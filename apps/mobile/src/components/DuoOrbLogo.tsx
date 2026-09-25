@@ -1,61 +1,35 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import { THEME } from '../theme';
+import { Image, StyleSheet, View } from 'react-native';
 
 interface DuoOrbLogoProps {
   size?: number;
+  /**
+   * Extra transparent breathing room around the mark, as a fraction of `size`.
+   * The source asset is a rounded-square app icon, so on a plain background it
+   * reads best with a little padding rather than edge to edge.
+   */
+  inset?: number;
 }
 
 /**
- * The DuoOrb mark: a blue orb and a red orb pressed against each other.
+ * The DuoOrb mark: a blue orb and a red orb inside a soft rounded tile.
  *
- * Two filled circles with no stroke — a stroked circle rasterises unevenly at
- * fractional sizes, which is the same class of bug the board turn ring had.
- * Depth comes from a soft shadow plus an offset highlight instead, so the
- * mark stays crisp at any size.
+ * Uses the real brand asset rather than drawn circles — it carries the
+ * gradients, highlights and orbit arcs that make the mark recognisable, and it
+ * is the same file that ships as the app icon.
  */
-export const DuoOrbLogo: React.FC<DuoOrbLogoProps> = ({ size = 96 }) => {
-  const orb = size * 0.58;
-  // The orbs overlap so they read as pushing rather than sitting side by
-  // side. Sized so the pair spans exactly `size`: 2 * 0.58 - 0.16 = 1.
-  const overlap = size * 0.16;
-  const highlight = orb * 0.3;
-
-  const renderOrb = (color: string, key: string) => (
-    <View
-      key={key}
-      style={[
-        styles.orb,
-        {
-          width: orb,
-          height: orb,
-          borderRadius: orb / 2,
-          backgroundColor: color,
-          shadowColor: color,
-        },
-      ]}
-    >
-      <View
-        style={[
-          styles.highlight,
-          {
-            width: highlight,
-            height: highlight,
-            borderRadius: highlight / 2,
-            top: orb * 0.16,
-            left: orb * 0.2,
-          },
-        ]}
-      />
-    </View>
-  );
+export const DuoOrbLogo: React.FC<DuoOrbLogoProps> = ({ size = 96, inset = 0 }) => {
+  const box = size * (1 - inset * 2);
 
   return (
     <View style={[styles.wrap, { width: size, height: size }]}>
-      <View style={{ flexDirection: 'row', marginLeft: -overlap }}>
-        {renderOrb(THEME.colors.player1, 'blue')}
-        {renderOrb(THEME.colors.player2, 'red')}
-      </View>
+      <Image
+        source={require('../../assets/duoorb-mark.png')}
+        style={{ width: box, height: box }}
+        resizeMode="contain"
+        accessibilityRole="image"
+        accessibilityLabel="DuoOrb"
+      />
     </View>
   );
 };
@@ -64,15 +38,5 @@ const styles = StyleSheet.create({
   wrap: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  orb: {
-    shadowOpacity: 0.32,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 5,
-  },
-  highlight: {
-    position: 'absolute',
-    backgroundColor: 'rgba(255, 255, 255, 0.38)',
   },
 });
