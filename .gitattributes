@@ -1,0 +1,19 @@
+# Normalize line endings in the repo; check out per platform.
+* text=auto eol=lf
+
+# Windows-only
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Keep these binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.wav binary
+*.mp3 binary
+*.ttf binary
+*.otf binary
+*.keystore binary
+*.jks binary

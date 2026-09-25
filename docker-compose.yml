@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: duoorb-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: duoorb
+    ports:
+      - "5432:5432"
+    volumes:
+      - duoorb_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d duoorb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: ./apps/server/Dockerfile
+    container_name: duoorb-server
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/duoorb?schema=public"
+      SUPABASE_URL: "${SUPABASE_URL}"
+      SUPABASE_PUBLISHABLE_KEY: "${SUPABASE_PUBLISHABLE_KEY}"
+      SUPABASE_SECRET_KEY: "${SUPABASE_SECRET_KEY}"
+      SUPABASE_JWKS_URL: "${SUPABASE_JWKS_URL}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  duoorb_postgres_data:

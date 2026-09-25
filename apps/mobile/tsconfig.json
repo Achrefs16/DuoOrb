@@ -1,0 +1,12 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@duoorb/game-core": ["../../packages/game-core/dist/index.d.ts"],
+      "@duoorb/protocol": ["../../packages/protocol/dist/index.d.ts"]
+    }
+  }
+}

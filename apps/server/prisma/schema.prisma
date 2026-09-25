@@ -1,0 +1,186 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id // Supabase auth UUID
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile           Profile?
+  ratings           Rating[]
+  ratingHistories   RatingHistory[]
+  gamePlayers       GamePlayer[]
+  
+  sentFriendRequests     FriendRequest[] @relation("SentFriendRequests")
+  receivedFriendRequests FriendRequest[] @relation("ReceivedFriendRequests")
+  
+  friendships1      Friendship[] @relation("Friendships1")
+  friendships2      Friendship[] @relation("Friendships2")
+  
+  blockedUsers      Block[] @relation("Blocker")
+  blockedBy         Block[] @relation("Blocked")
+
+  @@map("users")
+}
+
+model Profile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  username    String   @unique
+  displayName String
+  avatarUrl   String?
+  bio         String?
+  isOnline    Boolean  @default(false)
+  isPlaying   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("profiles")
+}
+
+model Rating {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // ONE universal DuoOrb rating per user (G2_UNIFIED_V1): every ranked
+  // online game — 1v1 or multiplayer, any mode — moves this single row.
+  rating      Float    @default(1500.0)
+  rd          Float    @default(350.0)
+  vol         Float    @default(0.06)
+  gamesPlayed Int      @default(0)
+  wins        Int      @default(0)
+  losses      Int      @default(0)
+  draws       Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@map("ratings")
+}
+
+model RatingHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameId       String
+  game         Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  mode         String   // game mode that produced this entry (audit only — rating itself is universal)
+  ratingBefore Float
+  ratingAfter  Float
+  delta        Float
+  rdBefore     Float
+  rdAfter      Float
+  volBefore    Float?
+  volAfter     Float?
+  algorithmVersion String? // e.g. G2_UNIFIED_V1
+  createdAt DateTime @default(now())
+
+  @@unique([gameId, userId])
+  @@map("rating_history")
+}
+
+model Game {
+  id                 String   @id
+  mode               String   // 2p, 3p, 4p, teams
+  status             String   @default("WAITING") // WAITING, IN_PROGRESS, COMPLETED, ABANDONED
+  isRanked           Boolean  @default(true)
+  timeControlMinutes Int      @default(3)
+  incrementSeconds   Int      @default(0)
+  wallsEach          Int      @default(10) // starting walls per player (recovery needs the real value)
+  rulesetVersion     String   @default("1.0.0")
+  winnerId           String?  // 'p1', 'p2', etc.
+  winnerUserId       String?
+  endedReason        String?  // GOAL_REACHED, RESIGNATION, TIMEOUT, DISCONNECT
+  createdAt          DateTime @default(now())
+  startedAt          DateTime?
+  endedAt            DateTime?
+
+  players            GamePlayer[]
+  moves              GameMove[]
+  ratingHistories    RatingHistory[]
+
+  @@map("games")
+}
+
+model GamePlayer {
+  id             String    @id @default(uuid())
+  gameId         String
+  game           Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerIndex    Int       // 0, 1, 2, 3
+  ratingBefore   Float?
+  rdBefore       Float?    // Glicko seeds at game start (recovery needs exact pre-game state)
+  volBefore      Float?
+  ratingAfter    Float?
+  isWinner       Boolean   @default(false)
+  /** Final 1-based placement (1v1: 1 = winner, 2 = loser; multiplayer: full order). */
+  placement      Int?
+  disconnectedAt DateTime?
+  hasLeft        Boolean   @default(false)
+
+  @@unique([gameId, playerIndex])
+  @@unique([gameId, userId])
+  @@map("game_players")
+}
+
+model GameMove {
+  id               String   @id @default(uuid())
+  gameId           String
+  game             Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  sequence         Int
+  playerIndex      Int
+  actionType       String
+  payload          Json
+  clockRemainingMs Int
+  serverTimestamp  BigInt
+  clientActionId   String?   // idempotency key for reconnect resubmits
+
+  @@unique([gameId, sequence])
+  @@unique([gameId, clientActionId])
+  @@map("game_moves")
+}
+
+model FriendRequest {
+  id         String   @id @default(uuid())
+  fromUserId String
+  fromUser   User     @relation("SentFriendRequests", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUserId   String
+  toUser     User     @relation("ReceivedFriendRequests", fields: [toUserId], references: [id], onDelete: Cascade)
+  status     String   @default("PENDING") // PENDING, ACCEPTED, REJECTED, CANCELLED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([fromUserId, toUserId])
+  @@map("friend_requests")
+}
+
+model Friendship {
+  id        String   @id @default(uuid())
+  user1Id   String
+  user1     User     @relation("Friendships1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2Id   String
+  user2     User     @relation("Friendships2", fields: [user2Id], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([user1Id, user2Id])
+  @@map("friendships")
+}
+
+model Block {
+  id        String   @id @default(uuid())
+  blockerId String
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@map("blocks")
+}

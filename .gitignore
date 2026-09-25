@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Expo / React Native
+.expo/
+.expo-shared/
+web-build/
+expo-env.d.ts
+/ios
+/android
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local tooling config
+.claude/
+.agents/
+
+# Design reference mockups (generated, not source)
+desginstitch/
+
+# Logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
