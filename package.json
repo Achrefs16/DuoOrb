@@ -7,6 +7,8 @@
     "apps/*"
   ],
   "scripts": {
+    "postinstall": "npm run build:packages",
+    "build:packages": "npm run build --workspace=@duoorb/game-core && npm run build --workspace=@duoorb/protocol",
     "test": "npm run test --workspace=@duoorb/game-core",
     "build:core": "npm run build --workspace=@duoorb/game-core",
     "mobile": "npm run start --workspace=@duoorb/mobile",
