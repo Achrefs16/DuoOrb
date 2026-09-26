@@ -127,16 +127,22 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       }
     }
 
-    // Supabase account JWT — only when the guest pass did not verify.
-    // This must NEVER downgrade an already-verified guest: a guest token
-    // is not a Supabase JWT, so verifyToken always throws for it.
-    if (!verified && rawToken) {
+    // Second pass: provisioning first, identity adoption second.
+    // verifyToken accepts guest HMACs as well as Supabase JWTs, and
+    // getOrCreateUser recreates any rows a valid credential lost (e.g.
+    // the database was wiped while its tokens stayed valid) — creating
+    // nothing for anyone who already has rows. Adopting the verified
+    // identity stays gated on !verified: this must NEVER downgrade an
+    // already-verified guest.
+    if (rawToken) {
       try {
         const claims = await this.authService.verifyToken(rawToken);
-        const user = await this.authService.getOrCreateUser(claims);
-        userId = user.id;
-        displayName = user.displayName;
-        verified = true;
+        const provisioned = await this.authService.getOrCreateUser(claims);
+        if (!verified) {
+          userId = provisioned.id;
+          displayName = provisioned.displayName;
+          verified = true;
+        }
       } catch {
         this.logger.warn(`No Supabase identity on ${client.id}; staying unverified.`);
       }
