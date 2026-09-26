@@ -112,6 +112,11 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const currentAnalysis: MoveAnalysis | undefined =
     currentStep > 0 ? review.moveAnalyses[currentStep - 1] : undefined;
 
+  /** State *before* the analyzed action — holds the mover's origin cell. */
+  const preMoveState = useMemo(() => {
+    return rebuildStateAtStep(initialState, history, currentStep - 1);
+  }, [initialState, history, currentStep]);
+
   const goTo = (step: number) => {
     setCurrentStep(Math.max(0, Math.min(history.length, step)));
     setShowWhyOpen(false);
@@ -140,7 +145,6 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const threat = currentAnalysis
     ? currentState.players.find((p) => p.id === currentAnalysis.after.closestThreatId)
     : undefined;
-  const threatColor = playerColor(threat?.index ?? 1, threat?.color);
   const markColor = currentAnalysis ? assessmentColor(currentAnalysis.assessment) : moverColor;
 
   const bestDiffers =
@@ -159,17 +163,23 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     if (!currentAnalysis) return null;
     const pa = currentAnalysis.playedAction;
     if (pa.type === 'MOVE') {
+      const origin = preMoveState.players.find(
+        (p) => p.id === currentAnalysis.playerId
+      )?.position;
       return {
-        from: currentAnalysis.before.moverPosition,
+        from: origin,
         to: pa.to,
         color: markColor,
       };
     }
-    return {
-      wall: pa.wall,
-      color: markColor,
-    };
-  }, [currentAnalysis, markColor]);
+    if (pa.type === 'PLACE_WALL') {
+      return {
+        wall: pa.wall,
+        color: markColor,
+      };
+    }
+    return null;
+  }, [currentAnalysis, markColor, preMoveState]);
 
   const altMark = useMemo(() => {
     if (!showAlt || !currentAnalysis?.bestAction) return null;
@@ -177,24 +187,11 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     if (ba.type === 'MOVE') {
       return { to: ba.to, color: '#004AC6' };
     }
-    return { wall: ba.wall, color: '#004AC6' };
+    if (ba.type === 'PLACE_WALL') {
+      return { wall: ba.wall, color: '#004AC6' };
+    }
+    return null;
   }, [showAlt, currentAnalysis]);
-
-  const pathDots = useMemo(() => {
-    if (!currentAnalysis) return undefined;
-    const out: Array<{ cell: { row: number; col: number }; color: string }> = [];
-    if (currentAnalysis.after.moverPath) {
-      for (const c of currentAnalysis.after.moverPath) {
-        out.push({ cell: c, color: moverColor });
-      }
-    }
-    if (currentAnalysis.after.threatPath && threat) {
-      for (const c of currentAnalysis.after.threatPath) {
-        out.push({ cell: c, color: threatColor });
-      }
-    }
-    return out;
-  }, [currentAnalysis, moverColor, threatColor, threat]);
 
   const opponentPlayer = currentState.players[1] || currentState.players[0];
   const userPlayer = currentState.players[0];
@@ -273,7 +270,6 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               flipAnim={flip}
               moveMark={moveMark}
               altMark={altMark}
-              pathDots={pathDots}
             />
           </Animated.View>
         </View>
