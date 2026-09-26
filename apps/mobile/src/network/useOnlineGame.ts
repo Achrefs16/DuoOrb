@@ -10,6 +10,11 @@ export interface UseOnlineGameOptions {
   onError?: (error: GameError) => void;
 }
 
+/** How often to re-ask the server for game state while still syncing. */
+const JOIN_RETRY_MS = 2500;
+/** After this many unanswered retries, surface an error instead of spinning. */
+const JOIN_ATTEMPT_LIMIT = 8;
+
 function sameAction(a: GameAction, b: GameAction): boolean {
   if (a.type !== b.type) return false;
   if (a.type === 'MOVE' && b.type === 'MOVE') {
@@ -39,8 +44,10 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
   const rematchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [gameEndedResult, setGameEndedResult] = useState<GameEndedDto | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(true);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [lastFinished, setLastFinished] = useState<{ gameId: string; playerId: string; userId: string; place: number } | null>(null);
+  const joinAttemptsRef = useRef<number>(0);
 
   const graceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastResyncRef = useRef(0);
@@ -108,6 +115,8 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
   const joinGame = useCallback(() => {
     const socket = socketManager.getSocket();
     setIsSyncing(true);
+    setJoinError(null);
+    joinAttemptsRef.current = 0;
     socket.emit('game:join', {
       gameId,
       lastSequence: gameStateRef.current?.history.length ?? 0,
@@ -117,6 +126,31 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
       })),
     });
   }, [gameId]);
+
+  /**
+   * Re-emit game:join if the server has not answered. Without this a dropped
+   * or coalesced emit leaves isSyncing true forever: the overlay in GameScreen
+   * is gated purely on that flag, so the player sits on "Connecting to match"
+   * with no way out except a Cancel button that does not release their seat.
+   */
+  useEffect(() => {
+    if (!isSyncing) return undefined;
+    const timer = setInterval(() => {
+      joinAttemptsRef.current += 1;
+      if (joinAttemptsRef.current > JOIN_ATTEMPT_LIMIT) {
+        setJoinError(
+          'Could not reach the match. It may have been abandoned — go back and search again.'
+        );
+        setIsSyncing(false);
+        return;
+      }
+      socketManager.getSocket().emit('game:join', {
+        gameId,
+        lastSequence: gameStateRef.current?.history.length ?? 0,
+      });
+    }, JOIN_RETRY_MS);
+    return () => clearInterval(timer);
+  }, [isSyncing, gameId]);
 
   // Rejoin + resync automatically after a transport reconnect (e.g. fresh
   // token). Skipped on first connect — mount already joins.
@@ -275,16 +309,29 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
       setLastFinished(finished);
     };
 
-    const handleError = (error: GameError) => {
-      console.warn('Game error from server:', error);
-      // Our view of the sequence drifted (missed broadcast, reconnect):
-      // pull full truth instead of acting on a stale board.
-      if (error.code === 'STALE_SEQUENCE') {
-        joinGame();
-        return;
-      }
-      if (onError) onError(error);
-    };
+  const handleError = (error: GameError) => {
+    console.warn('Game error from server:', error);
+    // Our view of the sequence drifted (missed broadcast, reconnect):
+    // pull full truth instead of acting on a stale board.
+    if (error.code === 'STALE_SEQUENCE') {
+      joinGame();
+      return;
+    }
+    // Every other rejection is terminal for this join attempt. isSyncing MUST
+    // be cleared here: the GameScreen overlay renders purely off that flag, so
+    // leaving it true pins the player on "Connecting to match" indefinitely
+    // with no message, while their clock runs down and the game is eventually
+    // forfeited in their name.
+    if (error.code === 'UNAUTHENTICATED' || error.code === 'GAME_NOT_IN_PROGRESS') {
+      setJoinError(
+        error.code === 'UNAUTHENTICATED'
+          ? 'Your session expired. Reconnect and try again.'
+          : 'That match is no longer available. Go back and search again.'
+      );
+      setIsSyncing(false);
+    }
+    if (onError) onError(error);
+  };
 
     socket.on('game:sync', handleSync);
     socket.on('game:actionAccepted', handleActionAccepted);
@@ -362,6 +409,7 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
     rematchGameId,
     gameEndedResult,
     isSyncing,
+    joinError,
     pendingCount,
     lastFinished,
     sendAction,

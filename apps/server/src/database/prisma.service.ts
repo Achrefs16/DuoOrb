@@ -8,7 +8,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor() {
     super({
-      log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+      // Production previously logged only 'error', which is why a systemic
+      // failure (a foreign-key violation repeated on every socket connect) sat
+      // invisible in the application log while the only trace was Prisma's bare
+      // "prisma:error" line with no context. 'warn' costs nothing at this
+      // request volume and surfaces degraded connections early.
+      log:
+        process.env.NODE_ENV === 'development'
+          ? ['warn', 'error']
+          : ['warn', 'error'],
     });
   }
 

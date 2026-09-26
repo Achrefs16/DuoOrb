@@ -122,7 +122,15 @@ export type GameErrorCode =
   | 'WALL_CROSSES_EXISTING'
   | 'WALL_BLOCKS_ALL_PATHS'
   | 'STALE_SEQUENCE'
-  | 'UNKNOWN_ACTION';
+  | 'UNKNOWN_ACTION'
+  /**
+   * Transport/auth failure, not a rules violation. game-core never returns it —
+   * the server gateway emits it when a socket cannot be verified or is not
+   * seated in the game it asked to join. It was missing from this union even
+   * though the gateway has always sent it, so the client's `game:error` handler
+   * could not narrow on it and silently failed to react.
+   */
+  | 'UNAUTHENTICATED';
 
 export interface GameError {
   code: GameErrorCode;

@@ -30,6 +30,11 @@ export interface ActiveOnlineGame {
   clocksMs: Record<string, number>;      // playerId -> remaining ms
   incrementSeconds: number;
   turnStartTimestamp: number;
+  /**
+   * Whether the countdown is running. False until the first move is accepted,
+   * so pairing latency is not charged to the slower player. See createGame.
+   */
+  clockStarted: boolean;
   timerInterval?: NodeJS.Timeout;
   /** Retained so the clock loop can restart after a mid-game forfeit. */
   onClockTick?: (gameId: string, clock: ClockStateDto) => void;
@@ -105,6 +110,10 @@ export class AuthoritativeGameService {
         if (game.timerInterval) clearInterval(game.timerInterval);
         return;
       }
+
+      // Armed but not yet running: no move has been played, so nobody is
+      // losing time. See the clockStarted note in createGame.
+      if (!game.clockStarted) return;
 
       const now = Date.now();
       const activePlayerId = game.state.players[game.state.currentPlayerIndex].id;
@@ -214,7 +223,15 @@ export class AuthoritativeGameService {
       ratings,
       clocksMs,
       incrementSeconds: incrementSec,
-      turnStartTimestamp: Date.now(),
+      // The clock does not start until the first move is actually played (see
+      // startClockIfPending). Creating a game and pairing two players is
+      // instant, but a client still has to attach, receive game:sync and render
+      // before it can move. Starting the countdown here charged that latency to
+      // whoever attached slowest — and a client that failed to attach entirely
+      // (see the game:join rejections in the gateway) simply ran out of time
+      // and forfeited a game it never saw.
+      turnStartTimestamp: 0,
+      clockStarted: false,
       onClockTick: params.onClockTick,
       onTimeout: params.onTimeout,
       disconnectedUsers: {},
@@ -250,6 +267,34 @@ export class AuthoritativeGameService {
    * - illegal against current truth → error so the client rolls back
    * The server always assigns the sequence; client numbers are advisory.
    */
+  /**
+   * Renames a player in every live game they are seated in.
+   *
+   * The game state holds its own copy of each player's name (seeded from the
+   * matchmaking snapshot at createGame) and previously had no way to be
+   * updated, so a rename was invisible for the rest of that game and only
+   * appeared in the next one. Returns the ids of the games that changed so the
+   * caller can broadcast the new state.
+   */
+  public setPlayerName(userId: string, displayName: string): string[] {
+    if (!displayName) return [];
+    const changed: string[] = [];
+    for (const game of this.games.values()) {
+      if (game.state.status !== 'IN_PROGRESS') continue;
+      const playerId = game.userPlayerIds[userId];
+      if (!playerId) continue;
+      const players = game.state.players.map((p) =>
+        p.id === playerId ? { ...p, displayName } : p
+      );
+      if (players.every((p, i) => p.displayName === game.state.players[i].displayName)) {
+        continue;
+      }
+      game.state = { ...game.state, players };
+      changed.push(game.id);
+    }
+    return changed;
+  }
+
   public async resubmitAction(
     gameId: string,
     userId: string,
@@ -405,6 +450,9 @@ export class AuthoritativeGameService {
         clocksMs,
         incrementSeconds: row.incrementSeconds,
         turnStartTimestamp: Date.now(),
+        // A recovered game was already under way before the restart, so its
+        // clock resumes immediately rather than waiting for a first move.
+        clockStarted: true,
         disconnectedUsers: {},
         rematchOffers: new Set(),
         isRanked: row.isRanked,
@@ -456,7 +504,12 @@ export class AuthoritativeGameService {
           ratingBefore: (p.ratingBefore as number | null) ?? null,
           rdBefore: (p.rdBefore as number | null) ?? null,
           volBefore: (p.volBefore as number | null) ?? null,
+          // username first, for the same reason as everywhere else: a
+          // recovered game previously showed the auto-generated guest handle
+          // where the original had shown the chosen username, so the same game
+          // changed names across a server restart.
           displayName:
+            (p.user?.profile?.username as string | undefined) ??
             (p.user?.profile?.displayName as string | undefined) ??
             `Player ${(p.userId as string).slice(0, 4)}`,
         }));
@@ -743,6 +796,14 @@ export class AuthoritativeGameService {
 
     // Deduct elapsed time from moving player
     if (game.timeControlMinutes > 0) {
+      // Arm on the very first move so the time spent attaching to the game is
+      // never charged. turnStartTimestamp is 0 until then, which would
+      // otherwise read as "the clock has been running since the epoch" and
+      // instantly zero the clock.
+      if (!game.clockStarted) {
+        game.clockStarted = true;
+        game.turnStartTimestamp = now;
+      }
       const elapsed = now - game.turnStartTimestamp;
       game.clocksMs[expectedPlayerId] = Math.max(0, game.clocksMs[expectedPlayerId] - elapsed);
 
@@ -933,6 +994,7 @@ export class AuthoritativeGameService {
       });
       if (!res.success) return;
       g.state = res.state;
+      g.clockStarted = true;
       g.turnStartTimestamp = Date.now();
       this.ledgerMove(g, res.state.lastMove!);
       if (res.state.status !== 'COMPLETED') {

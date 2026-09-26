@@ -1174,6 +1174,25 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     type === 'online' &&
     (!onlinePlayerId || (!online.gameState && !offlineSnapshot?.myPlayerId))
   ) {
+    // Once the join has definitively failed there is nothing to connect to, so
+    // render a plain message instead of a spinner that can never resolve.
+    if (online.joinError) {
+      return (
+        <View style={styles.container}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          <View style={styles.skeletonTop}>
+            <Text style={styles.syncingText}>{online.joinError}</Text>
+            <TouchableOpacity
+              style={styles.syncingBack}
+              onPress={leaveFinishedAndHome}
+              accessibilityRole="button"
+            >
+              <Text style={styles.syncingBackText}>Back to menu</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
     return (
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
@@ -1193,7 +1212,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         <View style={styles.syncingOverlay}>
           <ActivityIndicator size="large" color={THEME.colors.textPrimary} />
           <Text style={styles.syncingText}>Connecting to match…</Text>
-          <TouchableOpacity style={styles.syncingBack} onPress={onHome}>
+          {/* Must release the seat, not just navigate. Plain onHome left the
+              player seated in a live game, so their clock kept running and
+              the game was forfeited in their name. */}
+          <TouchableOpacity
+            style={styles.syncingBack}
+            onPress={leaveFinishedAndHome}
+            accessibilityRole="button"
+          >
             <Text style={styles.syncingBackText}>Cancel</Text>
           </TouchableOpacity>
         </View>

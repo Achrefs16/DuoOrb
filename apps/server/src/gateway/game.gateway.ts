@@ -138,9 +138,21 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       try {
         const claims = await this.authService.verifyToken(rawToken);
         const provisioned = await this.authService.getOrCreateUser(claims);
+        // Postgres is the ONLY source of truth for a player's name. `provisioned`
+        // is already computed here for every credential, so use it — assigning
+        // it only when !verified left every guest carrying the name the device
+        // asserted in the handshake query. That value was then snapshotted by
+        // matchmaking:find, frozen into the game by createGame, and persisted
+        // into history, so the same player appeared under different names in
+        // the friend list (which reads the database) and in every match.
+        //
+        // `username` is the canonical display name: it is unique, user-chosen
+        // and never auto-generated, whereas displayName is seeded with a random
+        // handle for new guests and is often left at that value.
+        const canonicalName = provisioned.username || provisioned.displayName;
+        if (canonicalName) displayName = canonicalName;
         if (!verified) {
           userId = provisioned.id;
-          displayName = provisioned.displayName;
           verified = true;
         }
       } catch {
@@ -260,11 +272,19 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         where: { userId: user.userId },
       });
       if (!profile) return;
-      const name = profile.displayName || profile.username;
+      // Same canonical field as handleConnection: username, not displayName.
+      const name = profile.username || profile.displayName;
       const mapped = this.socketUserMap.get(client.id);
       if (mapped && mapped.displayName !== name) {
         this.socketUserMap.set(client.id, { ...mapped, displayName: name });
-      }
+        // A rename must reach the game in progress, not just the next one. The
+        // game state holds its own copy of player names and had no way to be
+        // updated, so a rename mid-game stayed invisible until the rematch.
+        this.gameService.setPlayerName(user.userId, name);
+        this.server.to(user.userId).emit('game:playerRenamed', {
+          userId: user.userId,
+          displayName: name,
+        });      }
       this.matchmakingService.updateDisplayName(user.userId, name);
       const roomIds = this.roomService.refreshDisplayName(user.userId, name);
       for (const roomId of roomIds) {
@@ -929,12 +949,24 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   ) {
     const user = this.getUser(client);
     if (!user.verified) {
+      this.logger.warn(
+        `game:join rejected (unverified) socket=${client.id} userId=${user.userId} game=${payload.gameId}`
+      );
       client.emit('game:error', { code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
       return;
     }
     // No spectating: only seated players may join a game's channel.
     const existing = this.gameService.getGame(payload.gameId);
     if (!existing || !existing.userPlayerIds[user.userId]) {
+      // The usual cause is an identity change between matchmaking and joining:
+      // the game is seated with the id captured at matchmaking:find, so a
+      // client that re-authenticated under a different id is no longer seated
+      // and can never attach. Logged because the client renders this as an
+      // indefinite "Connecting to match" with no explanation.
+      this.logger.warn(
+        `game:join rejected (not seated) socket=${client.id} userId=${user.userId} game=${payload.gameId} ` +
+          `known=${existing ? Object.keys(existing.userPlayerIds).join(',') : 'game-not-found'}`
+      );
       client.emit('game:error', { code: 'GAME_NOT_IN_PROGRESS', message: 'Game not found.' });
       return;
     }
