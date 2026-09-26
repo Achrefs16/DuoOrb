@@ -1,36 +1,38 @@
-import { Audio } from 'expo-av';
+import type { AudioPlayer } from 'expo-audio';
 
 // Metro resolves static asset requires to numeric IDs at bundle time.
 declare const require: (path: string) => number;
 
-let moveSound: Audio.Sound | null = null;
-let wallSound: Audio.Sound | null = null;
-let goalSound: Audio.Sound | null = null;
+let moveSound: AudioPlayer | null = null;
+let wallSound: AudioPlayer | null = null;
+let goalSound: AudioPlayer | null = null;
 let loaded = false;
 let muted = false;
 
 async function ensureLoaded(): Promise<void> {
   if (loaded) return;
   try {
-    await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-    const [move, wall, goal] = await Promise.all([
-      Audio.Sound.createAsync(require('../../assets/sounds/move.wav')),
-      Audio.Sound.createAsync(require('../../assets/sounds/wall.wav')),
-      Audio.Sound.createAsync(require('../../assets/sounds/goal.wav')),
-    ]);
-    moveSound = move.sound;
-    wallSound = wall.sound;
-    goalSound = goal.sound;
+    // Import lazily so the audio native module is not touched during app
+    // startup. Sounds are only needed after gameplay begins.
+    const { createAudioPlayer, setAudioModeAsync } = await import('expo-audio');
+    await setAudioModeAsync({ playsInSilentMode: true });
+    moveSound = createAudioPlayer(require('../../assets/sounds/move.wav'));
+    wallSound = createAudioPlayer(require('../../assets/sounds/wall.wav'));
+    goalSound = createAudioPlayer(require('../../assets/sounds/goal.wav'));
+    for (const sound of [moveSound, wallSound, goalSound]) {
+      sound.muted = muted;
+    }
     loaded = true;
   } catch {
-    // Audio unavailable (e.g. web without user gesture yet) — stay silent.
+    // Audio unavailable — stay silent.
   }
 }
 
-async function play(sound: Audio.Sound | null): Promise<void> {
+async function play(sound: AudioPlayer | null): Promise<void> {
   if (muted || !sound) return;
   try {
-    await sound.replayAsync();
+    await sound.seekTo(0);
+    sound.play();
   } catch {
     // Ignore playback races; never break gameplay.
   }
@@ -38,6 +40,9 @@ async function play(sound: Audio.Sound | null): Promise<void> {
 
 export function setSoundsMuted(value: boolean): void {
   muted = value;
+  for (const sound of [moveSound, wallSound, goalSound]) {
+    if (sound) sound.muted = value;
+  }
 }
 
 export function areSoundsMuted(): boolean {
