@@ -5,8 +5,14 @@ import { socketManager } from './socket';
 
 export type MatchmakingState = 'idle' | 'searching' | 'matched';
 
+export interface MatchedOpponent {
+  userId: string;
+  displayName: string;
+  rating: number;
+}
+
 interface UseMatchmakingOptions {
-  onMatched: (gameId: string) => void;
+  onMatched: (gameId: string, opponents: MatchedOpponent[]) => void;
 }
 
 export function useMatchmaking({ onMatched }: UseMatchmakingOptions) {
@@ -64,13 +70,13 @@ export function useMatchmaking({ onMatched }: UseMatchmakingOptions) {
   useEffect(() => {
     const socket = socketManager.getSocket();
 
-    const handleMatched = (payload: { gameId: string }) => {
+    const handleMatched = (payload: { gameId: string; opponents?: MatchedOpponent[] }) => {
       stopTimer();
       lastFind.current = null;
       wasDown.current = false;
       stateRef.current = 'matched';
       setState('matched');
-      onMatched(payload.gameId);
+      onMatched(payload.gameId, payload.opponents ?? []);
     };
 
     // Connection dropped mid-search: the server threw our queue note

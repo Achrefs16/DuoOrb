@@ -19,9 +19,50 @@ import { GameMode, playerCountForMode } from '@duoorb/game-core';
 import { RoomDto } from '@duoorb/protocol';
 import { MatchType, modeLabel, resolveMode } from '../matchModes';
 import { useMatchmaking } from '../network/useMatchmaking';
+import type { MatchedOpponent } from '../network/useMatchmaking';
+import { useOnlineGame } from '../network/useOnlineGame';
 import { useRooms } from '../network/useRooms';
 import { api } from '../network/apiClient';
 import { getCurrentUser } from '../network/auth';
+
+/**
+ * Headless join: runs the normal game channel (join + sync) without any UI
+ * so the finding screen only hands off once the match is actually joined.
+ * After the sync lands, the opponent card stays up briefly, then the game
+ * starts directly — no blank connecting page in between.
+ */
+const MatchJoinGate: React.FC<{ gameId: string; onSynced: () => void }> = ({
+  gameId,
+  onSynced,
+}) => {
+  const online = useOnlineGame({ gameId });
+  const firedRef = useRef(false);
+  const onSyncedRef = useRef(onSynced);
+  useEffect(() => {
+    onSyncedRef.current = onSynced;
+  });
+  useEffect(() => {
+    if (firedRef.current) return undefined;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (online.gameState) {
+      firedRef.current = true;
+      timer = setTimeout(() => onSyncedRef.current(), 1400);
+    } else {
+      // Sync safety net: if the join never lands, still enter after a
+      // while — GameScreen's own join + skeleton take over from there.
+      timer = setTimeout(() => {
+        if (!firedRef.current) {
+          firedRef.current = true;
+          onSyncedRef.current();
+        }
+      }, 10000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [online.gameState, gameId]);
+  return null;
+};
 
 export type OnlineMode = 'quick' | 'rooms';
 
@@ -107,19 +148,21 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
     findMatch,
     cancelMatch,
   } = useMatchmaking({
-    onMatched: (gameId) => {
-      // The search spec is snapshotted when the search STARTS: entry props
-      // are consumed (cleared) right after firing, so reading matchConfig
-      // here would hand the next game the lobby defaults.
-      const spec = searchSpec;
-      onStartOnlineGame(
-        gameId,
-        spec?.mode ?? matchConfig.mode,
-        spec?.clock ?? matchConfig.clock,
-        spec ? (spec.custom ? 'custom' : 'quick') : autoMatch ? 'custom' : 'quick'
-      );
+    onMatched: (gameId, opponents) => {
+      // Don't navigate yet: stay on the finding screen, show WHO matched,
+      // and let the join gate below confirm the sync before entering.
+      setFoundGame({ gameId, opponents });
     },
   });
+
+  // The match the server just made for us (quick/custom search). While set,
+  // the finding screen shows the opponent card instead of the spinner, and
+  // the join gate confirms the game channel before we navigate — so the
+  // blank "connecting" page is only ever a rare fallback, not the flow.
+  const [foundGame, setFoundGame] = useState<{
+    gameId: string;
+    opponents: MatchedOpponent[];
+  } | null>(null);
 
   const {
     activeRoom,
@@ -204,6 +247,19 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       onConsumeAutoEntry?.();
     }
   }, [view, mmState, findMatch, matchConfig.mode, matchConfig.clock, matchConfig.wallsEach, autoMatch, onConsumeAutoEntry]);
+
+  // Starts a found match: same snapshot logic as onMatched (entry props
+  // were consumed on search start, so matchConfig may hold lobby defaults).
+  const startFoundGame = useCallback(() => {
+    if (!foundGame) return;
+    const spec = searchSpec;
+    onStartOnlineGame(
+      foundGame.gameId,
+      spec?.mode ?? matchConfig.mode,
+      spec?.clock ?? matchConfig.clock,
+      spec ? (spec.custom ? 'custom' : 'quick') : autoMatch ? 'custom' : 'quick'
+    );
+  }, [foundGame, searchSpec, matchConfig.mode, matchConfig.clock, autoMatch, onStartOnlineGame]);
 
   useEffect(() => {
     return () => {
@@ -406,7 +462,11 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
             <View style={styles.mmPlayerCol}>
               <View style={styles.mmAvatarSlot}>
-                {isMatched ? (
+                {foundGame?.opponents[0] ? (
+                  <Text style={styles.mmAvatarLetterOpp}>
+                    {(foundGame.opponents[0].displayName || 'O').charAt(0).toUpperCase()}
+                  </Text>
+                ) : isMatched ? (
                   <Text style={styles.mmAvatarLetterOpp}>O</Text>
                 ) : (
                   <>
@@ -419,7 +479,11 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 {isMatched ? 'READY' : 'OPEN'}
               </Text>
               <Text style={styles.mmPlayerName} numberOfLines={1}>
-                {isMatched
+                {foundGame?.opponents[0]
+                  ? foundGame.opponents.length > 1
+                    ? `${foundGame.opponents[0].displayName} +${foundGame.opponents.length - 1}`
+                    : foundGame.opponents[0].displayName
+                  : isMatched
                   ? matchPlayerCount === 2
                     ? 'Opponent'
                     : 'Table Ready'
@@ -427,7 +491,11 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               </Text>
               <View style={styles.mmRatingPill}>
                 <Text style={styles.mmRatingText}>
-                  {isMatched ? 'READY' : '—'}
+                  {foundGame?.opponents[0]
+                    ? Math.round(foundGame.opponents[0].rating)
+                    : isMatched
+                    ? 'READY'
+                    : '—'}
                 </Text>
               </View>
             </View>
@@ -435,7 +503,15 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
           {/* Action */}
           <View style={styles.radarActionRow}>
-            {isSearching ? (
+            {foundGame ? (
+              <>
+                <MatchJoinGate gameId={foundGame.gameId} onSynced={startFoundGame} />
+                <View style={styles.startingRow}>
+                  <ActivityIndicator size="small" color={THEME.colors.primary} />
+                  <Text style={styles.startingText}>Starting match…</Text>
+                </View>
+              </>
+            ) : isSearching ? (
               <TouchableOpacity
                 style={styles.cancelSearchBtn}
                 activeOpacity={0.8}
@@ -1562,6 +1638,23 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     color: THEME.colors.onSurface,
+  },
+  startingRow: {
+    width: '100%',
+    height: 46,
+    borderRadius: THEME.radius.md,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderWidth: 1,
+    borderColor: THEME.colors.outlineVariant,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  startingText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 14,
+    color: THEME.colors.textSecondary,
   },
   retrySearchBtn: {
     width: '100%',

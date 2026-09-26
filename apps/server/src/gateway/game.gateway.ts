@@ -845,8 +845,22 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       for (const socket of sockets) {
         socket?.join(gameId);
       }
+      // Personalized payload: everyone sees WHO they matched, not just
+      // a game id. The finding screen shows the opponent card straight
+      // from this instead of a blank connecting page.
+      const seats = orderedPlayers.map((player, index) => ({
+        userId: player.userId,
+        displayName: player.displayName,
+        rating: ratings[index] ?? 1500,
+      }));
       for (const player of players) {
-        this.server.to(player.socketId).emit('matchmaking:matched', { gameId, mode: match.mode });
+        this.server
+          .to(player.socketId)
+          .emit('matchmaking:matched', {
+            gameId,
+            mode: match.mode,
+            opponents: seats.filter((s) => s.userId !== player.userId),
+          });
       }
     }
   }

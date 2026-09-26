@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import {
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -38,10 +39,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       {/* Stitch Fixed Top Header */}
       <View style={styles.topHeader}>
         <View style={styles.brandGroup}>
-          <View style={styles.dualOrbsPill}>
-            <View style={[styles.miniOrb, { backgroundColor: THEME.colors.primary }]} />
-            <View style={[styles.miniOrb, { backgroundColor: THEME.colors.secondary }]} />
-          </View>
+          <Image
+            source={require('../../assets/logo.png')}
+            style={styles.brandLogo}
+            resizeMode="contain"
+            accessibilityRole="image"
+            accessibilityLabel="DuoOrb"
+          />
           <View style={styles.brandTitles}>
             <Text style={styles.brandTitle}>DuoOrb</Text>
             <Text style={styles.brandSubtitle}>TACTICAL GRID</Text>
@@ -284,19 +288,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  dualOrbsPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  miniOrb: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 2,
-    elevation: 2,
+  brandLogo: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
   },
   brandTitles: {
     flexDirection: 'column',

@@ -174,7 +174,12 @@ export interface ServerToClientEvents {
   'room:kicked': (payload: { roomId: string }) => void;
   'room:inviteReceived': (invite: RoomInviteDto) => void;
   'room:inviteDeclined': (payload: { inviteId: string; byUserId: string }) => void;
-  'matchmaking:matched': (payload: { gameId: string; roomId?: string }) => void;
+  'matchmaking:matched': (payload: {
+    gameId: string;
+    roomId?: string;
+    /** Everyone else seated in the match, for the opponent-found card. */
+    opponents?: Array<{ userId: string; displayName: string; rating: number }>;
+  }) => void;
   'challenge:received': (challenge: ChallengeDto) => void;
   'challenge:accepted': (payload: { challengeId: string; gameId: string; mode: GameMode; timeControlMinutes: number; incrementSeconds: number }) => void;
   'challenge:declined': (payload: { challengeId: string; byUserId: string }) => void;
