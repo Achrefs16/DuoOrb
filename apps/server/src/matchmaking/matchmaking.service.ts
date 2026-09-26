@@ -51,6 +51,16 @@ export class MatchmakingService {
   }
 
   /**
+   * Identity re-sync: a queued player chose or edited their name while
+   * searching. The queued snapshot would otherwise seed the match with
+   * the stale handshake name.
+   */
+  public updateDisplayName(userId: string, displayName: string): void {
+    const entry = this.queue.find((q) => q.userId === userId);
+    if (entry) entry.displayName = displayName;
+  }
+
+  /**
    * Guest signed in: rekey their queue entry to the account id so a
    * search started pre-sign-in still seats them correctly.
    */

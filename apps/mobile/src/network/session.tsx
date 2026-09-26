@@ -19,6 +19,7 @@ import {
   getStoredRefreshToken,
   setGuestCredentials,
   clearGuestCredentials,
+  subscribeIdentity,
 } from './auth';
 import { socketManager } from './socket';
 import {
@@ -104,7 +105,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<SessionProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
-  const guest = useMemo(() => getCurrentUser(), []);
+  // Single source of truth: re-read the identity cache whenever ANY
+  // mutation (mint, rename, sign-in/out) lands, so this context never
+  // holds the stale first-paint snapshot the old useMemo([]) kept.
+  const [identityVersion, setIdentityVersion] = useState(0);
+  useEffect(
+    () => subscribeIdentity(() => setIdentityVersion((v) => v + 1)),
+    []
+  );
+  const guest = useMemo(
+    () => getCurrentUser(),
+    // identityVersion is a deliberate change signal, not a read value:
+    // every auth mutation bumps it so this re-reads the live cache.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [identityVersion]
+  );
   const accountId = supabaseUser?.id;
 
   // Push the current credential into the socket layer whenever the session
@@ -139,6 +154,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (stored) {
       try {
         setGuestCredentials(await refreshGuestSession(stored));
+        socketManager.syncIdentity();
         return true;
       } catch (err) {
         if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
@@ -151,6 +167,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       setGuestCredentials(await createGuestSession());
+      socketManager.syncIdentity();
       return true;
     } catch (err) {
       setError(
@@ -203,7 +220,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         const token = session.access_token ?? (await getAccessToken());
         if (token) {
           const moved = await socketManager.adoptSession(token);
-          if (moved && !cancelled) adoptAccountIdentity(session.user.id);
+          if (moved && !cancelled) {
+            adoptAccountIdentity(session.user.id);
+            socketManager.syncIdentity();
+          }
         }
       } else {
         writeMergeRecord(guest.userId, 'signed-out');
@@ -280,6 +300,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       await ensureGuestSession();
       await pushTokenToSocket();
       socketManager.refreshIdentity(getCurrentUser().userId);
+      socketManager.syncIdentity();
     }
   }, [ensureGuestSession, pushTokenToSocket]);
 
@@ -370,6 +391,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       const next = await loadProfile();
       if (!next) return false;
       setProfile(next);
+      // Names changed (or first arrived): push them to the live socket
+      // state so rooms and matches stop showing the handshake snapshot.
+      socketManager.syncIdentity();
       return true;
     } finally {
       setProfileLoading(false);
@@ -381,7 +405,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void loadProfile().then((next) => {
-      if (!cancelled && next) setProfile(next);
+      if (!cancelled && next) {
+        setProfile(next);
+        socketManager.syncIdentity();
+      }
     });
     return () => {
       cancelled = true;

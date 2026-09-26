@@ -49,8 +49,11 @@ const storage = {
     } catch {
       // ignore
     }
-    // Native (no window.localStorage): persist async, best-effort.
-    void AsyncStorage.setItem(key, value).catch(() => {});
+    // Native (no window.localStorage): persist async, ORDERED. The writes
+    // used to race (placeholder id landing after the server id), so the
+    // next boot could hydrate a phantom identity. Every native write goes
+    // through one chain, in call order.
+    enqueueWrite(() => AsyncStorage.setItem(key, value));
   },
   removeItem: (key: string): void => {
     try {
@@ -61,9 +64,52 @@ const storage = {
     } catch {
       // ignore
     }
-    void AsyncStorage.removeItem(key).catch(() => {});
+    enqueueWrite(() => AsyncStorage.removeItem(key));
   },
 };
+
+/** Serializes native storage writes so disk order always matches call order. */
+let writeChain: Promise<void> = Promise.resolve();
+function enqueueWrite(op: () => Promise<unknown>): void {
+  writeChain = writeChain.then(op, op).then(
+    () => undefined,
+    () => undefined
+  );
+}
+
+/**
+ * Resolves when every queued storage write has landed. Call on app
+ * background (and before any destructive transition) so a kill can never
+ * strand half an identity on disk.
+ */
+export function flushStorage(): Promise<void> {
+  return writeChain;
+}
+
+type IdentityListener = () => void;
+const identityListeners = new Set<IdentityListener>();
+
+/**
+ * Single-source-of-truth subscription: every mutation below notifies, so
+ * the session layer (and any screen reading identity) converges on the
+ * latest values instead of holding a stale first-paint snapshot.
+ */
+export function subscribeIdentity(fn: IdentityListener): () => void {
+  identityListeners.add(fn);
+  return () => {
+    identityListeners.delete(fn);
+  };
+}
+
+function emitIdentityChanged(): void {
+  for (const fn of [...identityListeners]) {
+    try {
+      fn();
+    } catch {
+      // a listener must never break identity propagation
+    }
+  }
+}
 
 let cachedUser: UserIdentity | null = null;
 
@@ -192,6 +238,7 @@ export function setGuestCredentials(credentials: {
     token: credentials.accessToken,
     refreshToken: credentials.refreshToken,
   };
+  emitIdentityChanged();
   return cachedUser;
 }
 
@@ -204,6 +251,7 @@ export function updateGuestTokens(accessToken: string, refreshToken: string): vo
   storage.setItem(STORAGE_KEY_REFRESH, refreshToken);
   if (cachedUser) {
     cachedUser = { ...cachedUser, token: accessToken, refreshToken };
+    emitIdentityChanged();
   }
 }
 
@@ -217,6 +265,7 @@ export function clearGuestCredentials(): void {
   storage.removeItem(STORAGE_KEY_REFRESH);
   if (cachedUser && !cachedUser.refreshToken) return;
   cachedUser = null;
+  emitIdentityChanged();
 }
 
 /**
@@ -241,6 +290,7 @@ export function cacheProfile(profile: { username?: string; displayName?: string 
     ...(profile.username ? { username: profile.username } : {}),
     ...(displayName ? { displayName } : {}),
   };
+  emitIdentityChanged();
   return cachedUser;
 }
 
@@ -257,6 +307,7 @@ export function updateDisplayName(newName: string): UserIdentity {
     ...current,
     displayName: trimmed,
   };
+  emitIdentityChanged();
   return cachedUser;
 }
 
@@ -277,6 +328,7 @@ export function adoptAccountIdentity(accountId: string): string | null {
     userId: accountId,
     email: `${accountId}@duoorb.local`,
   };
+  emitIdentityChanged();
   return prevId;
 }
 
@@ -297,7 +349,9 @@ export function resetToNewGuest(): UserIdentity {
   storage.removeItem(STORAGE_KEY_USERNAME);
   storage.removeItem(STORAGE_KEY_TOKEN);
   storage.removeItem(STORAGE_KEY_REFRESH);
-  return getCurrentUser();
+  const fresh = getCurrentUser();
+  emitIdentityChanged();
+  return fresh;
 }
 
 /**
@@ -315,4 +369,5 @@ export function setAuthToken(token: string | null): void {
   // refresh token is dead weight from here on.
   storage.removeItem(STORAGE_KEY_REFRESH);
   cachedUser = null;
+  emitIdentityChanged();
 }

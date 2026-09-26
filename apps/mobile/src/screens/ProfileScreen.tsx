@@ -80,7 +80,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
         setProfile({
           id: identity.userId,
-          username: identity.displayName,
+          username: identity.username ?? identity.displayName,
           displayName: identity.displayName,
           ratings: {
             CLASSIC_1V1: {
@@ -99,7 +99,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [identity.userId, identity.displayName]);
+  }, [identity.userId, identity.username, identity.displayName]);
 
   useEffect(() => {
     fetchProfileData();

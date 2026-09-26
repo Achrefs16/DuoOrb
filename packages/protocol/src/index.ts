@@ -130,6 +130,13 @@ export interface ClientToServerEvents {
     payload: { newToken: string },
     callback?: (res: { success: boolean; userId?: string; error?: string }) => void
   ) => void;
+  /**
+   * Identity changed client-side (guest minted, username/display name
+   * chosen or edited, sign-in/out). No payload: the server re-reads the
+   * verified identity it already holds and refreshes its map, room slots
+   * and queue entries from the profile — never from client strings.
+   */
+  'session:sync': () => void;
   'game:resign': (payload: { gameId: string }) => void;
   'game:rematch': (payload: { gameId: string }) => void;
   'room:create': (payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;

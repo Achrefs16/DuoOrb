@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BackHandler, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, BackHandler, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AIDifficulty, GameMode, GameState, RecordedAction } from '@duoorb/game-core';
 import { RoomDto } from '@duoorb/protocol';
@@ -32,8 +32,8 @@ import {
   saveSettings,
 } from './src/storage/gameStorage';
 import { setSoundsMuted } from './src/audio/sounds';
-import { SessionProvider } from './src/network/session';
-import { hydrateIdentity } from './src/network/auth';
+import { SessionProvider, useSession } from './src/network/session';
+import { flushStorage, hydrateIdentity } from './src/network/auth';
 import { THEME } from './src/theme';
 import { DEFAULT_TIME_CONTROL, TimeControl } from './src/timeControls';
 import { api } from './src/network/apiClient';
@@ -181,6 +181,16 @@ export default function App() {
 
   useEffect(() => {
     hydrateIdentity().finally(() => setIdentityReady(true));
+  }, []);
+
+  useEffect(() => {
+    // A kill before the async storage queue drains strands half an
+    // identity on disk (next boot hydrates a stranger). Flush every
+    // write the moment the app leaves the foreground.
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'background') void flushStorage();
+    });
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {
@@ -348,6 +358,7 @@ export default function App() {
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.background} />
       <SessionProvider>
+        <SessionReady>
         <View style={styles.content}>
           {/* Main Tab Screens (when no subscreen is active) */}
           {subScreen === null && (
@@ -595,11 +606,23 @@ export default function App() {
             )}
           </View>
         </View>
+        </SessionReady>
       </SessionProvider>
     </SafeAreaView>
     </SafeAreaProvider>
   );
 }
+
+/**
+ * Boot-then-reveal: the main UI waits for the session layer to settle
+ * (guest minted or restored) instead of painting over a placeholder
+ * identity that later snaps to something else.
+ */
+const SessionReady: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { loading } = useSession();
+  if (loading) return <SplashScreen />;
+  return <>{children}</>;
+};
 
 const styles = StyleSheet.create({
   root: {

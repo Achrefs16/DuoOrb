@@ -111,8 +111,31 @@ export class RoomService {
     room.hostId = userId;
   }
 
-  public createInvite(
-    roomId: string,
+  /**
+   * Identity re-sync: a player chose or edited their name after joining.
+   * Refreshes every slot (and pending invite sender label) carrying their
+   * user id so lobbies stop showing the stale handshake name. Returns the
+   * ids of rooms whose visible state changed, for re-broadcast.
+   */
+  public refreshDisplayName(userId: string, displayName: string): string[] {
+    const touched = new Set<string>();
+    for (const room of this.rooms.values()) {
+      let changed = false;
+      for (const slot of room.slots) {
+        if (slot.userId === userId && slot.displayName !== displayName) {
+          slot.displayName = displayName;
+          changed = true;
+        }
+      }
+      if (changed) touched.add(room.id);
+    }
+    for (const invite of this.invites.values()) {
+      if (invite.fromUserId === userId) invite.fromDisplayName = displayName;
+    }
+    return [...touched];
+  }
+
+  public createInvite(    roomId: string,
     fromUserId: string,
     toUserId: string
   ): { success: true; invite: RoomInviteDto } | { success: false; error: string } {

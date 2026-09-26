@@ -236,6 +236,40 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     return { success: true, userId: newId };
   }
 
+  /**
+   * Identity re-sync WITHOUT reconnect: the client tells us something
+   * about its identity changed (guest minted, name chosen/edited,
+   * sign-in/out). We trust nothing in the payload — there isn't one —
+   * and re-read the display name from the verified profile, then refresh
+   * every snapshot that embeds it (gateway map, room slots, queue entry).
+   * This is what keeps rooms and matches showing the chosen name instead
+   * of the stale handshake name from app start.
+   */
+  @SubscribeMessage('session:sync')
+  async handleSessionSync(@ConnectedSocket() client: Socket) {
+    const user = this.getUser(client);
+    if (!user.verified || !this.prisma.isConnected) return;
+    try {
+      const profile = await this.prisma.profile.findUnique({
+        where: { userId: user.userId },
+      });
+      if (!profile) return;
+      const name = profile.displayName || profile.username;
+      const mapped = this.socketUserMap.get(client.id);
+      if (mapped && mapped.displayName !== name) {
+        this.socketUserMap.set(client.id, { ...mapped, displayName: name });
+      }
+      this.matchmakingService.updateDisplayName(user.userId, name);
+      const roomIds = this.roomService.refreshDisplayName(user.userId, name);
+      for (const roomId of roomIds) {
+        const room = this.roomService.getRoom(roomId);
+        if (room) this.server.to(roomId).emit('room:state', this.enrichRoom(room));
+      }
+    } catch (err: any) {
+      this.logger.warn(`session:sync failed for ${user.userId}: ${err?.message}`);
+    }
+  }
+
   handleDisconnect(client: Socket) {
     const userInfo = this.socketUserMap.get(client.id);
     if (!userInfo) return;
@@ -1053,19 +1087,19 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * writes it, so the gateway owns it: online on connect, offline on
    * disconnect, playing while seated in a live game.
    */
-  /**
-   * Presence flip for a VERIFIED identity only. Callers must gate on
-   * verified first (see handleConnection): presence must never manufacture
-   * identity rows, so this is update-only and logs failures instead of
-   * swallowing them.
-   */
   private setPresence(userId: string, patch: { isOnline?: boolean; isPlaying?: boolean }): void {
     if (!this.prisma.isConnected) return;
     this.prisma.profile
-      .updateMany({ where: { userId }, data: patch })
-      .catch((err) => {
-        this.logger.warn(`Presence update failed for ${userId}: ${err?.message}`);
-      });
+      .upsert({
+        where: { userId },
+        create: {
+          userId,
+          username: `player_${userId.substring(0, 6)}`,
+          displayName: 'Player',
+        },
+        update: patch,
+      })
+      .catch(() => {});
   }
 
   /** Marks every seated player of a game as (not) playing. Ending a game

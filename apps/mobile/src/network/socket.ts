@@ -81,6 +81,18 @@ class SocketManager {
   }
 
   /**
+   * Identity changed locally (guest minted, name chosen/edited,
+   * sign-in/out) without a reconnect: ask the server to re-read our
+   * verified profile and refresh its map, room slots and queue entry.
+   * No payload — the server trusts nothing client-asserted here.
+   */
+  public syncIdentity(): void {
+    const s = this.socket;
+    if (!s) return;
+    s.emit('session:sync');
+  }
+
+  /**
    * Asks the server to migrate live state (rooms, seats, queue) from this
    * socket's verified identity to the new credential's identity — no
    * reconnect, no client-asserted ids. Returns true when the server moved
