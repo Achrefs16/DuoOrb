@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { GameState } from '@duoorb/game-core';
 import { THEME, playerColor } from '../theme';
 import { modeLabel } from '../matchModes';
+import { nameInitial } from '../displayName';
 
 interface GameOverModalProps {
   visible: boolean;
@@ -185,7 +186,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                         ]}
                       >
                         <Text style={[styles.rowAvatarLetter, { color: hex }]}>
-                          {(p.displayName || 'P').charAt(0).toUpperCase()}
+                          {nameInitial(p.displayName)}
                         </Text>
                       </View>
                       <Text style={styles.rowName} numberOfLines={1}>

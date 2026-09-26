@@ -148,6 +148,16 @@ class SocketManager {
     const user = getCurrentUser();
     this.setStatus('connecting');
 
+    // displayName here is ADVISORY ONLY. The server resolves the real name
+    // from Postgres for any verified credential and ignores this field; it
+    // survives purely as a label for a socket that has not authenticated yet.
+    //
+    // It is captured once because socket.io fixes the handshake query for the
+    // life of the connection, and rebuilding it would mean a reconnect on every
+    // rename. That is precisely why it must not be trusted: while the server
+    // did trust it, a rename never reached the socket, the stale value was
+    // snapshotted by matchmaking and frozen into the game, and the same player
+    // appeared under different names in the friend list and in every match.
     const query: Record<string, string> = {
       userId: user.userId,
       displayName: user.displayName,

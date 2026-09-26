@@ -8,6 +8,7 @@ import {
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { GameState, PlayerState } from '@duoorb/game-core';
 import { THEME, hexToRgba, playerColor } from '../theme';
+import { nameInitial } from '../displayName';
 
 function formatTimer(seconds?: number): string {
   if (seconds === undefined || seconds <= 0) return '0:00';
@@ -52,7 +53,7 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
 }) => {
   const ball = playerColor(player.index, player.color);
   const tint = avatarTint(ball);
-  const initial = player.displayName ? player.displayName.charAt(0).toUpperCase() : 'P';
+  const initial = nameInitial(player.displayName);
 
   return (
     <View style={styles.playerCard}>
@@ -123,7 +124,7 @@ export const PlayerStrip: React.FC<{
           const isActive = state.players[state.currentPlayerIndex]?.id === p.id;
           const ball = playerColor(p.index, p.color);
           const tint = avatarTint(ball);
-          const initial = p.displayName ? p.displayName.charAt(0).toUpperCase() : 'P';
+          const initial = nameInitial(p.displayName);
           return (
             <View
               key={p.id}

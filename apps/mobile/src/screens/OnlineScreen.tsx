@@ -24,6 +24,7 @@ import { useOnlineGame } from '../network/useOnlineGame';
 import { useRooms } from '../network/useRooms';
 import { api } from '../network/apiClient';
 import { getCurrentUser } from '../network/auth';
+import { nameInitial, resolveName } from '../displayName';
 
 /**
  * Headless join: runs the normal game channel (join + sync) without any UI
@@ -437,12 +438,12 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             <View style={styles.mmPlayerCol}>
               <View style={styles.mmAvatarYou}>
                 <Text style={styles.mmAvatarLetterYou}>
-                  {(currentUser.displayName || 'Y').charAt(0).toUpperCase()}
+                  {nameInitial(currentUser.displayName)}
                 </Text>
               </View>
               <Text style={styles.mmPlayerTag}>YOU</Text>
               <Text style={styles.mmPlayerName} numberOfLines={1}>
-                {currentUser.displayName || 'You'}
+                {resolveName(currentUser.displayName, 'You')}
               </Text>
               <View style={styles.mmRatingPill}>
                 <Text style={styles.mmRatingText}>
@@ -464,7 +465,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               <View style={styles.mmAvatarSlot}>
                 {foundGame?.opponents[0] ? (
                   <Text style={styles.mmAvatarLetterOpp}>
-                    {(foundGame.opponents[0].displayName || 'O').charAt(0).toUpperCase()}
+                    {nameInitial(foundGame.opponents[0]?.displayName)}
                   </Text>
                 ) : isMatched ? (
                   <Text style={styles.mmAvatarLetterOpp}>O</Text>
@@ -621,7 +622,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               {activeRoom.slots.map((slot) => {
                 const isMe = slot.userId === currentUser.userId;
                 const isOccupied = slot.userId !== null;
-                const initial = slot.displayName ? slot.displayName.charAt(0).toUpperCase() : '?';
+                const initial = nameInitial(slot.displayName);
 
                 if (!isOccupied) {
                   const isFirstOpenSlot = activeRoom.slots.findIndex((s) => s.userId === null) === slot.index;
@@ -949,11 +950,11 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                     <View style={styles.searchResultLeft}>
                       <View style={styles.searchAvatar}>
                         <Text style={styles.searchAvatarText}>
-                          {(friend.displayName || friend.username).charAt(0).toUpperCase()}
+                          {nameInitial(friend)}
                         </Text>
                       </View>
                       <View>
-                        <Text style={styles.searchUsername}>{friend.displayName || friend.username}</Text>
+                        <Text style={styles.searchUsername}>{resolveName(friend)}</Text>
                         <Text style={styles.searchHandle}>@{friend.username} · {friend.status === 'PLAYING' ? 'In a match' : 'Online'}</Text>
                       </View>
                     </View>

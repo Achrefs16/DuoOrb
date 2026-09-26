@@ -72,8 +72,17 @@ export class HistoryService {
         opponent: opponentPlayer
           ? {
               userId: opponentPlayer.userId,
+              // `username` is the canonical display name everywhere (see
+              // handleConnection in the gateway). Exposing it in BOTH fields
+              // means a client can read either one and get the same answer —
+              // previously `displayName` returned the auto-generated guest
+              // handle here while the match showed the chosen username, so the
+              // same opponent appeared under two names.
               username: opponentPlayer.user.profile?.username ?? 'opponent',
-              displayName: opponentPlayer.user.profile?.displayName ?? 'Opponent',
+              displayName:
+                opponentPlayer.user.profile?.username ??
+                opponentPlayer.user.profile?.displayName ??
+                'Opponent',
               avatarUrl: opponentPlayer.user.profile?.avatarUrl,
               ratingBefore: opponentPlayer.ratingBefore,
               ratingAfter: opponentPlayer.ratingAfter,
@@ -134,8 +143,7 @@ export class HistoryService {
       players: game.players.map((p) => ({
         userId: p.userId,
         playerIndex: p.playerIndex,
-        username: p.user.profile?.username ?? `player_${p.userId.slice(0, 6)}`,
-        displayName: p.user.profile?.displayName ?? 'Player',
+        username: p.user.profile?.username ?? `player_${p.userId.slice(0, 6)}`,        displayName: p.user.profile?.displayName ?? 'Player',
         ratingBefore: p.ratingBefore,
         ratingAfter: p.ratingAfter,
         isWinner: p.isWinner,

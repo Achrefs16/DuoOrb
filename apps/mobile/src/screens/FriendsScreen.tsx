@@ -24,6 +24,7 @@ import { useSession } from '../network/session';
 import { getCurrentUser } from '../network/auth';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
 import { KeyboardShift } from '../components/KeyboardShift';
+import { nameInitial, resolveName } from '../displayName';
 
 interface FriendsScreenProps {
   onOpenChallengeSetup: (friend: { id: string; username: string }) => void;
@@ -206,7 +207,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
 
   const renderFriendCard = (friend: FriendItemDto) => {
     const isOnline = friend.status === 'ONLINE' || friend.status === 'PLAYING';
-    const initial = (friend.displayName || friend.username || '?').charAt(0).toUpperCase();
+    const initial = nameInitial(friend);
 
     return (
       <TouchableOpacity
@@ -235,7 +236,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
           <View style={styles.friendMeta}>
             <View style={styles.nameRow}>
               <Text style={[styles.friendName, !isOnline && styles.friendNameCompact]} numberOfLines={1}>
-                {friend.displayName || friend.username}
+                {resolveName(friend)}
               </Text>
               <Text style={[styles.friendRating, !isOnline && styles.friendRatingCompact]}>{friend.rating}</Text>
             </View>
@@ -508,11 +509,11 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                       <View style={styles.searchResultLeft}>
                         <View style={styles.searchAvatar}>
                           <Text style={styles.searchAvatarText}>
-                            {(user.displayName || user.username).charAt(0).toUpperCase()}
+                            {nameInitial(user)}
                           </Text>
                         </View>
                         <View>
-                          <Text style={styles.searchUsername}>{user.displayName || user.username}</Text>
+                          <Text style={styles.searchUsername}>{resolveName(user)}</Text>
                           <Text style={styles.searchHandle}>@{user.username}</Text>
                         </View>
                       </View>
