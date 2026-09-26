@@ -11,8 +11,10 @@ COPY packages/game-core/package*.json ./packages/game-core/
 COPY packages/protocol/package*.json ./packages/protocol/
 COPY apps/server/package*.json ./apps/server/
 
-# Install monorepo dependencies
-RUN npm install
+# Install monorepo dependencies. Scripts are skipped here on purpose: the
+# root postinstall builds the workspace packages, but their sources are
+# only copied below. The explicit builds further down cover it.
+RUN npm install --ignore-scripts
 
 # Copy source trees
 COPY packages/game-core ./packages/game-core
