@@ -1,5 +1,5 @@
 import { getLegalMoves } from './movement.js';
-import { getShortestDistance, getShortestPath, isGoalCell } from './pathfinding.js';
+import { getPathInfo, getShortestDistance, getShortestPath, isGoalCell } from './pathfinding.js';
 import { applyAction } from './ruleset.js';
 import { CellCoord, GameAction, GameState, PlayerState, WallCoord } from './types.js';
 import { getLegalWalls, isLegalWallPlacement } from './walls.js';
@@ -14,8 +14,13 @@ export interface AIProfile {
     pathDifference: number; // weight for (opponentDistance - ownDistance)
     wallAdvantage: number;  // weight for (ownWalls - opponentWalls)
     mobility: number;       // number of legal moves
+    pathways: number;       // log2 of distinct shortest routes (forks are hard to wall)
   };
   maxCandidateWalls: number; // Wall pruning limit for search performance
+  /** Soft ceiling in ms for iterative deepening. The search stops deepening
+   *  early rather than blocking a phone's UI thread; always returns the best
+   *  action from the last depth that completed. */
+  timeBudgetMs: number;
 }
 
 export const AI_PROFILES: Record<AIDifficulty, AIProfile> = {
@@ -27,8 +32,10 @@ export const AI_PROFILES: Record<AIDifficulty, AIProfile> = {
       pathDifference: 8.0,
       wallAdvantage: 0.5,
       mobility: 0.2,
+      pathways: 0.35,
     },
     maxCandidateWalls: 3,
+    timeBudgetMs: 20,
   },
   normal: {
     difficulty: 'normal',
@@ -38,8 +45,10 @@ export const AI_PROFILES: Record<AIDifficulty, AIProfile> = {
       pathDifference: 10.0,
       wallAdvantage: 1.0,
       mobility: 0.5,
+      pathways: 0.6,
     },
-    maxCandidateWalls: 6,
+    maxCandidateWalls: 5,
+    timeBudgetMs: 50,
   },
   hard: {
     difficulty: 'hard',
@@ -49,10 +58,15 @@ export const AI_PROFILES: Record<AIDifficulty, AIProfile> = {
       pathDifference: 12.0,
       wallAdvantage: 1.5,
       mobility: 0.8,
+      pathways: 0.9,
     },
-    maxCandidateWalls: 10,
+    maxCandidateWalls: 8,
+    timeBudgetMs: 120,
   },
 };
+
+/** Terminal score. Large enough that no heuristic can outweigh a finished game. */
+const WIN_SCORE = 10000;
 
 /**
  * Static evaluation of a game state from the perspective of activePlayerId.
@@ -60,8 +74,8 @@ export const AI_PROFILES: Record<AIDifficulty, AIProfile> = {
  */
 export function evaluateState(state: GameState, activePlayerId: string, profile: AIProfile): number {
   if (state.status === 'COMPLETED') {
-    if (state.winnerId === activePlayerId) return 10000;
-    return -10000;
+    if (state.winnerId === activePlayerId) return WIN_SCORE;
+    return -WIN_SCORE;
   }
 
   const activePlayer = state.players.find((p) => p.id === activePlayerId);
@@ -69,24 +83,44 @@ export function evaluateState(state: GameState, activePlayerId: string, profile:
 
   const opponents = state.players.filter((p) => p.id !== activePlayerId);
 
-  const ownDist = getShortestDistance(activePlayer.position, activePlayer.goalDirection, state.walls, state.mode);
-  if (ownDist === 0) return 10000;
+  const ownPath = getPathInfo(
+    activePlayer.position,
+    activePlayer.goalDirection,
+    state.walls,
+    state.mode
+  );
+  if (!ownPath) return -WIN_SCORE;
+  if (ownPath.distance === 0) return WIN_SCORE;
 
   // In 2P, opponent distance. In 4P, minimum opponent distance (closest threat)
   let minOpponentDist = Infinity;
+  let bestOpponentForks = 0;
   let totalOpponentWalls = 0;
 
   for (const opp of opponents) {
-    const d = getShortestDistance(opp.position, opp.goalDirection, state.walls, state.mode);
-    if (d < minOpponentDist) {
-      minOpponentDist = d;
+    const info = getPathInfo(opp.position, opp.goalDirection, state.walls, state.mode);
+    if (info && info.distance < minOpponentDist) {
+      minOpponentDist = info.distance;
+      // Forks are only read off the closest threat, matching minOpponentDist.
+      bestOpponentForks = info.pathCount;
     }
     totalOpponentWalls += opp.wallsRemaining;
   }
 
+  const ownDist = ownPath.distance;
+  if (ownDist === 0) return WIN_SCORE;
+
   const avgOpponentWalls = opponents.length > 0 ? totalOpponentWalls / opponents.length : 0;
   const pathAdvantage = minOpponentDist - ownDist;
   const wallAdvantage = activePlayer.wallsRemaining - avgOpponentWalls;
+
+  // Forks: a player with many equal-length routes is very hard to wall down,
+  // one on a single corridor is trivially blocked. The plain distance term
+  // cannot tell those apart, so it is worth roughly one step of progress at
+  // the top of the range. log2 keeps a wide-open board from dominating.
+  const pathwayAdvantage =
+    Math.log2(1 + Math.min(ownPath.pathCount, PATHWAY_FORK_CAP)) -
+    Math.log2(1 + Math.min(bestOpponentForks, PATHWAY_FORK_CAP));
 
   const ownMobility = getLegalMoves(state, activePlayerId).length;
   let totalOpponentMobility = 0;
@@ -99,10 +133,14 @@ export function evaluateState(state: GameState, activePlayerId: string, profile:
   const score =
     pathAdvantage * profile.weights.pathDifference +
     wallAdvantage * profile.weights.wallAdvantage +
-    mobilityAdvantage * profile.weights.mobility;
+    mobilityAdvantage * profile.weights.mobility +
+    pathwayAdvantage * profile.weights.pathways;
 
   return score;
 }
+
+/** Forks beyond this contribute nothing extra — one corridor plus one escape is enough. */
+const PATHWAY_FORK_CAP = 64;
 
 /**
  * Selects candidate actions for the AI.
@@ -231,6 +269,60 @@ export function shortestPathStep(state: GameState, playerId: string): CellCoord 
 }
 
 /**
+ * Search bookkeeping shared by every node of one root search.
+ *
+ * `deadline` is a wall-clock budget in ms. The search checks it on entry to
+ * each node and unwinds via `aborted` rather than running to completion, which
+ * is what keeps a slow device from freezing the UI: the caller falls back to
+ * the best action from the last depth that finished.
+ */
+interface SearchContext {
+  deadline: number;
+  aborted: boolean;
+  nodes: number;
+}
+
+function makeContext(timeBudgetMs: number | undefined): SearchContext {
+  const budget = timeBudgetMs ?? Number.POSITIVE_INFINITY;
+  return {
+    deadline: budget === Number.POSITIVE_INFINITY ? Number.POSITIVE_INFINITY : Date.now() + budget,
+    aborted: false,
+    nodes: 0,
+  };
+}
+
+function outOfTime(ctx: SearchContext): boolean {
+  if (ctx.aborted) return true;
+  if (ctx.deadline === Number.POSITIVE_INFINITY) return false;
+  // Checking the clock on every node is itself measurable, so only sample it
+  // every 256 nodes.
+  if ((ctx.nodes & 0xff) === 0 && Date.now() > ctx.deadline) {
+    ctx.aborted = true;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Orders candidates so alpha-beta can cut early: the step that actually
+ * reduces distance first, then walls by how much delay they buy, then the rest.
+ *
+ * On an unordered branching factor of ~14 the search visits close to the full
+ * tree; ordering is the cheapest large speedup available because it needs no
+ * extra search — only one BFS per wall candidate, which is paid back many times
+ * over by the pruning.
+ */
+function orderCandidates(
+  entries: Array<{ action: GameAction; delay: number; onPath: boolean }>
+): void {
+  entries.sort((a, b) => {
+    if (a.onPath !== b.onPath) return a.onPath ? -1 : 1;
+    if (a.delay !== b.delay) return b.delay - a.delay;
+    return 0;
+  });
+}
+
+/**
  * Minimax with Alpha-Beta pruning to find the best move.
  */
 function minimax(
@@ -240,11 +332,17 @@ function minimax(
   beta: number,
   isMaximizing: boolean,
   rootPlayerId: string,
-  profile: AIProfile
+  profile: AIProfile,
+  ctx: SearchContext
 ): number {
   if (depth === 0 || state.status === 'COMPLETED') {
     return evaluateState(state, rootPlayerId, profile);
   }
+
+  if (outOfTime(ctx)) {
+    return evaluateState(state, rootPlayerId, profile);
+  }
+  ctx.nodes++;
 
   const currentPlayer = state.players[state.currentPlayerIndex];
   const candidates = getCandidateActions(
@@ -273,14 +371,16 @@ function minimax(
         beta,
         nextIsMaximizing,
         rootPlayerId,
-        profile
+        profile,
+        ctx
       );
 
-      maxEval = Math.max(maxEval, evaluation);
-      alpha = Math.max(alpha, evaluation);
+      if (evaluation > maxEval) maxEval = evaluation;
+      if (evaluation > alpha) alpha = evaluation;
       if (beta <= alpha) break; // Beta cut-off
+      if (ctx.aborted) break;
     }
-    return maxEval;
+    return maxEval === -Infinity ? evaluateState(state, rootPlayerId, profile) : maxEval;
   } else {
     let minEval = Infinity;
     for (const action of candidates) {
@@ -297,14 +397,16 @@ function minimax(
         beta,
         nextIsMaximizing,
         rootPlayerId,
-        profile
+        profile,
+        ctx
       );
 
-      minEval = Math.min(minEval, evaluation);
-      beta = Math.min(beta, evaluation);
+      if (evaluation < minEval) minEval = evaluation;
+      if (evaluation < beta) beta = evaluation;
       if (beta <= alpha) break; // Alpha cut-off
+      if (ctx.aborted) break;
     }
-    return minEval;
+    return minEval === Infinity ? evaluateState(state, rootPlayerId, profile) : minEval;
   }
 }
 
@@ -320,10 +422,54 @@ export function getBestAction(
   if (state.status !== 'IN_PROGRESS') return null;
 
   const currentPlayer = state.players[state.currentPlayerIndex];
-  const ranked = rankActions(state, currentPlayer.id, profile);
+  if (!currentPlayer) return null;
 
-  if (ranked.length === 0) return null;
+  // Iterative deepening: search one ply, then two, then three, stopping as
+  // soon as a ply would exceed the time budget. The shallower plies are cheap
+  // and already far stronger than the previous flat-depth search, so a phone
+  // that can only afford depth 2 still plays well — and it returns the
+  // completed result rather than a half-finished tree.
+  const deadline = Date.now() + profile.timeBudgetMs;
 
+  let fallback: GameAction | null = null;
+
+  for (let depth = 1; depth <= profile.depth; depth++) {
+    const started = Date.now();
+    const ranked = rankActions(state, currentPlayer.id, profile, {
+      depth,
+      deterministic: true,
+      timeBudgetMs: Math.max(1, deadline - started),
+    });
+    if (ranked.length === 0) break;
+
+    const best = argmax(ranked);
+    fallback = best;
+    if (Date.now() >= deadline) break;
+  }
+
+  if (!fallback) return null;
+
+  // Jitter is applied to the final choice only, so the search itself stays
+  // deterministic and repeatable (and the analysis engine can opt out).
+  if (profile.randomness > 0) {
+    const ranked = rankActions(state, currentPlayer.id, profile, {
+      depth: profile.depth,
+      deterministic: true,
+      timeBudgetMs: profile.timeBudgetMs,
+    });
+    if (ranked.length > 0) {
+      const jittered = ranked.map((r) => ({
+        action: r.action,
+        score: r.score + (Math.random() - 0.5) * 2 * profile.randomness * 10,
+      }));
+      return argmax(jittered);
+    }
+  }
+
+  return fallback;
+}
+
+function argmax(ranked: RankedAction[]): GameAction | null {
   let bestScore = -Infinity;
   let bestActions: GameAction[] = [];
 
@@ -337,10 +483,8 @@ export function getBestAction(
   }
 
   if (bestActions.length === 0) return null;
-
-  // Pick from tied best actions
-  const index = Math.floor(Math.random() * bestActions.length);
-  return bestActions[index];
+  if (bestActions.length === 1) return bestActions[0];
+  return bestActions[Math.floor(Math.random() * bestActions.length)];
 }
 
 export interface RankedAction {
@@ -353,6 +497,12 @@ export interface RankOptions {
   depth?: number;
   /** Skip jitter and pick deterministically (for analysis, not play). */
   deterministic?: boolean;
+  /**
+   * Wall-clock budget in ms. The search returns the best action from the last
+   * depth that completed, so a slow device degrades in strength rather than
+   * freezing. Defaults to the profile budget.
+   */
+  timeBudgetMs?: number;
 }
 
 /**
@@ -381,27 +531,55 @@ export function rankActions(
   // Goal-directed guidance, computed once per turn from the optimal paths:
   // - pathStep: the next square along the AI's own shortest route.
   // - racing: AI is strictly closer to goal than every opponent → just run.
-  const pathStep = shortestPathStep(state, currentPlayer.id);
-  const ownPathLen = (() => {
-    const p = getShortestPath(
-      currentPlayer.position,
-      currentPlayer.goalDirection,
-      state.walls,
-      state.mode
-    );
-    return p ? p.length - 1 : Infinity;
+  const ownInfo = getPathInfo(
+    currentPlayer.position,
+    currentPlayer.goalDirection,
+    state.walls,
+    state.mode
+  );
+  const pathStep = ownInfo?.firstStep ?? null;
+  const ownPathLen = ownInfo ? ownInfo.distance : Infinity;
+
+  // One BFS per opponent, reused by every wall candidate below instead of
+  // re-running the same search per candidate.
+  const opponentIds = state.players.filter((p) => p.id !== currentPlayer.id).map((p) => p.id);
+  const minOppDist = (() => {
+    let best = Infinity;
+    for (const id of opponentIds) {
+      const opp = state.players.find((p) => p.id === id);
+      if (!opp) continue;
+      const d = getShortestDistance(opp.position, opp.goalDirection, state.walls, state.mode);
+      if (d < best) best = d;
+    }
+    return best;
   })();
-  let minOppDist = Infinity;
-  for (const opp of state.players) {
-    if (opp.id === currentPlayer.id) continue;
-    const d = getShortestDistance(opp.position, opp.goalDirection, state.walls, state.mode);
-    if (d < minOppDist) minOppDist = d;
-  }
+
   const racing = ownPathLen < minOppDist;
   // Smarter profiles follow the path more strictly; easy stays loose.
   const focus = 1 - profile.randomness;
 
-  const ranked: RankedAction[] = [];
+  // Whether this turn has a productive alternative. Walling only really costs
+  // tempo when a step forward was available — when the route ahead is blocked
+  // the turn was going to be spent shuffling anyway, so the wall is close to
+  // free. Charging a full step unconditionally (an earlier attempt) made every
+  // wall look like a clear loss, so the AI either refused to wall at all or,
+  // in self-play, both seats walled constantly and the second mover won 100%
+  // of games purely because the first was charged tempo for going first.
+  const hasProgressMove = (() => {
+    if (ownPathLen === Infinity) return false;
+    const target = ownPathLen - 1;
+    for (const to of getLegalMoves(state, currentPlayer.id)) {
+      if (getShortestDistance(to, currentPlayer.goalDirection, state.walls, state.mode) === target) {
+        return true;
+      }
+    }
+    return false;
+  })();
+
+  const ctx = makeContext(opts.timeBudgetMs);
+
+  type Scored = { action: GameAction; score: number; onPath: boolean; delay: number };
+  const scored: Scored[] = [];
 
   for (const action of candidates) {
     const result = applyAction(state, action);
@@ -418,7 +596,8 @@ export function rankActions(
       Infinity,
       nextIsMaximizing,
       currentPlayer.id,
-      profile
+      profile,
+      ctx
     );
 
     // Add slight random jitter based on profile.randomness
@@ -427,32 +606,36 @@ export function rankActions(
       score += jitter;
     }
 
-    // Prefer progress over shuffling back and forth.
+    let onPath = false;
+    let delay = 0;
+
     if (action.type === 'MOVE') {
-      score -= repetitionPenalty(state, currentPlayer.id, action.to);
+      // Prefer progress over shuffling back and forth. Scaled to a
+      // tie-breaker: it must never outweigh a genuine step of progress,
+      // because when you are walled in, shuffling is the *correct* play.
+      score -= repetitionPenalty(state, currentPlayer.id, action.to) * 0.25;
       // Step along the optimal shortest path when possible.
-      if (
-        pathStep &&
-        action.to.row === pathStep.row &&
-        action.to.col === pathStep.col
-      ) {
+      if (pathStep && action.to.row === pathStep.row && action.to.col === pathStep.col) {
         score += 4 * focus;
+        onPath = true;
       }
       // Winning the race: keep running instead of walling.
       if (racing) score += 3 * focus;
     }
 
-    // Spoil the opponent's plan: reward walls that lengthen the closest
-    // opponent's route. This is how the AI breaks a corridor you started
-    // building instead of letting you funnel it. Capped so that stopping
-    // you can never dwarf the AI's own race to the line — everything is
-    // scored in the same "steps" currency as the path weights. And when
-    // clearly losing the race, the AI runs its own route instead of
-    // throwing walls it can't afford.
+    // Spoil the opponent's plan: walls that lengthen the closest opponent's
+    // route, priced in the same currency as everything else.
+    //
+    // The exchange rate is the whole ballgame. An earlier revision capped the
+    // wall bonus at a flat 8 while `chase` scaled it by 0.3, which made the
+    // best possible wall worth less than a single step of progress (12 at
+    // hard) — so a wall could never be chosen while any forward move existed
+    // and the AI degenerated into a pure footrace that never spent a wall.
     if (action.type === 'PLACE_WALL') {
       let after = Infinity;
-      for (const opp of result.state.players) {
-        if (opp.id === currentPlayer.id) continue;
+      for (const id of opponentIds) {
+        const opp = result.state.players.find((p) => p.id === id);
+        if (!opp) continue;
         const d = getShortestDistance(
           opp.position,
           opp.goalDirection,
@@ -461,17 +644,36 @@ export function rankActions(
         );
         if (d < after) after = d;
       }
-      if (after > minOppDist) {
-        const deficit = ownPathLen - minOppDist;
-        // Someone about to win: block at full weight no matter what.
-        // Clearly losing otherwise: run your own race instead.
-        const chase = minOppDist <= 1 || deficit <= 2 ? 1 : 0.3;
-        score += Math.min(8, 6 * (after - minOppDist)) * focus * chase;
+      delay = Math.max(0, after - minOppDist);
+
+      const perStep = profile.weights.pathDifference;
+
+      // Charge the turn — but only if a forward step was actually available.
+      // The leaf evaluation is turn-blind, so the search happily credits a
+      // wall for pushing the opponent one step further away without
+      // accounting for the step this wall gave up. Without this charge,
+      // walling always looks like a small gain over walking.
+      if (hasProgressMove) score -= perStep;
+
+      if (delay > 0) {
+        // The delay itself is already reflected in the search result above.
+        // This is only a horizon correction: at depth 1-2 the search cannot
+        // see that a detour keeps compounding over the turns that follow, so
+        // a real delay is credited again — but only when it can change the
+        // race. Someone about to finish is blocked at full weight; a wall
+        // that merely shrinks a deficit is not, because the opponent moves
+        // first from here on and the race stays level.
+        const emergency = minOppDist <= 1;
+        const flipsAhead = ownPathLen < minOppDist + delay;
+        const urgency = emergency ? 2.5 : flipsAhead ? 1 : 0.3;
+        score += Math.min(perStep * 3, delay * perStep) * urgency * focus;
       }
     }
 
-    ranked.push({ action, score });
+    scored.push({ action, score, onPath, delay });
   }
 
-  return ranked;
+  // Best-first ordering for the caller and for the root scan below.
+  orderCandidates(scored);
+  return scored.map(({ action, score }) => ({ action, score }));
 }
