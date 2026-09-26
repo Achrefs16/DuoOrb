@@ -244,6 +244,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [showGameOver, setShowGameOver] = useState<boolean>(false);
   const [wallDrag, setWallDrag] = useState<WallDrag | null>(null);
   const wallDragRef = useRef<WallDrag | null>(null);
+  // Coalesces touch-move floods (often 100+/sec) into one state commit per
+  // animation frame. The ref always holds the latest finger position, so no
+  // movement is lost — intermediates are just skipped.
+  const dragFrameRef = useRef<number | null>(null);
   const [resignOpen, setResignOpen] = useState<boolean>(false);
   const [finishModal, setFinishModal] = useState<{ place: number } | null>(null);
   const [rematchSent, setRematchSent] = useState<boolean>(false);
@@ -816,6 +820,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (!owner || owner.wallsRemaining <= 0) return;
     measureAnchor();
     measureRoot();
+    if (dragFrameRef.current !== null) {
+      cancelAnimationFrame(dragFrameRef.current);
+      dragFrameRef.current = null;
+    }
     const drag: WallDrag = { orientation, pageX, pageY };
     wallDragRef.current = drag;
     setWallDrag(drag);
@@ -826,10 +834,18 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       ? { ...wallDragRef.current, pageX, pageY }
       : null;
     wallDragRef.current = next;
-    setWallDrag(next);
+    if (dragFrameRef.current !== null) return;
+    dragFrameRef.current = requestAnimationFrame(() => {
+      dragFrameRef.current = null;
+      setWallDrag(wallDragRef.current);
+    });
   };
 
   const handleTrayEnd = (pageX: number, pageY: number) => {
+    if (dragFrameRef.current !== null) {
+      cancelAnimationFrame(dragFrameRef.current);
+      dragFrameRef.current = null;
+    }
     const drag = wallDragRef.current;
     wallDragRef.current = null;
     setWallDrag(null);
@@ -1111,14 +1127,31 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     playerRatings[p.id] = type === 'ai' ? (isAiSide(idx) ? aiRating : 1500) : 1500;
   });
 
-  // Board-relative drag position for the ghost preview.
-  let externalDrag: { orientation: Orientation; x: number; y: number } | null = null;
+  // Board-relative drag position for the ghost preview, reduced to a
+  // snapped-slot STRING key. The raw computation below is trivial (rect
+  // reads + a 64-cell scan), but the key is value-compared: same-slot
+  // pointer motion keeps the memoized board — and its BFS legality
+  // check — asleep instead of rebuilding ~300 views per touch event.
+  let dragSlotRaw: WallCoord | null = null;
   if (wallDrag) {
     const pt = toBoardPoint(wallDrag.pageX, wallDrag.pageY);
     if (pt && isInsideBoard(pt.boardSize, pt.x, pt.y)) {
-      externalDrag = { orientation: wallDrag.orientation, x: pt.x, y: pt.y };
+      const s = nearestWallSlot(pt.boardSize, pt.x, pt.y);
+      dragSlotRaw = { row: s.row, col: s.col, orientation: wallDrag.orientation };
     }
   }
+  const dragSlotKey = dragSlotRaw
+    ? `${dragSlotRaw.row},${dragSlotRaw.col},${dragSlotRaw.orientation}`
+    : '';
+  const dragSlot = useMemo((): WallCoord | null => {
+    if (!dragSlotKey) return null;
+    const [row, col, orientation] = dragSlotKey.split(',');
+    return {
+      row: Number(row),
+      col: Number(col),
+      orientation: orientation as Orientation,
+    };
+  }, [dragSlotKey]);
 
   // Screen overlay chip so the held wall follows the finger continuously.
   // Matches the (responsive) tray piece size.
@@ -1276,7 +1309,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             previewWall={null}
             selectedCell={viewingStep !== null ? null : selectedCellMemo}
             interactive={(humanTurn || canPremove) && !wallDrag && !flipping && viewingStep === null}
-            externalDrag={externalDrag}
+            dragSlot={dragSlot}
             moveHintColor={wallDrag ? trayColor : hintColor}
             premoveMarks={viewingStep !== null ? EMPTY_PREMOVE_MARKS : premoveMarks}
             hideDots={hideDots}

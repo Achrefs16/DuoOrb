@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   LayoutChangeEvent,
@@ -12,7 +12,6 @@ import {
   BOARD_CENTER,
   CellCoord,
   GameState,
-  Orientation,
   WallCoord,
   isCenterGoalMode,
   isGoalCell,
@@ -30,7 +29,13 @@ interface GameBoardProps {
    * Drag forwarded from the wall inventory (board-relative coords).
    * Orientation is fixed by which piece was picked up — never inferred.
    */
-  externalDrag?: { orientation: Orientation; x: number; y: number } | null;
+  /**
+   * Snapped wall slot the held piece hovers over (row/col/orientation).
+   * The parent passes a referentially STABLE object per slot (see the
+   * slot-key memo in GameScreen): pixel motion alone must not re-render
+   * this ~300-view tree, so raw pointer coordinates never reach here.
+   */
+  dragSlot?: WallCoord | null;
   /** Override dot/tint color (e.g. premove hints in the waiter's color). */
   moveHintColor?: string;
   /** Queued premove destinations, tinted like chess.com. */
@@ -223,7 +228,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   previewWall = null,
   selectedCell,
   interactive = true,
-  externalDrag = null,
+  dragSlot = null,
   moveHintColor,
   premoveMarks = [],
   hideDots = false,
@@ -343,18 +348,16 @@ const GameBoardView: React.FC<GameBoardProps> = ({
       : false;
 
   // Fixed-orientation ghost for the wall currently held from the inventory.
-  const dragSlot =
-    externalDrag && currentPlayer
-      ? nearestSlot(externalDrag.x - BOARD_PAD, externalDrag.y - BOARD_PAD, CELL, GAP)
-      : null;
-  const dragCandidate: WallCoord | null =
-    externalDrag && dragSlot
-      ? { row: dragSlot.row, col: dragSlot.col, orientation: externalDrag.orientation }
-      : null;
-  const dragLegal =
-    dragCandidate && currentPlayer
-      ? isLegalWallPlacement(state, currentPlayer.id, dragCandidate)
-      : false;
+  // Legality is gated on the snapped slot (plus board state): same-slot
+  // pointer motion skips the BFS entirely.
+  const dragCandidate: WallCoord | null = dragSlot;
+  const dragLegal = useMemo(
+    () =>
+      dragCandidate && currentPlayer
+        ? isLegalWallPlacement(state, currentPlayer.id, dragCandidate)
+        : false,
+    [dragCandidate, state, currentPlayer]
+  );
 
   const playerWallBg = (playerIndex: number, color?: string) =>
     wallColorForPlayer(playerColor(playerIndex, color));
