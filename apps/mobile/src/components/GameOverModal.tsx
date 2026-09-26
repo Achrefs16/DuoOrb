@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { GameState } from '@duoorb/game-core';
 import { THEME, playerColor } from '../theme';
@@ -108,7 +109,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.overlay}>
+      <SafeAreaView style={styles.overlay} edges={['top', 'bottom']}>
         <Animated.View
           style={[
             styles.card,
@@ -281,7 +282,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </TouchableOpacity>
           </View>
         </Animated.View>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 };

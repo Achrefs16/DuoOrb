@@ -57,7 +57,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   timeControlMinutes: 3,
   aiDifficulty: 'normal',
   incrementEnabled: true,
-  autoFlip: true,
+  autoFlip: false,
   premoveEnabled: true,
   extendedQueue: true,
   testThink: false,

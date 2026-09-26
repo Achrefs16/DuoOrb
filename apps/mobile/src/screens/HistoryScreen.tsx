@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME } from '../theme';
 import { api, GameHistoryItemDto } from '../network/apiClient';
@@ -230,9 +231,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>History</Text>
-        <TouchableOpacity style={styles.filterIconButton} activeOpacity={0.7}>
-          <Feather name="filter" size={18} color={THEME.colors.textSecondary} />
-        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -350,7 +348,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
 
       {/* Match detail modal (Stitch) */}
       <Modal visible={!!selected} transparent animationType="fade">
-        <View style={styles.detailOverlay}>
+        <SafeAreaView style={styles.detailOverlay} edges={['top', 'bottom']}>
           <View style={styles.detailCard}>
             {selected && (() => {
               const isWin = selected.outcome === 'WIN';
@@ -414,7 +412,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
               );
             })()}
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -440,14 +438,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: THEME.colors.onSurface,
-  },
-  filterIconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: THEME.colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   listContent: {
     paddingHorizontal: 16,

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, BackHandler, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   AIDifficulty,
   AI_PROFILES,
@@ -131,7 +132,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   aiDifficulty = 'normal',
   timeControl = DEFAULT_TIME_CONTROL,
   incrementEnabled = true,
-  autoFlip = true,
+  autoFlip = false,
   premoveEnabled = true,
   extendedQueue = true,
   testThink = false,
@@ -1467,7 +1468,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
       {/* Stitch resign confirm: dimmed overlay, white card, red icon. */}
       <Modal visible={resignOpen} transparent animationType="fade">
-        <View style={styles.resignOverlay}>
+        <SafeAreaView style={styles.resignOverlay} edges={['top', 'bottom']}>
           <View style={styles.resignCard}>
             <View style={styles.resignIconCircle}>
               <Feather name="flag" size={28} color="#BA1A1A" />
@@ -1496,7 +1497,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Held wall follows the finger */}
@@ -1518,7 +1519,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       )}
 
       <Modal visible={finishModal !== null} transparent animationType="fade">
-        <View style={styles.resignOverlay}>
+        <SafeAreaView style={styles.resignOverlay} edges={['top', 'bottom']}>
           <View style={styles.finishCard}>
             <View style={styles.finishIconCircle}>
               <Feather name="award" size={30} color="#D97706" />
@@ -1536,7 +1537,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               <Text style={styles.finishSecondaryText}>Leave Match</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       <GameOverModal
@@ -1593,7 +1594,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         }        transparent
         animationType="none"
       >
-        <View style={styles.rematchToastOverlay} pointerEvents="box-none">
+        <SafeAreaView style={styles.rematchToastOverlay} edges={['top', 'bottom']} pointerEvents="box-none">
           <View style={styles.rematchToast}>
             <Feather name="rotate-ccw" size={18} color="#2563EB" />
             <Text style={styles.rematchToastText}>
@@ -1621,7 +1622,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               </>
             )}
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
     </View>
   );

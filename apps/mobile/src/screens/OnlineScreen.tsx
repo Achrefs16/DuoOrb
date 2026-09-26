@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../theme';
@@ -503,12 +504,6 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               <Text style={styles.codePillText}>{activeRoom.code}</Text>
               <Feather name="copy" size={13} color="#2563EB" />
             </TouchableOpacity>
-            {isHost && (
-              <TouchableOpacity style={styles.closePill} onPress={() => setConfirmMode('close')}>
-                <Feather name="log-out" size={14} color="#DC2626" />
-                <Text style={styles.closePillText}>Close</Text>
-              </TouchableOpacity>
-            )}
           </View>
         ) : (
           <View style={{ width: 36 }} />
@@ -678,6 +673,15 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 {!canStart && (
                   <Text style={styles.lobbyHint}>Waiting for all players to be ready…</Text>
                 )}
+                <TouchableOpacity
+                  style={styles.lobbyCloseBtn}
+                  activeOpacity={0.7}
+                  onPress={() => setConfirmMode(isHost ? 'close' : 'leave')}
+                  accessibilityLabel={isHost ? 'Close room' : 'Leave room'}
+                >
+                  <Feather name="log-out" size={15} color={THEME.colors.textSecondary} />
+                  <Text style={styles.lobbyCloseText}>{isHost ? 'Close Room' : 'Leave Room'}</Text>
+                </TouchableOpacity>
               </>
             ) : (
               <TouchableOpacity
@@ -851,7 +855,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       )}
       {showQuickAdd && (
         <Modal visible transparent animationType="none">
-          <View style={styles.sheetOverlay}>
+          <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
           <View style={styles.sheetCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Quick Add</Text>
@@ -886,7 +890,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               )}
             </ScrollView>
           </View>
-        </View>
+          </SafeAreaView>
         </Modal>
       )}
     </View>
@@ -961,20 +965,6 @@ const styles = StyleSheet.create({
     color: '#334155',
     letterSpacing: 1,
     fontVariant: ['tabular-nums'],
-  },
-  closePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  closePillText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#DC2626',
   },
   lobbySummary: {
     width: '100%',
@@ -1206,6 +1196,25 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#64748B',
     textAlign: 'center',
+  },
+  lobbyCloseBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: THEME.colors.outlineVariant,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  lobbyCloseText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 14,
+    fontWeight: '600',
+    color: THEME.colors.textSecondary,
   },
   rmCard: {
     width: '100%',

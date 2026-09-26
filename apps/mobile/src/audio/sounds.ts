@@ -8,6 +8,11 @@ let wallSound: AudioPlayer | null = null;
 let goalSound: AudioPlayer | null = null;
 let loaded = false;
 let muted = false;
+// Rapid moves (fast opponent, AI bursts) used to stack overlapping taps
+// into harsh noise. Sounds take turns with a small breathing gap instead.
+let playChain: Promise<void> = Promise.resolve();
+let lastPlayAt = 0;
+const MIN_GAP_MS = 35;
 
 async function ensureLoaded(): Promise<void> {
   if (loaded) return;
@@ -34,12 +39,19 @@ async function ensureLoaded(): Promise<void> {
 
 async function play(sound: AudioPlayer | null): Promise<void> {
   if (muted || !sound) return;
-  try {
-    await sound.seekTo(0);
-    sound.play();
-  } catch {
-    // Ignore playback races; never break gameplay.
-  }
+  const run = playChain.then(async () => {
+    const wait = MIN_GAP_MS - (Date.now() - lastPlayAt);
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    try {
+      await sound.seekTo(0);
+      sound.play();
+    } catch {
+      // Ignore playback races; never break gameplay.
+    }
+    lastPlayAt = Date.now();
+  });
+  playChain = run.catch(() => {});
+  await playChain;
 }
 
 export function setSoundsMuted(value: boolean): void {

@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { THEME } from '../theme';
@@ -413,7 +414,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
 
       {/* Remove Friend Confirm */}
       <Modal visible={!!removeTarget} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <SafeAreaView style={styles.modalOverlay} edges={['top', 'bottom']}>
           <View style={styles.modalCard}>
             <Text style={styles.removeTitle}>
               Remove {removeTarget?.username ?? 'friend'}?
@@ -439,13 +440,13 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Add Friend Bottom Sheet */}
       <Modal visible={showAddModal} transparent animationType="fade">
         <KeyboardShift>
-        <View style={styles.sheetOverlay}>
+        <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
           <View style={styles.sheetCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Friend</Text>
@@ -556,7 +557,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </SafeAreaView>
         </KeyboardShift>
       </Modal>
     </View>

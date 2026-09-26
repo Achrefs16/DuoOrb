@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, BackHandler, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { NavigationBar } from 'expo-navigation-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AIDifficulty, GameMode, GameState, RecordedAction } from '@duoorb/game-core';
 import { RoomDto } from '@duoorb/protocol';
@@ -403,6 +404,9 @@ export default function App() {
     return (
       <SafeAreaProvider>
         <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+          {/* Light bar + dark buttons: with edge-to-edge the app
+              background shows through behind the system buttons. */}
+          <NavigationBar style="light" />
           <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.background} />
           <SessionProvider>
             <OnboardingFlow onFinish={() => setOnboarded(true)} />
@@ -415,6 +419,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+      {/* Light bar + dark buttons: with edge-to-edge the app
+          background shows through behind the system buttons. */}
+      <NavigationBar style="light" />
       <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.background} />
       <SessionProvider>
         <SessionReady>

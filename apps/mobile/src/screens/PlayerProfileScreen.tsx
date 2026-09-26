@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME, playerColor } from '../theme';
@@ -219,7 +220,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
 
       {/* Remove friend confirm */}
       <Modal visible={showRemove} transparent animationType="fade">
-        <View style={styles.removeOverlay}>
+        <SafeAreaView style={styles.removeOverlay} edges={['top', 'bottom']}>
           <View style={styles.removeCard}>
             <Text style={styles.removeTitle}>
               Remove {profile?.displayName || profile?.username || 'friend'}?
@@ -245,7 +246,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {loading ? (
