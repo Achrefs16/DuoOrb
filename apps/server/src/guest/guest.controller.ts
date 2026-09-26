@@ -12,11 +12,24 @@ import {
 import { GuestService } from './guest.service.js';
 import { RateLimiter } from './rate-limiter.js';
 
-/** Guest creation is unauthenticated, so it is rate limited per IP. */
-const CREATE_LIMIT = 5;
-const CREATE_WINDOW_MS = 60 * 60 * 1000; // 5 per hour
-const REFRESH_LIMIT = 30;
-const REFRESH_WINDOW_MS = 60 * 60 * 1000; // 30 per hour
+/**
+ * Guest creation is unauthenticated, so it is rate limited per IP.
+ *
+ * These numbers are budgets, not security barriers. A guest identity is minted
+ * roughly once per install, so the previous 5/hour was small enough to lock
+ * out a real household: every device behind one home router shares a public
+ * NAT address, and the limiter counts that address, not the device. Two
+ * phones and a couple of reinstalls exhausted it, and because the counter is
+ * held in server memory, reinstalling the app could not recover — only a
+ * server restart cleared it. Anything that throttles a paying player needs
+ * headroom for shared-IP traffic (NAT, CGNAT, corporate egress, mobile
+ * carriers), so the limit is generous and the sliding window in RateLimiter
+ * does the real smoothing.
+ */
+const CREATE_LIMIT = 60;
+const CREATE_WINDOW_MS = 60 * 60 * 1000; // 60 per hour
+const REFRESH_LIMIT = 60;
+const REFRESH_WINDOW_MS = 60 * 60 * 1000; // 60 per hour
 
 @Controller('api/guest')
 export class GuestController {
