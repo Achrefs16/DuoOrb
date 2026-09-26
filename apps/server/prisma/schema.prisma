@@ -27,7 +27,40 @@ model User {
   blockedUsers      Block[] @relation("Blocker")
   blockedBy         Block[] @relation("Blocked")
 
+  guestSession      GuestSession?
+
   @@map("users")
+}
+
+/// Server-issued guest credentials.
+///
+/// A guest's access token is a short-lived HS256 JWT. The refresh token is an
+/// opaque random string stored ONLY as a SHA-256 hash, so it can be revoked
+/// instantly — a long-lived JWT could not be. Every refresh rotates both and
+/// keeps the previous hash briefly, which lets us spot a replayed (i.e.
+/// stolen) refresh token and kill the whole session.
+model GuestSession {
+  id        String @id @default(uuid())
+  userId    String @unique
+  tokenHash String @unique
+
+  /// Hash of the token that was just rotated away, kept for reuse detection.
+  prevTokenHash String?
+
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  /// Hashed client IP — enough to rate limit and spot abuse without storing
+  /// personal data.
+  ipHash   String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("guest_sessions")
 }
 
 model Profile {

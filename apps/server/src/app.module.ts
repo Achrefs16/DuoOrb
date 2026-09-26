@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from './database/database.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { GuestModule } from './guest/guest.module.js';
 import { UsersModule } from './users/users.module.js';
 import { FriendsModule } from './friends/friends.module.js';
 import { HistoryModule } from './history/history.module.js';
@@ -11,6 +12,8 @@ import { GameGateway } from './gateway/game.gateway.js';
   imports: [
     DatabaseModule,
     AuthModule,
+    // Global: the socket gateway resolves guest tokens on its handshake path.
+    GuestModule,
     UsersModule,
     FriendsModule,
     HistoryModule,

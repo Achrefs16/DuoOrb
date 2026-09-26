@@ -12,6 +12,8 @@ import { Server, Socket } from 'socket.io';
 import { GameAction, GameMode, RecordedAction } from '@duoorb/game-core';
 import { AuthoritativeGameService } from '../game/authoritative-game.service.js';
 import { MatchmakingService } from '../matchmaking/matchmaking.service.js';
+import { GuestService } from '../guest/guest.service.js';
+import { resolveCorsOrigins } from '../config/cors.js';
 import { RoomService } from '../rooms/room.service.js';
 import { ChallengeService } from '../challenge/challenge.service.js';
 import { AuthService } from '../auth/auth.service.js';
@@ -35,9 +37,9 @@ interface SocketUserInfo {
 }
 
 @WebSocketGateway({
-  cors: {
-    origin: '*',
-  },
+  // Same allowlist as the HTTP API so the two cannot drift. Resolved at module
+  // load, which is after dotenv has populated process.env.
+  cors: resolveCorsOrigins(),
 })
 export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(GameGateway.name);
@@ -59,7 +61,8 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   constructor(
     private readonly authService: AuthService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly guestService?: GuestService
   ) {
     this.gameService = new AuthoritativeGameService(this.prisma);
   }
@@ -102,24 +105,25 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     this.userSocketMap.set(earlyId, client.id);
     this.matchmakingService.updateSocket(earlyId, client.id);
 
-    // Dev guest tokens verify with pure string parsing (no I/O) — mark
-    // them synchronously so mutations in the first milliseconds after
-    // connect are not wrongly rejected. Google JWTs stay async below.
+    // Guest access tokens verify with a local HMAC (no I/O), so they can be
+    // resolved synchronously and mutations in the first milliseconds after
+    // connect are never wrongly rejected. Account JWTs go through Supabase's
+    // JWKS below, which is a network round trip.
     const rawToken =
       (client.handshake.auth?.token as string) ||
       (client.handshake.headers?.authorization?.replace('Bearer ', '') as string) ||
       (client.handshake.query?.token as string);
-    if (rawToken && rawToken.startsWith('dev-')) {
-      const sub = rawToken.split(':')[0].replace(/^dev-/, '');
-      if (sub) {
+    if (rawToken) {
+      const guestUserId = this.guestService?.verifyAccessToken(rawToken) ?? null;
+      if (guestUserId) {
         this.socketUserMap.set(client.id, {
-          userId: sub,
+          userId: guestUserId,
           displayName: qName ?? `Player ${client.id.substring(0, 4)}`,
           rating: 1500,
           verified: true,
         });
-        this.userSocketMap.set(sub, client.id);
-        this.matchmakingService.updateSocket(sub, client.id);
+        this.userSocketMap.set(guestUserId, client.id);
+        this.matchmakingService.updateSocket(guestUserId, client.id);
       }
     }
 

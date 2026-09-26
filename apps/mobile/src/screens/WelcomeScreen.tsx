@@ -14,6 +14,8 @@ interface WelcomeScreenProps {
   onContinueAsGuest: () => void;
   onContinueWithGoogle: () => void;
   googleBusy: boolean;
+  /** True while the server mints guest credentials. */
+  guestBusy?: boolean;
   error?: string | null;
 }
 
@@ -26,8 +28,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   onContinueAsGuest,
   onContinueWithGoogle,
   googleBusy,
+  guestBusy,
   error,
 }) => {
+  const busy = googleBusy || !!guestBusy;
+
   return (
     <View style={styles.container}>
       <View style={styles.top}>
@@ -50,6 +55,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             style={styles.googleButton}
             activeOpacity={0.85}
             onPress={onContinueWithGoogle}
+            disabled={busy}
             accessibilityLabel="Continue with Google"
           >
             <MaterialCommunityIcons name="google" size={19} color="#4285F4" />
@@ -61,11 +67,17 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           style={styles.guestButton}
           activeOpacity={0.85}
           onPress={onContinueAsGuest}
-          disabled={googleBusy}
+          disabled={busy}
           accessibilityLabel="Continue as guest"
         >
-          <Feather name="user" size={17} color={THEME.colors.textSecondary} />
-          <Text style={styles.guestButtonText}>Continue as Guest</Text>
+          {guestBusy ? (
+            <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
+          ) : (
+            <Feather name="user" size={17} color={THEME.colors.textSecondary} />
+          )}
+          <Text style={styles.guestButtonText}>
+            {guestBusy ? 'Starting…' : 'Continue as Guest'}
+          </Text>
         </TouchableOpacity>
 
         {!!error && <Text style={styles.errorText}>{error}</Text>}

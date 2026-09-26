@@ -1,6 +1,7 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { PrismaService } from '../database/prisma.service.js';
+import { GuestTokenService } from './guest-token.service.js';
 import { validateUsername } from '../users/username.js';
 
 export interface AuthenticatedUser {
@@ -15,7 +16,10 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly guestTokens: GuestTokenService
+  ) {
     const jwksUrl = process.env.SUPABASE_JWKS_URL;
     if (jwksUrl) {
       try {
@@ -27,22 +31,29 @@ export class AuthService {
   }
 
   /**
-   * Verifies a Supabase JWT token and extracts user identity.
+   * Verifies a bearer token and extracts user identity.
+   *
+   * Two accepted kinds:
+   *  - a guest access token, minted and signed by this server
+   *  - a Supabase account JWT, verified against Supabase's JWKS
+   *
+   * There is deliberately no third path. Previously any string starting with
+   * "dev-" was trusted, which meant anyone could claim any account in
+   * production; guests now present a signed token instead.
    */
   async verifyToken(token: string): Promise<{ sub: string; email?: string; user_metadata?: any }> {
     if (!token) {
       throw new UnauthorizedException('Missing authentication token.');
     }
 
-    // In local development or testing, permit dev tokens like "dev-u_abc123:email".
-    // The client identity is the part AFTER the prefix ("u_abc123") — the
-    // server must key everything by that same string, otherwise seat
-    // resolution (and turn validation mismatches) break downstream.
-    if (token.startsWith('dev-') || process.env.NODE_ENV === 'test') {
-      const parts = token.split(':');
-      const userId = parts[0].replace(/^dev-/, '');
-      const email = parts[1] || `${userId}@example.com`;
-      return { sub: userId, email, user_metadata: { full_name: `Dev ${userId.slice(0, 5)}` } };
+    // Guest tokens are local HMACs, so this is fast and works before Supabase
+    // is reachable.
+    const guestUserId = this.guestTokens.verifyUserId(token);
+    if (guestUserId) {
+      return {
+        sub: guestUserId,
+        user_metadata: { role: 'guest' },
+      };
     }
 
     if (!this.jwks) {

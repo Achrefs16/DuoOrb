@@ -5,10 +5,11 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
       POSTGRES_DB: duoorb
-    ports:
-      - "5432:5432"
+    # No ports block on purpose. The database is reachable only over Docker's
+    # internal network as `postgres:5432`, so it must never be published to
+    # the internet.
     volumes:
       - duoorb_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,14 +25,25 @@ services:
     container_name: duoorb-server
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      # Bound to loopback only. Caddy is the single public entry point for
+      # HTTPS; nothing on the internet can reach the raw HTTP port.
+      - "127.0.0.1:4000:4000"
     environment:
+      NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/duoorb?schema=public"
+      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/duoorb?schema=public"
       SUPABASE_URL: "${SUPABASE_URL}"
       SUPABASE_PUBLISHABLE_KEY: "${SUPABASE_PUBLISHABLE_KEY}"
       SUPABASE_SECRET_KEY: "${SUPABASE_SECRET_KEY}"
       SUPABASE_JWKS_URL: "${SUPABASE_JWKS_URL}"
+      # Signs guest access tokens. If this is empty the server refuses to
+      # mint guests and logs an error — it never falls back to a default, so
+      # a missing secret fails closed rather than shipping a known key.
+      GUEST_TOKEN_SECRET: "${GUEST_TOKEN_SECRET:-}"
+      # Comma-separated browser origins allowed to call the API, e.g.
+      # https://duoorb.com,https://www.duoorb.com. Only affects the web build;
+      # native apps are not subject to CORS. Unset means local dev origins only.
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
     depends_on:
       postgres:
         condition: service_healthy

@@ -29,5 +29,10 @@ EXPOSE 4000
 
 WORKDIR /app
 
-# Sync database schema and start server
-CMD ["sh", "-c", "npm run db:push --workspace=@duoorb/server && npm run start --workspace=@duoorb/server"]
+# Apply committed migrations, then start.
+#
+# `migrate deploy` only replays the migrations in prisma/migrations and never
+# drops or rewrites anything, so a bad deploy can be rolled back by deploying
+# the previous image. `prisma db push` (the old behaviour) did an
+# uncontrolled schema diff with no history and no way back.
+CMD ["sh", "-c", "npm run migrate:deploy --workspace=@duoorb/server && npm run start --workspace=@duoorb/server"]

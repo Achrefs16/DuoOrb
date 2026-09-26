@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
+import { GuestService } from '../guest/guest.service.js';
 import {
   BIO_MAX,
   assertValidDisplayName,
@@ -22,7 +23,11 @@ function isUniqueViolation(e: unknown): boolean {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  // Optional so the service can be constructed bare in unit tests.
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly guestService?: GuestService
+  ) {}
 
   async getMe(userId: string) {
     if (!this.prisma.isConnected) {
@@ -371,6 +376,11 @@ export class UsersService {
 
       await tx.user.delete({ where: { id: guestId } });
     });
+
+    // The guest row is gone (the session cascades with it), but revoke
+    // explicitly too: a refresh token must not survive the merge and be
+    // redeemable for an account that now owns that progress.
+    await this.guestService?.revokeForUser(guestId);
 
     return { merged: true, adoptedRatings: accountGames === 0 };
   }

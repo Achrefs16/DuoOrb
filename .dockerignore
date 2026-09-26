@@ -7,3 +7,13 @@ dist
 apps/mobile
 .expo
 npm-debug.log*
+
+# Never bake credentials into an image layer. Runtime secrets arrive as
+# environment variables (docker-compose reads a .env next to the compose file).
+.env
+**/.env
+**/.env.*
+!**/.env.example
+
+# Design reference mockups (generated, not source)
+desginstitch

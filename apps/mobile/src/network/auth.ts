@@ -4,15 +4,22 @@ export interface UserIdentity {
   userId: string;
   displayName: string;
   email: string;
+  /** Bearer token: a server-signed guest token, or a Supabase account JWT. */
   token: string;
   /** Public @handle, once the server profile has been loaded. */
   username?: string;
+  /**
+   * Long-lived opaque token used to mint a new access token. Guest sessions
+   * only; accounts refresh through Supabase.
+   */
+  refreshToken?: string;
 }
 
 const STORAGE_KEY_USER_ID = '@duoorb:auth:user_id';
 const STORAGE_KEY_DISPLAY_NAME = '@duoorb:auth:display_name';
 const STORAGE_KEY_TOKEN = '@duoorb:auth:token';
 const STORAGE_KEY_USERNAME = '@duoorb:auth:username';
+const STORAGE_KEY_REFRESH = '@duoorb:auth:refresh_token';
 
 function hasLocalStorage(): boolean {
   try {
@@ -82,11 +89,12 @@ function generateRandomName(): string {
 export async function hydrateIdentity(): Promise<void> {
   if (cachedUser || hasLocalStorage()) return;
   try {
-    const [userId, displayName, customToken, username] = await Promise.all([
+    const [userId, displayName, customToken, username, refreshToken] = await Promise.all([
       AsyncStorage.getItem(STORAGE_KEY_USER_ID),
       AsyncStorage.getItem(STORAGE_KEY_DISPLAY_NAME),
       AsyncStorage.getItem(STORAGE_KEY_TOKEN),
       AsyncStorage.getItem(STORAGE_KEY_USERNAME),
+      AsyncStorage.getItem(STORAGE_KEY_REFRESH),
     ]);
     if (userId) {
       const email = `${userId}@duoorb.local`;
@@ -94,8 +102,9 @@ export async function hydrateIdentity(): Promise<void> {
         userId,
         displayName: displayName ?? generateRandomName(),
         email,
-        token: customToken || `dev-${userId}:${email}`,
+        token: customToken ?? '',
         ...(username ? { username } : {}),
+        ...(refreshToken ? { refreshToken } : {}),
       };
       if (!displayName) {
         void AsyncStorage.setItem(STORAGE_KEY_DISPLAY_NAME, cachedUser.displayName).catch(
@@ -109,15 +118,21 @@ export async function hydrateIdentity(): Promise<void> {
 }
 
 /**
- * Retrieves the current user's authenticated identity.
- * Creates and persists a dev identity if none exists.
+ * Retrieves the current user's identity.
+ *
+ * The local id/display name are a fast, offline placeholder only. Authority
+ * comes from the token: a guest must hold a server-issued one (see
+ * `createGuestSession`), and a signed-in player holds a Supabase JWT. There is
+ * deliberately no locally-minted fallback any more — the server would reject
+ * it, and a self-asserted identity is exactly the hole this replaced.
  */
 export function getCurrentUser(): UserIdentity {
   if (cachedUser) return cachedUser;
 
   let userId = storage.getItem(STORAGE_KEY_USER_ID);
   let displayName = storage.getItem(STORAGE_KEY_DISPLAY_NAME);
-  let customToken = storage.getItem(STORAGE_KEY_TOKEN);
+  const customToken = storage.getItem(STORAGE_KEY_TOKEN);
+  const refreshToken = storage.getItem(STORAGE_KEY_REFRESH) ?? undefined;
 
   if (!userId) {
     userId = generateRandomId();
@@ -130,18 +145,70 @@ export function getCurrentUser(): UserIdentity {
   }
 
   const email = `${userId}@duoorb.local`;
-  const token = customToken || `dev-${userId}:${email}`;
   const username = storage.getItem(STORAGE_KEY_USERNAME) ?? undefined;
 
   cachedUser = {
     userId,
     displayName,
     email,
-    token,
+    token: customToken ?? '',
     ...(username ? { username } : {}),
+    ...(refreshToken ? { refreshToken } : {}),
   };
 
   return cachedUser;
+}
+
+/**
+ * Stores the credentials the server issued for a guest, and adopts the
+ * identity that came with them. The server is the source of truth for the id,
+ * the generated handle and the display name.
+ */
+export function setGuestCredentials(credentials: {
+  accessToken: string;
+  refreshToken: string;
+  userId: string;
+  displayName: string;
+}): UserIdentity {
+  storage.setItem(STORAGE_KEY_USER_ID, credentials.userId);
+  storage.setItem(STORAGE_KEY_TOKEN, credentials.accessToken);
+  storage.setItem(STORAGE_KEY_REFRESH, credentials.refreshToken);
+  storage.setItem(STORAGE_KEY_DISPLAY_NAME, credentials.displayName.slice(0, 24));
+  // The previous handle belonged to the old identity and must not carry over.
+  storage.removeItem(STORAGE_KEY_USERNAME);
+
+  cachedUser = {
+    userId: credentials.userId,
+    displayName: credentials.displayName.slice(0, 24),
+    email: `${credentials.userId}@duoorb.local`,
+    token: credentials.accessToken,
+    refreshToken: credentials.refreshToken,
+  };
+  return cachedUser;
+}
+
+/**
+ * Swaps in a freshly rotated access token. The refresh token rotates too, so
+ * the previous one is worthless from this moment on.
+ */
+export function updateGuestTokens(accessToken: string, refreshToken: string): void {
+  storage.setItem(STORAGE_KEY_TOKEN, accessToken);
+  storage.setItem(STORAGE_KEY_REFRESH, refreshToken);
+  if (cachedUser) {
+    cachedUser = { ...cachedUser, token: accessToken, refreshToken };
+  }
+}
+
+/** The stored guest refresh token, if any. */
+export function getStoredRefreshToken(): string | null {
+  return storage.getItem(STORAGE_KEY_REFRESH);
+}
+
+/** Forgets guest credentials so the next boot requests a fresh identity. */
+export function clearGuestCredentials(): void {
+  storage.removeItem(STORAGE_KEY_REFRESH);
+  if (cachedUser && !cachedUser.refreshToken) return;
+  cachedUser = null;
 }
 
 /**
@@ -208,6 +275,9 @@ export function adoptAccountIdentity(accountId: string): string | null {
 /**
  * Drops back to a brand-new guest (sign-out). Previous account rooms
  * stay under the account id by design.
+ *
+ * Guest credentials are cleared too, so the next bootstrap asks the server
+ * for a new identity instead of carrying the account's bearer token.
  */
 export function resetToNewGuest(): UserIdentity {
   cachedUser = null;
@@ -217,23 +287,24 @@ export function resetToNewGuest(): UserIdentity {
   storage.setItem(STORAGE_KEY_DISPLAY_NAME, displayName);
   // The signed-in account's handle must never leak onto the fresh guest.
   storage.removeItem(STORAGE_KEY_USERNAME);
+  storage.removeItem(STORAGE_KEY_TOKEN);
+  storage.removeItem(STORAGE_KEY_REFRESH);
   return getCurrentUser();
 }
 
 /**
- * Sets a custom JWT authentication token (e.g. from real Supabase Auth).
+ * Sets the bearer token used for every request (Supabase account JWT, or a
+ * server-issued guest token).
  */
 export function setAuthToken(token: string | null): void {
   if (token) {
     storage.setItem(STORAGE_KEY_TOKEN, token);
   } else {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.removeItem(STORAGE_KEY_TOKEN);
-      }
-    } catch {
-      // ignore
-    }
+    storage.removeItem(STORAGE_KEY_TOKEN);
   }
+  // A Supabase session replaces any guest credentials, and the guest session
+  // was revoked server-side when the accounts were merged, so the local
+  // refresh token is dead weight from here on.
+  storage.removeItem(STORAGE_KEY_REFRESH);
   cachedUser = null;
 }

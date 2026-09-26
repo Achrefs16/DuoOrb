@@ -11,9 +11,21 @@ import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import type { User } from '../lib/supabase';
 import { getSupabaseAuth, isSupabaseConfigured } from '../lib/supabase';
-import { getCurrentUser, adoptAccountIdentity, resetToNewGuest, cacheProfile } from './auth';
+import {
+  getCurrentUser,
+  adoptAccountIdentity,
+  resetToNewGuest,
+  cacheProfile,
+  getStoredRefreshToken,
+  setGuestCredentials,
+} from './auth';
 import { socketManager } from './socket';
-import { api, setTokenProvider } from './apiClient';
+import {
+  api,
+  setTokenProvider,
+  createGuestSession,
+  refreshGuestSession,
+} from './apiClient';
 import { clearOnboarding } from '../storage/onboarding';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -70,6 +82,11 @@ interface SessionContextValue {
   getAccessToken: () => Promise<string | null>;
   /** Re-pulls /me and refreshes identity; call after editing the profile. */
   refreshProfile: () => Promise<boolean>;
+  /**
+   * Ensures guest credentials exist (minting or rotating them). The welcome
+   * screen calls this before letting a player continue as a guest.
+   */
+  ensureGuestSession: () => Promise<boolean>;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -100,6 +117,30 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  /**
+   * Makes sure a guest holds credentials the server actually issued.
+   *
+   * Two cases: we have a refresh token, so mint a new access token; or we have
+   * nothing (first launch, or a guest whose session expired/was revoked), so
+   * request a brand-new identity. There is no locally-generated fallback any
+   * more — the server would reject it.
+   */
+  const ensureGuestSession = useCallback(async (): Promise<boolean> => {
+    if (!isSupabaseConfigured) return false;
+    try {
+      if (getStoredRefreshToken()) {
+        const next = await refreshGuestSession(getStoredRefreshToken() as string);
+        setGuestCredentials(next);
+        return true;
+      }
+      const fresh = await createGuestSession();
+      setGuestCredentials(fresh);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const getAccessToken = useCallback(async (): Promise<string | null> => {
     if (!isSupabaseConfigured) return null;
     try {
@@ -120,6 +161,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         } catch {
           // offline on first launch — guest mode
         }
+      }
+      // A guest needs server-issued credentials before the socket handshake or
+      // any API call, so mint (or rotate) them first.
+      if (!(await ensureGuestSession()) && !cancelled) {
+        setError('Could not reach the server. Check your connection and try again.');
       }
       if (!cancelled) setLoading(false);
       await pushTokenToSocket();
@@ -147,7 +193,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       listener.subscription.unsubscribe();
     };
-  }, [guest.userId, pushTokenToSocket, getAccessToken]);
+  }, [guest.userId, pushTokenToSocket, getAccessToken, ensureGuestSession]);
 
   const signInWithGoogle = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -208,9 +254,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // welcome + username flow is offered again next launch.
       void clearOnboarding();
       resetToNewGuest();
-      socketManager.refreshIdentity(null);
+      // resetToNewGuest dropped the credentials, so the socket has nothing to
+      // present until a new guest is minted.
+      await ensureGuestSession();
+      await pushTokenToSocket();
+      socketManager.refreshIdentity(getCurrentUser().userId);
     }
-  }, []);
+  }, [ensureGuestSession, pushTokenToSocket]);
 
   useEffect(() => {
     setTokenProvider(getAccessToken);
@@ -351,6 +401,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     signOut,
     getAccessToken,
     refreshProfile,
+    ensureGuestSession,
   };
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
