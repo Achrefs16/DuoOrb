@@ -158,12 +158,22 @@ class SocketManager {
       }
     });
 
-    s.on('connect_error', () => {
+    s.on('connect_error', (err: Error) => {
+      // Auth rejections used to look identical to network drops because the
+      // reason was discarded. Log it so "not authenticated" is diagnosable.
+      console.warn(`[socket] connect_error: ${err?.message ?? 'unknown'}`);
       this.setStatus('disconnected');
     });
 
     s.io.on('reconnect_attempt', () => {
       this.setStatus('reconnecting');
+    });
+
+    s.io.on('reconnect_failed', () => {
+      // Retries exhausted: surface it instead of sticking forever on a
+      // stale "reconnecting" state with no further attempts coming.
+      console.warn('[socket] reconnect_failed: giving up, staying disconnected');
+      this.setStatus('disconnected');
     });
 
     s.io.on('reconnect', () => {

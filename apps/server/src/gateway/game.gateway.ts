@@ -92,10 +92,11 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   async handleConnection(client: Socket) {
     // Register synchronously FIRST so no message can ever arrive before
-    // the maps know this socket (verify + rating enrich below).
-    const qId = client.handshake.query?.userId as string | undefined;
+    // the maps know this socket. The entry starts UNVERIFIED under an
+    // opaque per-socket handle and is only upgraded below by a credential
+    // the server itself verifies — never by client-asserted query fields.
     const qName = client.handshake.query?.displayName as string | undefined;
-    const earlyId = qId ?? client.id;
+    const earlyId = `anon-${client.id.substring(0, 6)}`;
     this.socketUserMap.set(client.id, {
       userId: earlyId,
       displayName: qName ?? `Player ${client.id.substring(0, 4)}`,
@@ -105,78 +106,77 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     this.userSocketMap.set(earlyId, client.id);
     this.matchmakingService.updateSocket(earlyId, client.id);
 
-    // Guest access tokens verify with a local HMAC (no I/O), so they can be
-    // resolved synchronously and mutations in the first milliseconds after
-    // connect are never wrongly rejected. Account JWTs go through Supabase's
-    // JWKS below, which is a network round trip.
+    // Guest access tokens verify with a local HMAC (no I/O), so they are
+    // resolved first and treated as AUTHORITATIVE. Account JWTs go through
+    // Supabase's JWKS below, which is a network round trip.
     const rawToken =
       (client.handshake.auth?.token as string) ||
       (client.handshake.headers?.authorization?.replace('Bearer ', '') as string) ||
       (client.handshake.query?.token as string);
+
+    let userId: string | null = null;
+    let displayName = qName ?? `Player ${client.id.substring(0, 4)}`;
+    let rating = 1500;
+    let verified = false;
+
     if (rawToken) {
       const guestUserId = this.guestService?.verifyAccessToken(rawToken) ?? null;
       if (guestUserId) {
-        this.socketUserMap.set(client.id, {
-          userId: guestUserId,
-          displayName: qName ?? `Player ${client.id.substring(0, 4)}`,
-          rating: 1500,
-          verified: true,
-        });
-        this.userSocketMap.set(guestUserId, client.id);
-        this.matchmakingService.updateSocket(guestUserId, client.id);
+        userId = guestUserId;
+        verified = true;
       }
     }
 
-    try {
-      const token =
-        (client.handshake.auth?.token as string) ||
-        (client.handshake.headers?.authorization?.replace('Bearer ', '') as string) ||
-        (client.handshake.query?.token as string);
-
-      let userId = qId;
-      let displayName = qName ?? `Player ${client.id.substring(0, 4)}`;
-      let rating = 1500;
-      let verified = false;
-
-      if (token) {
-        try {
-          const claims = await this.authService.verifyToken(token);
-          const user = await this.authService.getOrCreateUser(claims);
-          userId = user.id;
-          displayName = user.displayName;
-          verified = true;
-        } catch {
-          this.logger.warn(`Invalid token on socket connection ${client.id}, falling back to guest.`);
-        }
+    // Supabase account JWT — only when the guest pass did not verify.
+    // This must NEVER downgrade an already-verified guest: a guest token
+    // is not a Supabase JWT, so verifyToken always throws for it.
+    if (!verified && rawToken) {
+      try {
+        const claims = await this.authService.verifyToken(rawToken);
+        const user = await this.authService.getOrCreateUser(claims);
+        userId = user.id;
+        displayName = user.displayName;
+        verified = true;
+      } catch {
+        this.logger.warn(`No Supabase identity on ${client.id}; staying unverified.`);
       }
+    }
 
-      if (!userId) {
-        userId = `guest-${client.id.substring(0, 6)}`;
-      }
+    // Unverified callers keep an opaque per-socket handle. The
+    // client-asserted query.userId is untrusted input: it must never
+    // become identity, presence, or matchmaking state.
+    const effectiveId = userId ?? earlyId;
 
-      // Fetch the universal rating if DB is available
-      if (this.prisma.isConnected) {
+    // Fetch the universal rating if DB is available
+    if (this.prisma.isConnected && verified) {
+      try {
         const ratingRecord = await this.prisma.rating.findUnique({
-          where: { userId },
+          where: { userId: effectiveId },
         });
         if (ratingRecord) {
           rating = Math.round(ratingRecord.rating);
         }
+      } catch (err: any) {
+        this.logger.warn(`Rating lookup failed for ${effectiveId}: ${err?.message}`);
       }
+    }
 
+    try {
       // A newer connection may have superseded this one while awaiting.
       if (client.disconnected) {
         return;
       }
-      const userInfo: SocketUserInfo = { userId, displayName, rating, verified };
+      const userInfo: SocketUserInfo = { userId: effectiveId, displayName, rating, verified };
       this.socketUserMap.set(client.id, userInfo);
-      this.userSocketMap.set(userId, client.id);
-      this.setPresence(userId, { isOnline: true });
+      this.userSocketMap.delete(earlyId);
+      this.userSocketMap.set(effectiveId, client.id);
+      // Presence only for a real identity — never for an opaque handle.
+      if (verified) this.setPresence(effectiveId, { isOnline: true });
       // Fresh socket for someone already searching: refresh their queue
       // line so the sweep never matches a dead connection.
-      this.matchmakingService.updateSocket(userId, client.id);
+      this.matchmakingService.updateSocket(effectiveId, client.id);
 
-      this.logger.log(`Socket connected: ${client.id} (User: ${userId}, Rating: ${rating})`);
+      this.logger.log(`Socket connected: ${client.id} (User: ${effectiveId}, Rating: ${rating})`);
     } catch (err: any) {
       this.logger.error(`Error in handleConnection: ${err.message}`);
     }
@@ -1053,19 +1053,19 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * writes it, so the gateway owns it: online on connect, offline on
    * disconnect, playing while seated in a live game.
    */
+  /**
+   * Presence flip for a VERIFIED identity only. Callers must gate on
+   * verified first (see handleConnection): presence must never manufacture
+   * identity rows, so this is update-only and logs failures instead of
+   * swallowing them.
+   */
   private setPresence(userId: string, patch: { isOnline?: boolean; isPlaying?: boolean }): void {
     if (!this.prisma.isConnected) return;
     this.prisma.profile
-      .upsert({
-        where: { userId },
-        create: {
-          userId,
-          username: `player_${userId.substring(0, 6)}`,
-          displayName: 'Player',
-        },
-        update: patch,
-      })
-      .catch(() => {});
+      .updateMany({ where: { userId }, data: patch })
+      .catch((err) => {
+        this.logger.warn(`Presence update failed for ${userId}: ${err?.message}`);
+      });
   }
 
   /** Marks every seated player of a game as (not) playing. Ending a game

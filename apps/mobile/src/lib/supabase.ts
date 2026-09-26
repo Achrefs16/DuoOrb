@@ -27,6 +27,10 @@ export function getSupabaseAuth(): GoTrueClient {
   cached = new GoTrueClient({
     url: `${SUPABASE_URL}/auth/v1`,
     headers: { apikey: SUPABASE_ANON_KEY as string },
+    // Native Google sign-in does an explicit ?code= exchange
+    // (session.tsx), which only works under PKCE: implicit flow returns
+    // tokens in the URL fragment and never produces a code.
+    flowType: 'pkce',
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,

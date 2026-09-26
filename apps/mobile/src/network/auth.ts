@@ -67,8 +67,16 @@ const storage = {
 
 let cachedUser: UserIdentity | null = null;
 
+/**
+ * Client-side placeholder prefix. Deliberately NOT `u_` (the server's guest
+ * namespace): a locally minted id must never be confusable with a
+ * server-provisioned identity — the server ignores it everywhere and the
+ * /api/link validator rejects it.
+ */
+const LOCAL_ID_PREFIX = 'local_';
+
 function generateRandomId(): string {
-  return 'u_' + Math.random().toString(36).substring(2, 10);
+  return LOCAL_ID_PREFIX + Math.random().toString(36).substring(2, 10);
 }
 
 function generateRandomName(): string {

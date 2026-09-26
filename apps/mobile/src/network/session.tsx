@@ -18,10 +18,12 @@ import {
   cacheProfile,
   getStoredRefreshToken,
   setGuestCredentials,
+  clearGuestCredentials,
 } from './auth';
 import { socketManager } from './socket';
 import {
   api,
+  ApiError,
   setTokenProvider,
   createGuestSession,
   refreshGuestSession,
@@ -105,38 +107,57 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const guest = useMemo(() => getCurrentUser(), []);
   const accountId = supabaseUser?.id;
 
-  // Push the current token (real JWT or dev fallback) into the socket layer
-  // whenever the session changes, reconnecting if already connected.
+  // Push the current credential into the socket layer whenever the session
+  // changes, reconnecting if already connected. Signed-in players present
+  // their Supabase JWT; guests present their server-issued access token —
+  // pushing null for guests used to leave live sockets holding a stale or
+  // empty token forever.
   const pushTokenToSocket = useCallback(async () => {
     if (!isSupabaseConfigured) return;
     try {
       const { data } = await getSupabaseAuth().getSession();
-      socketManager.updateAuthToken(data.session?.access_token ?? null);
+      socketManager.updateAuthToken(
+        data.session?.access_token || getCurrentUser().token || null
+      );
     } catch {
-      // stay on dev identity
+      socketManager.updateAuthToken(getCurrentUser().token || null);
     }
   }, []);
 
   /**
    * Makes sure a guest holds credentials the server actually issued.
    *
-   * Two cases: we have a refresh token, so mint a new access token; or we have
-   * nothing (first launch, or a guest whose session expired/was revoked), so
-   * request a brand-new identity. There is no locally-generated fallback any
-   * more — the server would reject it.
+   * Three cases: a live refresh token mints a new access token; a dead one
+   * (expired, revoked, rate-limited) is dropped and a brand-new identity is
+   * minted so the device can never wedge itself retrying the same token;
+   * with nothing stored, a first identity is requested. There is no
+   * locally-generated fallback — the server would reject it.
    */
   const ensureGuestSession = useCallback(async (): Promise<boolean> => {
     if (!isSupabaseConfigured) return false;
-    try {
-      if (getStoredRefreshToken()) {
-        const next = await refreshGuestSession(getStoredRefreshToken() as string);
-        setGuestCredentials(next);
+    const stored = getStoredRefreshToken();
+    if (stored) {
+      try {
+        setGuestCredentials(await refreshGuestSession(stored));
         return true;
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+          clearGuestCredentials();
+        } else {
+          setError('Could not reach the server. Check your connection and try again.');
+          return false;
+        }
       }
-      const fresh = await createGuestSession();
-      setGuestCredentials(fresh);
+    }
+    try {
+      setGuestCredentials(await createGuestSession());
       return true;
-    } catch {
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : 'Could not reach the server. Check your connection and try again.'
+      );
       return false;
     }
   }, []);

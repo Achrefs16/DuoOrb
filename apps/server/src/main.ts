@@ -7,6 +7,10 @@ import { resolveCorsOrigins } from './config/cors.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, new ExpressAdapter());
+  // One proxy hop (Caddy) sits in front of this server and overwrites
+  // X-Forwarded-For, so trust exactly one hop: without this every client
+  // shares one rate-limit bucket and @Ip() sees only the proxy.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   // Explicit allowlist, shared with the WebSocket gateway. Native builds are
   // unaffected (CORS is browser-enforced); this exists to stop arbitrary
   // websites from calling the API. See config/cors.ts.
