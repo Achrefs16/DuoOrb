@@ -320,6 +320,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           style={styles.mmScroll}
           contentContainerStyle={styles.mmBody}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           {/* Configuration card */}
           <View style={styles.mmConfigCard}>
@@ -478,6 +479,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
         style={styles.scrollArea}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {activeRoom ? (
           /* ACTIVE ROOM LOBBY */

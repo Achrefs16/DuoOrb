@@ -9,6 +9,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
 import { DuoOrbLogo } from '../components/DuoOrbLogo';
+import { KeyboardShift } from '../components/KeyboardShift';
 import { api, ApiError } from '../network/apiClient';
 import { useSession } from '../network/session';
 import {
@@ -114,6 +115,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
   })();
 
   return (
+    <KeyboardShift>
     <View style={styles.container}>
       <View style={styles.top}>
         <DuoOrbLogo size={64} />
@@ -178,6 +180,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
         </TouchableOpacity>
       </View>
     </View>
+    </KeyboardShift>
   );
 };
 

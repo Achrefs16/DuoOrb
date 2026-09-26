@@ -155,6 +155,9 @@ const styles = StyleSheet.create({
     right: 12,
     alignItems: 'center',
     zIndex: 100,
+    // zIndex alone does not win on Android — the wrap needs real elevation
+    // so the toast paints above inputs and other elevated siblings.
+    elevation: 30,
   },
   card: {
     width: '100%',

@@ -37,7 +37,7 @@ export const RoomInviteToast: React.FC<{
 };
 
 const styles = StyleSheet.create({
-  wrap: { position: 'absolute', left: 12, right: 12, bottom: 78, zIndex: 100 },
+  wrap: { position: 'absolute', left: 12, right: 12, bottom: 78, zIndex: 100, elevation: 30 },
   toast: {
     flexDirection: 'row',
     alignItems: 'center',

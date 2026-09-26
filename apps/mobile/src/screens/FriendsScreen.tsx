@@ -22,6 +22,7 @@ import {
 import { useSession } from '../network/session';
 import { getCurrentUser } from '../network/auth';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
+import { KeyboardShift } from '../components/KeyboardShift';
 
 interface FriendsScreenProps {
   onOpenChallengeSetup: (friend: { id: string; username: string }) => void;
@@ -309,6 +310,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
           keyExtractor={() => 'friends_content'}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           renderItem={() => (
             <View style={styles.sectionsContainer}>
               {/* Friend Requests Section */}
@@ -442,6 +444,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
 
       {/* Add Friend Bottom Sheet */}
       <Modal visible={showAddModal} transparent animationType="fade">
+        <KeyboardShift>
         <View style={styles.sheetOverlay}>
           <View style={styles.sheetCard}>
             <View style={styles.modalHeader}>
@@ -554,6 +557,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
             </View>
           </View>
         </View>
+        </KeyboardShift>
       </Modal>
     </View>
   );

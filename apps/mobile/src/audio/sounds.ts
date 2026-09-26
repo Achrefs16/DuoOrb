@@ -15,11 +15,15 @@ async function ensureLoaded(): Promise<void> {
     // Import lazily so the audio native module is not touched during app
     // startup. Sounds are only needed after gameplay begins.
     const { createAudioPlayer, setAudioModeAsync } = await import('expo-audio');
-    await setAudioModeAsync({ playsInSilentMode: true });
+    // Game effects must play at full volume on the music stream and mix
+    // with other apps (not duck under them). Relying on library defaults
+    // here is what made the effects nearly inaudible on some devices.
+    await setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'mixWithOthers' });
     moveSound = createAudioPlayer(require('../../assets/sounds/move.wav'));
     wallSound = createAudioPlayer(require('../../assets/sounds/wall.wav'));
     goalSound = createAudioPlayer(require('../../assets/sounds/goal.wav'));
     for (const sound of [moveSound, wallSound, goalSound]) {
+      sound.volume = 1.0;
       sound.muted = muted;
     }
     loaded = true;

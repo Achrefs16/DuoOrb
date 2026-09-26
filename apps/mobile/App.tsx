@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { SafeAreaView, StatusBar, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { BackHandler, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AIDifficulty, GameMode, GameState, RecordedAction } from '@duoorb/game-core';
 import { RoomDto } from '@duoorb/protocol';
 import { GameReviewScreen } from './src/screens/GameReviewScreen';
@@ -56,6 +57,12 @@ type SubScreen =
   | 'REPLAY'
   | 'REVIEW'
   | null;
+
+/** One entry in the in-app navigation history (hardware back stack). */
+interface NavLoc {
+  tab: MainTab;
+  sub: SubScreen;
+}
 
 interface ActiveGameConfig {
   mode: GameMode;
@@ -117,6 +124,44 @@ export default function App() {
   // onboarding check, so there is never a blank frame.
   const [splashElapsed, setSplashElapsed] = useState(false);
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
+  // In-app navigation history for the Android hardware back button. Tab
+  // switches are not recorded — backing out of any main tab asks to exit.
+  const stackRef = useRef<NavLoc[]>([]);
+  const [exitAsk, setExitAsk] = useState(false);
+
+  /** Forward navigation: records where we came from, then moves. */
+  const navigate = (tab: MainTab, sub: SubScreen) => {
+    stackRef.current = [...stackRef.current, { tab: currentTab, sub: subScreen }].slice(-50);
+    setExitAsk(false);
+    setCurrentTab(tab);
+    setSubScreen(sub);
+  };
+
+  /** Back navigation: restores the previous location, or asks to exit. */
+  const goBack = useCallback(() => {
+    const stack = stackRef.current;
+    if (stack.length === 0) {
+      setExitAsk(true);
+      return;
+    }
+    const prev = stack[stack.length - 1];
+    stackRef.current = stack.slice(0, -1);
+    setExitAsk(false);
+    setCurrentTab(prev.tab);
+    setSubScreen(prev.sub);
+  }, []);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (exitAsk) {
+        BackHandler.exitApp();
+        return true;
+      }
+      goBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [exitAsk, goBack]);
 
   useEffect(() => {
     const t = setTimeout(() => setSplashElapsed(true), SPLASH_MIN_MS);
@@ -158,7 +203,7 @@ export default function App() {
 
   const handleStartGame = (config: ActiveGameConfig) => {
     setGameConfig(config);
-    setSubScreen('GAME');
+    navigate(currentTab, 'GAME');
   };
 
   // Global friend-challenge line: toast overlay works from any tab, and
@@ -179,25 +224,25 @@ export default function App() {
         autoRoom: null,
         initialRoom: room,
       }));
-      setSubScreen('ONLINE');
+      navigate(currentTab, 'ONLINE');
     },
   });
 
   const handleOpenOnline = (clock: TimeControl, view: OnlineMode, inviteName: string | null = null) => {
     setOnlineEntry({ clock, view, inviteName, autoMatch: null, autoRoom: null, initialRoom: null });
-    setSubScreen('ONLINE');
+    navigate(currentTab, 'ONLINE');
   };
 
   const handleOpenSetup = (kind: 'ai' | 'local' | 'online') => {
     setSetupKind(kind);
     setChallengeTarget(null);
-    setSubScreen('SETUP');
+    navigate(currentTab, 'SETUP');
   };
 
   const handleOpenChallengeSetup = (friend: { id: string; username: string }) => {
     setSetupKind('challenge');
     setChallengeTarget(friend);
-    setSubScreen('SETUP');
+    navigate(currentTab, 'SETUP');
   };
 
   // Close Match: return to the surface that match came from —
@@ -214,7 +259,7 @@ export default function App() {
           autoRoom: null,
           initialRoom: gameConfig.room,
         });
-        setSubScreen('ONLINE');
+        navigate(currentTab, 'ONLINE');
         return;
       }
       if (gameConfig.onlineSource === 'custom') {
@@ -223,8 +268,7 @@ export default function App() {
         return;
       }
       // Quick Match closes to the home page.
-      setSubScreen(null);
-      setCurrentTab('PLAY');
+      navigate('PLAY', null);
       return;
     }
     handleOpenSetup(gameConfig.type);
@@ -246,7 +290,7 @@ export default function App() {
         autoRoom: null,
         initialRoom: null,
       });
-      setSubScreen('ONLINE');
+      navigate(currentTab, 'ONLINE');
     } else {
       handleOpenSetup(gameConfig.type);
     }
@@ -254,7 +298,7 @@ export default function App() {
 
   const handleOpenPlayerProfile = (player: { userId: string; username: string }) => {
     setSelectedPlayer(player);
-    setSubScreen('PLAYER_PROFILE');
+    navigate(currentTab, 'PLAYER_PROFILE');
   };
 
   const handleChallengePlayer = (player: { id: string; username: string }) => {
@@ -263,7 +307,7 @@ export default function App() {
 
   const handleOpenReview = (initialState: GameState, history: RecordedAction[], perspectiveIdx = 0) => {
     setReplayData({ initialState, history, perspectiveIdx });
-    setSubScreen('REVIEW');
+    navigate(currentTab, 'REVIEW');
   };
 
   const handleSelectGameFromHistory = (savedGame: SavedGameRecord) => {
@@ -272,29 +316,36 @@ export default function App() {
       history: savedGame.history,
       perspectiveIdx: 0,
     });
-    setSubScreen('REPLAY');
+    navigate(currentTab, 'REPLAY');
   };
 
   // Splash holds until fonts, identity and the onboarding check are all
   // ready AND the minimum time has elapsed.
   if (!fontsLoaded || !identityReady || !splashElapsed || onboarded === null) {
-    return <SplashScreen />;
+    return (
+      <SafeAreaProvider>
+        <SplashScreen />
+      </SafeAreaProvider>
+    );
   }
 
   // First launch on this device: Welcome -> Choose Username.
   if (!onboarded) {
     return (
-      <SafeAreaView style={styles.root}>
-        <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.background} />
-        <SessionProvider>
-          <OnboardingFlow onFinish={() => setOnboarded(true)} />
-        </SessionProvider>
-      </SafeAreaView>
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+          <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.background} />
+          <SessionProvider>
+            <OnboardingFlow onFinish={() => setOnboarded(true)} />
+          </SessionProvider>
+        </SafeAreaView>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaProvider>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.background} />
       <SessionProvider>
         <View style={styles.content}>
@@ -306,7 +357,7 @@ export default function App() {
                   onOpenOnline={(clock, view) => handleOpenOnline(clock, view)}
                   onOpenSetup={handleOpenSetup}
                   onOpenCustomOnline={() => handleOpenSetup('online')}
-                  onOpenSettings={() => setSubScreen('SETTINGS')}
+                  onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
                 />
               )}
 
@@ -328,7 +379,7 @@ export default function App() {
 
               {currentTab === 'PROFILE' && (
                 <ProfileScreen
-                  onOpenSettings={() => setSubScreen('SETTINGS')}
+                  onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
                   onSelectGame={handleSelectGameFromHistory}
                 />
               )}
@@ -377,7 +428,7 @@ export default function App() {
               initialKind={setupKind}
               challengeName={challengeTarget?.username}
               initialClock={DEFAULT_TIME_CONTROL}
-              onBack={() => setSubScreen(null)}
+              onBack={goBack}
               onConfirm={(sel) => {
                 if (sel.vsType === 'challenge' && challengeTarget) {
                   challenge.sendChallenge(challengeTarget.id, challengeTarget.username, {
@@ -386,12 +437,11 @@ export default function App() {
                     wallsEach: sel.wallsEach,
                   });
                   setChallengeTarget(null);
-                  setSubScreen(null);
-                  setCurrentTab('FRIENDS');
+                  navigate('FRIENDS', null);
                   return;
                 }
                 if (sel.vsType === 'challenge') {
-                  setSubScreen(null);
+                  goBack();
                   return;
                 }
                 // Custom Online Match: configured ranked matchmaking,
@@ -405,7 +455,7 @@ export default function App() {
                     autoRoom: null,
                     initialRoom: null,
                   });
-                  setSubScreen('ONLINE');
+                  navigate(currentTab, 'ONLINE');
                   return;
                 }
                 handleStartGame({
@@ -424,7 +474,7 @@ export default function App() {
             <PlayerProfileScreen
               userId={selectedPlayer.userId}
               initialUsername={selectedPlayer.username}
-              onBack={() => setSubScreen(null)}
+              onBack={goBack}
               onChallenge={(p) => handleOpenChallengeSetup({ id: p.id, username: p.username })}
               onSelectGame={handleSelectGameFromHistory}
             />
@@ -432,7 +482,7 @@ export default function App() {
 
           {subScreen === 'LEADERBOARD' && (
             <LeaderboardScreen
-              onBack={() => setSubScreen(null)}
+              onBack={goBack}
               onSelectPlayer={handleOpenPlayerProfile}
             />
           )}
@@ -441,7 +491,7 @@ export default function App() {
             <SettingsScreen
               settings={settings}
               onChange={updateSettings}
-              onBack={() => setSubScreen(null)}
+              onBack={goBack}
             />
           )}
 
@@ -454,7 +504,7 @@ export default function App() {
               autoMatch={onlineEntry.autoMatch}
               autoRoom={onlineEntry.autoRoom}
               initialRoom={onlineEntry.initialRoom}
-              onBack={() => setSubScreen(null)}
+              onBack={goBack}
               onStartOnlineGame={(gameId, mode, clock, source, room) => {
                 handleStartGame({
                   mode,
@@ -474,8 +524,8 @@ export default function App() {
               initialState={replayData.initialState}
               history={replayData.history}
               perspectiveIdx={replayData.perspectiveIdx}
-              onBack={() => setSubScreen(null)}
-              onAnalyze={() => setSubScreen('REVIEW')}
+              onBack={goBack}
+              onAnalyze={() => navigate(currentTab, 'REVIEW')}
             />
           )}
 
@@ -484,7 +534,7 @@ export default function App() {
               initialState={replayData.initialState}
               history={replayData.history}
               perspectiveIdx={replayData.perspectiveIdx}
-              onBack={() => setSubScreen(null)}
+              onBack={goBack}
             />
           )}
 
@@ -493,6 +543,7 @@ export default function App() {
             <BottomNav
               currentTab={currentTab}
               onSelectTab={(tab) => {
+                setExitAsk(false);
                 setSubScreen(null);
                 setCurrentTab(tab);
               }}
@@ -500,24 +551,53 @@ export default function App() {
             />
           )}
 
-          {/* Global challenge toasts (receiver accept/decline, sender wait). */}
-          <ChallengeToast
-            incoming={challenge.incoming}
-            outgoing={challenge.outgoing}
-            notice={challenge.notice}
-            onAccept={() => challenge.respond(true)}
-            onDecline={() => challenge.respond(false)}
-            onCancelWaiting={challenge.cancelWaiting}
-          />
-          <RoomInviteToast
-            invite={roomInvites.incoming}
-            notice={roomInvites.notice}
-            onAccept={() => void roomInvites.respond(true)}
-            onDecline={() => void roomInvites.respond(false)}
-          />
+          {/* Global overlay layer: toasts and the exit confirm render last,
+              above every screen, with high elevation so Android draws them
+              on top of inputs and other elevated views. */}
+          <View style={styles.overlayLayer} pointerEvents="box-none">
+            <ChallengeToast
+              incoming={challenge.incoming}
+              outgoing={challenge.outgoing}
+              notice={challenge.notice}
+              onAccept={() => challenge.respond(true)}
+              onDecline={() => challenge.respond(false)}
+              onCancelWaiting={challenge.cancelWaiting}
+            />
+            <RoomInviteToast
+              invite={roomInvites.incoming}
+              notice={roomInvites.notice}
+              onAccept={() => void roomInvites.respond(true)}
+              onDecline={() => void roomInvites.respond(false)}
+            />
+            {exitAsk && (
+              <View style={styles.exitOverlay}>
+                <View style={styles.exitCard}>
+                  <Text style={styles.exitTitle}>Exit DuoOrb?</Text>
+                  <Text style={styles.exitSub}>Press back again to close the app.</Text>
+                  <View style={styles.exitRow}>
+                    <TouchableOpacity
+                      style={styles.exitStay}
+                      onPress={() => setExitAsk(false)}
+                      accessibilityLabel="Stay in DuoOrb"
+                    >
+                      <Text style={styles.exitStayText}>Stay</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.exitQuit}
+                      onPress={() => BackHandler.exitApp()}
+                      accessibilityLabel="Exit DuoOrb"
+                    >
+                      <Text style={styles.exitQuitText}>Exit</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
         </View>
       </SessionProvider>
     </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
@@ -532,5 +612,78 @@ const styles = StyleSheet.create({
   },
   tabContent: {
     flex: 1,
+  },
+  overlayLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 999,
+    elevation: 30,
+  },
+  exitOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  exitCard: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 20,
+    alignItems: 'center',
+    ...THEME.shadows.modal,
+  },
+  exitTitle: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 17,
+    color: '#0F172A',
+  },
+  exitSub: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  exitRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+    width: '100%',
+  },
+  exitStay: {
+    flex: 1,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  exitStayText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 14,
+    color: '#475569',
+  },
+  exitQuit: {
+    flex: 1,
+    borderRadius: 10,
+    backgroundColor: '#DC2626',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  exitQuitText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 14,
+    color: '#FFFFFF',
   },
 });
