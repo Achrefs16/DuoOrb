@@ -1,5 +1,10 @@
 import { BOARD_SIZE, DIRECTIONS } from './constants.js';
-import { areCellsAdjacent, isBlockedByWall, isCellWithinBoard } from './geometry.js';
+import {
+  areCellsAdjacent,
+  buildWallIndex,
+  isBlockedByWallIndexed,
+  isCellWithinBoard,
+} from './geometry.js';
 import { CellCoord, GameMode, GoalDirection, PlayerState, WallCoord } from './types.js';
 
 /** Modes whose winning square is the single board center (legacy '4p' included). */
@@ -52,8 +57,15 @@ export function isGoalCell(
 
 /**
  * Returns valid orthogonal neighbors for a cell given existing walls.
+ *
+ * Takes a prebuilt wall index (see buildWallIndex) so the neighbour scan is
+ * O(1) per direction rather than O(walls).
  */
-export function getCellNeighbors(cell: CellCoord, walls: WallCoord[]): CellCoord[] {
+export function getCellNeighbors(
+  cell: CellCoord,
+  walls: WallCoord[] | Uint8Array
+): CellCoord[] {
+  const index = walls instanceof Uint8Array ? walls : buildWallIndex(walls);
   const neighbors: CellCoord[] = [];
 
   for (const dir of DIRECTIONS) {
@@ -62,7 +74,7 @@ export function getCellNeighbors(cell: CellCoord, walls: WallCoord[]): CellCoord
       col: cell.col + dir.dc,
     };
 
-    if (isCellWithinBoard(next) && !isBlockedByWall(cell, next, walls)) {
+    if (isCellWithinBoard(next) && !isBlockedByWallIndexed(cell, next, index)) {
       neighbors.push(next);
     }
   }
@@ -136,6 +148,7 @@ function buildPathTable(
   table.parent.fill(UNREACHED);
   table.goalIndex = UNREACHED;
 
+  const wallIndex = buildWallIndex(walls);
   const startIndex = cellToIndex(start);
   table.dist[startIndex] = 0;
   table.count[startIndex] = 1;
@@ -151,7 +164,7 @@ function buildPathTable(
     const nextDist = table.dist[currentIndex] + 1;
     const currentCount = table.count[currentIndex];
 
-    for (const neighbor of getCellNeighbors(current, walls)) {
+    for (const neighbor of getCellNeighbors(current, wallIndex)) {
       const neighborIndex = cellToIndex(neighbor);
       const seen = table.dist[neighborIndex];
       if (seen === UNREACHED) {
@@ -275,6 +288,53 @@ export function hasPathToGoal(
 }
 
 /**
+ * Same check against a prebuilt wall index, so a caller testing several
+ * players against one hypothetical board pays for the index once.
+ */
+export function hasPathToGoalWithIndex(
+  start: CellCoord,
+  goalDirection: GoalDirection,
+  wallIndex: Uint8Array,
+  mode?: GameMode
+): boolean {
+  if (isGoalCell(start, goalDirection, mode)) return true;
+  return getShortestDistanceIndexed(start, goalDirection, wallIndex, mode) !== Infinity;
+}
+
+/** Distance-only BFS against a prebuilt index. */
+function getShortestDistanceIndexed(
+  start: CellCoord,
+  goalDirection: GoalDirection,
+  wallIndex: Uint8Array,
+  mode?: GameMode
+): number {
+  const dist = distanceScratch;
+  dist.fill(UNREACHED);
+
+  const startIndex = cellToIndex(start);
+  dist[startIndex] = 0;
+
+  const queue = distanceQueue;
+  let head = 0;
+  let tail = 0;
+  queue[tail++] = startIndex;
+
+  while (head < tail) {
+    const currentIndex = queue[head++];
+    const nextDist = dist[currentIndex] + 1;
+    for (const neighbor of getCellNeighbors(indexToCell(currentIndex), wallIndex)) {
+      const neighborIndex = cellToIndex(neighbor);
+      if (dist[neighborIndex] !== UNREACHED) continue;
+      dist[neighborIndex] = nextDist;
+      if (isGoalCell(neighbor, goalDirection, mode)) return nextDist;
+      queue[tail++] = neighborIndex;
+    }
+  }
+
+  return Infinity;
+}
+
+/**
  * Gets the shortest distance (number of moves) from start to goal. Returns Infinity if no path.
  *
  * Deliberately leaner than getPathInfo: this is the hottest call in the AI
@@ -292,6 +352,7 @@ export function getShortestDistance(
     return 0;
   }
 
+  const wallIndex = buildWallIndex(walls);
   const dist = distanceScratch;
   dist.fill(UNREACHED);
 
@@ -307,7 +368,7 @@ export function getShortestDistance(
     const currentIndex = queue[head++];
     const nextDist = dist[currentIndex] + 1;
 
-    for (const neighbor of getCellNeighbors(indexToCell(currentIndex), walls)) {
+    for (const neighbor of getCellNeighbors(indexToCell(currentIndex), wallIndex)) {
       const neighborIndex = cellToIndex(neighbor);
       if (dist[neighborIndex] !== UNREACHED) continue;
       dist[neighborIndex] = nextDist;

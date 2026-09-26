@@ -28,9 +28,10 @@ import { SideChoice } from './MatchSetupScreen';
 import { WallTray } from '../components/WallTray';
 import { playGoalSound, playMoveSound, playWallSound, preloadSounds } from '../audio/sounds';
 import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
-import { THEME, playerColor } from '../theme';
+import { THEME, playerColor, wallPreviewColor } from '../theme';
 import { DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
+import { WallDragGhostProvider } from '../components/WallDragGhost';
 import { getCurrentUser } from '../network/auth';
 import { socketManager } from '../network/socket';
 
@@ -1154,6 +1155,22 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     };
   }, [dragSlotKey]);
 
+  // Legality for the held wall, computed here and published through context so
+  // only the small ghost view re-renders when the snapped slot changes.
+  // Passing it to GameBoard as a prop re-rendered ~300 views per slot crossing,
+  // which capped dragging a held wall across the board at ~15fps while dragging
+  // outside it — where no slot is produced — stayed smooth.
+  const dragGhostValue = useMemo(() => {
+    if (!dragSlot || !currentPlayer) {
+      return { slot: null, legal: false, color: trayColor };
+    }
+    return {
+      slot: dragSlot,
+      legal: isLegalWallPlacement(displayState, currentPlayer.id, dragSlot),
+      color: wallPreviewColor(trayColor),
+    };
+  }, [dragSlot, currentPlayer, displayState, trayColor]);
+
   // Screen overlay chip so the held wall follows the finger continuously.
   // Matches the (responsive) tray piece size.
   let chipStyle: { left: number; top: number; width: number; height: number } | null = null;
@@ -1330,15 +1347,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               ],
             }}
           >
-          <GameBoard
+          <WallDragGhostProvider value={dragGhostValue}>
+            <GameBoard
             state={displayState}
             legalMoves={viewingStep !== null ? EMPTY_CELL_LIST : legalMoves}
             previewWall={null}
             selectedCell={viewingStep !== null ? null : selectedCellMemo}
             interactive={(humanTurn || canPremove) && !wallDrag && !flipping && viewingStep === null}
-            dragSlot={dragSlot}
-            moveHintColor={wallDrag ? trayColor : hintColor}
-            premoveMarks={viewingStep !== null ? EMPTY_PREMOVE_MARKS : premoveMarks}
+            moveHintColor={wallDrag ? trayColor : hintColor}            premoveMarks={viewingStep !== null ? EMPTY_PREMOVE_MARKS : premoveMarks}
             hideDots={hideDots}
             queuedWalls={viewingStep !== null ? EMPTY_QUEUED_WALLS : queuedWallEntries}
             onQueuedWallPress={canPremove && viewingStep === null ? handleQueuedWallPress : undefined}
@@ -1348,6 +1364,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             onCellPress={viewingStep !== null ? undefined : handleCellPress}
             onMetricsChange={handleMetricsChange}
           />
+          </WallDragGhostProvider>
           </Animated.View>
         </View>
 

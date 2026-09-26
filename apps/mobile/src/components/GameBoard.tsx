@@ -1,4 +1,5 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { WallDragGhost } from './WallDragGhost';
 import {
   Animated,
   LayoutChangeEvent,
@@ -35,7 +36,6 @@ interface GameBoardProps {
    * slot-key memo in GameScreen): pixel motion alone must not re-render
    * this ~300-view tree, so raw pointer coordinates never reach here.
    */
-  dragSlot?: WallCoord | null;
   /** Override dot/tint color (e.g. premove hints in the waiter's color). */
   moveHintColor?: string;
   /** Queued premove destinations, tinted like chess.com. */
@@ -127,7 +127,7 @@ function nearestSlot(x: number, y: number, cell: number, gap: number) {
   return best;
 }
 
-function wallRect(
+export function wallRect(
   wall: WallCoord,
   cell: number,
   gap: number
@@ -228,7 +228,6 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   previewWall = null,
   selectedCell,
   interactive = true,
-  dragSlot = null,
   moveHintColor,
   premoveMarks = [],
   hideDots = false,
@@ -326,38 +325,58 @@ const GameBoardView: React.FC<GameBoardProps> = ({
       (p) => p.status === 'ACTIVE' && p.position.row === r && p.position.col === c
     );
 
-  const isLegalMoveTarget = (r: number, c: number) =>
-    legalMoves.some((m) => m.row === r && m.col === c);
-
   /**
    * Subtle tint on each player's winning squares in their own ball color.
    * 2p: the whole far edge. 4p: only the middle square. Kept faint on purpose.
+   *
+   * Precomputed for all 81 squares: this used to run per cell on every render,
+   * and hexA parses the hex and allocates a fresh rgba string each time — 81
+   * string builds per board render just for the goal tint.
    */
-  const goalTintFor = (r: number, c: number): string | null => {
+  const goalTints = useMemo(() => {
+    const tints = new Array<string | null>(BOARD_SIZE * BOARD_SIZE).fill(null);
     for (const p of state.players) {
-      if (isGoalCell({ row: r, col: c }, p.goalDirection, state.mode)) {
-        return hexA(playerColor(p.index, p.color), 0.1);
+      const tint = hexA(playerColor(p.index, p.color), 0.1);
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const i = r * BOARD_SIZE + c;
+          if (tints[i] === null && isGoalCell({ row: r, col: c }, p.goalDirection, state.mode)) {
+            tints[i] = tint;
+          }
+        }
       }
     }
-    return null;
-  };
+    return tints;
+  }, [state.players, state.mode]);
+
+  const goalTintFor = (r: number, c: number): string | null => goalTints[r * BOARD_SIZE + c] ?? null;
+
+  /** Legal-move membership as a flat lookup, avoiding a scan per cell. */
+  const legalCellSet = useMemo(() => {
+    const set = new Set<number>();
+    for (const m of legalMoves) set.add(m.row * BOARD_SIZE + m.col);
+    return set;
+  }, [legalMoves]);
+
+  const isLegalMoveTarget = (r: number, c: number) => legalCellSet.has(r * BOARD_SIZE + c);
+
+  /** Queued premove targets as a lookup, avoiding a scan per cell. */
+  const premoveTintByCell = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const m of premoveMarks) {
+      map.set(m.to.row * BOARD_SIZE + m.to.col, hexA(m.color, 0.3));
+    }
+    return map;
+  }, [premoveMarks]);
 
   const isPreviewValid =
     previewWall && currentPlayer
       ? isLegalWallPlacement(state, currentPlayer.id, previewWall)
       : false;
 
-  // Fixed-orientation ghost for the wall currently held from the inventory.
-  // Legality is gated on the snapped slot (plus board state): same-slot
-  // pointer motion skips the BFS entirely.
-  const dragCandidate: WallCoord | null = dragSlot;
-  const dragLegal = useMemo(
-    () =>
-      dragCandidate && currentPlayer
-        ? isLegalWallPlacement(state, currentPlayer.id, dragCandidate)
-        : false,
-    [dragCandidate, state, currentPlayer]
-  );
+  // The held-wall ghost is rendered by <WallDragGhost/> from context, so the
+  // snapped slot and its legality no longer travel through this component's
+  // props — see WallDragGhost for why that matters.
 
   const playerWallBg = (playerIndex: number, color?: string) =>
     wallColorForPlayer(playerColor(playerIndex, color));
@@ -379,12 +398,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
               // Goal lines keep their own color — move previews never cover them.
               const goalTint = goalTintFor(r, c);
               // Queued premove target: clearly tinted in the queuer's color.
-              const queuedTint = (() => {
-                const mark = premoveMarks.find(
-                  (m) => m.to.row === r && m.to.col === c
-                );
-                return mark ? hexA(mark.color, 0.3) : null;
-              })();
+              const queuedTint = premoveTintByCell.get(r * BOARD_SIZE + c) ?? null;
               // Center-goal modes: the single shiny square everyone races for.
               const isCrownCell =
                 isCenterGoalMode(state.mode) && r === BOARD_CENTER.row && c === BOARD_CENTER.col;
@@ -731,28 +745,9 @@ const GameBoardView: React.FC<GameBoardProps> = ({
           );
         })}
 
-        {/* Inventory drag ghost — single fixed-orientation preview, snapped */}
-        {dragCandidate &&
-          (() => {
-            const rect = wallRect(dragCandidate, CELL, GAP);
-            return (
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.previewWall,
-                  {
-                    top: rect.top,
-                    left: rect.left,
-                    width: rect.width,
-                    height: rect.height,
-                    backgroundColor: dragLegal
-                      ? wallPreviewColor(hintColor)
-                      : 'rgba(220, 38, 38, 0.45)',
-                  },
-                ]}
-              />
-            );
-          })()}
+        {/* Inventory drag ghost. Driven by context (see WallDragGhost) rather
+            than a prop, so crossing a slot does not re-render this board. */}
+        <WallDragGhost cell={CELL} gap={GAP} />
       </View>
     </View>
   );

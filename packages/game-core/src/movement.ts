@@ -1,4 +1,4 @@
-import { areCellsEqual, isBlockedByWall, isCellWithinBoard } from './geometry.js';
+import { areCellsEqual, buildWallIndex, isBlockedByWallIndexed, isCellWithinBoard } from './geometry.js';
 import { CellCoord, GameState, PlayerState, WallCoord } from './types.js';
 
 interface DirectionOffset {
@@ -65,7 +65,8 @@ export function getLegalMovesFrom(
 
   const current = from;
   const legalMoves: CellCoord[] = [];
-  const walls: WallCoord[] = state.walls;
+  // One index for the whole call instead of an O(walls) scan per direction.
+  const wallIndex = buildWallIndex(state.walls);
 
   for (const dir of ORTHOGONAL_DIRECTIONS) {
     const neighbor: CellCoord = {
@@ -74,7 +75,7 @@ export function getLegalMovesFrom(
     };
 
     // Must be inside board and not blocked by wall between current and neighbor
-    if (!isCellWithinBoard(neighbor) || isBlockedByWall(current, neighbor, walls)) {
+    if (!isCellWithinBoard(neighbor) || isBlockedByWallIndexed(current, neighbor, wallIndex)) {
       continue;
     }
 
@@ -90,7 +91,7 @@ export function getLegalMovesFrom(
         col: neighbor.col + dir.dc,
       };
 
-      const isStraightBlockedByWall = isBlockedByWall(neighbor, straightBehind, walls);
+      const isStraightBlockedByWall = isBlockedByWallIndexed(neighbor, straightBehind, wallIndex);
       const isStraightOutOfBounds = !isCellWithinBoard(straightBehind);
       const isStraightOccupied =
         !isStraightOutOfBounds && getPlayerAt(straightBehind, state.players) !== undefined;
@@ -112,7 +113,7 @@ export function getLegalMovesFrom(
 
           if (
             isCellWithinBoard(diagonalCell) &&
-            !isBlockedByWall(neighbor, diagonalCell, walls) &&
+            !isBlockedByWallIndexed(neighbor, diagonalCell, wallIndex) &&
             !getPlayerAt(diagonalCell, state.players)
           ) {
             legalMoves.push(diagonalCell);

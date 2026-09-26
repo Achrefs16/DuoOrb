@@ -1,6 +1,6 @@
 import { WALL_GRID_SIZE } from './constants.js';
-import { doesWallConflict, isWallWithinBoard } from './geometry.js';
-import { hasPathToGoal } from './pathfinding.js';
+import { buildWallIndex, doesWallConflict, isWallWithinBoard } from './geometry.js';
+import { hasPathToGoalWithIndex } from './pathfinding.js';
 import { GameError, GameState, WallCoord } from './types.js';
 
 /**
@@ -38,11 +38,21 @@ export function validateWallPlacement(
   // 4. Temporarily place the wall and test BFS path preservation for every
   // still-active player. Finished players are ghosts: they keep their
   // earned place no matter how the board evolves, so they never veto walls.
-  const hypotheticalWalls: WallCoord[] = [...state.walls, wall];
+  //
+  // The wall index is built ONCE and shared by every player's search. The
+  // board calls this on every wall-slot crossing while a wall is being dragged,
+  // and rebuilding the index per player (and scanning the wall array per
+  // neighbour) is what made dragging sluggish on a phone.
+  const hypotheticalIndex = buildWallIndex([...state.walls, wall]);
 
   for (const p of state.players) {
     if (p.status !== 'ACTIVE') continue;
-    const hasPath = hasPathToGoal(p.position, p.goalDirection, hypotheticalWalls, state.mode);
+    const hasPath = hasPathToGoalWithIndex(
+      p.position,
+      p.goalDirection,
+      hypotheticalIndex,
+      state.mode
+    );
     if (!hasPath) {
       return {
         code: 'WALL_BLOCKS_ALL_PATHS',
