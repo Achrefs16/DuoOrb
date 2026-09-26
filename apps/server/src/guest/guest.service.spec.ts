@@ -68,11 +68,16 @@ function fakePrisma() {
 
 function build(secret = 'x'.repeat(48)) {
   const { prisma, rows } = fakePrisma();
-  const authService = { getOrCreateUser: async ({ sub }: any) => ({
-    id: sub,
-    username: `player_${sub.slice(2, 8)}`,
-    displayName: 'SwiftOrb42',
-  }) } as unknown as AuthService;
+  // Mirrors the real getOrCreateUser behaviour: a supplied full_name wins,
+  // and with no name it falls back to the generated username.
+  const authService = {
+    getOrCreateUser: async (claims: any) => ({
+      id: claims.sub,
+      username: `player_${claims.sub.slice(2, 8)}`,
+      displayName:
+        claims.user_metadata?.full_name ?? `player_${claims.sub.slice(2, 8)}`,
+    }),
+  } as unknown as AuthService;
 
   process.env.GUEST_TOKEN_SECRET = secret;
   const tokens = new GuestTokenService();
@@ -96,8 +101,31 @@ describe('GuestService', () => {
     expect(g.accessToken.split('.')).toHaveLength(3);
     expect(g.refreshToken.length).toBeGreaterThanOrEqual(40);
     expect(g.username).toBe(`player_${g.userId.slice(2, 8)}`);
-    expect(g.displayName).toBe('SwiftOrb42');
     expect(g.accessExpiresAt).toBeGreaterThan(Date.now());
+  });
+
+  /**
+   * Regression: getOrCreateUser falls back to the *username* when no name is
+   * supplied, so a guest was created as "player_u_3any" and appeared in every
+   * match under their generated handle instead of a real name.
+   */
+  it('gives a guest a friendly display name, not the generated username', async () => {
+    const { service, meta } = build();
+    const g = await service.createGuest(meta);
+
+    expect(g.displayName).not.toBe(g.username);
+    expect(g.displayName).not.toContain('player_');
+    // Word + Word + two digits, e.g. SwiftOrb42.
+    expect(g.displayName).toMatch(/^[A-Z][a-z]+[A-Z][a-z]+\d{2}$/);
+  });
+
+  it('produces different display names for different guests', async () => {
+    const { service, meta } = build();
+    const names = new Set<string>();
+    for (let i = 0; i < 12; i++) {
+      names.add((await service.createGuest(meta)).displayName);
+    }
+    expect(names.size).toBeGreaterThan(1);
   });
 
   it('never stores the raw refresh token', async () => {

@@ -87,7 +87,14 @@ export class GuestService implements OnModuleInit, OnModuleDestroy {
     const userId = await this.reserveGuestId();
     // Reuse the account provisioning path so a guest ends up with an identical
     // set of rows: User + Profile (with a generated handle) + Rating.
-    const user = await this.authService.getOrCreateUser({ sub: userId });
+    //
+    // The display name must be passed explicitly. getOrCreateUser falls back
+    // to the *username* when no name is supplied, which made every guest
+    // appear in matches as "player_u_xxxxxxxx" instead of a real name.
+    const user = await this.authService.getOrCreateUser({
+      sub: userId,
+      user_metadata: { full_name: generateGuestDisplayName() },
+    });
 
     const issued = this.signCredentials(userId);
     await this.prisma.guestSession.create({
@@ -157,7 +164,12 @@ export class GuestService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    const user = await this.authService.getOrCreateUser({ sub: session.userId });
+    // A name is supplied as a fallback only: for an existing guest the
+    // profile is found and kept, so this never overwrites a chosen name.
+    const user = await this.authService.getOrCreateUser({
+      sub: session.userId,
+      user_metadata: { full_name: generateGuestDisplayName() },
+    });
     return {
       ...issued,
       userId: session.userId,
