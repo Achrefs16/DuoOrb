@@ -1107,19 +1107,19 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * writes it, so the gateway owns it: online on connect, offline on
    * disconnect, playing while seated in a live game.
    */
+  /**
+   * Presence flip for a VERIFIED identity only. Callers must gate on
+   * verified first (see handleConnection): presence must never manufacture
+   * identity rows, so this is update-only and logs failures instead of
+   * swallowing them.
+   */
   private setPresence(userId: string, patch: { isOnline?: boolean; isPlaying?: boolean }): void {
     if (!this.prisma.isConnected) return;
     this.prisma.profile
-      .upsert({
-        where: { userId },
-        create: {
-          userId,
-          username: `player_${userId.substring(0, 6)}`,
-          displayName: 'Player',
-        },
-        update: patch,
-      })
-      .catch(() => {});
+      .updateMany({ where: { userId }, data: patch })
+      .catch((err) => {
+        this.logger.warn(`Presence update failed for ${userId}: ${err?.message}`);
+      });
   }
 
   /** Marks every seated player of a game as (not) playing. Ending a game
