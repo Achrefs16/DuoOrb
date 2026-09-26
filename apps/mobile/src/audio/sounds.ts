@@ -53,6 +53,15 @@ export function areSoundsMuted(): boolean {
   return muted;
 }
 
+/**
+ * Warm up the audio engine (native module, WAV decode, players) while the
+ * game screen is opening — never inside the first move's commit, where the
+ * cold start used to cause a visible hitch.
+ */
+export function preloadSounds(): void {
+  void ensureLoaded();
+}
+
 export async function playMoveSound(): Promise<void> {
   await ensureLoaded();
   await play(moveSound);

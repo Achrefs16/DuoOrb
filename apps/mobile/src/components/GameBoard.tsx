@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   LayoutChangeEvent,
@@ -197,12 +197,14 @@ function useOrbAnimations(state: GameState, cell: number, gap: number) {
         Animated.timing(a.x, {
           toValue: cellLeft(p.position.col),
           duration: THEME.animation.ballMoveMs,
-          useNativeDriver: false,
+          // Translate is native-drivable: the glide runs on the UI thread
+          // instead of re-rendering the board from JS every frame.
+          useNativeDriver: true,
         }),
         Animated.timing(a.y, {
           toValue: cellTop(p.position.row),
           duration: THEME.animation.ballMoveMs,
-          useNativeDriver: false,
+          useNativeDriver: true,
         })
       );
     }
@@ -215,7 +217,7 @@ function useOrbAnimations(state: GameState, cell: number, gap: number) {
   return animsRef.current;
 }
 
-export const GameBoard: React.FC<GameBoardProps> = ({
+const GameBoardView: React.FC<GameBoardProps> = ({
   state,
   legalMoves,
   previewWall = null,
@@ -752,6 +754,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     </View>
   );
 };
+
+/**
+ * Memoized: the board only re-renders when its actual inputs change.
+ * Clock ticks, modal state and other GameScreen state skip the ~300-view
+ * subtree entirely as long as every prop below stays referentially stable
+ * (GameScreen memoizes the derived arrays/objects it passes).
+ */
+export const GameBoard = memo(GameBoardView);
 
 function hexA(hex: string, alpha: number): string {
   const clean = hex.replace('#', '');

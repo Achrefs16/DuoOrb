@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import {
   AIDifficulty,
@@ -25,7 +25,7 @@ import { PlayerStrip } from '../components/GameHud';
 import { GameOverModal } from '../components/GameOverModal';
 import { SideChoice } from './MatchSetupScreen';
 import { WallTray } from '../components/WallTray';
-import { playGoalSound, playMoveSound, playWallSound } from '../audio/sounds';
+import { playGoalSound, playMoveSound, playWallSound, preloadSounds } from '../audio/sounds';
 import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
 import { THEME, playerColor } from '../theme';
 import { DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
@@ -80,6 +80,11 @@ function playerNamesFor(
   }
   return Array.from({ length: n }, (_, i) => `P${i + 1}`);
 }
+
+/** Shared frozen empty list: keeps memoized-board props referentially stable. */
+const EMPTY_CELL_LIST: CellCoord[] = [];
+const EMPTY_PREMOVE_MARKS: { to: CellCoord; color: string }[] = [];
+const EMPTY_QUEUED_WALLS: { qi: number; wall: WallCoord; color: string }[] = [];
 
 /** Thinking beat per difficulty — long enough to queue a premove. */
 function thinkMsFor(difficulty: AIDifficulty, testThink: boolean): number {
@@ -143,6 +148,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const online = useOnlineGame({
     gameId: onlineGameId || '',
   });
+  // Stable pieces of the (fresh-every-render) online hook object, so
+  // memoized callbacks below don't churn with every parent render.
+  const onlineConnStatus = online.connStatus;
+  const onlineSendAction = online.sendAction;
   const [offlineSnapshot, setOfflineSnapshot] = useState<Awaited<ReturnType<typeof loadOnlineGameSnapshot>>>(null);
 
   // Your side in classic AI games, resolved once per mount (random = 50/50
@@ -271,13 +280,20 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // match and clock. Toggleable from Settings — when off, no bonus at all.
   // The credit flashes on the mover's clock so the jump is legible.
   const [lastBonus, setLastBonus] = useState<{ playerId: string; amount: number } | null>(null);
-  const creditIncrement = (moverId: string, action: GameAction) => {
-    const inc = effectiveIncrement(timeControl, incrementEnabled);
-    if (inc <= 0) return;
-    if (action.type !== 'MOVE' && action.type !== 'PLACE_WALL') return;
-    setTimers((prev) => ({ ...prev, [moverId]: (prev[moverId] ?? 0) + inc }));
-    setLastBonus({ playerId: moverId, amount: inc });
-  };
+  // Manual deps are intentional: the callback must refresh when the clock
+  // config changes (React Compiler is not enabled in this project, and its
+  // inferred deps would freeze stale timeControl/incrementEnabled values).
+  const creditIncrement = useCallback(
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization
+    (moverId: string, action: GameAction) => {
+      const inc = effectiveIncrement(timeControl, incrementEnabled);
+      if (inc <= 0) return;
+      if (action.type !== 'MOVE' && action.type !== 'PLACE_WALL') return;
+      setTimers((prev) => ({ ...prev, [moverId]: (prev[moverId] ?? 0) + inc }));
+      setLastBonus({ playerId: moverId, amount: inc });
+    },
+    [timeControl, incrementEnabled]
+  );
 
   useEffect(() => {
     if (!lastBonus) return;
@@ -306,6 +322,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   // Action sounds — fire for both player and AI actions.
   // A move onto the goal line gets its own distinct chime.
+  // Audio is pre-warmed on mount so the first move doesn't pay the
+  // native-module + WAV-decode cold start inside its tap commit.
+  useEffect(() => {
+    preloadSounds();
+  }, []);
   const historyLenRef = useRef(state.history.length);
   useEffect(() => {
     const len = state.history.length;
@@ -409,39 +430,66 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // Queueing UI stays visible while a queue exists (even with nothing
   // explicitly selected), so dots never vanish mid-plan. Projected board:
   // dots anchor at your orb, then advance from each queued step's target.
+  // Memoized so premove taps and clock ticks don't rebuild these arrays
+  // (and therefore the memoized board) when nothing relevant changed.
   const showSel =
     canPremove && myOrb && (premoveSel === myOrb.id || premoveQueue.length > 0);
-  const selFrom = (() => {
+  const selFrom = useMemo(() => {
     for (let i = premoveQueue.length - 1; i >= 0; i--) {
       const s = premoveQueue[i];
       if (s && s.kind === 'move') return s.to;
     }
     return myOrb?.position ?? null;
-  })();
-  const selHints =
-    showSel && myOrb && selFrom ? getLegalMovesFrom(state, myOrb.id, selFrom) : [];
+  }, [premoveQueue, myOrb]);
+  const selHints = useMemo(
+    () => (showSel && myOrb && selFrom ? getLegalMovesFrom(state, myOrb.id, selFrom) : EMPTY_CELL_LIST),
+    [showSel, myOrb, selFrom, state]
+  );
   // Queued targets stay tappable (to extend or cancel) even with dots hidden.
-  const queuedTos = premoveQueue.flatMap((s) => (s.kind === 'move' ? [s.to] : []));
-  const legalMoves = showSel
-    ? [...selHints, ...queuedTos]
-    : humanTurn && currentPlayer
-    ? getLegalMoves(state, currentPlayer.id)
-    : [];
+  const queuedTos = useMemo(
+    () => premoveQueue.flatMap((s) => (s.kind === 'move' ? [s.to] : [])),
+    [premoveQueue]
+  );
+  const legalMoves = useMemo(
+    () =>
+      showSel
+        ? [...selHints, ...queuedTos]
+        : humanTurn && currentPlayer
+        ? getLegalMoves(state, currentPlayer.id)
+        : EMPTY_CELL_LIST,
+    [showSel, selHints, queuedTos, humanTurn, currentPlayer, state]
+  );
   // Dots show for the first pick only; afterwards the queue runs blind on
   // tints (own turn always keeps its normal dots).
   // No possibility highlights while queueing — only tapped cells tint.
   const hideDots = canPremove;
   const hintColor = showSel ? myColor : currentBallColor;
-  const premoveMarks = (() => {
-    const marks: Array<{ to: CellCoord; color: string }> = [];
+  const premoveMarks = useMemo(() => {
+    const marks: { to: CellCoord; color: string }[] = [];
     for (const s of premoveQueue) {
       if (s.kind === 'move') marks.push({ to: s.to, color: myColor });
     }
     return marks;
-  })();
-  const queuedWallEntries = premoveQueue.flatMap((s, qi) =>
-    s.kind === 'wall' ? [{ qi, wall: s.wall, color: myColor }] : []
+  }, [premoveQueue, myColor]);
+  const queuedWallEntries = useMemo(
+    () =>
+      premoveQueue.flatMap((s, qi) =>
+        s.kind === 'wall' ? [{ qi, wall: s.wall, color: myColor }] : []
+      ),
+    [premoveQueue, myColor]
   );
+  // Stable selected-cell object: without this memo the board prop identity
+  // changes every render and the memoized board can never skip.
+  const selectedCellMemo = useMemo(
+    () =>
+      showSel && myOrb
+        ? { ...myOrb.position }
+        : currentPlayer?.position ?? null,
+    [showSel, myOrb, currentPlayer]
+  );
+  const handleMetricsChange = useCallback((bs: number) => {
+    boardSizeRef.current = bs;
+  }, []);
   // Tray shows your pieces while queueing on the AI's turn, else the side to move.
   const trayPlayer = humanTurn
     ? currentPlayer
@@ -452,10 +500,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     : currentPlayer;
   const trayColor = playerColor(trayPlayer?.index ?? 0, trayPlayer?.color);
 
-  const handleQueuedWallPress = (qi: number) => {
-    if (!canPremove) return;
-    setPremoveQueue((prev) => prev.filter((_, i) => i !== qi));
-  };
+  const handleQueuedWallPress = useCallback(
+    (qi: number) => {
+      if (!canPremove) return;
+      setPremoveQueue((prev) => prev.filter((_, i) => i !== qi));
+    },
+    [canPremove]
+  );
 
   /**
    * Revalidate the queue against the live board the moment anything changes
@@ -580,7 +631,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     } else {
       setPremoveQueue([]);
     }
-  }, [humanTurn, state, premoveQueue, currentPlayer, type, online]);
+  }, [humanTurn, state, premoveQueue, currentPlayer, type, online, creditIncrement]);
 
   // Game over persistence
   // Rematch toasts auto-dismiss after 4s; the offer itself stays pending on
@@ -669,7 +720,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     return { x: bx, y: by, boardSize };
   };
 
-  const handleCellPress = (target: CellCoord) => {
+  // Stable identity so the memoized board skips renders where the tap
+  // target handling didn't change (e.g. clock ticks).
+  const handleCellPress = useCallback(
+    (target: CellCoord) => {
     if (state.status !== 'IN_PROGRESS') return;
     // Premove queueing on the AI's turn: own orb selects, a dot appends a
     // step (chained from the last one when extended), tapping a ring drops
@@ -720,7 +774,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (!humanTurn || !currentPlayer) return;
     const action = { type: 'MOVE' as const, to: target };
     if (type === 'online') {
-      if (online.connStatus !== 'connected') {
+      if (onlineConnStatus !== 'connected') {
         setPremoveQueue((prev) =>
           prev.length >= 5 ? prev : [...prev, { kind: 'move' as const, from: { ...currentPlayer.position }, to: target }]
         );
@@ -729,7 +783,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       // Server-authoritative online play: send only. The local state must
       // not apply the move optimistically, or a goal move can look like the
       // mover already occupies/finished the goal before the server echo.
-      online.sendAction(action);
+      onlineSendAction(action);
       return;
     }
     const result = applyAction(state, action);
@@ -737,7 +791,21 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       setState(result.state);
       creditIncrement(currentPlayer.id, action);
     }
-  };
+  }, [
+    state,
+    canPremove,
+    myOrb,
+    premoveQueue,
+    showSel,
+    selFrom,
+    selHints,
+    humanTurn,
+    currentPlayer,
+    type,
+    onlineConnStatus,
+    onlineSendAction,
+    creditIncrement,
+  ]);
 
   // --- Wall inventory drag & drop (fixed orientation per piece) ---
   // On your turn the drop places immediately; on the AI's turn (extended
@@ -1118,7 +1186,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           style={styles.boardAnchor}
         >
           <Animated.View
-            key={`board-perspective-${activeHumanIdx}-${rotationTargetDeg}`}
+            key={`board-perspective-${activeHumanIdx}`}
             collapsable={false}
             style={{
               transform: [
@@ -1136,29 +1204,21 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           >
           <GameBoard
             state={displayState}
-            legalMoves={viewingStep !== null ? [] : legalMoves}
+            legalMoves={viewingStep !== null ? EMPTY_CELL_LIST : legalMoves}
             previewWall={null}
-            selectedCell={
-              viewingStep !== null
-                ? null
-                : showSel && myOrb
-                ? { ...myOrb.position }
-                : currentPlayer?.position ?? null
-            }
+            selectedCell={viewingStep !== null ? null : selectedCellMemo}
             interactive={(humanTurn || canPremove) && !wallDrag && !flipping && viewingStep === null}
             externalDrag={externalDrag}
             moveHintColor={wallDrag ? trayColor : hintColor}
-            premoveMarks={viewingStep !== null ? [] : premoveMarks}
+            premoveMarks={viewingStep !== null ? EMPTY_PREMOVE_MARKS : premoveMarks}
             hideDots={hideDots}
-            queuedWalls={viewingStep !== null ? [] : queuedWallEntries}
+            queuedWalls={viewingStep !== null ? EMPTY_QUEUED_WALLS : queuedWallEntries}
             onQueuedWallPress={canPremove && viewingStep === null ? handleQueuedWallPress : undefined}
             size={measuredBoardSize}
             flipAnim={type === 'local' && mode === '2p' && autoFlip ? flipAnim : null}
             rotationDeg={type === 'local' && mode === '2p' && autoFlip ? 0 : rotationTargetDeg}
             onCellPress={viewingStep !== null ? undefined : handleCellPress}
-            onMetricsChange={(bs) => {
-              boardSizeRef.current = bs;
-            }}
+            onMetricsChange={handleMetricsChange}
           />
           </Animated.View>
         </View>
