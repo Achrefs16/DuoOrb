@@ -114,16 +114,16 @@ function emitIdentityChanged(): void {
 let cachedUser: UserIdentity | null = null;
 
 /**
- * Client-side placeholder prefix. Deliberately NOT `u_` (the server's guest
- * namespace): a locally minted id must never be confusable with a
- * server-provisioned identity — the server ignores it everywhere and the
- * /api/link validator rejects it.
+ * There is deliberately no client-side id generator any more.
+ *
+ * The device used to mint its own `local_<random>` identity and cache it,
+ * because the sync storage shim reports "no stored id" on native. That made
+ * the app believe in an identity the server had never issued, which cost the
+ * player the room host crown (granted by id equality) and their game:join
+ * (rejected as unseated), and made every name fall back to `player_<id>`. The
+ * server allocates guest identities; the client only ever holds what it is
+ * given.
  */
-const LOCAL_ID_PREFIX = 'local_';
-
-function generateRandomId(): string {
-  return LOCAL_ID_PREFIX + Math.random().toString(36).substring(2, 10);
-}
 
 function generateRandomName(): string {
   const adjectives = ['Swift', 'Bold', 'Silent', 'Cosmic', 'Solar', 'Lunar', 'Echo', 'Neon', 'Apex', 'Shadow'];
@@ -183,15 +183,22 @@ export async function hydrateIdentity(): Promise<void> {
 export function getCurrentUser(): UserIdentity {
   if (cachedUser) return cachedUser;
 
-  let userId = storage.getItem(STORAGE_KEY_USER_ID);
+  // Native has no window.localStorage, so the sync shim always reports "no
+  // stored id" here. The previous response was to invent a random one and
+  // cache it, which produced a device that believed in an identity the server
+  // had never issued: it could not become room host (the host crown is granted
+  // by id equality), its game:join was rejected as unseated, and every name
+  // fell back to `player_<id>`. It also explained why the fault moved between
+  // phones — it depended purely on whether that launch's guest bootstrap
+  // succeeded before this ran.
+  //
+  // An empty id is the honest answer: it means "no identity yet". The server
+  // assigns one via createGuestSession -> setGuestCredentials, which replaces
+  // this and re-renders consumers. Nothing may treat it as a real id.
+  let userId = storage.getItem(STORAGE_KEY_USER_ID) ?? '';
   let displayName = storage.getItem(STORAGE_KEY_DISPLAY_NAME);
   const customToken = storage.getItem(STORAGE_KEY_TOKEN);
   const refreshToken = storage.getItem(STORAGE_KEY_REFRESH) ?? undefined;
-
-  if (!userId) {
-    userId = generateRandomId();
-    storage.setItem(STORAGE_KEY_USER_ID, userId);
-  }
 
   if (!displayName) {
     displayName = generateRandomName();
@@ -341,14 +348,16 @@ export function adoptAccountIdentity(accountId: string): string | null {
  */
 export function resetToNewGuest(): UserIdentity {
   cachedUser = null;
-  const userId = generateRandomId();
+  // No fabricated id: the server allocates the next guest identity. Writing a
+  // random one here left the device asserting an identity that did not exist,
+  // which is what cost the player the room host crown and the match join.
   const displayName = generateRandomName();
-  storage.setItem(STORAGE_KEY_USER_ID, userId);
   storage.setItem(STORAGE_KEY_DISPLAY_NAME, displayName);
   // The signed-in account's handle must never leak onto the fresh guest.
   storage.removeItem(STORAGE_KEY_USERNAME);
   storage.removeItem(STORAGE_KEY_TOKEN);
   storage.removeItem(STORAGE_KEY_REFRESH);
+  storage.removeItem(STORAGE_KEY_USER_ID);
   const fresh = getCurrentUser();
   emitIdentityChanged();
   return fresh;

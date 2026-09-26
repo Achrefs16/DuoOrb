@@ -143,7 +143,16 @@ export class HistoryService {
       players: game.players.map((p) => ({
         userId: p.userId,
         playerIndex: p.playerIndex,
-        username: p.user.profile?.username ?? `player_${p.userId.slice(0, 6)}`,        displayName: p.user.profile?.displayName ?? 'Player',
+        // username is the canonical display name (see handleConnection in the
+        // gateway). This is the second of two name-resolution sites in this
+        // file — the other is the `opponent` block in getUserHistory — and it
+        // was missed the first time, so a match's player list and its summary
+        // could disagree.
+        username: p.user.profile?.username ?? `player_${p.userId.slice(0, 6)}`,
+        displayName:
+          p.user.profile?.username ??
+          p.user.profile?.displayName ??
+          `player_${p.userId.slice(0, 6)}`,
         ratingBefore: p.ratingBefore,
         ratingAfter: p.ratingAfter,
         isWinner: p.isWinner,
