@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Animated, BackHandler, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import {
   AIDifficulty,
   AI_PROFILES,
@@ -943,7 +943,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const canResign =
     !isCompleted && type !== 'local' && !mySeatFinished && !myAiFinished;
 
-  const leaveFinishedAndHome = () => {
+  // Manual deps are intentional (React Compiler is not enabled; see the
+  // note on creditIncrement): back routing must see fresh props.
+  const leaveFinishedAndHome = useCallback(
+    () => {
     if (type === 'online' && onlineGameId) {
       try {
         socketManager.getSocket().emit('game:leave', { gameId: onlineGameId });
@@ -952,9 +955,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       }
     }
     onHome();
-  };
+  }, [type, onlineGameId, onHome]);
 
-  const handleBackPress = () => {
+  const handleBackPress = useCallback(
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization
+    () => {
     if (isCompleted || type === 'local' || myAiFinished) {
       onHome();
       return;
@@ -964,7 +969,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       return;
     }
     setResignOpen(true);
-  };
+  }, [isCompleted, type, myAiFinished, onHome, mySeatFinished, leaveFinishedAndHome]);
 
   // ---- In-match replay (finished games only) ----
   // Reconstructs the opening position from the mode + final names, then
@@ -1000,10 +1005,73 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setReplaying(false);
     setViewingStep(totalSteps);
   };
-  const exitReplay = () => {
+  const exitReplay = useCallback(
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization
+    () => {
     setReplaying(false);
     setViewingStep(null);
-  };
+  }, []);
+
+  // Hardware back mirrors the header back button: dismiss the topmost
+  // overlay first (result modal, resign confirm, place modal, incoming
+  // rematch toast, step-through replay), then follow the same
+  // leave/resign routing. Always handled here while a match screen is
+  // mounted, so App's generic pop never fires underneath a game.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (showGameOver) {
+        setShowGameOver(false);
+        return true;
+      }
+      if (resignOpen) {
+        setResignOpen(false);
+        return true;
+      }
+      if (finishModal) {
+        setFinishModal(null);
+        return true;
+      }
+      if (
+        type === 'online' &&
+        isCompleted &&
+        online.rematchOffered &&
+        !rematchIncomingDismissed
+      ) {
+        setRematchIncomingDismissed(true);
+        return true;
+      }
+      if (viewingStep !== null) {
+        exitReplay();
+        return true;
+      }
+      if (
+        type === 'online' &&
+        (!onlinePlayerId || (!online.gameState && !offlineSnapshot?.myPlayerId))
+      ) {
+        // Still connecting: cancel the join, like the skeleton's Cancel.
+        onHome();
+        return true;
+      }
+      handleBackPress();
+      return true;
+    });
+    return () => sub.remove();
+  }, [
+    showGameOver,
+    resignOpen,
+    finishModal,
+    type,
+    isCompleted,
+    online.rematchOffered,
+    rematchIncomingDismissed,
+    viewingStep,
+    onlinePlayerId,
+    online.gameState,
+    offlineSnapshot,
+    onHome,
+    handleBackPress,
+    exitReplay,
+  ]);
 
   // Auto-advance playback; at the end, stop on the live final board.
   useEffect(() => {

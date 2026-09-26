@@ -137,6 +137,19 @@ export default function App() {
     setSubScreen(sub);
   };
 
+  /**
+   * Dismiss the current screen WITHOUT recording a return path to it.
+   * Close/cancel/leave actions must use this, never navigate(): pushing
+   * the screen you just left is what built the Home ⇄ dead-match circle.
+   */
+  const dismissTo = (tab: MainTab, sub: SubScreen) => {
+    const stack = stackRef.current;
+    stackRef.current = stack.length > 0 ? stack.slice(0, -1) : stack;
+    setExitAsk(false);
+    setCurrentTab(tab);
+    setSubScreen(sub);
+  };
+
   /** Back navigation: restores the previous location, or asks to exit. */
   const goBack = useCallback(() => {
     const stack = stackRef.current;
@@ -257,6 +270,8 @@ export default function App() {
 
   // Close Match: return to the surface that match came from —
   // private room lobby, custom online setup page, or the home screen.
+  // Dismissals pop (never push): the closed match must not stay in
+  // history, or Back walks straight back into the dead game.
   const handleCloseMatch = () => {
     if (gameConfig.type === 'online') {
       const clock = gameConfig.timeControl ?? DEFAULT_TIME_CONTROL;
@@ -269,23 +284,29 @@ export default function App() {
           autoRoom: null,
           initialRoom: gameConfig.room,
         });
-        navigate(currentTab, 'ONLINE');
+        dismissTo(currentTab, 'ONLINE');
         return;
       }
       if (gameConfig.onlineSource === 'custom') {
         // Custom Online Match closes back to its configuration page.
-        handleOpenSetup('online');
+        setSetupKind('online');
+        setChallengeTarget(null);
+        dismissTo(currentTab, 'SETUP');
         return;
       }
       // Quick Match closes to the home page.
-      navigate('PLAY', null);
+      dismissTo('PLAY', null);
       return;
     }
-    handleOpenSetup(gameConfig.type);
+    setSetupKind(gameConfig.type);
+    setChallengeTarget(null);
+    dismissTo(currentTab, 'SETUP');
   };
 
   // New Game from the result modal: re-queue the same online match type
   // (quick or custom) with a new opponent; AI/local return to setup.
+  // The finished game is dismissed, not stacked: Back must not return
+  // to a dead board.
   const handleNewGameAfter = () => {
     if (gameConfig.type === 'online') {
       const clock = gameConfig.timeControl ?? DEFAULT_TIME_CONTROL;
@@ -300,16 +321,54 @@ export default function App() {
         autoRoom: null,
         initialRoom: null,
       });
-      navigate(currentTab, 'ONLINE');
+      dismissTo(currentTab, 'ONLINE');
     } else {
-      handleOpenSetup(gameConfig.type);
+      setSetupKind(gameConfig.type);
+      setChallengeTarget(null);
+      dismissTo(currentTab, 'SETUP');
     }
+  };
+
+  // Rematch accepted (online): the finished game is REPLACED by the new
+  // one — stacking it would send Back into the dead match.
+  const handleFreshOnlineGame = (newGameId: string) => {
+    const clock = gameConfig.timeControl ?? DEFAULT_TIME_CONTROL;
+    setGameConfig({
+      mode: gameConfig.mode,
+      type: 'online',
+      onlineGameId: newGameId,
+      onlineSource: gameConfig.onlineSource,
+      wallsEach: gameConfig.wallsEach,
+      timeControl: clock,
+    });
+    setOnlineEntry({
+      clock,
+      view: 'quick',
+      inviteName: null,
+      autoMatch: null,
+      autoRoom: null,
+      initialRoom: null,
+    });
+    dismissTo(currentTab, 'GAME');
   };
 
   const handleOpenPlayerProfile = (player: { userId: string; username: string }) => {
     setSelectedPlayer(player);
     navigate(currentTab, 'PLAYER_PROFILE');
   };
+
+  /**
+   * One-shot lobby triggers (autoMatch/autoRoom) are consumed on arrival:
+   * without this, popping back to the lobby remounts it with the stale
+   * trigger and instantly re-queues / re-creates. Room context stays.
+   */
+  const consumeOnlineEntryTransients = useCallback(() => {
+    setOnlineEntry((prev) =>
+      prev.autoMatch || prev.autoRoom
+        ? { ...prev, autoMatch: null, autoRoom: null }
+        : prev
+    );
+  }, []);
 
   const handleChallengePlayer = (player: { id: string; username: string }) => {
     handleOpenOnline(DEFAULT_TIME_CONTROL, 'rooms', player.username);
@@ -420,16 +479,7 @@ export default function App() {
               testThink={settings.testThink}
               onHome={handleCloseMatch}
               onNewGame={handleNewGameAfter}
-              onRematchAccepted={(newGameId) =>
-                handleStartGame({
-                  mode: gameConfig.mode,
-                  type: 'online',
-                  onlineGameId: newGameId,
-                  onlineSource: gameConfig.onlineSource,
-                  wallsEach: gameConfig.wallsEach,
-                  timeControl: gameConfig.timeControl,
-                })
-              }
+              onRematchAccepted={handleFreshOnlineGame}
               onAnalyze={handleOpenReview}
             />
           )}
@@ -448,7 +498,7 @@ export default function App() {
                     wallsEach: sel.wallsEach,
                   });
                   setChallengeTarget(null);
-                  navigate('FRIENDS', null);
+                  dismissTo('FRIENDS', null);
                   return;
                 }
                 if (sel.vsType === 'challenge') {
@@ -508,7 +558,7 @@ export default function App() {
 
           {subScreen === 'ONLINE' && (
             <OnlineScreen
-              key={`${onlineEntry.clock.id}-${onlineEntry.view}-${onlineEntry.inviteName ?? ''}-${onlineEntry.autoMatch?.mode ?? ''}-${onlineEntry.autoMatch?.wallsEach ?? ''}-${onlineEntry.autoRoom?.mode ?? ''}-${onlineEntry.autoRoom?.wallsEach ?? ''}`}
+              key={`${onlineEntry.clock.id}-${onlineEntry.view}-${onlineEntry.inviteName ?? ''}`}
               initialClock={onlineEntry.clock}
               initialView={onlineEntry.view}
               inviteName={onlineEntry.inviteName}
@@ -516,6 +566,7 @@ export default function App() {
               autoRoom={onlineEntry.autoRoom}
               initialRoom={onlineEntry.initialRoom}
               onBack={goBack}
+              onConsumeAutoEntry={consumeOnlineEntryTransients}
               onStartOnlineGame={(gameId, mode, clock, source, room) => {
                 handleStartGame({
                   mode,

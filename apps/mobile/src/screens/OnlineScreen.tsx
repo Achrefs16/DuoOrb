@@ -34,6 +34,11 @@ interface OnlineScreenProps {
   /** Custom Online Match config: create this room immediately on entry. */
   autoRoom?: { mode: GameMode; clock: TimeControl; wallsEach: number } | null;
   initialRoom?: RoomDto | null;
+  /**
+   * Called after a one-shot entry trigger (autoMatch/autoRoom) fires, so
+   * the parent clears it: a later return to this lobby must not replay it.
+   */
+  onConsumeAutoEntry?: () => void;
   onStartOnlineGame: (
     gameId: string,
     mode: GameMode,
@@ -52,6 +57,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   autoRoom = null,
   initialRoom = null,
   onStartOnlineGame,
+  onConsumeAutoEntry,
 }) => {
   const [view] = useState<OnlineMode>(initialView);
   const [clock, setClock] = useState<TimeControl>(initialClock);
@@ -101,7 +107,16 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
     cancelMatch,
   } = useMatchmaking({
     onMatched: (gameId) => {
-      onStartOnlineGame(gameId, matchConfig.mode, matchConfig.clock, autoMatch ? 'custom' : 'quick');
+      // The search spec is snapshotted when the search STARTS: entry props
+      // are consumed (cleared) right after firing, so reading matchConfig
+      // here would hand the next game the lobby defaults.
+      const spec = searchSpec;
+      onStartOnlineGame(
+        gameId,
+        spec?.mode ?? matchConfig.mode,
+        spec?.clock ?? matchConfig.clock,
+        spec ? (spec.custom ? 'custom' : 'quick') : autoMatch ? 'custom' : 'quick'
+      );
     },
   });
 
@@ -167,12 +182,27 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
   // Automatically start search if entering quick mode
   const autoStarted = useRef(false);
+  // Snapshot of the search that is actually running (see onMatched above).
+  const [searchSpec, setSearchSpec] = useState<{
+    mode: GameMode;
+    clock: TimeControl;
+    wallsEach: number;
+    custom: boolean;
+  } | null>(null);
   useEffect(() => {
     if (view === 'quick' && !autoStarted.current && mmState === 'idle') {
       autoStarted.current = true;
+      setSearchSpec({
+        mode: matchConfig.mode,
+        clock: matchConfig.clock,
+        wallsEach: matchConfig.wallsEach,
+        custom: !!autoMatch,
+      });
       findMatch(matchConfig.mode, matchConfig.clock, matchConfig.wallsEach);
+      // One-shot entry consumed: returning here later must stay idle.
+      onConsumeAutoEntry?.();
     }
-  }, [view, mmState, findMatch, matchConfig.mode, matchConfig.clock, matchConfig.wallsEach]);
+  }, [view, mmState, findMatch, matchConfig.mode, matchConfig.clock, matchConfig.wallsEach, autoMatch, onConsumeAutoEntry]);
 
   useEffect(() => {
     return () => {
@@ -212,6 +242,8 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   useEffect(() => {
     if (!autoRoom || autoRoomHandled.current) return;
     autoRoomHandled.current = true;
+    // One-shot entry consumed: a later return must not create a duplicate.
+    onConsumeAutoEntry?.();
     void createRoom(autoRoom.mode, autoRoom.clock, autoRoom.wallsEach).then((room) => {
       if (room) {
         void copyCode(room.code, 'Room code copied — invite friends!');
@@ -418,7 +450,15 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               <TouchableOpacity
                 style={styles.retrySearchBtn}
                 activeOpacity={0.85}
-                onPress={() => findMatch(matchConfig.mode, matchConfig.clock, matchConfig.wallsEach)}
+                onPress={() => {
+                  setSearchSpec({
+                    mode: matchConfig.mode,
+                    clock: matchConfig.clock,
+                    wallsEach: matchConfig.wallsEach,
+                    custom: false,
+                  });
+                  findMatch(matchConfig.mode, matchConfig.clock, matchConfig.wallsEach);
+                }}
               >
                 <Feather name="search" size={16} color="#FFFFFF" />
                 <Text style={styles.retrySearchText}>Search Again</Text>
