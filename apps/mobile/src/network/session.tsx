@@ -35,6 +35,12 @@ WebBrowser.maybeCompleteAuthSession();
 
 const MERGE_KEY_PREFIX = '@duoorb:auth:merged-guest:';
 
+/**
+ * In-flight guest bootstrap, shared by every caller for the lifetime of the
+ * module. See ensureGuestSession for why concurrent calls are harmful.
+ */
+let guestSessionInFlight: Promise<boolean> | null = null;
+
 function readMergeRecord(guestId: string): string | null {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -147,36 +153,54 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
    * minted so the device can never wedge itself retrying the same token;
    * with nothing stored, a first identity is requested. There is no
    * locally-generated fallback — the server would reject it.
+   *
+   * SERIALIZED ON PURPOSE. The boot effect below re-runs whenever the guest
+   * id changes, and setGuestCredentials is what changes it, so two
+   * invocations could overlap. They each read the stored refresh token
+   * synchronously before either has written one, so both would see `null`
+   * and both would POST /api/guest — minting two server-side identities for
+   * one device, orphaning the first. On top of that, guest creation is rate
+   * limited, so every duplicate burns quota and the device locks itself out
+   * ("works twice, then stops"). One in-flight promise at a time is the fix.
    */
   const ensureGuestSession = useCallback(async (): Promise<boolean> => {
     if (!isSupabaseConfigured) return false;
-    const stored = getStoredRefreshToken();
-    if (stored) {
+    if (guestSessionInFlight) return guestSessionInFlight;
+
+    const run = async (): Promise<boolean> => {
+      const stored = getStoredRefreshToken();
+      if (stored) {
+        try {
+          setGuestCredentials(await refreshGuestSession(stored));
+          socketManager.syncIdentity();
+          return true;
+        } catch (err) {
+          if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+            clearGuestCredentials();
+          } else {
+            setError('Could not reach the server. Check your connection and try again.');
+            return false;
+          }
+        }
+      }
       try {
-        setGuestCredentials(await refreshGuestSession(stored));
+        setGuestCredentials(await createGuestSession());
         socketManager.syncIdentity();
         return true;
       } catch (err) {
-        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-          clearGuestCredentials();
-        } else {
-          setError('Could not reach the server. Check your connection and try again.');
-          return false;
-        }
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : 'Could not reach the server. Check your connection and try again.'
+        );
+        return false;
       }
-    }
-    try {
-      setGuestCredentials(await createGuestSession());
-      socketManager.syncIdentity();
-      return true;
-    } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : 'Could not reach the server. Check your connection and try again.'
-      );
-      return false;
-    }
+    };
+
+    guestSessionInFlight = run().finally(() => {
+      guestSessionInFlight = null;
+    });
+    return guestSessionInFlight;
   }, []);
 
   const getAccessToken = useCallback(async (): Promise<string | null> => {
@@ -226,7 +250,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } else {
-        writeMergeRecord(guest.userId, 'signed-out');
+        // Read the id live rather than from the `guest` memo: this effect no
+        // longer depends on guest.userId (it must not, or writing credentials
+        // re-triggers the effect that wrote them), so a captured value here
+        // could be stale by the time a sign-out actually happens.
+        writeMergeRecord(getCurrentUser()?.userId ?? guest.userId, 'signed-out');
       }
       await pushTokenToSocket();
     });
@@ -234,7 +262,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       listener.subscription.unsubscribe();
     };
-  }, [guest.userId, pushTokenToSocket, getAccessToken, ensureGuestSession]);
+    // Intentionally NOT depending on guest.userId. setGuestCredentials is
+    // what changes that value, so depending on it made this effect re-trigger
+    // itself after every credential write — the loop behind the duplicate
+    // guest identities. Auth changes still arrive via onAuthStateChange, which
+    // is registered once here. Re-bootstrapping the guest after an account
+    // adoption was also harmful: it would overwrite the freshly adopted
+    // account identity with the guest one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pushTokenToSocket, getAccessToken, ensureGuestSession]);
 
   const signInWithGoogle = useCallback(async () => {
     if (!isSupabaseConfigured) {

@@ -40,11 +40,19 @@ class SocketManager {
   }
 
   /**
-   * Called by the session layer whenever auth changes. Reconnects with the
-   * new token when already connected so the server re-verifies immediately.
+   * Called by the session layer whenever auth changes.
+   *
+   * A reconnect is only needed when the server has to (re)verify this socket,
+   * i.e. when we are going from no credential to a real one. Refreshing a guest
+   * access token keeps the same `sub`, so the identity the server already
+   * verified is still correct — tearing the socket down for that produced a
+   * burst of sub-second connect/disconnect cycles and burned guest-creation
+   * quota. The new token is still written to `auth` so the next natural
+   * reconnect presents it.
    */
   public updateAuthToken(token: string | null): void {
-    if (this.overrideToken === token) return;
+    const previous = this.overrideToken;
+    if (previous === token) return;
     this.overrideToken = token;
     const s = this.socket;
     if (!s) return;
@@ -52,7 +60,8 @@ class SocketManager {
     s.auth = {
       token: token ?? user.token,
     };
-    if (s.connected) {
+    const wasUnverified = !previous;
+    if (s.connected && wasUnverified) {
       this.setStatus('reconnecting');
       s.disconnect();
       s.connect();

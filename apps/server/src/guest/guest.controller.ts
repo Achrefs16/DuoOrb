@@ -6,6 +6,7 @@ import {
   Headers,
   HttpCode,
   Ip,
+  Logger,
   Post,
 } from '@nestjs/common';
 import { GuestService } from './guest.service.js';
@@ -19,6 +20,8 @@ const REFRESH_WINDOW_MS = 60 * 60 * 1000; // 30 per hour
 
 @Controller('api/guest')
 export class GuestController {
+  private readonly logger = new Logger(GuestController.name);
+
   constructor(
     private readonly guestService: GuestService,
     private readonly rateLimiter: RateLimiter
@@ -70,6 +73,13 @@ export class GuestController {
 
   private assertAllowed(ip: string, bucket: string, limit: number, windowMs: number): void {
     if (!this.rateLimiter.allow(`${bucket}:${RateLimiter.ipKey(ip)}`, limit, windowMs)) {
+      // Logged because a silent 403 here is indistinguishable from a network
+      // failure on the client, which turns a rate limit into a multi-hour
+      // debugging session. The bucket name and limit identify the throttle;
+      // the IP is logged raw because this is server-side diagnostics only.
+      this.logger.warn(
+        `Rate limited guest ${bucket} for ${ip} (limit ${limit} per ${Math.round(windowMs / 1000)}s)`
+      );
       throw new ForbiddenException('Too many attempts. Try again later.');
     }
   }
