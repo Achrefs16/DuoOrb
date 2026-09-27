@@ -7,11 +7,15 @@ import { GameState, RecordedAction } from '../src/index.js';
 import { isLegalWallPlacement } from '../src/walls.js';
 
 describe('AI Engine', () => {
-  it('evaluates starting board state as balanced (score close to 0)', () => {
+  it('evaluates starting board state as balanced (neither side favored)', () => {
     const state = createInitialState({ mode: '2p' });
     const p1Eval = evaluateState(state, 'p1', AI_PROFILES.normal);
-    // Both players start with equal distance to goal (8 steps) and 10 walls
-    expect(p1Eval).toBe(0);
+    const p2Eval = evaluateState(state, 'p2', AI_PROFILES.normal);
+    // Both players start with equal distance to goal (8 steps) and 10 walls,
+    // so the eval must be exactly symmetric. The absolute scale is arbitrary
+    // (the progress term prices distance from zero), which is why this
+    // asserts equality of the two sides rather than a literal 0.
+    expect(p1Eval).toBe(p2Eval);
   });
 
   it('generates strictly legal moves for all difficulty levels', () => {

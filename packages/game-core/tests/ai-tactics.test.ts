@@ -53,7 +53,12 @@ describe('AI: converts a won race instead of decorating it', () => {
   it('does not throw a wall at a rival seven steps away while it is winning', () => {
     const state = createInitialState({ mode: '2p' });
     state.players[1].position = { row: 4, col: 4 };
-    state.players[0].position = { row: 1, col: 1 };
+    // The rival is genuinely distant: seven steps from their line with us
+    // four out and to move. (An earlier revision placed them at (1,1) — one
+    // step from winning, a lost position either way — which contradicted
+    // this test's own name. A wall there delays the inevitable; marching
+    // here converts a real lead.)
+    state.players[0].position = { row: 7, col: 1 };
     state.currentPlayerIndex = 1;
     expect(describeAction(getBestAction(state, STEADY))).toBe('MOVE 5,4');
   });
@@ -122,7 +127,8 @@ describe('AI: does not pace around the same corridor', () => {
     // Boxed into a one-wide column with the far end closed: every legal move
     // costs distance, so the only thing that separates them is the anti-loop
     // penalty, and it has to prefer the square visited least recently.
-    const state = createInitialState({ mode: '2p' });
+    // (let: the loop advances the position by reassigning state.)
+    let state = createInitialState({ mode: '2p' });
     state.players[1].position = { row: 4, col: 4 };
     state.players[1].wallsRemaining = 0;
     state.currentPlayerIndex = 1;
@@ -397,7 +403,8 @@ describe('AI: per-move budget', () => {
   it('keeps every difficulty inside its wall-clock ceiling', () => {
     for (const difficulty of ['easy', 'normal', 'hard'] as const) {
       const profile = AI_PROFILES[difficulty];
-      const state = createInitialState({ mode: '4p', gameId: `budget-${difficulty}` });
+      // (let: the loop advances the game by reassigning state.)
+      let state = createInitialState({ mode: '4p', gameId: `budget-${difficulty}` });
       let worst = 0;
       for (let i = 0; i < 6; i++) {
         const started = Date.now();
