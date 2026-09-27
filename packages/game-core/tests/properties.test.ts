@@ -7,6 +7,9 @@ import { applyAction, createInitialState } from '../src/ruleset.js';
 import { isLegalWallPlacement } from '../src/walls.js';
 
 describe('Property-Style & Invariant Verification', () => {
+  // The AI is played at its real per-move time budgets, so this is a wall-clock
+  // bound by design rather than an accident: 3 games x 60 plies x 20-50ms. The
+  // default 5s is not enough headroom on a loaded machine.
   it('maintains all rules, paths, turn order, and replay invariants across full automated games', () => {
     // Run multiple simulated games
     const NUM_GAMES = 3;
@@ -72,5 +75,5 @@ describe('Property-Style & Invariant Verification', () => {
       expect(rebuiltFinal.status).toBe(state.status);
       expect(rebuiltFinal.history).toEqual(state.history);
     }
-  });
+  }, 120_000);
 });
