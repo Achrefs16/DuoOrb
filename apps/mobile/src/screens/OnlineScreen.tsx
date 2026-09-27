@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import {
   ActivityIndicator,
   Animated,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -67,6 +69,38 @@ const MatchJoinGate: React.FC<{ gameId: string; onSynced: () => void }> = ({
 
 export type OnlineMode = 'quick' | 'rooms';
 
+/**
+ * One seat in the matchup card: same avatar/tag/name/rating language for YOU
+ * and every opponent. 1v1 renders YOU | VS | OPP; 3-4P tables render YOU +
+ * one column per seat, so a Race/Center table shows the whole lobby instead
+ * of a single "Opponent +N".
+ */
+const MmSeat: React.FC<{
+  tag: string;
+  name: string;
+  rating: string;
+  avatar: React.ReactNode;
+  avatarStyle: object;
+  letterStyle?: object;
+}> = ({ tag, name, rating, avatar, avatarStyle, letterStyle }) => (
+  <View style={styles.mmPlayerCol}>
+    <View style={avatarStyle}>
+      {typeof avatar === 'string' ? (
+        <Text style={letterStyle ?? styles.mmAvatarLetterOpp}>{avatar}</Text>
+      ) : (
+        avatar
+      )}
+    </View>
+    <Text style={styles.mmPlayerTag}>{tag}</Text>
+    <Text style={styles.mmPlayerName} numberOfLines={1}>
+      {name}
+    </Text>
+    <View style={styles.mmRatingPill}>
+      <Text style={styles.mmRatingText}>{rating}</Text>
+    </View>
+  </View>
+);
+
 interface OnlineScreenProps {
   onBack: () => void;
   initialClock: TimeControl;
@@ -111,6 +145,10 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   const [wallsCount, setWallsCount] = useState<10 | 15 | 'unlimited'>(10);
   const roomType: GameMode = resolveMode(roomKind, roomCount);
   const [roomCodeInput, setRoomCodeInput] = useState<string>('');
+  // Keeps the Join Room input visible above the Android keyboard: the
+  // KeyboardAvoidingView below shrinks the scroll area, and focusing the
+  // input scrolls it into view on any screen height.
+  const roomsScrollRef = useRef<ScrollView>(null);
   const [copiedMsg, setCopiedMsg] = useState<string | null>(null);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [onlineFriends, setOnlineFriends] = useState<{ id: string; username: string; displayName: string; status: string }[]>([]);
@@ -433,7 +471,10 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             </View>
           </View>
 
-          {/* Matchup card */}
+          {/* Matchup card: 1v1 is YOU | VS | OPP. A 3-4P table shows YOU
+              plus one column per seat, in the same seat language, so every
+              filled seat names its player and every open seat pulses. */}
+          {matchPlayerCount === 2 ? (
           <View style={styles.mmMatchCard}>
             <View style={styles.mmPlayerCol}>
               <View style={styles.mmAvatarYou}>
@@ -481,13 +522,9 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               </Text>
               <Text style={styles.mmPlayerName} numberOfLines={1}>
                 {foundGame?.opponents[0]
-                  ? foundGame.opponents.length > 1
-                    ? `${foundGame.opponents[0].displayName} +${foundGame.opponents.length - 1}`
-                    : foundGame.opponents[0].displayName
+                  ? foundGame.opponents[0].displayName
                   : isMatched
-                  ? matchPlayerCount === 2
-                    ? 'Opponent'
-                    : 'Table Ready'
+                  ? 'Opponent'
                   : 'Searching'}
               </Text>
               <View style={styles.mmRatingPill}>
@@ -501,6 +538,53 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               </View>
             </View>
           </View>
+          ) : (
+          <View style={styles.mmMatchCard}>
+            <MmSeat
+              tag="YOU"
+              name={resolveName(identity?.displayName ?? '', 'You')}
+              rating={myRating !== null ? String(myRating) : '—'}
+              avatar={nameInitial(identity?.displayName ?? '')}
+              avatarStyle={styles.mmAvatarYouSm}
+              letterStyle={styles.mmAvatarLetterSmYou}
+            />
+            {Array.from(
+              { length: matchPlayerCount - 1 },
+              (_, i) => foundGame?.opponents[i] ?? null
+            ).map((opp, i) => (
+              <MmSeat
+                key={opp ? opp.userId : `open-${i}`}
+                tag={opp || isMatched ? 'READY' : 'OPEN'}
+                name={
+                  opp ? opp.displayName : isMatched ? 'Ready' : 'Searching'
+                }
+                rating={
+                  opp
+                    ? String(Math.round(opp.rating))
+                    : isMatched
+                    ? 'READY'
+                    : '—'
+                }
+                avatar={
+                  opp ? (
+                    nameInitial(opp.displayName)
+                  ) : isMatched ? (
+                    'O'
+                  ) : (
+                    <>
+                      <Animated.View
+                        style={[styles.mmSlotPingSm, pulseStyles.ping]}
+                      />
+                      <Text style={styles.mmSlotDash}>—</Text>
+                    </>
+                  )
+                }
+                avatarStyle={styles.mmAvatarSlotSm}
+                letterStyle={styles.mmAvatarLetterSm}
+              />
+            ))}
+          </View>
+          )}
 
           {/* Action */}
           <View style={styles.radarActionRow}>
@@ -587,11 +671,17 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
         )}
       </View>
 
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <ScrollView
+        ref={roomsScrollRef}
         style={styles.scrollArea}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { flexGrow: 1 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
       >
         {activeRoom ? (
           /* ACTIVE ROOM LOBBY */
@@ -887,6 +977,13 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   maxLength={7}
                   autoCapitalize="characters"
                   autoCorrect={false}
+                  returnKeyType="join"
+                  onFocus={() => roomsScrollRef.current?.scrollToEnd({ animated: true })}
+                  onSubmitEditing={() => {
+                    if (roomCodeInput.trim() && !roomLoading) {
+                      void joinRoom(roomCodeInput.trim());
+                    }
+                  }}
                 />
                 <TouchableOpacity
                   style={[
@@ -904,6 +1001,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           </>
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Close / Leave / Kick confirm */}
       {confirmMode && (
@@ -1003,6 +1101,9 @@ const styles = StyleSheet.create({
     color: THEME.colors.onSurface,
   },
   scrollArea: {
+    flex: 1,
+  },
+  kav: {
     flex: 1,
   },
   content: {
@@ -1559,6 +1660,46 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.extraBold,
     fontSize: 24,
     color: THEME.colors.secondary,
+  },
+  // Compact seats for 3-4P tables: same language, smaller so YOU + 3
+  // opponents fit the card on narrow phones. 1v1 keeps the 58px seats.
+  mmAvatarYouSm: {
+    width: 46,
+    height: 46,
+    borderRadius: THEME.radius.md,
+    backgroundColor: THEME.colors.primaryLight,
+    borderWidth: 1.5,
+    borderColor: THEME.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mmAvatarSlotSm: {
+    width: 46,
+    height: 46,
+    borderRadius: THEME.radius.md,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: THEME.colors.outlineVariant,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mmAvatarLetterSm: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 19,
+    color: THEME.colors.secondary,
+  },
+  mmAvatarLetterSmYou: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 19,
+    color: THEME.colors.primary,
+  },
+  mmSlotPingSm: {
+    position: 'absolute',
+    width: 46,
+    height: 46,
+    borderRadius: THEME.radius.md,
+    borderWidth: 1.5,
+    borderColor: THEME.colors.primary,
   },
   mmSlotPing: {
     position: 'absolute',
