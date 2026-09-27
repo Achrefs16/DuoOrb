@@ -120,7 +120,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const currentUsername = identity?.username ?? null;
   const currentDisplayName = identity?.displayName ?? '';
   // Email belongs to the sign-in provider, so it comes from the account
-  // session â€” never from the guest identity, which has no address.
+  // session — never from the guest identity, which has no address.
   const email = supabaseUser?.email;
   // The handle is only "generated" if it is exactly what the server seeds for
   // this id, so a name the player deliberately chose is never flagged.
@@ -245,7 +245,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       const check = validateUsername(usernameDraft);
       if (check.ok && check.value === currentUsername) return 'This is your current username';
     }
-    if (availability === 'checking') return 'Checking availabilityâ€¦';
+    if (availability === 'checking') return 'Checking availability…';
     if (availability === 'available') {
       return '@' + validateUsername(usernameDraft).value + ' is available';
     }
@@ -310,9 +310,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </Text>
               <Text style={styles.settingDesc} numberOfLines={1}>
                 {sessionLoading
-                  ? 'Checking sessionâ€¦'
+                  ? 'Checking session…'
                   : isGuest
-                  ? 'Guest â€” progress stays on this device'
+                  ? 'Guest — progress stays on this device'
                   : email ?? 'Signed in'}
               </Text>
               {!!sessionError && <Text style={styles.errorText}>{sessionError}</Text>}
@@ -328,7 +328,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 onPress={() => void signInWithGoogle()}
               >
                 <Text style={styles.authButtonPrimaryText}>
-                  {signingIn ? 'â€¦' : 'Sign in'}
+                  {signingIn ? '…' : 'Sign in'}
                 </Text>
               </TouchableOpacity>
             ) : (
@@ -407,7 +407,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     onPress={() => void saveDisplayName()}
                   >
                     <Text style={styles.primaryButtonText}>
-                      {savingDisplayName ? 'Savingâ€¦' : 'Save'}
+                      {savingDisplayName ? 'Saving…' : 'Save'}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -432,11 +432,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 </View>
                 <View style={styles.settingText}>
                   <Text style={styles.settingTitle} numberOfLines={1}>
-                    {currentUsername ? `@${currentUsername}` : 'â€”'}
+                    {currentUsername ? `@${currentUsername}` : '—'}
                   </Text>
                 <Text style={styles.settingDesc}>
                   {usingGeneratedUsername
-                    ? 'Generated for you. Pick your own â€” friends add you by it.'
+                    ? 'Generated for you. Pick your own — friends add you by it.'
                     : 'Friends add you by this name.'}
                 </Text>
                 </View>
@@ -499,7 +499,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   onPress={() => void saveUsername()}
                 >
                   <Text style={styles.primaryButtonText}>
-                    {savingUsername ? 'Savingâ€¦' : 'Save'}
+                    {savingUsername ? 'Saving…' : 'Save'}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.secondaryButton} onPress={cancelUsernameEdit}>

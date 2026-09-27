@@ -137,7 +137,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
 
   /**
    * Ask the server for the room's real state. Needed whenever the lobby is
-   * (re)opened with a snapshot from before a match ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â that copy still says
+   * (re)opened with a snapshot from before a match — that copy still says
    * everyone is ready, which would let the host start a game that players who
    * are still on the previous board never joined.
    */

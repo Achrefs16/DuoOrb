@@ -125,7 +125,7 @@ describe('socket transport follows the canonical identity', () => {
 
   it('keeps listeners attached across a transport rebuild', () => {
     const received: unknown[] = [];
-    // Attached BEFORE any identity exists Ã¢â‚¬â€ this is what the challenge and
+    // Attached BEFORE any identity exists — this is what the challenge and
     // room-invite hooks do while the splash is still up.
     socketMod.socketManager.getSocket().on('challenge:received', (p: unknown) => received.push(p));
 

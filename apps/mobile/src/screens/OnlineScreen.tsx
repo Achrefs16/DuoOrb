@@ -30,7 +30,7 @@ import { nameInitial, resolveName } from '../displayName';
  * Headless join: runs the normal game channel (join + sync) without any UI
  * so the finding screen only hands off once the match is actually joined.
  * After the sync lands, the opponent card stays up briefly, then the game
- * starts directly ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â no blank connecting page in between.
+ * starts directly — no blank connecting page in between.
  */
 const MatchJoinGate: React.FC<{ gameId: string; onSynced: () => void }> = ({
   gameId,
@@ -50,7 +50,7 @@ const MatchJoinGate: React.FC<{ gameId: string; onSynced: () => void }> = ({
       timer = setTimeout(() => onSyncedRef.current(), 1400);
     } else {
       // Sync safety net: if the join never lands, still enter after a
-      // while ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â GameScreen's own join + skeleton take over from there.
+      // while — GameScreen's own join + skeleton take over from there.
       timer = setTimeout(() => {
         if (!firedRef.current) {
           firedRef.current = true;
@@ -158,7 +158,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
   // The match the server just made for us (quick/custom search). While set,
   // the finding screen shows the opponent card instead of the spinner, and
-  // the join gate confirms the game channel before we navigate ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â so the
+  // the join gate confirms the game channel before we navigate — so the
   // blank "connecting" page is only ever a rare fallback, not the flow.
   const [foundGame, setFoundGame] = useState<{
     gameId: string;
@@ -295,7 +295,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   }, [inviteName, roomType, clock, createRoom]);
 
   // Custom Online Match: the setup screen already configured mode/clock/
-  // walls ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â land straight in a fresh lobby for those settings.
+  // walls — land straight in a fresh lobby for those settings.
   const autoRoomHandled = useRef(false);
   useEffect(() => {
     if (!autoRoom || autoRoomHandled.current) return;
@@ -304,7 +304,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
     onConsumeAutoEntry?.();
     void createRoom(autoRoom.mode, autoRoom.clock, autoRoom.wallsEach).then((room) => {
       if (room) {
-        void copyCode(room.code, 'Room code copied ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â invite friends!');
+        void copyCode(room.code, 'Room code copied — invite friends!');
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -447,7 +447,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               </Text>
               <View style={styles.mmRatingPill}>
                 <Text style={styles.mmRatingText}>
-                  {myRating !== null ? myRating : 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â'}
+                  {myRating !== null ? myRating : '—'}
                 </Text>
               </View>
             </View>
@@ -472,7 +472,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 ) : (
                   <>
                     <Animated.View style={[styles.mmSlotPing, pulseStyles.ping]} />
-                    <Text style={styles.mmSlotDash}>ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â</Text>
+                    <Text style={styles.mmSlotDash}>—</Text>
                   </>
                 )}
               </View>
@@ -496,7 +496,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                     ? Math.round(foundGame.opponents[0].rating)
                     : isMatched
                     ? 'READY'
-                    : 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â'}
+                    : '—'}
                 </Text>
               </View>
             </View>
@@ -509,7 +509,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 <MatchJoinGate gameId={foundGame.gameId} onSynced={startFoundGame} />
                 <View style={styles.startingRow}>
                   <ActivityIndicator size="small" color={THEME.colors.primary} />
-                  <Text style={styles.startingText}>Starting matchÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦</Text>
+                  <Text style={styles.startingText}>Starting match…</Text>
                 </View>
               </>
             ) : isSearching ? (
@@ -604,7 +604,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               <View>
                 <Text style={styles.lobbySummaryTitle}>{lobbyModeName}</Text>
                 <Text style={styles.lobbySummarySub}>
-                  {activeRoom.slots.length} Players ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {lobbyClock}
+                  {activeRoom.slots.length} Players · {lobbyClock}
                 </Text>
               </View>
             </View>
@@ -632,7 +632,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         <View style={[styles.slotAvatar, styles.slotAvatarEmpty]}>
                           <Text style={styles.slotInitialEmpty}>?</Text>
                         </View>
-                        <Text style={styles.slotWaiting}>Waiting for playerÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦</Text>
+                        <Text style={styles.slotWaiting}>Waiting for player…</Text>
                       </View>
                       {isHost && isFirstOpenSlot ? (
                         <TouchableOpacity style={styles.quickAddBtn} onPress={() => void openQuickAdd()}>
@@ -748,7 +748,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   )}
                 </TouchableOpacity>
                 {!canStart && (
-                  <Text style={styles.lobbyHint}>Waiting for all players to be readyÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦</Text>
+                  <Text style={styles.lobbyHint}>Waiting for all players to be ready…</Text>
                 )}
                 <TouchableOpacity
                   style={styles.lobbyCloseBtn}
@@ -850,7 +850,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                       onPress={() => setWallsCount(w)}
                     >
                       <Text style={[styles.rmOptText, wallsCount === w && styles.rmOptTextActive]}>
-                        {w === 'unlimited' ? 'Unlimited ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¹ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾' : `${w} Walls`}
+                        {w === 'unlimited' ? 'Unlimited ∞' : `${w} Walls`}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -955,7 +955,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                       </View>
                       <View>
                         <Text style={styles.searchUsername}>{resolveName(friend)}</Text>
-                        <Text style={styles.searchHandle}>@{friend.username} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {friend.status === 'PLAYING' ? 'In a match' : 'Online'}</Text>
+                        <Text style={styles.searchHandle}>@{friend.username} · {friend.status === 'PLAYING' ? 'In a match' : 'Online'}</Text>
                       </View>
                     </View>
                     <TouchableOpacity style={styles.quickAddBtn} onPress={() => void inviteFriend(friend.id)}>

@@ -238,7 +238,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 onPress={() => void handleRemoveFriend()}
               >
                 <Text style={styles.removeConfirmText}>
-                  {removing ? 'RemovingÃ¢â‚¬Â¦' : 'Remove friend'}
+                  {removing ? 'Removing…' : 'Remove friend'}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -253,7 +253,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
       </Modal>
 
       {loading ? (
-        <LoadingState message="Loading player profileÃ¢â‚¬Â¦" />
+        <LoadingState message="Loading player profile…" />
       ) : error ? (
         <ErrorState message={error} onRetry={loadPlayerData} />
       ) : (
@@ -299,7 +299,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </View>
               <View style={styles.statBox}>
                 <Text style={styles.statBoxNumber}>{gamesPlayed}</Text>
-                <Text style={styles.statBoxSub}>{wins}W Ã‚Â· {losses}L</Text>
+                <Text style={styles.statBoxSub}>{wins}W · {losses}L</Text>
               </View>
             </View>
 
@@ -478,7 +478,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                           </Text>
                           <Text style={styles.matchDateText}>
                             {clockDisplayName(match)}
-                            {match.isRanked ? ` Ã‚Â· ${delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} pts` : ''}
+                            {match.isRanked ? ` · ${delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} pts` : ''}
                           </Text>
                         </View>
                       </View>

@@ -25,7 +25,7 @@ interface ChooseUsernameScreenProps {
 }
 
 /**
- * Username step. Every new identity Ã¢â‚¬â€ guest or signed in Ã¢â‚¬â€ passes through
+ * Username step. Every new identity — guest or signed in — passes through
  * here, so nobody reaches the app with an auto-generated handle unless they
  * explicitly skip.
  */
@@ -107,7 +107,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
   }, [draft, availability, refreshProfile, onDone]);
 
   const hint = (() => {
-    if (availability === 'checking') return 'Checking availabilityÃ¢â‚¬Â¦';
+    if (availability === 'checking') return 'Checking availability…';
     if (availability === 'available') {
       return '@' + validateUsername(draft).value + ' is available';
     }
@@ -173,7 +173,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
           disabled={saving}
           onPress={() => void save()}
         >
-          <Text style={styles.primaryText}>{saving ? 'SavingÃ¢â‚¬Â¦' : 'Continue'}</Text>
+          <Text style={styles.primaryText}>{saving ? 'Saving…' : 'Continue'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.secondary} onPress={onDone} disabled={saving}>

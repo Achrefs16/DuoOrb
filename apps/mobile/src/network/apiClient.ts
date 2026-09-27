@@ -182,7 +182,7 @@ async function getAuthHeader(): Promise<Record<string, string>> {
 
 /**
  * Asks the server for a guest identity. The device sends nothing it can be
- * trusted about â€” the server allocates the id, profile, rating and tokens.
+ * trusted about — the server allocates the id, profile, rating and tokens.
  * This is what replaced the old self-minted "dev-" credential.
  */
 export async function createGuestSession(): Promise<GuestCredentialsDto> {
@@ -237,7 +237,7 @@ export class ApiError extends Error {
 /**
  * In-flight guest refresh, shared so parallel 401s trigger exactly one
  * rotation. Without this, five simultaneous requests would each present the
- * same refresh token â€” and since rotation invalidates the previous one, four
+ * same refresh token — and since rotation invalidates the previous one, four
  * of them would look like a replay and get the session revoked.
  */
 let refreshInFlight: Promise<boolean> | null = null;
@@ -246,8 +246,8 @@ function refreshOnce(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
       // Read the refresh token from the canonical identity in memory. The old
-      // synchronous storage shim returned null on Android, so this path â€” and
-      // therefore the 401 recovery below â€” never ran on a phone.
+      // synchronous storage shim returned null on Android, so this path — and
+      // therefore the 401 recovery below — never ran on a phone.
       const refreshToken = getRefreshToken();
       if (!refreshToken) return false;
       try {
@@ -293,7 +293,7 @@ async function request<T>(
   let res = await attempt();
 
   // An expired guest access token is recoverable: rotate once and replay.
-  // Accounts never reach here â€” their 401 means the Supabase session is gone,
+  // Accounts never reach here — their 401 means the Supabase session is gone,
   // which only a re-login can fix.
   if (res.status === 401 && allowRefresh && getRefreshToken()) {
     if (await refreshOnce()) {

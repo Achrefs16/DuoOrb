@@ -83,7 +83,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   }, [loadSocialData]);
 
   // Live refresh: incoming requests and presence land within seconds,
-  // no browser refresh needed. Silent ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â no spinner flashes.
+  // no browser refresh needed. Silent — no spinner flashes.
   useEffect(() => {
     const interval = setInterval(() => {
       loadSocialData(true);
@@ -240,7 +240,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               <Text style={[styles.friendRating, !isOnline && styles.friendRatingCompact]}>{friend.rating}</Text>
             </View>
             <Text style={styles.friendHandle} numberOfLines={1}>
-              @{friend.username} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â·{' '}
+              @{friend.username} ·{' '}
               <Text style={[styles.statusText, { color: isOnline ? THEME.colors.tertiary : THEME.colors.textMuted }]}>
                 {friend.status === 'PLAYING' ? 'In a match' : isOnline ? 'Online' : 'Offline'}
               </Text>
@@ -302,7 +302,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
 
       {/* Main Content List */}
       {loading ? (
-        <LoadingState message="Loading friendsÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦" />
+        <LoadingState message="Loading friends…" />
       ) : error ? (
         <ErrorState message={error} onRetry={loadSocialData} />
       ) : (
@@ -319,7 +319,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 <View style={styles.section}>
                   <View style={styles.sectionTitleRow}>
                     <Text style={styles.sectionTitle}>
-                      FRIEND REQUESTS ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {requests.length}
+                      FRIEND REQUESTS · {requests.length}
                     </Text>
                   </View>
 
@@ -365,7 +365,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               {/* Online Friends Section */}
               <View style={styles.section}>
                 <View style={styles.sectionTitleRow}>
-                  <Text style={styles.sectionTitle}>ONLINE ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {onlineFriends.length}</Text>
+                  <Text style={styles.sectionTitle}>ONLINE · {onlineFriends.length}</Text>
                 </View>
 
                 {onlineFriends.length > 0 ? (
@@ -383,7 +383,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               {offlineFriends.length > 0 && (
                 <View style={styles.section}>
                   <View style={styles.sectionTitleRow}>
-                    <Text style={styles.sectionTitle}>OFFLINE ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {offlineFriends.length}</Text>
+                    <Text style={styles.sectionTitle}>OFFLINE · {offlineFriends.length}</Text>
                   </View>
                   <View style={styles.cardGroup}>
                     {offlineFriends.map(renderFriendCard)}
@@ -429,7 +429,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 onPress={() => void handleRemoveFriend()}
               >
                 <Text style={styles.removeConfirmText}>
-                  {removing ? 'RemovingÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦' : 'Remove friend'}
+                  {removing ? 'Removing…' : 'Remove friend'}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -546,7 +546,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
             <View style={styles.ownIdRow}>
               <View>
                 <Text style={styles.ownIdLabel}>Your ID</Text>
-                <Text style={styles.ownIdValue}>{ownUsername?.toUpperCase() ?? 'ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦'}</Text>
+                <Text style={styles.ownIdValue}>{ownUsername?.toUpperCase() ?? '…'}</Text>
               </View>
               <TouchableOpacity
                 style={styles.ownIdCopy}

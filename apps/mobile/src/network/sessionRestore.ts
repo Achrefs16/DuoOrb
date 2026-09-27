@@ -118,7 +118,7 @@ export async function restoreSession(deps: RestoreDeps): Promise<RestoreOutcome>
 
 /**
  * Reads `/me` and folds the server's names into the canonical identity.
- * Returns null on any failure â€” the caller decides whether that is fatal.
+ * Returns null on any failure — the caller decides whether that is fatal.
  */
 export async function loadCanonicalProfile(
   accessToken: string,
