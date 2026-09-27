@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,6 +26,12 @@ interface InGamePlayerChipProps {
   bonus?: number | null;
   /** Bottom (own) card hides the wall pill — the count lives in the tray. */
   hideWallsBadge?: boolean;
+  /**
+   * Opens this seat's profile. Present for opponents with a real account and
+   * absent for your own seat, AI and local play, so the avatar and the name
+   * are the only tappable parts of the card.
+   */
+  onPressIdentity?: () => void;
 }
 
 /** Avatar tint per ball color, matching the Stitch active-match design. */
@@ -50,22 +57,41 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
   rating,
   bonus,
   hideWallsBadge = false,
+  onPressIdentity,
 }) => {
   const ball = playerColor(player.index, player.color);
   const tint = avatarTint(ball);
   const initial = nameInitial(player.displayName);
+  const identityLabel = onPressIdentity
+    ? `View ${player.displayName}'s profile`
+    : undefined;
 
   return (
     <View style={styles.playerCard}>
       {/* Left: letter avatar + name + rating + walls */}
       <View style={styles.playerLeft}>
-        <View style={[styles.avatarBox, { backgroundColor: tint.bg, borderColor: tint.border }]}>
-          <Text style={[styles.avatarLetter, { color: tint.text }]}>{initial}</Text>
-        </View>
+        <Pressable
+          onPress={onPressIdentity}
+          disabled={!onPressIdentity}
+          hitSlop={6}
+          accessibilityRole={onPressIdentity ? 'button' : undefined}
+          accessibilityLabel={identityLabel}
+        >
+          <View style={[styles.avatarBox, { backgroundColor: tint.bg, borderColor: tint.border }]}>
+            <Text style={[styles.avatarLetter, { color: tint.text }]}>{initial}</Text>
+          </View>
+        </Pressable>
 
         <View style={styles.playerMeta}>
           <View style={styles.nameRow}>
-            <Text style={[styles.playerName, isActive && styles.playerNameActive]} numberOfLines={1}>
+            <Text
+              onPress={onPressIdentity}
+              suppressHighlighting
+              accessibilityRole={onPressIdentity ? 'button' : undefined}
+              accessibilityLabel={identityLabel}
+              style={[styles.playerName, isActive && styles.playerNameActive]}
+              numberOfLines={1}
+            >
               {player.displayName}
             </Text>
             {rating !== undefined && (
@@ -110,7 +136,112 @@ export const PlayerStrip: React.FC<{
   ratings?: Record<string, number>;
   bonus?: { playerId: string; amount: number } | null;
   hideWallsBadge?: boolean;
-}> = ({ state, timers, ratings, bonus = null, hideWallsBadge = false }) => {
+  /**
+   * Split-table layout: compact cards in a wrapping 2-column grid (two
+   * above the board, two below) instead of one scrolling strip, so every
+   * seat keeps its avatar, truncated name, wall count and clock visible
+   * on narrow screens with no overlap.
+   */
+  grid?: boolean;
+  /** Hides the wall pill for a single seat (your own — the tray shows it). */
+  hideWallsForPlayerId?: string;
+  /**
+   * Called with the seat id of the tapped opponent. Omitted entirely when
+   * the seats have no account behind them, which keeps every chip inert
+   * without a per-player "is this tappable" map.
+   */
+  onPressPlayer?: (playerId: string) => void;
+}> = ({
+  state,
+  timers,
+  ratings,
+  bonus = null,
+  hideWallsBadge = false,
+  grid = false,
+  hideWallsForPlayerId,
+  onPressPlayer,
+}) => {
+  // Split multiplayer tables (2 up / 2 down): side-by-side compact cards
+  // that flex with the row width. Long names truncate (numberOfLines +
+  // minWidth 0) while the wall pill and clock are shrink-proof, so the
+  // clock can never cover the wall count, even on narrow screens.
+  if (grid) {
+    return (
+      <View style={styles.gridRow}>
+        {state.players.map((p) => {
+          const isActive = state.players[state.currentPlayerIndex]?.id === p.id;
+          const ball = playerColor(p.index, p.color);
+          const tint = avatarTint(ball);
+          const initial = nameInitial(p.displayName);
+          const onPressIdentity = onPressPlayer ? () => onPressPlayer(p.id) : undefined;
+          const identityLabel = onPressIdentity ? `View ${p.displayName}'s profile` : undefined;
+          const showWalls = !hideWallsBadge && hideWallsForPlayerId !== p.id;
+          const playerBonus = bonus?.playerId === p.id ? bonus.amount : null;
+          return (
+            <View
+              key={p.id}
+              style={[
+                styles.compactItem,
+                styles.gridItem,
+                isActive && { borderColor: ball, backgroundColor: tint.bg },
+              ]}
+            >
+              <Pressable
+                onPress={onPressIdentity}
+                disabled={!onPressIdentity}
+                hitSlop={6}
+                accessibilityRole={onPressIdentity ? 'button' : undefined}
+                accessibilityLabel={identityLabel}
+                style={styles.gridAvatarPress}
+              >
+                <View style={[styles.compactAvatar, { backgroundColor: tint.bg, borderColor: tint.border }]}>
+                  <Text style={[styles.compactLetter, { color: tint.text }]}>{initial}</Text>
+                </View>
+              </Pressable>
+              <View style={styles.gridMeta}>
+                <Text
+                  onPress={onPressIdentity}
+                  suppressHighlighting
+                  accessibilityRole={onPressIdentity ? 'button' : undefined}
+                  accessibilityLabel={identityLabel}
+                  style={styles.gridName}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {p.displayName}
+                </Text>
+                <View style={styles.compactSub}>
+                  {ratings?.[p.id] !== undefined && (
+                    <Text style={styles.compactRating}>{Math.round(ratings[p.id])}</Text>
+                  )}
+                  {p.place !== null && p.place !== undefined && (
+                    <Text style={[styles.compactPlace, { color: ball }]}>
+                      {p.place === 1 ? '1ST' : p.place === 2 ? '2ND' : p.place === 3 ? '3RD' : `${p.place}TH`}
+                    </Text>
+                  )}
+                  {showWalls && (
+                    <View style={[styles.gridWalls, { borderColor: tint.border, backgroundColor: tint.bg }]}>
+                      <MaterialIcons name="fence" size={12} color={ball} />
+                      <Text style={[styles.gridWallsText, { color: ball }]}>
+                        {p.wallsRemaining}
+                      </Text>
+                    </View>
+                  )}
+                  {timers?.[p.id] !== undefined && (
+                    <Text style={styles.compactTime}>{formatTimer(timers[p.id])}</Text>
+                  )}
+                  {playerBonus !== null && playerBonus > 0 && (
+                    <Text style={styles.bonusText}>+{playerBonus}</Text>
+                  )}
+                </View>
+              </View>
+              {isActive && <View style={[styles.turnDot, { backgroundColor: ball }]} />}
+            </View>
+          );
+        })}
+      </View>
+    );
+  }
   // 3-4 player tables use one compact horizontal strip (scrolls when
   // narrow) instead of tall stacked cards. Same information, compressed.
   if (state.players.length > 2) {
@@ -125,6 +256,8 @@ export const PlayerStrip: React.FC<{
           const ball = playerColor(p.index, p.color);
           const tint = avatarTint(ball);
           const initial = nameInitial(p.displayName);
+          const onPressIdentity = onPressPlayer ? () => onPressPlayer(p.id) : undefined;
+          const identityLabel = onPressIdentity ? `View ${p.displayName}'s profile` : undefined;
           return (
             <View
               key={p.id}
@@ -133,11 +266,26 @@ export const PlayerStrip: React.FC<{
                 isActive && { borderColor: ball, backgroundColor: tint.bg },
               ]}
             >
-              <View style={[styles.compactAvatar, { backgroundColor: tint.bg, borderColor: tint.border }]}>
-                <Text style={[styles.compactLetter, { color: tint.text }]}>{initial}</Text>
-              </View>
+              <Pressable
+                onPress={onPressIdentity}
+                disabled={!onPressIdentity}
+                hitSlop={6}
+                accessibilityRole={onPressIdentity ? 'button' : undefined}
+                accessibilityLabel={identityLabel}
+              >
+                <View style={[styles.compactAvatar, { backgroundColor: tint.bg, borderColor: tint.border }]}>
+                  <Text style={[styles.compactLetter, { color: tint.text }]}>{initial}</Text>
+                </View>
+              </Pressable>
               <View style={styles.compactMeta}>
-                <Text style={styles.compactName} numberOfLines={1}>
+                <Text
+                  onPress={onPressIdentity}
+                  suppressHighlighting
+                  accessibilityRole={onPressIdentity ? 'button' : undefined}
+                  accessibilityLabel={identityLabel}
+                  style={styles.compactName}
+                  numberOfLines={1}
+                >
                   {p.displayName}
                 </Text>
                 <View style={styles.compactSub}>
@@ -178,6 +326,7 @@ export const PlayerStrip: React.FC<{
             rating={playerRating}
             bonus={playerBonus}
             hideWallsBadge={hideWallsBadge}
+            onPressIdentity={onPressPlayer ? () => onPressPlayer(p.id) : undefined}
           />
         );
       })}
@@ -237,6 +386,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    flexWrap: 'wrap',
   },
   compactRating: {
     fontFamily: THEME.fonts.medium,
@@ -256,6 +406,52 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
     color: '#1E293B',
+    flexShrink: 0,
+  },
+  gridRow: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  gridItem: {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: '100%',
+    flexShrink: 1,
+  },
+  gridAvatarPress: {
+    flexShrink: 0,
+  },
+  gridMeta: {
+    flexDirection: 'column',
+    gap: 1,
+    flex: 1,
+    minWidth: 0,
+  },
+  gridName: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0F172A',
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  gridWalls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  gridWallsText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 10,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   playerCard: {
     width: '100%',
@@ -267,6 +463,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
     ...THEME.shadows.card,
   },
   playerLeft: {
@@ -274,6 +471,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     flex: 1,
+    minWidth: 0,
   },
   avatarBox: {
     width: 36,
@@ -292,11 +490,14 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: 2,
     flex: 1,
+    minWidth: 0,
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
+    minWidth: 0,
   },
   playerName: {
     fontFamily: THEME.fonts.semiBold,
@@ -304,6 +505,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0F172A',
     maxWidth: 120,
+    flexShrink: 1,
+    minWidth: 0,
   },
   playerNameActive: {
     fontFamily: THEME.fonts.bold,
@@ -314,6 +517,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 2,
     backgroundColor: '#F1F5F9',
+    flexShrink: 0,
   },
   ratingText: {
     fontFamily: THEME.fonts.medium,
@@ -325,6 +529,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+    flexShrink: 0,
   },
   wallsBadge: {
     flexDirection: 'row',
@@ -334,6 +539,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 6,
     borderWidth: 1,
+    flexShrink: 0,
   },
   wallsText: {
     fontFamily: THEME.fonts.bold,
@@ -350,6 +556,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    flexShrink: 0,
+    marginLeft: 8,
   },
   timerText: {
     fontFamily: THEME.fonts.bold,

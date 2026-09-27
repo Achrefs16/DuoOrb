@@ -17,12 +17,15 @@ import {
   GameHistoryItemDto,
 } from '../network/apiClient';
 import { RatingChart } from '../components/RatingChart';
+import { MatchResultModal } from '../components/MatchResultModal';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
 import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
 
 interface ProfileScreenProps {
   onOpenSettings: () => void;
   onSelectGame: (game: SavedGameRecord) => void;
+  /** Opens the shared player profile for a recent match's opponent. */
+  onOpenPlayerProfile?: (player: { userId: string; username: string }) => void;
 }
 
 type RecentFilter = 'ALL' | 'WINS' | 'LOSSES';
@@ -44,6 +47,7 @@ function clockDisplayName(game: GameHistoryItemDto): string {
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onOpenSettings,
   onSelectGame,
+  onOpenPlayerProfile,
 }) => {
   const { identity } = useSession();
   const [profile, setProfile] = useState<UserMeDto | null>(null);
@@ -51,6 +55,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [recentGames, setRecentGames] = useState<GameHistoryItemDto[]>([]);
   const [recentFilter, setRecentFilter] = useState<RecentFilter>('ALL');
   const [recentVisible, setRecentVisible] = useState(5);
+  const [selectedMatch, setSelectedMatch] = useState<GameHistoryItemDto | null>(null);
   const [localHistory, setLocalHistory] = useState<SavedGameRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -290,7 +295,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       key={match.gameId}
                       style={styles.matchItem}
                       activeOpacity={0.75}
-                      onPress={() => handleGameTap(match)}
+                      onPress={() => setSelectedMatch(match)}
                     >
                       <View style={styles.matchItemLeft}>
                         <View style={[styles.miniOutcomeBadge, isWin ? styles.badgeWin : styles.badgeLoss]}>
@@ -331,6 +336,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </ScrollView>
       )}
+
+      {/* Match details + View Profile, the same modal History uses. */}
+      <MatchResultModal
+        match={selectedMatch}
+        onClose={() => setSelectedMatch(null)}
+        onReplay={(match) => {
+          setSelectedMatch(null);
+          handleGameTap(match);
+        }}
+        onViewOpponentProfile={onOpenPlayerProfile}
+      />
     </View>
   );
 };

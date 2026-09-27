@@ -26,7 +26,7 @@ import { PlayerStrip } from '../components/GameHud';
 import { GameOverModal } from '../components/GameOverModal';
 import { SideChoice } from './MatchSetupScreen';
 import { WallTray } from '../components/WallTray';
-import { playGoalSound, playMoveSound, playWallSound, preloadSounds } from '../audio/sounds';
+import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
 import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
 import { THEME, playerColor, wallPreviewColor } from '../theme';
 import { DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
@@ -52,6 +52,8 @@ interface GameScreenProps {
   onNewGame: () => void;
   onRematchAccepted?: (newGameId: string) => void;
   onAnalyze: (initialState: GameState, history: any[], perspectiveIdx: number) => void;
+  /** Opens the shared player profile for a seat that has an account behind it. */
+  onOpenPlayerProfile?: (player: { userId: string; username: string }) => void;
   wallsEach?: number;
 }
 
@@ -93,12 +95,12 @@ function thinkMsFor(difficulty: AIDifficulty, testThink: boolean): number {
   if (testThink) return 10000;
   switch (difficulty) {
     case 'easy':
-      return 700;
+      return 350;
     case 'hard':
-      return 2200;
+      return 800;
     case 'normal':
     default:
-      return 1400;
+      return 700;
   }
 }
 
@@ -143,6 +145,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   onNewGame,
   onRematchAccepted,
   onAnalyze,
+  onOpenPlayerProfile,
 }) => {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const identity = useIdentity();
@@ -282,6 +285,26 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
   }, [type, online.clocks]);
 
+  // Thirty-second warning: fires once, the moment YOUR clock crosses 30s
+  // going down — not at game start when the control itself is short, and
+  // never twice. `timers` are seconds in every mode (server ms are
+  // converted on the way in).
+  const lastMySecsRef = useRef<number | null>(null);
+  const warned30Ref = useRef(false);
+  useEffect(() => {
+    if (state.status !== 'IN_PROGRESS') return;
+    const myId = online.myPlayerId ?? state.players[humanIdx]?.id ?? null;
+    if (!myId) return;
+    const mine = timers[myId];
+    if (mine == null) return;
+    const prev = lastMySecsRef.current;
+    lastMySecsRef.current = mine;
+    if (!warned30Ref.current && prev != null && prev > 30 && mine <= 30 && mine > 0) {
+      warned30Ref.current = true;
+      void playThirtySecondsSound();
+    }
+  }, [timers, state.status, state.players, humanIdx, online.myPlayerId]);
+
   // Per-move bonus: credited to the mover after every move/wall, in EVERY
   // match and clock. Toggleable from Settings — when off, no bonus at all.
   // The credit flashes on the mover's clock so the jump is legible.
@@ -327,26 +350,55 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [type, onlineGameId]);
 
   // Action sounds — fire for both player and AI actions.
-  // A move onto the goal line gets its own distinct chime.
-  // Audio is pre-warmed on mount so the first move doesn't pay the
-  // native-module + WAV-decode cold start inside its tap commit.
+  // A move onto the goal line gets its own distinct chime, a hop over
+  // another orb gets the jump sound, and your moves sound different from
+  // everyone else's. Audio is pre-warmed on mount so the first move doesn't
+  // pay the native-module + decode cold start inside its tap commit.
   useEffect(() => {
     preloadSounds();
+    void playGameStartSound();
   }, []);
   const historyLenRef = useRef(state.history.length);
+  // Last-known orb positions, so a jump (a move covering more than one
+  // cell) can be told apart from a plain step. Refreshed every run.
+  const positionsRef = useRef<Record<string, { row: number; col: number }> | null>(null);
   useEffect(() => {
+    if (!positionsRef.current) {
+      positionsRef.current = {};
+      for (const p of state.players) positionsRef.current[p.id] = { ...p.position };
+    }
     const len = state.history.length;
     if (len > historyLenRef.current) {
       const last = state.history[len - 1];
       if (last?.action.type === 'MOVE') {
         const reachedGoal =
           state.status === 'COMPLETED' && state.winnerId !== null;
-        if (reachedGoal) void playGoalSound();
-        else void playMoveSound();
+        if (reachedGoal) {
+          void playGoalSound();
+        } else {
+          // A jump is only certain when exactly one move arrived since the
+          // last run; on a multi-move catch-up the stored positions are
+          // older than the move, so fall back to a plain step sound.
+          const from = positionsRef.current[last.playerId];
+          const jumped =
+            len === historyLenRef.current + 1 &&
+            !!from &&
+            Math.abs(from.row - last.action.to.row) + Math.abs(from.col - last.action.to.col) > 1;
+          if (jumped) {
+            void playJumpSound();
+          } else {
+            const myId = online.myPlayerId ?? state.players[humanIdx]?.id ?? null;
+            if (myId && last.playerId === myId) void playOwnMoveSound();
+            else void playOpponentMoveSound();
+          }
+        }
       } else if (last?.action.type === 'PLACE_WALL') void playWallSound();
     }
     historyLenRef.current = len;
-  }, [state.history, state.status, state.winnerId]);
+    const next: Record<string, { row: number; col: number }> = {};
+    for (const p of state.players) next[p.id] = { ...p.position };
+    positionsRef.current = next;
+  }, [state.history, state.status, state.winnerId, state.players, humanIdx, online.myPlayerId]);
 
   // Board geometry for mapping screen touches to wall slots.
   const boardSizeRef = useRef<number>(Math.min(windowWidth - 32, 420));
@@ -666,6 +718,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   useEffect(() => {
     if (state.status === 'COMPLETED' && !showGameOver) {
       setShowGameOver(true);
+      void playGameEndSound();
       setFinishModal(null);
       setPremoveQueue([]);
       setPremoveSel(null);
@@ -868,14 +921,20 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     // Pre-drop: queue the wall for your next turn.
     if (!humanTurn) {
       if (!canPremove || !queueOn || !myOrb || myOrb.wallsRemaining <= 0) return;
-      if (!isLegalWallPlacement(state, myOrb.id, candidate)) return;
+      if (!isLegalWallPlacement(state, myOrb.id, candidate)) {
+        void playIllegalMoveSound();
+        return;
+      }
       setPremoveQueue((prev) =>
         prev.length >= 5 ? prev : [...prev, { kind: 'wall' as const, wall: candidate }]
       );
       return;
     }
     if (!currentPlayer || currentPlayer.wallsRemaining <= 0) return;
-    if (!isLegalWallPlacement(state, currentPlayer.id, candidate)) return;
+    if (!isLegalWallPlacement(state, currentPlayer.id, candidate)) {
+      void playIllegalMoveSound();
+      return;
+    }
 
     const action = { type: 'PLACE_WALL' as const, wall: candidate };
     if (type === 'online') {
@@ -892,6 +951,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (result.success) {
       setState(result.state);
       creditIncrement(currentPlayer.id, action);
+    } else {
+      // Passed the UI legality gate but failed the authoritative rules
+      // (same rejected drop, detected a step later).
+      void playIllegalMoveSound();
     }
   };
 
@@ -944,8 +1007,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   };
 
   // Seat-relative placement: each side keeps its own players for the whole
-  // game, so clocks never swap sides. Bottom is always the first player
-  // (you, in AI games); the rest sit on top. The active ring shows turn.
+  // game, so clocks never swap sides. 1v1: one opponent on top, you at the
+  // bottom. Multiplayer: two cards above the board, two below — the bottom
+  // row is always your seat plus the last opponent, the rest sit on top.
   // You always sit at the bottom on your own phone: the human side in AI
   // games, the first player otherwise. Nobody's clock ever swaps sides.
   const seatIdx = type === 'online' ? activeHumanIdx : type === 'ai' ? humanIdx : 0;
@@ -1106,22 +1170,27 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [replaying, viewingStep, totalSteps]);
 
   const topList = state.players.filter((_, i) => i !== seatIdx);
-  const topActive = topList.findIndex(
-    (p) => p.id === state.players[state.currentPlayerIndex]?.id
-  );
+  const activeId = state.players[state.currentPlayerIndex]?.id;
+  // 4 seats: top 2 opponents, bottom you + 1 opponent. 3 seats: top 1
+  // opponent, bottom you + 1 opponent. 1v1 is untouched (top 1, bottom 1).
+  const splitActive = isMultiplayer && topList.length >= 2;
+  const bottomCompanions = splitActive ? topList.slice(-1) : [];
+  const topOpponents = splitActive ? topList.slice(0, -1) : topList;
   const topStripState: GameState = {
     ...state,
-    players: topList,
-    currentPlayerIndex: topActive,
+    players: topOpponents,
+    currentPlayerIndex: topOpponents.findIndex((p) => p.id === activeId),
   };
   const seatPlayer = state.players[seatIdx];
-  const bottomStripState: GameState | null = seatPlayer
-    ? {
-        ...state,
-        players: [seatPlayer],
-        currentPlayerIndex: state.currentPlayerIndex === seatIdx ? 0 : -1,
-      }
-    : null;
+  const bottomPlayers = [...(seatPlayer ? [seatPlayer] : []), ...bottomCompanions];
+  const bottomStripState: GameState | null =
+    bottomPlayers.length > 0
+      ? {
+          ...state,
+          players: bottomPlayers,
+          currentPlayerIndex: bottomPlayers.findIndex((p) => p.id === activeId),
+        }
+      : null;
 
   const aiRating = aiDifficulty === 'hard' ? 1750 : aiDifficulty === 'easy' ? 1250 : 1500;
   const playerRatings: Record<string, number> = {};
@@ -1129,11 +1198,50 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     playerRatings[p.id] = type === 'ai' ? (isAiSide(idx) ? aiRating : 1500) : 1500;
   });
 
+  // A board seat id ('p2') is not a user id. The server sends the seat ->
+  // account map with every sync, so this is the one lookup that turns a
+  // tapped opponent into the exact same userId the profile screen, history
+  // and the leaderboard use. No account behind the seat (AI, local, own
+  // seat) means no profile, and the chip stays inert.
+  const opponentAccount = useCallback(
+    (playerId: string): { userId: string; username: string } | null => {
+      if (!onOpenPlayerProfile) return null;
+      const userId = online.playerUserIds[playerId];
+      const player = state.players.find((p) => p.id === playerId);
+      if (!userId || !player) return null;
+      return { userId, username: player.displayName };
+    },
+    [onOpenPlayerProfile, online.playerUserIds, state.players]
+  );
+
+  // Only opponents are wired up: your own card opens nothing.
+  const handleOpponentPress = useCallback(
+    (playerId: string) => {
+      const account = opponentAccount(playerId);
+      if (account && onOpenPlayerProfile) onOpenPlayerProfile(account);
+    },
+    [onOpenPlayerProfile, opponentAccount]
+  );
+
+  // Bottom grid shares the row with one opponent: that seat stays tappable
+  // while your own card stays inert, exactly like the old bottom strip.
+  const handleBottomGridPress = useCallback(
+    (playerId: string) => {
+      if (playerId === seatPlayer?.id) return;
+      handleOpponentPress(playerId);
+    },
+    [seatPlayer?.id, handleOpponentPress]
+  );
+
+  // 1v1 result modal names a single opponent; multiplayer has no one opponent.
+  const opponentSeatId = !isMultiplayer ? topList[0]?.id ?? null : null;
+  const opponentAccountForResult = opponentSeatId ? opponentAccount(opponentSeatId) : null;
+
   // Board-relative drag position for the ghost preview, reduced to a
   // snapped-slot STRING key. The raw computation below is trivial (rect
   // reads + a 64-cell scan), but the key is value-compared: same-slot
-  // pointer motion keeps the memoized board ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â and its BFS legality
-  // check ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â asleep instead of rebuilding ~300 views per touch event.
+  // pointer motion keeps the memoized board — and its BFS legality
+  // check — asleep instead of rebuilding ~300 views per touch event.
   let dragSlotRaw: WallCoord | null = null;
   if (wallDrag) {
     const pt = toBoardPoint(wallDrag.pageX, wallDrag.pageY);
@@ -1305,6 +1413,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
       {/* Opponent card(s). Turn ring + timer highlight show whose move it is. */}
       {/* Strips ignore touches while a wall is dragged over them. */}
+      {/* Multiplayer splits 2 up / 2 down in a grid; 1v1 keeps full cards. */}
       <View
         pointerEvents={wallDrag ? 'none' : 'auto'}
         style={[
@@ -1317,7 +1426,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           timers={timers}
           ratings={playerRatings}
           compact
+          grid={splitActive}
           bonus={lastBonus}
+          onPressPlayer={handleOpponentPress}
         />
       </View>
       </View>
@@ -1384,7 +1495,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 timers={timers}
                 ratings={playerRatings}
                 bonus={lastBonus}
-                hideWallsBadge
+                hideWallsBadge={!splitActive}
+                grid={splitActive}
+                hideWallsForPlayerId={splitActive ? seatPlayer?.id : undefined}
+                onPressPlayer={splitActive ? handleBottomGridPress : undefined}
               />
             </View>
           )}
@@ -1616,6 +1730,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           onNewGame();
         }}
         onReplay={enterReplay}
+        opponentUserId={opponentAccountForResult?.userId ?? null}
+        onViewOpponentProfile={
+          opponentAccountForResult
+            ? () => {
+                setShowGameOver(false);
+                if (onOpenPlayerProfile) onOpenPlayerProfile(opponentAccountForResult);
+              }
+            : undefined
+        }
         onAnalyze={() => {
           setShowGameOver(false);
           onAnalyze(initialState, state.history, seatIdx);

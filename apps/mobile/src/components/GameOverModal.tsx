@@ -14,6 +14,12 @@ interface GameOverModalProps {
   ratingAfter?: number;
   opponentName?: string;
   isWinner?: boolean;
+  /**
+   * The opponent's account, when the match was against a real player. Drives
+   * the View Profile action; AI and local games have no opponent to open.
+   */
+  opponentUserId?: string | null;
+  onViewOpponentProfile?: () => void;
   /** Your seat for multiplayer placement titles (online + AI). Local games omit it. */
   myPlayerId?: string | null;
   onRematch: () => void;
@@ -43,6 +49,8 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   ratingAfter,
   opponentName,
   isWinner,
+  opponentUserId,
+  onViewOpponentProfile,
   myPlayerId,
   onRematch,
   showNewGame = false,
@@ -272,6 +280,22 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 <Text style={styles.utilityText}>Analyze</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Opponent identity: the one place a finished online match can
+                hand the player off to the same profile screen everyone else
+                uses. Hidden when there is no opponent account. */}
+            {onViewOpponentProfile && opponentUserId && (
+              <TouchableOpacity
+                style={styles.viewProfileBtn}
+                activeOpacity={0.75}
+                onPress={onViewOpponentProfile}
+                accessibilityRole="button"
+                accessibilityLabel={`View ${opponentName ?? 'opponent'}'s profile`}
+              >
+                <Feather name="user" size={14} color={THEME.colors.textSecondary} />
+                <Text style={styles.viewProfileText}>View Profile</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Exit Link */}
             <TouchableOpacity
@@ -530,6 +554,24 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   utilityText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.colors.textSecondary,
+  },
+  viewProfileBtn: {
+    width: '100%',
+    height: 40,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderRadius: THEME.radius.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  viewProfileText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',

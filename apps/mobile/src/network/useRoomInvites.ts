@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RoomDto, RoomInviteDto } from '@duoorb/protocol';
 import { socketManager } from './socket';
+import { playNotifySound } from '../audio/sounds';
 
 interface UseRoomInvitesOptions {
   onAccepted: (room: RoomDto) => void;
@@ -12,7 +13,10 @@ export function useRoomInvites({ onAccepted }: UseRoomInvitesOptions) {
 
   useEffect(() => {
     const socket = socketManager.getSocket();
-    const onInvite = (invite: RoomInviteDto) => setIncoming(invite);
+    const onInvite = (invite: RoomInviteDto) => {
+      setIncoming(invite);
+      void playNotifySound();
+    };
     const onDeclined = (payload: { inviteId: string; byUserId: string }) => {
       setNotice('Room invite declined.');
       setTimeout(() => setNotice(null), 2500);

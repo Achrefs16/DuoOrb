@@ -335,6 +335,12 @@ export default function App() {
     dismissTo(currentTab, 'GAME');
   };
 
+  /**
+   * The one way into the player profile. Every surface that shows an opponent
+   * (friends, leaderboard, the match board, the result modal, history, the
+   * profile's recent matches) hands over the same server-issued userId and
+   * lands on this same screen — no second profile implementation.
+   */
   const handleOpenPlayerProfile = (player: { userId: string; username: string }) => {
     setSelectedPlayer(player);
     navigate(currentTab, 'PLAYER_PROFILE');
@@ -423,6 +429,7 @@ export default function App() {
                   onBack={() => setCurrentTab('PLAY')}
                   onSelectGame={handleSelectGameFromHistory}
                   onQuickMatch={() => handleOpenOnline(DEFAULT_TIME_CONTROL, 'quick')}
+                  onOpenPlayerProfile={handleOpenPlayerProfile}
                 />
               )}
 
@@ -430,6 +437,7 @@ export default function App() {
                 <ProfileScreen
                   onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
                   onSelectGame={handleSelectGameFromHistory}
+                  onOpenPlayerProfile={handleOpenPlayerProfile}
                 />
               )}
             </View>
@@ -460,6 +468,7 @@ export default function App() {
               onNewGame={handleNewGameAfter}
               onRematchAccepted={handleFreshOnlineGame}
               onAnalyze={handleOpenReview}
+              onOpenPlayerProfile={handleOpenPlayerProfile}
             />
           )}
 

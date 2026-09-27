@@ -44,6 +44,13 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
   const [clocks, setClocks] = useState<Record<string, number>>({});
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [myPlayerIndex, setMyPlayerIndex] = useState<number>(0);
+  /**
+   * Seat id ('p1', 'p2', ...) -> userId, straight from the server. A
+   * PlayerState only carries a displayName, so this is the ONE mapping that
+   * turns a board seat into a real account: without it the opponent's name on
+   * the match board and in the result modal cannot reach their profile.
+   */
+  const [playerUserIds, setPlayerUserIds] = useState<Record<string, string>>({});
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('connecting');
   const [opponentGrace, setOpponentGrace] = useState<{ userId: string; seconds: number } | null>(null);
   const [rematchOffered, setRematchOffered] = useState<boolean>(false);
@@ -178,6 +185,11 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
     const handleSync = (sync: GameSyncDto) => {
       setIsSyncing(false);
       setGameState(sync.state);
+
+      // The seat -> account map rides along with every sync. Keep it: the
+      // opponent's chips need a userId to open a profile, and this is the
+      // only place it exists (a board seat id is not a user id).
+      if (sync.playerUserIds) setPlayerUserIds(sync.playerUserIds);
 
       // Prune the pending tail against authoritative truth: anything at or
       // below the server length is either confirmed or dead — the sync
@@ -425,6 +437,7 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
     clocks,
     myPlayerId,
     myPlayerIndex,
+    playerUserIds,
     connStatus,
     opponentGrace,
     rematchOffered,

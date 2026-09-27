@@ -14,9 +14,11 @@ import { getSupabaseAuth, isSupabaseConfigured } from '../lib/supabase';
 import {
   clearIdentity,
   getIdentity,
+  patchIdentity,
   setIdentity,
   useIdentity,
 } from './auth';
+import { classifyAuthEvent } from './sessionEvents';
 import { socketManager } from './socket';
 import { api, ApiError, setTokenProvider, createGuestSession, refreshGuestSession } from './apiClient';
 import {
@@ -197,43 +199,71 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   /* ---------------------------------------------------------------------- */
   useEffect(() => {
     if (!isSupabaseConfigured) return undefined;
-    const { data: listener } = getSupabaseAuth().onAuthStateChange(async (_event, session) => {
-      setSupabaseUser(session?.user ?? null);
-      if (session?.user) {
-        const token = session.access_token;
+    const { data: listener } = getSupabaseAuth().onAuthStateChange(async (event, session) => {
+      // Gate every emission through the event classifier. The boot effect
+      // owns the subscription-time INITIAL_SESSION; reacting to it here used
+      // to read "no Supabase session (yet)" as a sign-out, wiping the
+      // persisted guest identity and flashing onboarding on every reopen
+      // while the restore was still in flight.
+      const action = classifyAuthEvent(
+        event,
+        session?.user
+          ? {
+              userId: session.user.id,
+              accessToken: session.access_token,
+              fullName: session.user.user_metadata?.full_name as string | undefined,
+            }
+          : null,
+        getIdentity()?.isGuest === false
+      );
+      if (action.kind === 'ignore') return;
+
+      if (action.kind === 'refresh') {
+        // The account credential rotated. Follow it in the store so the
+        // socket (which rebuilds on token change) and the API stop
+        // presenting the expired one.
+        patchIdentity({ accessToken: action.accessToken });
+        return;
+      }
+
+      if (action.kind === 'signin') {
+        setSupabaseUser(session!.user);
         // Capture the guest id BEFORE the account replaces it, so guest
         // progress (rating, friends, history) can be merged into the account.
         const previous = getIdentity();
         const mergingGuest =
-          previous?.isGuest === true && previous.userId !== session.user.id ? previous.userId : null;
+          previous?.isGuest === true && previous.userId !== action.userId
+            ? previous.userId
+            : null;
 
         setIdentity({
-          userId: session.user.id,
+          userId: action.userId,
           username: '',
-          displayName:
-            (session.user.user_metadata?.full_name as string | undefined) ?? 'Player',
-          accessToken: token,
+          displayName: action.fullName ?? 'Player',
+          accessToken: action.accessToken,
           refreshToken: null,
           isGuest: false,
         });
         // The socket observes identity changes itself and rebuilds with the
         // account credential, then migrates live rooms/seats/queue.
-        socketManager.adoptSession(token);
-        if (mergingGuest) void linkGuestProgress(token, mergingGuest);
+        socketManager.adoptSession(action.accessToken);
+        if (mergingGuest) void linkGuestProgress(action.accessToken, mergingGuest);
 
-        const next = await loadCanonicalProfile(token, fetchProfile);
+        const next = await loadCanonicalProfile(action.accessToken, fetchProfile);
         if (next) {
           applyProfileToState({ username: next.username, displayName: next.displayName });
         }
         setStatus('ready');
-      } else {
-        // Signed out: forget everything. The next Continue as Guest press
-        // mints a new identity — never silently, never at boot.
-        clearIdentity();
-        setProfile(null);
-        void clearOnboarding();
-        setStatus('anonymous');
+        return;
       }
+
+      // signout: forget everything. The next Continue as Guest press mints a
+      // new identity — never silently, never at boot.
+      setSupabaseUser(null);
+      clearIdentity();
+      setProfile(null);
+      void clearOnboarding();
+      setStatus('anonymous');
     });
     return () => listener.subscription.unsubscribe();
   }, [fetchProfile, applyProfileToState]);

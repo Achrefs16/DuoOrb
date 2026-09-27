@@ -1,34 +1,29 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   FlatList,
-  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME } from '../theme';
+import { modeDisplayName } from '../matchModes';
 import { api, GameHistoryItemDto } from '../network/apiClient';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
+import { MatchResultModal } from '../components/MatchResultModal';
 import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
 
 interface HistoryScreenProps {
   onBack: () => void;
   onSelectGame: (game: SavedGameRecord) => void;
   onQuickMatch: () => void;
+  /** Opens the shared player profile for a listed opponent. */
+  onOpenPlayerProfile?: (player: { userId: string; username: string }) => void;
 }
 
 type OutcomeFilter = 'ALL' | 'WINS' | 'LOSSES';
-
-function modeDisplayName(mode: string): string {
-  if (mode === '2p') return 'Classic (9×9)';
-  if (mode === '4p' || mode === 'center2' || mode === 'center3') return 'Center Rush';
-  if (mode.startsWith('race')) return 'Race';
-  return mode;
-}
 
 const PAGE_SIZE = 10;
 
@@ -36,6 +31,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   onBack,
   onSelectGame,
   onQuickMatch,
+  onOpenPlayerProfile,
 }) => {
   const [games, setGames] = useState<GameHistoryItemDto[]>([]);
   const [localGames, setLocalGames] = useState<SavedGameRecord[]>([]);
@@ -81,7 +77,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           durationMs: (lg.durationSeconds || 0) * 1000,
           myRating: { before: null, after: null, delta: 0 },
           opponent: {
-            userId: 'local',
+            // Empty on purpose: a device-local game has no account behind the
+            // opponent, and the result modal keys the View Profile action off
+            // this id. 'local' would open a profile for a user that is not one.
+            userId: '',
             username: lg.winnerName === 'You' ? 'AI' : lg.winnerName,
             displayName: lg.winnerName === 'You' ? 'AI' : lg.winnerName,
             ratingBefore: null,
@@ -347,73 +346,12 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
       )}
 
       {/* Match detail modal (Stitch) */}
-      <Modal visible={!!selected} transparent animationType="fade">
-        <SafeAreaView style={styles.detailOverlay} edges={['top', 'bottom']}>
-          <View style={styles.detailCard}>
-            {selected && (() => {
-              const isWin = selected.outcome === 'WIN';
-              const isDraw = selected.outcome === 'DRAW';
-              const opp = selected.opponent?.displayName || selected.opponent?.username || 'Opponent';
-              const oppRating = selected.opponent?.ratingBefore ?? selected.opponent?.ratingAfter;
-              const delta = selected.myRating?.delta ?? 0;
-              return (
-                <>
-                  <TouchableOpacity
-                    style={styles.detailClose}
-                    onPress={() => setSelected(null)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Feather name="x" size={20} color={THEME.colors.textMuted} />
-                  </TouchableOpacity>
-                  <Text style={styles.detailOutcome}>
-                    {isDraw ? 'Draw' : isWin ? 'Victory' : 'Defeat'}
-                  </Text>
-                  <Text style={styles.detailVs}>
-                    vs {opp}
-                    {oppRating !== undefined && oppRating !== null ? ` · ${Math.round(oppRating)}` : ''}
-                  </Text>
-                  <View style={styles.detailRows}>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Mode</Text>
-                      <Text style={styles.detailValue}>
-                        {selected.isRanked ? 'Ranked' : 'Practice'} · {modeDisplayName(selected.mode)}
-                      </Text>
-                    </View>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Rating Change</Text>
-                      {selected.isRanked ? (
-                        <Text style={[styles.detailValue, delta >= 0 ? styles.deltaWin : styles.deltaLoss]}>
-                          {delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} Rating
-                        </Text>
-                      ) : (
-                        <Text style={styles.detailValue}>Unrated</Text>
-                      )}
-                    </View>
-                  </View>
-                  <View style={styles.detailActions}>
-                    <TouchableOpacity
-                      style={styles.detailReplay}
-                      onPress={() => {
-                        const item = selected;
-                        setSelected(null);
-                        handleGameSelect(item);
-                      }}
-                    >
-                      <Text style={styles.detailReplayText}>Replay</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.detailDone}
-                      onPress={() => setSelected(null)}
-                    >
-                      <Text style={styles.detailDoneText}>Done</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              );
-            })()}
-          </View>
-        </SafeAreaView>
-      </Modal>
+      <MatchResultModal
+        match={selected}
+        onClose={() => setSelected(null)}
+        onReplay={handleGameSelect}
+        onViewOpponentProfile={onOpenPlayerProfile}
+      />
     </View>
   );
 };
@@ -623,95 +561,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: THEME.colors.textMuted,
-  },
-  detailOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  detailCard: {
-    width: '100%',
-    maxWidth: 340,
-    backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderRadius: THEME.radius.xl,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceContainer,
-    padding: 20,
-    alignItems: 'center',
-    ...THEME.shadows.modal,
-  },
-  detailClose: {
-    alignSelf: 'flex-end',
-    padding: 4,
-    marginBottom: 4,
-  },
-  detailOutcome: {
-    fontFamily: THEME.fonts.extraBold,
-    fontSize: 22,
-    fontWeight: '800',
-    color: THEME.colors.onSurface,
-  },
-  detailVs: {
-    fontFamily: THEME.fonts.medium,
-    fontSize: 13,
-    fontWeight: '500',
-    color: THEME.colors.onSurfaceVariant,
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  detailRows: {
-    width: '100%',
-    gap: 10,
-    marginBottom: 20,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  detailLabel: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 12,
-    fontWeight: '600',
-    color: THEME.colors.textMuted,
-  },
-  detailValue: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 13,
-    fontWeight: '600',
-    color: THEME.colors.onSurface,
-  },
-  detailActions: {
-    width: '100%',
-    gap: 8,
-  },
-  detailReplay: {
-    width: '100%',
-    paddingVertical: 12,
-    borderRadius: THEME.radius.md,
-    backgroundColor: THEME.colors.surfaceContainerLow,
-    alignItems: 'center',
-  },
-  detailReplayText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 14,
-    fontWeight: '600',
-    color: THEME.colors.onSurface,
-  },
-  detailDone: {
-    width: '100%',
-    paddingVertical: 12,
-    borderRadius: THEME.radius.md,
-    backgroundColor: THEME.colors.primary,
-    alignItems: 'center',
-  },
-  detailDoneText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
   emptyContainer: {
     alignItems: 'center',

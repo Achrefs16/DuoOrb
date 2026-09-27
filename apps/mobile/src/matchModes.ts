@@ -22,6 +22,18 @@ export function modeLabel(mode: GameMode): string {
   }
 }
 
+/**
+ * Short mode name for match lists and the result modal, where the full
+ * `modeLabel` is too long. One function so History and Profile never label
+ * the same match differently.
+ */
+export function modeDisplayName(mode: string): string {
+  if (mode === '2p') return 'Classic (9×9)';
+  if (mode === '4p' || mode === 'center2' || mode === 'center3') return 'Center Rush';
+  if (mode.startsWith('race')) return 'Race';
+  return mode;
+}
+
 export type MatchType = 'classic' | 'center' | 'race';
 
 /** Resolve the player-facing Type × Players pick to a ruleset mode. Classic is always head-to-head 1v1. */

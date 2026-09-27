@@ -3,6 +3,7 @@ import { GameMode } from '@duoorb/game-core';
 import { ChallengeDto } from '@duoorb/protocol';
 import { TimeControl } from '../timeControls';
 import { socketManager } from './socket';
+import { playNotifySound } from '../audio/sounds';
 
 export interface OutgoingChallenge {
   challenge: ChallengeDto;
@@ -88,7 +89,10 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
   useEffect(() => {
     const socket = socketManager.getSocket();
 
-    const onReceived = (c: ChallengeDto) => setIncoming(c);
+    const onReceived = (c: ChallengeDto) => {
+      setIncoming(c);
+      void playNotifySound();
+    };
     const onAccepted = (p: {
       challengeId: string;
       gameId: string;
