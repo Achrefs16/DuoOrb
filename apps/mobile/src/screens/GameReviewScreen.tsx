@@ -75,6 +75,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   });
 
   const [isPlaying, setIsPlaying] = useState(false);
+  // Playback speed, cycled 1x -> 1.5x -> 2x -> 1x by a single button.
+  const SPEEDS = [1, 1.5, 2];
+  const [speedIdx, setSpeedIdx] = useState(0);
   const [showWhyOpen, setShowWhyOpen] = useState(false);
   const [tryOpen, setTryOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -91,12 +94,13 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           }
           return prev + 1;
         });
-      }, 1200);
+      }, 1200 / SPEEDS[speedIdx]);
     }
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [isPlaying, history.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, history.length, speedIdx]);
 
   const [flip] = useState(
     () =>
@@ -342,6 +346,18 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               onPress={() => setIsPlaying(!isPlaying)}
             >
               <Feather name={isPlaying ? 'pause' : 'play'} size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.mediaBtn}
+              onPress={() => {
+                // Tapping speed always leaves playback running so the new
+                // pace is visible immediately — even from paused.
+                setSpeedIdx((prev) => (prev + 1) % SPEEDS.length);
+                setIsPlaying(true);
+              }}
+            >
+              <Text style={styles.speedText}>{SPEEDS[speedIdx]}×</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -674,6 +690,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
+  },
+  speedText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
   },
   btnDisabled: {
     opacity: 0.4,

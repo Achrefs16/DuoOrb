@@ -11,7 +11,6 @@ import { OnlineMode, OnlineScreen } from './src/screens/OnlineScreen';
 import { SideChoice } from './src/screens/MatchSetupScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
-import { ReplayScreen } from './src/screens/ReplayScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SplashScreen, SPLASH_MIN_MS } from './src/screens/SplashScreen';
 import { OnboardingFlow } from './src/screens/OnboardingFlow';
@@ -54,7 +53,6 @@ type SubScreen =
   | 'LEADERBOARD'
   | 'SETTINGS'
   | 'ONLINE'
-  | 'REPLAY'
   | 'REVIEW'
   | null;
 
@@ -96,6 +94,7 @@ export default function App() {
 
   const [selectedPlayer, setSelectedPlayer] = useState<{ userId: string; username: string } | null>(null);
   const [friendRequestsCount, setFriendRequestsCount] = useState<number>(0);
+  const [onlineCount, setOnlineCount] = useState<number>(0);
 
   const [gameConfig, setGameConfig] = useState<ActiveGameConfig>({
     mode: '2p',
@@ -374,7 +373,9 @@ export default function App() {
       history: savedGame.history,
       perspectiveIdx: 0,
     });
-    navigate(currentTab, 'REPLAY');
+    // History/Profile replays open the full review screen (opponent
+    // header, step controls, autoplay) - the plain replay view is retired.
+    navigate(currentTab, 'REVIEW');
   };
 
   // Splash holds until fonts and the persisted identity are hydrated, plus the
@@ -402,7 +403,7 @@ export default function App() {
         <SessionGate>
           {/* Authenticated-only side effects: nothing here runs before a
               canonical identity exists. */}
-          <SessionEffects onFriendRequests={setFriendRequestsCount} />
+          <SessionEffects onFriendRequests={setFriendRequestsCount} onOnlineCount={setOnlineCount} />
         <View style={styles.content}>
           {/* Main Tab Screens (when no subscreen is active) */}
           {subScreen === null && (
@@ -413,6 +414,7 @@ export default function App() {
                   onOpenSetup={handleOpenSetup}
                   onOpenCustomOnline={() => handleOpenSetup('online')}
                   onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
+                  onlineCount={onlineCount}
                 />
               )}
 
@@ -569,16 +571,6 @@ export default function App() {
             />
           )}
 
-          {subScreen === 'REPLAY' && replayData && (
-            <ReplayScreen
-              initialState={replayData.initialState}
-              history={replayData.history}
-              perspectiveIdx={replayData.perspectiveIdx}
-              onBack={goBack}
-              onAnalyze={() => navigate(currentTab, 'REVIEW')}
-            />
-          )}
-
           {subScreen === 'REVIEW' && replayData && (
             <GameReviewScreen
               initialState={replayData.initialState}
@@ -675,17 +667,38 @@ const SessionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
  * Runs only while a session exists. Kept out of the root component so no
  * request is ever issued with a missing or stale identity.
  */
-const SessionEffects: React.FC<{ onFriendRequests: (n: number) => void }> = ({
-  onFriendRequests,
-}) => {
+const SessionEffects: React.FC<{
+  onFriendRequests: (n: number) => void;
+  onOnlineCount: (n: number) => void;
+}> = ({ onFriendRequests, onOnlineCount }) => {
   const { identity } = useSession();
   const userId = identity?.userId;
   useEffect(() => {
     if (!userId) return;
-    api.getFriendRequests()
-      .then((reqs) => onFriendRequests(reqs.length))
-      .catch(() => {});
-  }, [userId, onFriendRequests]);
+    // The badge must light up wherever you are, not only while the Friends
+    // tab is open. FriendsScreen polls on the same cadence when mounted;
+    // both writers publish the same number so they never fight. The lobby
+    // headcount rides the same tick for the Home presence pill.
+    let cancelled = false;
+    const fetchCount = () => {
+      api.getFriendRequests()
+        .then((reqs) => {
+          if (!cancelled) onFriendRequests(reqs.length);
+        })
+        .catch(() => {});
+      api.getOnlineCount()
+        .then((n) => {
+          if (!cancelled) onOnlineCount(n);
+        })
+        .catch(() => {});
+    };
+    fetchCount();
+    const interval = setInterval(fetchCount, 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [userId, onFriendRequests, onOnlineCount]);
   return null;
 };
 

@@ -364,6 +364,12 @@ export const api = {
     return request<FriendItemDto[]>('/friends');
   },
 
+  /** Live lobby headcount (everyone online, not just friends). */
+  async getOnlineCount(): Promise<number> {
+    const res = await request<{ count: number }>('/presence/online').catch(() => null);
+    return typeof res?.count === 'number' ? res.count : 0;
+  },
+
   async getFriendRequests(): Promise<FriendRequestItemDto[]> {
     const res = await request<FriendRequestItemDto[] | { incoming: FriendRequestItemDto[] }>(
       '/friends/requests'

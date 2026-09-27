@@ -17,6 +17,8 @@ interface HomeScreenProps {
   onOpenSetup: (kind: 'ai' | 'local') => void;
   onOpenCustomOnline: () => void;
   onOpenSettings: () => void;
+  /** Everyone online in the game right now (friends and strangers). */
+  onlineCount: number;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -24,6 +26,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpenSetup,
   onOpenCustomOnline,
   onOpenSettings,
+  onlineCount,
 }) => {
   const navLock = useRef(0);
 
@@ -73,6 +76,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <View style={styles.adBanner}>
           <Feather name="shield" size={14} color={THEME.colors.textMuted} />
           <Text style={styles.adBannerText}>COMPETITIVE TURN-BASED GRID STRATEGY</Text>
+        </View>
+
+        {/* Lobby presence: who is online right now, above the play
+            button. A small indicator, nothing more — no tap target, since
+            strangers have no destination screen. */}
+        <View style={styles.presencePill} accessibilityLabel={`${onlineCount} players online`}>
+          <View
+            style={[
+              styles.presenceDot,
+              onlineCount === 0 && styles.presenceDotIdle,
+            ]}
+          />
+          <Text style={styles.presenceText}>
+            {onlineCount > 0
+              ? `${onlineCount} player${onlineCount === 1 ? '' : 's'} online`
+              : 'No players online yet'}
+          </Text>
         </View>
 
         {/* Hero Quick Match Action — starts directly with defaults. */}
@@ -384,6 +404,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
+  },
+  presencePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+  },
+  presenceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22C55E',
+  },
+  presenceDotIdle: {
+    backgroundColor: THEME.colors.textMuted,
+  },
+  presenceText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
   },
   modeCardsList: {
     width: '100%',

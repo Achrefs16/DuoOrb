@@ -16,17 +16,18 @@ type SoundName =
   | 'thirtySeconds';
 
 const SOURCES: Record<SoundName, number> = {
-  ownMove: require('../../assets/sounds/move-self.mp3'),
-  opponentMove: require('../../assets/sounds/move-opponent.mp3'),
+  ownMove: require('../../assets/sounds/move-self.wav'),
+  opponentMove: require('../../assets/sounds/move-opponent.wav'),
   // A move that hops over another orb.
-  jump: require('../../assets/sounds/dot jumponoter.mp3'),
-  wall: require('../../assets/sounds/placewall.mp3'),
+  jump: require('../../assets/sounds/dot jumponoter.wav'),
+  wall: require('../../assets/sounds/placewall.wav'),
   goal: require('../../assets/sounds/goal.wav'),
-  gameStart: require('../../assets/sounds/game-start.mp3'),
-  gameEnd: require('../../assets/sounds/game-end.mp3'),
-  illegal: require('../../assets/sounds/illegalmove.mp3'),
+  gameStart: require('../../assets/sounds/game-start.wav'),
+  gameEnd: require('../../assets/sounds/game-end.wav'),
+  illegal: require('../../assets/sounds/illegalmove.wav'),
+  // No .wav provided for notify: the mp3 stays.
   notify: require('../../assets/sounds/notify.mp3'),
-  thirtySeconds: require('../../assets/sounds/30secondsleft.mp3'),
+  thirtySeconds: require('../../assets/sounds/30secondsleft.wav'),
 };
 
 const players: Record<SoundName, AudioPlayer | null> = {
@@ -44,20 +45,6 @@ const players: Record<SoundName, AudioPlayer | null> = {
 
 let loaded = false;
 let muted = false;
-// Per-sound levels. Wall placement fires often and the raw file is hot,
-// so it sits a little lower than everything else.
-const VOLUMES: Record<SoundName, number> = {
-  ownMove: 1.0,
-  opponentMove: 1.0,
-  jump: 1.0,
-  wall: 0.6,
-  goal: 1.0,
-  gameStart: 1.0,
-  gameEnd: 1.0,
-  illegal: 1.0,
-  notify: 1.0,
-  thirtySeconds: 1.0,
-};
 // Rapid moves (fast opponent, AI bursts) used to stack overlapping taps
 // into harsh noise. Sounds take turns with a small breathing gap instead.
 let playChain: Promise<void> = Promise.resolve();
@@ -69,11 +56,8 @@ async function ensureLoaded(): Promise<void> {
   try {
     // Import lazily so the audio native module is not touched during app
     // startup. Sounds are only needed after gameplay begins.
-    const { createAudioPlayer, setAudioModeAsync } = await import('expo-audio');
-    // Game effects must play at full volume on the music stream and mix
-    // with other apps (not duck under them). Relying on library defaults
-    // here is what made the effects nearly inaudible on some devices.
-    await setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'mixWithOthers' });
+    const { createAudioPlayer } = await import('expo-audio');
+    // Files play exactly as they are: no volume, rate or mode tweaks.
     (Object.keys(SOURCES) as SoundName[]).forEach((name) => {
       players[name] = createAudioPlayer(SOURCES[name]);
     });
@@ -82,10 +66,6 @@ async function ensureLoaded(): Promise<void> {
         player.muted = muted;
       }
     }
-    (Object.keys(players) as SoundName[]).forEach((name) => {
-      const player = players[name];
-      if (player) player.volume = VOLUMES[name];
-    });
     loaded = true;
   } catch {
     // Audio unavailable — stay silent.

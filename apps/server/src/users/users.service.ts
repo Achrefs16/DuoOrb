@@ -251,6 +251,21 @@ export class UsersService {
   }
 
   /**
+   * How many players are online right now, for the Home lobby indicator.
+   * `updatedAt` refreshes on every presence flip, so rows older than a few
+   * minutes are stale ghosts (killed apps whose disconnect never landed)
+   * and are not counted.
+   */
+  async countOnlineUsers() {
+    if (!this.prisma.isConnected) return { count: 0 };
+    const since = new Date(Date.now() - 5 * 60 * 1000);
+    const count = await this.prisma.profile.count({
+      where: { isOnline: true, updatedAt: { gt: since } },
+    });
+    return { count };
+  }
+
+  /**
    * Player search. Excludes the searching account: finding yourself in the
    * list is never useful, and the client hides only the CURRENT id, so an
    * orphaned row for the same human would otherwise surface as a second

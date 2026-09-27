@@ -53,6 +53,13 @@ export class UsersController {
     return this.usersService.searchUsers(query, user.id);
   }
 
+  /** Live lobby headcount for the Home presence pill. */
+  @Get('presence/online')
+  @UseGuards(JwtAuthGuard)
+  async onlineCount() {
+    return this.usersService.countOnlineUsers();
+  }
+
   /**
    * One-shot guest merge: adopts a never-authenticated guest row
    * (ratings, friendships, game history) into the signed-in account,

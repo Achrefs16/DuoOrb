@@ -138,7 +138,14 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 }) => {
   const [view] = useState<OnlineMode>(initialView);
   const [clock, setClock] = useState<TimeControl>(initialClock);
-  const matchConfig = autoMatch ?? { mode: '2p' as GameMode, clock: initialClock, wallsEach: 10 };
+  // Snapshot the entry config on mount, like view/clock above. The one-shot
+  // autoMatch/autoRoom props are consumed (nulled) the moment the search
+  // starts, so reading them live would drop a 3P/4P custom search back to
+  // the '2p' lobby default mid-search — collapsing the multi-seat finding
+  // card into the 1v1 card with a single opponent slot.
+  const [matchConfig] = useState(
+    () => autoMatch ?? { mode: '2p' as GameMode, clock: initialClock, wallsEach: 10 }
+  );
   const matchPlayerCount = playerCountForMode(matchConfig.mode);
   const [roomKind, setRoomKind] = useState<MatchType>('classic');
   const [roomCount, setRoomCount] = useState<2 | 3 | 4>(2);
@@ -863,8 +870,43 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             {!!roomError && <Text style={styles.errorText}>{roomError}</Text>}
           </>
         ) : (
-          /* CREATE & JOIN CARDS */
+          /* CREATE & JOIN CARDS: join-by-code first, room setup below. */
           <>
+            {/* Join Room Card */}
+            <View style={styles.rmCard}>
+              <Text style={styles.rmLabel}>Join Room</Text>
+              <View style={styles.rmJoinRow}>
+                <TextInput
+                  style={styles.rmJoinInput}
+                  placeholder="Enter room code"
+                  placeholderTextColor="#94A3B8"
+                  value={roomCodeInput}
+                  onChangeText={(t) => setRoomCodeInput(t.toUpperCase())}
+                  maxLength={7}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  returnKeyType="join"
+                  onFocus={() => roomsScrollRef.current?.scrollToEnd({ animated: true })}
+                  onSubmitEditing={() => {
+                    if (roomCodeInput.trim() && !roomLoading) {
+                      void joinRoom(roomCodeInput.trim());
+                    }
+                  }}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.rmJoinBtn,
+                    (!roomCodeInput.trim() || roomLoading) && styles.joinBtnDisabled,
+                  ]}
+                  disabled={!roomCodeInput.trim() || roomLoading}
+                  onPress={() => void joinRoom(roomCodeInput.trim())}
+                >
+                  <Text style={styles.rmJoinBtnText}>Join</Text>
+                </TouchableOpacity>
+              </View>
+              {roomError && <Text style={styles.errorText}>{roomError}</Text>}
+            </View>
+
             {/* Create Room Card */}
             <View style={styles.rmCard}>
               {/* Mode Selection */}
@@ -962,41 +1004,6 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   <Text style={styles.rmCtaText}>Create Room</Text>
                 )}
               </TouchableOpacity>
-            </View>
-
-            {/* Join Room Card */}
-            <View style={styles.rmCard}>
-              <Text style={styles.rmLabel}>Join Room</Text>
-              <View style={styles.rmJoinRow}>
-                <TextInput
-                  style={styles.rmJoinInput}
-                  placeholder="Enter room code"
-                  placeholderTextColor="#94A3B8"
-                  value={roomCodeInput}
-                  onChangeText={(t) => setRoomCodeInput(t.toUpperCase())}
-                  maxLength={7}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  returnKeyType="join"
-                  onFocus={() => roomsScrollRef.current?.scrollToEnd({ animated: true })}
-                  onSubmitEditing={() => {
-                    if (roomCodeInput.trim() && !roomLoading) {
-                      void joinRoom(roomCodeInput.trim());
-                    }
-                  }}
-                />
-                <TouchableOpacity
-                  style={[
-                    styles.rmJoinBtn,
-                    (!roomCodeInput.trim() || roomLoading) && styles.joinBtnDisabled,
-                  ]}
-                  disabled={!roomCodeInput.trim() || roomLoading}
-                  onPress={() => void joinRoom(roomCodeInput.trim())}
-                >
-                  <Text style={styles.rmJoinBtnText}>Join</Text>
-                </TouchableOpacity>
-              </View>
-              {roomError && <Text style={styles.errorText}>{roomError}</Text>}
             </View>
           </>
         )}

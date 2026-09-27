@@ -29,6 +29,13 @@ interface PlayerProfileScreenProps {
   onBack: () => void;
   onChallenge: (targetUser: { id: string; username: string }) => void;
   onSelectGame: (game: SavedGameRecord) => void;
+  /**
+   * Rendered as an overlay on top of a live match. Hides everything that
+   * would navigate away (Challenge, replay entries): leaving the game
+   * screen mid-match resigns the live game, so those actions must not be
+   * reachable here. Add Friend stays — it is a plain API call.
+   */
+  inGame?: boolean;
 }
 
 type MatchFilter = 'ALL' | 'WINS' | 'LOSSES';
@@ -53,6 +60,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   onBack,
   onChallenge,
   onSelectGame,
+  inGame = false,
 }) => {
   const [profile, setProfile] = useState<PublicProfileDto | null>(null);
   const [ratingHistory, setRatingHistory] = useState<RatingHistoryPointDto[]>([]);
@@ -303,8 +311,11 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </View>
             </View>
 
-            {/* Action Buttons: Challenge & Add Friend */}
+            {/* Action Buttons: Challenge & Add Friend. Challenge is hidden
+                in a live-match overlay — it would navigate away and resign
+                the game. */}
             <View style={styles.actionsRow}>
+              {!inGame && (
               <TouchableOpacity
                 style={styles.challengeBtn}
                 activeOpacity={0.88}
@@ -313,6 +324,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 <MaterialCommunityIcons name="sword-cross" size={20} color="#FFFFFF" />
                 <Text style={styles.challengeBtnText}>Challenge</Text>
               </TouchableOpacity>
+              )}
 
               <TouchableOpacity
                 style={[
@@ -458,8 +470,8 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                     <TouchableOpacity
                       key={match.gameId}
                       style={styles.matchItem}
-                      activeOpacity={0.75}
-                      onPress={() => handleGameTap(match)}
+                      activeOpacity={inGame ? 1 : 0.75}
+                      onPress={inGame ? undefined : () => handleGameTap(match)}
                     >
                       <View style={styles.matchLeft}>
                         <View style={[styles.resultBadge, isWin ? styles.badgeWin : styles.badgeLoss]}>

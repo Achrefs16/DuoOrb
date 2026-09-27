@@ -24,6 +24,7 @@ import { Feather } from '@expo/vector-icons';
 import { GameBoard, isInsideBoard, nearestWallSlot } from '../components/GameBoard';
 import { PlayerStrip } from '../components/GameHud';
 import { GameOverModal } from '../components/GameOverModal';
+import { PlayerProfileScreen } from './PlayerProfileScreen';
 import { SideChoice } from './MatchSetupScreen';
 import { WallTray } from '../components/WallTray';
 import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
@@ -145,7 +146,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   onNewGame,
   onRematchAccepted,
   onAnalyze,
-  onOpenPlayerProfile,
+  // Accepted for API compatibility (App passes it) but intentionally
+  // unused: opponent profiles open as an in-game overlay so this screen
+  // never unmounts mid-match. See profilePlayer.
 }) => {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const identity = useIdentity();
@@ -255,6 +258,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const dragFrameRef = useRef<number | null>(null);
   const [resignOpen, setResignOpen] = useState<boolean>(false);
   const [finishModal, setFinishModal] = useState<{ place: number } | null>(null);
+  // Opponent profile overlay state lives with the other UI state (not next
+  // to the tap handler): the hardware-back effect above reads it.
+  const [profilePlayer, setProfilePlayer] = useState<{ userId: string; username: string } | null>(null);
   const [rematchSent, setRematchSent] = useState<boolean>(false);
   const [rematchIncomingDismissed, setRematchIncomingDismissed] = useState<boolean>(false);
   // In-match replay: null = live final board; a step number replays the
@@ -1101,6 +1107,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // mounted, so App's generic pop never fires underneath a game.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (profilePlayer) {
+        setProfilePlayer(null);
+        return true;
+      }
       if (showGameOver) {
         setShowGameOver(false);
         return true;
@@ -1139,6 +1149,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     });
     return () => sub.remove();
   }, [
+    profilePlayer,
     showGameOver,
     resignOpen,
     finishModal,
@@ -1205,22 +1216,28 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // seat) means no profile, and the chip stays inert.
   const opponentAccount = useCallback(
     (playerId: string): { userId: string; username: string } | null => {
-      if (!onOpenPlayerProfile) return null;
       const userId = online.playerUserIds[playerId];
       const player = state.players.find((p) => p.id === playerId);
       if (!userId || !player) return null;
       return { userId, username: player.displayName };
     },
-    [onOpenPlayerProfile, online.playerUserIds, state.players]
+    [online.playerUserIds, state.players]
   );
+
+  // Opponent profile opens as an overlay ON TOP of the match — never as a
+  // navigation. Leaving this screen mid-match emits game:leave and forfeits
+  // the live game, which is exactly what the old banner tap did.
+  // (State lives near the other UI state above for the back handler.)
 
   // Only opponents are wired up: your own card opens nothing.
   const handleOpponentPress = useCallback(
     (playerId: string) => {
       const account = opponentAccount(playerId);
-      if (account && onOpenPlayerProfile) onOpenPlayerProfile(account);
+      if (account) setProfilePlayer(account);
     },
-    [onOpenPlayerProfile, opponentAccount]
+    // setProfilePlayer is a stable setter; listing it keeps the manual
+    // memoization exactly matching what the callback closes over.
+    [opponentAccount, setProfilePlayer]
   );
 
   // Bottom grid shares the row with one opponent: that seat stays tappable
@@ -1735,7 +1752,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           opponentAccountForResult
             ? () => {
                 setShowGameOver(false);
-                if (onOpenPlayerProfile) onOpenPlayerProfile(opponentAccountForResult);
+                setProfilePlayer(opponentAccountForResult);
               }
             : undefined
         }
@@ -1790,6 +1807,23 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Opponent profile as an overlay, NOT a navigation: this screen must
+          stay mounted or the walk-away cleanup forfeits the live game. In
+          inGame mode the profile hides Challenge and replay entries, so
+          nothing here can navigate away; hardware back closes it first. */}
+      {profilePlayer && (
+        <View style={styles.profileOverlay}>
+          <PlayerProfileScreen
+            userId={profilePlayer.userId}
+            initialUsername={profilePlayer.username}
+            onBack={() => setProfilePlayer(null)}
+            onChallenge={() => {}}
+            onSelectGame={() => {}}
+            inGame
+          />
+        </View>
+      )}
     </View>
   );
 };
@@ -2185,6 +2219,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     padding: 12,
     paddingBottom: 28,
+  },
+  profileOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: THEME.colors.background,
   },
   rematchToast: {
     flexDirection: 'row',
