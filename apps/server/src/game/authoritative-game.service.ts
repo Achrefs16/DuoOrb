@@ -1029,13 +1029,21 @@ export class AuthoritativeGameService {
       delete game.disconnectedUsers[userId];
     }
 
-    return this.getSyncState(gameId, 0);
+    return this.getSyncState(gameId, 0, userId);
   }
 
   /**
    * Resynchronizes a player on reconnect with authoritative state and missing moves.
+   *
+   * `forUserId` is the id the SERVER resolved from the verified token. When
+   * given, the response carries that player's seat in `you`, so the client
+   * never has to guess which seat is its own.
    */
-  public getSyncState(gameId: string, lastSequence = 0): GameSyncDto | null {
+  public getSyncState(
+    gameId: string,
+    lastSequence = 0,
+    forUserId?: string
+  ): GameSyncDto | null {
     const game = this.games.get(gameId);
     if (!game) return null;
 
@@ -1052,6 +1060,7 @@ export class AuthoritativeGameService {
       clock: clockDto,
       missingActions: missing,
       playerUserIds: game.playerUserIds,
+      you: forUserId ? game.userPlayerIds[forUserId] ?? null : undefined,
     };
   }
 

@@ -3,7 +3,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
-  useMemo,
+  useRef,
   useState,
 } from 'react';
 import { Platform } from 'react-native';
@@ -12,64 +12,34 @@ import { makeRedirectUri } from 'expo-auth-session';
 import type { User } from '../lib/supabase';
 import { getSupabaseAuth, isSupabaseConfigured } from '../lib/supabase';
 import {
-  getCurrentUser,
-  adoptAccountIdentity,
-  resetToNewGuest,
-  cacheProfile,
-  getStoredRefreshToken,
-  setGuestCredentials,
-  clearGuestCredentials,
-  subscribeIdentity,
+  clearIdentity,
+  getIdentity,
+  setIdentity,
+  useIdentity,
 } from './auth';
 import { socketManager } from './socket';
+import { api, ApiError, setTokenProvider, createGuestSession, refreshGuestSession } from './apiClient';
 import {
-  api,
-  ApiError,
-  setTokenProvider,
-  createGuestSession,
-  refreshGuestSession,
-} from './apiClient';
+  createGuestIdentity,
+  loadCanonicalProfile,
+  restoreSession,
+  ServerProfile,
+} from './sessionRestore';
 import { clearOnboarding } from '../storage/onboarding';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const MERGE_KEY_PREFIX = '@duoorb:auth:merged-guest:';
-
 /**
- * In-flight guest bootstrap, shared by every caller for the lifetime of the
- * module. See ensureGuestSession for why concurrent calls are harmful.
+ * Session lifecycle.
+ *
+ * `restoring`  — recovering persisted credentials. Renders nothing.
+ * `anonymous`  — no usable session. Onboarding (Welcome -> Username) is shown.
+ * `ready`      — canonical identity installed, `/me` loaded, app may render.
+ *
+ * There is no path from `restoring` to `ready` that creates an account. Only
+ * the Continue as Guest button can do that.
  */
-let guestSessionInFlight: Promise<boolean> | null = null;
-
-function readMergeRecord(guestId: string): string | null {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      return window.localStorage.getItem(MERGE_KEY_PREFIX + guestId);
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-function writeMergeRecord(guestId: string, accountId: string): void {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem(MERGE_KEY_PREFIX + guestId, accountId);
-    }
-  } catch {
-    // ignore
-  }
-}
-
-export interface Identity {
-  userId: string;
-  displayName: string;
-  /** Public @handle, present for signed-in players once /me has loaded. */
-  username?: string;
-  email?: string;
-  isGuest: boolean;
-}
+export type SessionStatus = 'restoring' | 'anonymous' | 'ready';
 
 export interface SessionProfile {
   username: string;
@@ -77,11 +47,11 @@ export interface SessionProfile {
 }
 
 interface SessionContextValue {
-  identity: Identity;
-  /** Server profile (username + display name), null for guests or before load. */
+  /** The one canonical identity. Null only while `anonymous`/`restoring`. */
+  identity: ReturnType<typeof useIdentity>;
   profile: SessionProfile | null;
-  /** False while the initial /me fetch is still in flight. */
   profileLoading: boolean;
+  status: SessionStatus;
   supabaseUser: User | null;
   loading: boolean;
   signingIn: boolean;
@@ -89,188 +59,184 @@ interface SessionContextValue {
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
-  /** Re-pulls /me and refreshes identity; call after editing the profile. */
+  /** Re-reads `/me` and folds it into the canonical identity. */
   refreshProfile: () => Promise<boolean>;
   /**
-   * Ensures guest credentials exist (minting or rotating them). The welcome
-   * screen calls this before letting a player continue as a guest.
+   * Creates a guest. EXCLUSIVELY called by the Continue as Guest button.
+   * Concurrent calls share one in-flight request, so a double tap or a
+   * remount mints exactly one account.
    */
-  ensureGuestSession: () => Promise<boolean>;
+  continueAsGuest: () => Promise<boolean>;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
+const isDeadSessionError = (error: unknown): boolean =>
+  error instanceof ApiError && (error.status === 401 || error.status === 403);
+
+/**
+ * Carries guest progress (rating, friends, history) into a freshly signed-in
+ * account. Fire-and-forget: a failure must never block sign-in, and the merge
+ * is one-shot server-side so a retry is harmless.
+ */
+async function linkGuestProgress(accessToken: string, guestId: string): Promise<void> {
+  try {
+    await api.linkGuest(guestId, accessToken);
+  } catch {
+    // Progress stays on the guest row; not worth surfacing.
+  }
+}
+
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<SessionStatus>('restoring');
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Server-owned identity (username + display name). Kept in state so an edit
-  // re-renders every consumer, and mirrored into the local identity cache so
-  // the socket handshake, room slots and seats pick it up immediately.
-  const [profile, setProfile] = useState<SessionProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  // The canonical identity, live. Every consumer in the app resolves the user
+  // through this (directly or via useIdentity), so there is no second copy
+  // that can drift.
+  const identity = useIdentity();
+  const [profile, setProfile] = useState<SessionProfile | null>(null);
 
-  // Single source of truth: re-read the identity cache whenever ANY
-  // mutation (mint, rename, sign-in/out) lands, so this context never
-  // holds the stale first-paint snapshot the old useMemo([]) kept.
-  const [identityVersion, setIdentityVersion] = useState(0);
-  useEffect(
-    () => subscribeIdentity(() => setIdentityVersion((v) => v + 1)),
-    []
-  );
-  const guest = useMemo(
-    () => getCurrentUser(),
-    // identityVersion is a deliberate change signal, not a read value:
-    // every auth mutation bumps it so this re-reads the live cache.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [identityVersion]
-  );
-  const accountId = supabaseUser?.id;
-
-  // Push the current credential into the socket layer whenever the session
-  // changes, reconnecting if already connected. Signed-in players present
-  // their Supabase JWT; guests present their server-issued access token —
-  // pushing null for guests used to leave live sockets holding a stale or
-  // empty token forever.
-  const pushTokenToSocket = useCallback(async () => {
-    if (!isSupabaseConfigured) return;
-    try {
-      const { data } = await getSupabaseAuth().getSession();
-      socketManager.updateAuthToken(
-        data.session?.access_token || getCurrentUser().token || null
-      );
-    } catch {
-      socketManager.updateAuthToken(getCurrentUser().token || null);
-    }
+  const fetchProfile = useCallback(async (accessToken: string): Promise<ServerProfile> => {
+    // `getMe` sends its own Authorization header from the canonical store, so
+    // the token argument is only used to assert the caller's intent.
+    void accessToken;
+    const me = await api.getMe();
+    return { username: me.username, displayName: me.displayName };
   }, []);
 
-  /**
-   * Makes sure a guest holds credentials the server actually issued.
-   *
-   * Three cases: a live refresh token mints a new access token; a dead one
-   * (expired, revoked, rate-limited) is dropped and a brand-new identity is
-   * minted so the device can never wedge itself retrying the same token;
-   * with nothing stored, a first identity is requested. There is no
-   * locally-generated fallback — the server would reject it.
-   *
-   * SERIALIZED ON PURPOSE. The boot effect below re-runs whenever the guest
-   * id changes, and setGuestCredentials is what changes it, so two
-   * invocations could overlap. They each read the stored refresh token
-   * synchronously before either has written one, so both would see `null`
-   * and both would POST /api/guest — minting two server-side identities for
-   * one device, orphaning the first. On top of that, guest creation is rate
-   * limited, so every duplicate burns quota and the device locks itself out
-   * ("works twice, then stops"). One in-flight promise at a time is the fix.
-   */
-  const ensureGuestSession = useCallback(async (): Promise<boolean> => {
-    if (!isSupabaseConfigured) return false;
-    if (guestSessionInFlight) return guestSessionInFlight;
-
-    const run = async (): Promise<boolean> => {
-      const stored = getStoredRefreshToken();
-      if (stored) {
-        try {
-          setGuestCredentials(await refreshGuestSession(stored));
-          socketManager.syncIdentity();
-          return true;
-        } catch (err) {
-          if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-            clearGuestCredentials();
-          } else {
-            setError('Could not reach the server. Check your connection and try again.');
-            return false;
-          }
-        }
-      }
-      try {
-        setGuestCredentials(await createGuestSession());
-        socketManager.syncIdentity();
-        return true;
-      } catch (err) {
-        setError(
-          err instanceof ApiError
-            ? err.message
-            : 'Could not reach the server. Check your connection and try again.'
-        );
-        return false;
-      }
-    };
-
-    guestSessionInFlight = run().finally(() => {
-      guestSessionInFlight = null;
-    });
-    return guestSessionInFlight;
+  const applyProfileToState = useCallback((next: ServerProfile | null) => {
+    if (!next) return;
+    setProfile(next);
   }, []);
 
-  const getAccessToken = useCallback(async (): Promise<string | null> => {
-    if (!isSupabaseConfigured) return null;
-    try {
-      const { data } = await getSupabaseAuth().getSession();
-      return data.session?.access_token ?? null;
-    } catch {
-      return null;
-    }
-  }, []);
-
+  /* ---------------------------------------------------------------------- */
+  /* Boot: hydrate -> restore -> /me. Never creates an account.              */
+  /* ---------------------------------------------------------------------- */
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
-      if (isSupabaseConfigured) {
-        try {
-          const { data } = await getSupabaseAuth().getSession();
-          if (!cancelled) setSupabaseUser(data.session?.user ?? null);
-        } catch {
-          // offline on first launch — guest mode
+      try {
+        const supabaseSession = isSupabaseConfigured
+          ? (await getSupabaseAuth().getSession().catch(() => ({ data: { session: null } }))).data
+              .session
+          : null;
+
+        if (cancelled) return;
+
+        if (supabaseSession?.user) {
+          // A signed-in account is authoritative; adopt it and load /me.
+          setSupabaseUser(supabaseSession.user);
+          setIdentity({
+            userId: supabaseSession.user.id,
+            username: '',
+            displayName:
+              (supabaseSession.user.user_metadata?.full_name as string | undefined) ?? 'Player',
+            accessToken: supabaseSession.access_token,
+            refreshToken: null,
+            isGuest: false,
+          });
+          const next = await loadCanonicalProfile(supabaseSession.access_token, fetchProfile);
+          if (cancelled) return;
+          applyProfileToState(next ? { username: next.username, displayName: next.displayName } : null);
+          if (!cancelled) setStatus('ready');
+          return;
         }
+
+        const outcome = await restoreSession({
+          getStoredRefreshToken: () => getIdentity()?.refreshToken ?? null,
+          refreshGuestSession,
+          fetchProfile,
+          isDeadSession: isDeadSessionError,
+        });
+        if (cancelled) return;
+
+        if (outcome.status === 'restored') {
+          applyProfileToState(
+            outcome.profileLoaded
+              ? { username: outcome.identity.username, displayName: outcome.identity.displayName }
+              : null
+          );
+          setStatus('ready');
+        } else {
+          setStatus('anonymous');
+        }
+      } catch (e: any) {
+        if (cancelled) return;
+        setError(e?.message ?? 'Could not restore your session.');
+        setStatus('anonymous');
       }
-      // A guest needs server-issued credentials before the socket handshake or
-      // any API call, so mint (or rotate) them first.
-      if (!(await ensureGuestSession()) && !cancelled) {
-        setError('Could not reach the server. Check your connection and try again.');
-      }
-      if (!cancelled) setLoading(false);
-      await pushTokenToSocket();
     })();
 
-    if (!isSupabaseConfigured) return undefined;
-    const { data: listener } = getSupabaseAuth().onAuthStateChange(async (_event, session) => {
-      if (cancelled) return;
-      setSupabaseUser(session?.user ?? null);
-      if (session?.user) {
-        // Migrate live state on the CURRENT socket first (server moves
-        // rooms/seats/queue guest -> account), then adopt the account id
-        // locally. If migration fails we stay guest: safe, never split.
-        const token = session.access_token ?? (await getAccessToken());
-        if (token) {
-          const moved = await socketManager.adoptSession(token);
-          if (moved && !cancelled) {
-            adoptAccountIdentity(session.user.id);
-            socketManager.syncIdentity();
-          }
-        }
-      } else {
-        // Read the id live rather than from the `guest` memo: this effect no
-        // longer depends on guest.userId (it must not, or writing credentials
-        // re-triggers the effect that wrote them), so a captured value here
-        // could be stale by the time a sign-out actually happens.
-        writeMergeRecord(getCurrentUser()?.userId ?? guest.userId, 'signed-out');
-      }
-      await pushTokenToSocket();
-    });
     return () => {
       cancelled = true;
-      listener.subscription.unsubscribe();
     };
-    // Intentionally NOT depending on guest.userId. setGuestCredentials is
-    // what changes that value, so depending on it made this effect re-trigger
-    // itself after every credential write — the loop behind the duplicate
-    // guest identities. Auth changes still arrive via onAuthStateChange, which
-    // is registered once here. Re-bootstrapping the guest after an account
-    // adoption was also harmful: it would overwrite the freshly adopted
-    // account identity with the guest one.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pushTokenToSocket, getAccessToken, ensureGuestSession]);
+  }, [fetchProfile, applyProfileToState]);
+
+  /* ---------------------------------------------------------------------- */
+  /* Token provider: always the CURRENT canonical identity.                  */
+  /* ---------------------------------------------------------------------- */
+  useEffect(() => {
+    setTokenProvider(async () => {
+      const live = getIdentity();
+      if (live?.isGuest) return live.accessToken;
+      // Signed in: prefer the Supabase session, fall back to canonical.
+      if (isSupabaseConfigured) {
+        const { data } = await getSupabaseAuth().getSession().catch(() => ({ data: { session: null } }));
+        if (data.session?.access_token) return data.session.access_token;
+      }
+      return live?.accessToken ?? null;
+    });
+  }, []);
+
+  /* ---------------------------------------------------------------------- */
+  /* Account sign-in / sign-out.                                             */
+  /* ---------------------------------------------------------------------- */
+  useEffect(() => {
+    if (!isSupabaseConfigured) return undefined;
+    const { data: listener } = getSupabaseAuth().onAuthStateChange(async (_event, session) => {
+      setSupabaseUser(session?.user ?? null);
+      if (session?.user) {
+        const token = session.access_token;
+        // Capture the guest id BEFORE the account replaces it, so guest
+        // progress (rating, friends, history) can be merged into the account.
+        const previous = getIdentity();
+        const mergingGuest =
+          previous?.isGuest === true && previous.userId !== session.user.id ? previous.userId : null;
+
+        setIdentity({
+          userId: session.user.id,
+          username: '',
+          displayName:
+            (session.user.user_metadata?.full_name as string | undefined) ?? 'Player',
+          accessToken: token,
+          refreshToken: null,
+          isGuest: false,
+        });
+        // The socket observes identity changes itself and rebuilds with the
+        // account credential, then migrates live rooms/seats/queue.
+        socketManager.adoptSession(token);
+        if (mergingGuest) void linkGuestProgress(token, mergingGuest);
+
+        const next = await loadCanonicalProfile(token, fetchProfile);
+        if (next) {
+          applyProfileToState({ username: next.username, displayName: next.displayName });
+        }
+        setStatus('ready');
+      } else {
+        // Signed out: forget everything. The next Continue as Guest press
+        // mints a new identity — never silently, never at boot.
+        clearIdentity();
+        setProfile(null);
+        void clearOnboarding();
+        setStatus('anonymous');
+      }
+    });
+    return () => listener.subscription.unsubscribe();
+  }, [fetchProfile, applyProfileToState]);
 
   const signInWithGoogle = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -280,9 +246,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setSigningIn(true);
     setError(null);
     try {
-      // WEB: full-page redirect back to our origin (popups + custom schemes
-      // cannot complete on desktop browsers). The client restores the
-      // session from the returning URL automatically.
       if (Platform.OS === 'web') {
         const siteUrl =
           typeof window !== 'undefined' && window.location?.origin
@@ -295,7 +258,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (oauthError) throw oauthError;
         return;
       }
-      // NATIVE: PKCE via system browser, then explicit code exchange.
       const redirectTo = makeRedirectUri({ scheme: 'duoorb', path: 'auth/callback' });
       const { data, error: oauthError } = await getSupabaseAuth().signInWithOAuth({
         provider: 'google',
@@ -326,166 +288,83 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     try {
       if (isSupabaseConfigured) await getSupabaseAuth().signOut();
     } finally {
+      clearIdentity();
+      socketManager.disconnect();
       setProfile(null);
-      // An explicit sign-out is a clean first run on this device, so the
-      // welcome + username flow is offered again next launch.
       void clearOnboarding();
-      resetToNewGuest();
-      // resetToNewGuest dropped the credentials, so the socket has nothing to
-      // present until a new guest is minted.
-      await ensureGuestSession();
-      await pushTokenToSocket();
-      socketManager.refreshIdentity(getCurrentUser().userId);
-      socketManager.syncIdentity();
-    }
-  }, [ensureGuestSession, pushTokenToSocket]);
-
-  useEffect(() => {
-    setTokenProvider(getAccessToken);
-  }, [getAccessToken]);
-
-  /**
-   * One-shot guest merge, run automatically on sign-in. Silent by design:
-   * a background retry must not surface an error toast, so failures only
-   * schedule another attempt.
-   */
-  const mergeGuestProgress = useCallback(async (): Promise<boolean> => {
-    try {
-      const token = await getAccessToken();
-      if (!token) return false;
-      const base = process.env.EXPO_PUBLIC_SERVER_URL;
-      if (!base) return false;
-      const res = await fetch(`${base}/api/users/link`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ guestId: guest.userId }),
-      });
-      if (!res.ok) return false;
-      writeMergeRecord(guest.userId, accountId ?? 'account');
-      return true;
-    } catch {
-      return false;
-    }
-  }, [getAccessToken, guest.userId, accountId]);
-
-  /**
-   * Guest progress is carried into the account with no prompt: the player
-   * signs in to keep playing, so keeping their rating, friends and history is
-   * the expected behaviour. A marker is written once per guest so this runs
-   * a single time, and a failed attempt (offline, server down) is retried
-   * quietly until it succeeds.
-   */
-  useEffect(() => {
-    if (!supabaseUser) return undefined;
-    if (readMergeRecord(guest.userId)) return undefined;
-
-    let cancelled = false;
-    let retry: ReturnType<typeof setTimeout> | null = null;
-    const attempt = async () => {
-      const merged = await mergeGuestProgress();
-      if (cancelled || merged) return;
-      retry = setTimeout(() => void attempt(), 5000);
-    };
-    void attempt();
-
-    return () => {
-      cancelled = true;
-      if (retry) clearTimeout(retry);
-    };
-  }, [supabaseUser, guest.userId, mergeGuestProgress]);
-
-  /**
-   * Fetches the server profile and mirrors it into the local identity cache
-   * (so the socket handshake, room slots and seats pick it up).
-   *
-   * Works for guests too: the API client falls back to the local dev token,
-   * so a guest gets a real server profile with a generated `player_xxxxxx`
-   * handle that can be renamed just like a signed-in account. Returns null
-   * when the request fails — callers keep whatever they had.
-   */
-  const loadProfile = useCallback(async (): Promise<SessionProfile | null> => {
-    try {
-      const me = await api.getMe();
-      const next: SessionProfile = {
-        username: me.username,
-        displayName: me.displayName,
-      };
-      cacheProfile(next);
-      return next;
-    } catch {
-      return null;
+      setStatus('anonymous');
     }
   }, []);
 
-  /** Re-reads /me and pushes it into session state. True on success. */
+  /* ---------------------------------------------------------------------- */
+  /* Continue as Guest: the ONLY account-creation path.                      */
+  /* ---------------------------------------------------------------------- */
+  const guestCreateInFlight = useRef<Promise<boolean> | null>(null);
+
+  const continueAsGuest = useCallback(async (): Promise<boolean> => {
+    if (guestCreateInFlight.current) return guestCreateInFlight.current;
+
+    const run = async (): Promise<boolean> => {
+      setError(null);
+      try {
+        const result = await createGuestIdentity({ fetchProfile }, createGuestSession);
+        if (!result.ok) return false;
+        applyProfileToState({
+          username: result.identity.username,
+          displayName: result.identity.displayName,
+        });
+        setStatus('ready');
+        return true;
+      } catch (e: any) {
+        setError(
+          e instanceof ApiError
+            ? e.message
+            : 'Could not reach the server. Check your connection and try again.'
+        );
+        return false;
+      }
+    };
+
+    guestCreateInFlight.current = run().finally(() => {
+      guestCreateInFlight.current = null;
+    });
+    return guestCreateInFlight.current;
+  }, [fetchProfile, applyProfileToState]);
+
+  /** Re-reads `/me` and folds the result into the canonical identity. */
   const refreshProfile = useCallback(async (): Promise<boolean> => {
     setProfileLoading(true);
     try {
-      const next = await loadProfile();
+      const live = getIdentity();
+      if (!live) return false;
+      const next = await loadCanonicalProfile(live.accessToken, fetchProfile);
       if (!next) return false;
-      setProfile(next);
-      // Names changed (or first arrived): push them to the live socket
-      // state so rooms and matches stop showing the handshake snapshot.
-      socketManager.syncIdentity();
+      applyProfileToState({ username: next.username, displayName: next.displayName });
       return true;
+    } catch {
+      return false;
     } finally {
       setProfileLoading(false);
     }
-  }, [loadProfile]);
-
-  // Initial load. The setState lives in the promise callback, so the effect
-  // itself never triggers a cascading render.
-  useEffect(() => {
-    let cancelled = false;
-    void loadProfile().then((next) => {
-      if (!cancelled && next) {
-        setProfile(next);
-        socketManager.syncIdentity();
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [loadProfile]);
-
-  const identity: Identity = supabaseUser
-    ? {
-        userId: supabaseUser.id,
-        // The chosen display name wins over the identity provider's, since
-        // that is what the player sees in matches and what others see.
-        displayName:
-          profile?.displayName ??
-          (supabaseUser.user_metadata?.full_name as string | undefined) ??
-          supabaseUser.email ??
-          'Player',
-        username: profile?.username,
-        email: supabaseUser.email,
-        isGuest: false,
-      }
-    : {
-        userId: guest.userId,
-        // Guests get the same editable identity, just without an email.
-        displayName: profile?.displayName ?? guest.displayName,
-        username: profile?.username ?? guest.username,
-        isGuest: true,
-      };
+  }, [fetchProfile, applyProfileToState]);
 
   const value: SessionContextValue = {
     identity,
     profile,
     profileLoading,
+    status,
     supabaseUser,
-    loading,
+    loading: status === 'restoring',
     signingIn,
     error,
     signInWithGoogle,
     signOut,
-    getAccessToken,
+    getAccessToken: async () => {
+      const live = getIdentity();
+      return live?.accessToken ?? null;
+    },
     refreshProfile,
-    ensureGuestSession,
+    continueAsGuest,
   };
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

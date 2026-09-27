@@ -49,8 +49,8 @@ export class UsersController {
 
   @Get('users/search')
   @UseGuards(JwtAuthGuard)
-  async searchUsers(@Query('q') query: string) {
-    return this.usersService.searchUsers(query);
+  async searchUsers(@CurrentUser() user: AuthenticatedUser, @Query('q') query: string) {
+    return this.usersService.searchUsers(query, user.id);
   }
 
   /**

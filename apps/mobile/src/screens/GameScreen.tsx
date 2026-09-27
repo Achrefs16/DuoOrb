@@ -32,7 +32,7 @@ import { THEME, playerColor, wallPreviewColor } from '../theme';
 import { DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
-import { getCurrentUser } from '../network/auth';
+import { useIdentity } from '../network/auth';
 import { socketManager } from '../network/socket';
 
 interface GameScreenProps {
@@ -70,7 +70,7 @@ function playerNamesFor(
 ) {
   const n = playerCountForMode(mode);
   if (type === 'ai') {
-    if (mode === '2p') return humanIdx === 0 ? [ownName, `AI · ${aiDifficulty}`] : [`AI · ${aiDifficulty}`, ownName];
+    if (mode === '2p') return humanIdx === 0 ? [ownName, `AI ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${aiDifficulty}`] : [`AI ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${aiDifficulty}`, ownName];
     // AI games: you lead, every other seat is an AI opponent.
     return Array.from({ length: n }, (_, i) =>
       i === 0 ? ownName : i === 1 ? 'AI' : `AI ${i}`
@@ -88,7 +88,7 @@ const EMPTY_CELL_LIST: CellCoord[] = [];
 const EMPTY_PREMOVE_MARKS: { to: CellCoord; color: string }[] = [];
 const EMPTY_QUEUED_WALLS: { qi: number; wall: WallCoord; color: string }[] = [];
 
-/** Thinking beat per difficulty — long enough to queue a premove. */
+/** Thinking beat per difficulty ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â long enough to queue a premove. */
 function thinkMsFor(difficulty: AIDifficulty, testThink: boolean): number {
   if (testThink) return 10000;
   switch (difficulty) {
@@ -114,9 +114,9 @@ function desiredRotationDeg(
     return mode === '2p' && autoFlip && currentPlayerIndex === 1 ? 180 : 0;
   }
   // Derive perspective from the seat's actual starting edge, not from a
-  // mode-specific table: bottom=0°, top=180°, left=270°, right=90°.
+  // mode-specific table: bottom=0ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°, top=180ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°, left=270ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°, right=90ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°.
   // This covers Blue/Red/Green/Yellow Rush Center seats and Race seats
-  // (Race starts on the bottom row, so it correctly stays at 0°).
+  // (Race starts on the bottom row, so it correctly stays at 0ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°).
   if (!startPosition) return 0;
   if (startPosition.row === 8) return 0;
   if (startPosition.row === 0) return 180;
@@ -145,7 +145,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   onAnalyze,
 }) => {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const currentUser = getCurrentUser();
+  const identity = useIdentity();
 
   const online = useOnlineGame({
     gameId: onlineGameId || '',
@@ -174,7 +174,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // Every non-human seat in an AI game is AI-controlled
   const isAiSide = (idx: number) => type === 'ai' && idx !== humanIdx;
   const [initialState] = useState<GameState>(() =>
-    createInitialState({ mode, playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, currentUser.displayName), wallsEach })
+    createInitialState({ mode, playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You'), wallsEach })
   );
   // Static board orientation. Online/AI never animate a flip: the board
   // initializes directly in the player's perspective after the server seat
@@ -235,12 +235,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (
       type === 'online' &&
       online.lastFinished &&
-      online.lastFinished.userId === currentUser.userId &&
+      online.lastFinished.userId === identity?.userId &&
       state.status === 'IN_PROGRESS'
     ) {
       setFinishModal({ place: online.lastFinished.place });
     }
-  }, [type, online.lastFinished, currentUser.userId, state.status]);
+  }, [type, online.lastFinished, identity?.userId, state.status]);
 
   const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
   const [showGameOver, setShowGameOver] = useState<boolean>(false);
@@ -248,7 +248,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const wallDragRef = useRef<WallDrag | null>(null);
   // Coalesces touch-move floods (often 100+/sec) into one state commit per
   // animation frame. The ref always holds the latest finger position, so no
-  // movement is lost — intermediates are just skipped.
+  // movement is lost ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â intermediates are just skipped.
   const dragFrameRef = useRef<number | null>(null);
   const [resignOpen, setResignOpen] = useState<boolean>(false);
   const [finishModal, setFinishModal] = useState<{ place: number } | null>(null);
@@ -283,7 +283,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [type, online.clocks]);
 
   // Per-move bonus: credited to the mover after every move/wall, in EVERY
-  // match and clock. Toggleable from Settings — when off, no bonus at all.
+  // match and clock. Toggleable from Settings ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â when off, no bonus at all.
   // The credit flashes on the mover's clock so the jump is legible.
   const [lastBonus, setLastBonus] = useState<{ playerId: string; amount: number } | null>(null);
   // Manual deps are intentional: the callback must refresh when the clock
@@ -320,13 +320,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         try {
           socketManager.getSocket().emit('game:leave', { gameId: onlineGameId });
         } catch {
-          // offline — server grace path covers it
+          // offline ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â server grace path covers it
         }
       }
     };
   }, [type, onlineGameId]);
 
-  // Action sounds — fire for both player and AI actions.
+  // Action sounds ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â fire for both player and AI actions.
   // A move onto the goal line gets its own distinct chime.
   // Audio is pre-warmed on mount so the first move doesn't pay the
   // native-module + WAV-decode cold start inside its tap commit.
@@ -352,7 +352,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const boardSizeRef = useRef<number>(Math.min(windowWidth - 32, 420));
   // Measured chrome heights so the board takes exactly the leftover space:
   // full width on tall phones, shrunk-to-fit on short ones. No scrolling,
-  // no gaps — resign is always visible, nothing overflows.
+  // no gaps ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â resign is always visible, nothing overflows.
   const [topH, setTopH] = useState(0);
   const [bottomH, setBottomH] = useState(0);
   const measuredBoardSize = Math.max(
@@ -467,7 +467,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   );
   // Dots show for the first pick only; afterwards the queue runs blind on
   // tints (own turn always keeps its normal dots).
-  // No possibility highlights while queueing — only tapped cells tint.
+  // No possibility highlights while queueing ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â only tapped cells tint.
   const hideDots = canPremove;
   const hintColor = showSel ? myColor : currentBallColor;
   const premoveMarks = useMemo(() => {
@@ -517,7 +517,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   /**
    * Revalidate the queue against the live board the moment anything changes
    * (e.g. a wall just landed): simulate steps in order as yourself on a
-   * throwaway copy — the real state is never touched. The first step that
+   * throwaway copy ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the real state is never touched. The first step that
    * became impossible drops itself and everything chained after it, so its
    * highlights vanish immediately.
    */
@@ -571,7 +571,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     return () => clearInterval(interval);
   }, [state.status, type]);
 
-  // AI turn — logic untouched, presentation only.
+  // AI turn ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â logic untouched, presentation only.
   // NOTE: isAiThinking is intentionally NOT used as a scheduling guard here:
   // setting it re-renders and would run this effect's cleanup, cancelling
   // the AI timer before it fires (which left the game stuck "thinking").
@@ -733,7 +733,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (state.status !== 'IN_PROGRESS') return;
     // Premove queueing on the AI's turn: own orb selects, a dot appends a
     // step (chained from the last one when extended), tapping a ring drops
-    // that step. Strictly your own orb — never the AI's.
+    // that step. Strictly your own orb ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â never the AI's.
     if (canPremove && myOrb) {
       if (target.row === myOrb.position.row && target.col === myOrb.position.col) {
         // One tap undoes everything: a non-empty queue clears outright,
@@ -765,7 +765,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           from: { ...selFrom },
           to: target,
         };
-        // Chain up to 5 — selection stays so the next tap extends the route.
+        // Chain up to 5 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â selection stays so the next tap extends the route.
         setPremoveQueue((prev) => (prev.length >= 5 ? prev : [...prev, step]));
         return;
       }
@@ -855,7 +855,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
     const pt = toBoardPoint(pageX, pageY);
     if (!pt) return;
-    // Released outside the board → cancel silently.
+    // Released outside the board ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ cancel silently.
     if (!isInsideBoard(pt.boardSize, pt.x, pt.y)) return;
 
     const slot = nearestWallSlot(pt.boardSize, pt.x, pt.y);
@@ -932,11 +932,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setPremoveSel(null);
     const fresh = createInitialState({
       mode,
-      playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, currentUser.displayName),
+      playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You'),
       wallsEach,
     });
     setState(fresh);
-    // Fresh clocks — never carry leftover time into the new match.
+    // Fresh clocks ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â never carry leftover time into the new match.
     const full = timeControl.minutes * 60;
     const reset: Record<string, number> = {};
     for (const p of fresh.players) reset[p.id] = full;
@@ -957,7 +957,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const myAiFinished = type === 'ai' && myOrb?.status === 'FINISHED';
   const isCompleted = state.status === 'COMPLETED';
   const isMultiplayer = state.players.length > 2;
-  // No Resign anywhere near a finished match — and never in local games.
+  // No Resign anywhere near a finished match ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â and never in local games.
   const canResign =
     !isCompleted && type !== 'local' && !mySeatFinished && !myAiFinished;
 
@@ -969,7 +969,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       try {
         socketManager.getSocket().emit('game:leave', { gameId: onlineGameId });
       } catch {
-        // offline — nothing to free server-side
+        // offline ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â nothing to free server-side
       }
     }
     onHome();
@@ -1007,7 +1007,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [isCompleted, type, initialState, state.mode, state.players, state.history]);
   const totalSteps = state.history.length;
   // Reconstruction can throw if the local history diverged (missed
-  // broadcast) — fall back to the live final board instead of crashing.
+  // broadcast) ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â fall back to the live final board instead of crashing.
   const replayState: GameState | null = useMemo(() => {
     if (viewingStep === null || !replayBase) return null;
     try {
@@ -1132,8 +1132,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // Board-relative drag position for the ghost preview, reduced to a
   // snapped-slot STRING key. The raw computation below is trivial (rect
   // reads + a 64-cell scan), but the key is value-compared: same-slot
-  // pointer motion keeps the memoized board — and its BFS legality
-  // check — asleep instead of rebuilding ~300 views per touch event.
+  // pointer motion keeps the memoized board ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â and its BFS legality
+  // check ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â asleep instead of rebuilding ~300 views per touch event.
   let dragSlotRaw: WallCoord | null = null;
   if (wallDrag) {
     const pt = toBoardPoint(wallDrag.pageX, wallDrag.pageY);
@@ -1159,7 +1159,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // only the small ghost view re-renders when the snapped slot changes.
   // Passing it to GameBoard as a prop re-rendered ~300 views per slot crossing,
   // which capped dragging a held wall across the board at ~15fps while dragging
-  // outside it — where no slot is produced — stayed smooth.
+  // outside it ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â where no slot is produced ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â stayed smooth.
   const dragGhostValue = useMemo(() => {
     if (!dragSlot || !currentPlayer) {
       return { slot: null, legal: false, color: trayColor };
@@ -1228,7 +1228,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </View>
         <View style={styles.syncingOverlay}>
           <ActivityIndicator size="large" color={THEME.colors.textPrimary} />
-          <Text style={styles.syncingText}>Connecting to match…</Text>
+          <Text style={styles.syncingText}>Connecting to matchÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦</Text>
           {/* Must release the seat, not just navigate. Plain onHome left the
               player seated in a live game, so their clock kept running and
               the game was forfeited in their name. */}
@@ -1258,18 +1258,18 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         <View style={styles.bannerWarning}>
           <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
           <Text style={styles.bannerText}>
-            Connection lost · Reconnecting…{online.pendingCount > 0 ? ` · ${online.pendingCount} pending` : ''}
+            Connection lost ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ReconnectingÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦{online.pendingCount > 0 ? ` ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${online.pendingCount} pending` : ''}
           </Text>
         </View>
       )}
 
       {/* Seat miss: sync arrived but neither your id nor name matches a
-          seat (changed identity mid-flow). Never silently play as P1 —
+          seat (changed identity mid-flow). Never silently play as P1 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â
           one tap resyncs, and the seat resolves as soon as ids line up. */}
       {type === 'online' && !!online.gameState && !online.myPlayerId && (
         <TouchableOpacity style={styles.bannerDanger} onPress={() => online.resync()}>
           <Text style={styles.bannerText}>
-            Couldn't find your seat — tap to resync.
+            Couldn't find your seat ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â tap to resync.
           </Text>
         </TouchableOpacity>
       )}
@@ -1368,7 +1368,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           </Animated.View>
         </View>
 
-        {/* Bottom: your card + wall inventory + resign — packed right under
+        {/* Bottom: your card + wall inventory + resign ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â packed right under
             the board like the Stitch page, no stretched gaps. */}
         <View
           style={styles.bottomBar}
@@ -1405,7 +1405,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             </View>
           )}
           {/* Finished match: replay controls step through the stored moves
-              on this same board — no separate replay page. */}
+              on this same board ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â no separate replay page. */}
           {isCompleted && !showGameOver && (
             <View style={styles.replayBar}>
               <View style={styles.replayRow}>
@@ -1586,8 +1586,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       <GameOverModal
         visible={showGameOver}
         state={state}
-        ratingDelta={type === 'online' ? online.gameEndedResult?.ratingChanges?.[currentUser.userId]?.delta : undefined}
-        ratingAfter={type === 'online' ? online.gameEndedResult?.ratingChanges?.[currentUser.userId]?.after : undefined}
+        ratingDelta={type === 'online' && identity ? online.gameEndedResult?.ratingChanges?.[identity.userId]?.delta : undefined}
+        ratingAfter={type === 'online' && identity ? online.gameEndedResult?.ratingChanges?.[identity.userId]?.after : undefined}
         opponentName={
           isMultiplayer
             ? undefined
@@ -1643,7 +1643,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             <Text style={styles.rematchToastText}>
               {online.rematchOffered && !rematchIncomingDismissed
                 ? 'Opponent wants a rematch'
-                : 'Waiting for opponent…'}
+                : 'Waiting for opponentÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦'}
             </Text>
             {online.rematchOffered && !rematchIncomingDismissed && (
               <>

@@ -1,9 +1,9 @@
 import { API_URL } from './config';
 import {
-  clearGuestCredentials,
-  getCurrentUser,
-  getStoredRefreshToken,
-  updateGuestTokens,
+  clearIdentity,
+  getAccessTokenSync,
+  getRefreshToken,
+  patchIdentity,
 } from './auth';
 import { socketManager } from './socket';
 
@@ -153,27 +153,36 @@ export interface HeadToHeadStats {
   recentMatches: GameHistoryItemDto[];
 }
 
-let activeTokenGetter: (() => Promise<string | null>) | null = null;
+let activeTokenProvider: (() => Promise<string | null>) | null = null;
 
 export function setTokenProvider(getter: () => Promise<string | null>) {
-  activeTokenGetter = getter;
+  activeTokenProvider = getter;
 }
 
+/**
+ * The bearer for every request, resolved fresh on each call.
+ *
+ * The provider (the session layer) is asked first because it can refresh an
+ * account session; the canonical identity is the fallback. Reading the store
+ * rather than a render-time snapshot is what makes a 401-then-retry actually
+ * present the NEW token instead of the one that just failed.
+ */
 async function getAuthHeader(): Promise<Record<string, string>> {
-  if (activeTokenGetter) {
-    const token = await activeTokenGetter();
-    if (token) return { Authorization: `Bearer ${token}` };
+  if (activeTokenProvider) {
+    try {
+      const token = await activeTokenProvider();
+      if (token) return { Authorization: `Bearer ${token}` };
+    } catch {
+      // fall through to the canonical identity
+    }
   }
-  const fallback = getCurrentUser();
-  if (fallback?.token) {
-    return { Authorization: `Bearer ${fallback.token}` };
-  }
-  return {};
+  const token = getAccessTokenSync();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /**
  * Asks the server for a guest identity. The device sends nothing it can be
- * trusted about — the server allocates the id, profile, rating and tokens.
+ * trusted about â€” the server allocates the id, profile, rating and tokens.
  * This is what replaced the old self-minted "dev-" credential.
  */
 export async function createGuestSession(): Promise<GuestCredentialsDto> {
@@ -228,7 +237,7 @@ export class ApiError extends Error {
 /**
  * In-flight guest refresh, shared so parallel 401s trigger exactly one
  * rotation. Without this, five simultaneous requests would each present the
- * same refresh token — and since rotation invalidates the previous one, four
+ * same refresh token â€” and since rotation invalidates the previous one, four
  * of them would look like a replay and get the session revoked.
  */
 let refreshInFlight: Promise<boolean> | null = null;
@@ -236,18 +245,25 @@ let refreshInFlight: Promise<boolean> | null = null;
 function refreshOnce(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
-      const refreshToken = getStoredRefreshToken();
+      // Read the refresh token from the canonical identity in memory. The old
+      // synchronous storage shim returned null on Android, so this path â€” and
+      // therefore the 401 recovery below â€” never ran on a phone.
+      const refreshToken = getRefreshToken();
       if (!refreshToken) return false;
       try {
         const next = await refreshGuestSession(refreshToken);
-        updateGuestTokens(next.accessToken, next.refreshToken);
-        // A live socket still holds the previous access token. Without this it
-        // would keep presenting an expired credential until it reconnects.
-        socketManager.updateAuthToken(next.accessToken);
+        patchIdentity({ accessToken: next.accessToken, refreshToken: next.refreshToken });
+        // The live socket still holds the previous access token; it observes
+        // identity changes and rebuilds itself.
+        socketManager.syncWithIdentity();
         return true;
-      } catch {
-        // Expired or revoked: forget it so the next boot starts clean.
-        clearGuestCredentials();
+      } catch (error) {
+        // Only a definitively rejected session is discarded. A network blip
+        // must not throw away a working identity and send the player to
+        // onboarding.
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          clearIdentity();
+        }
         return false;
       } finally {
         refreshInFlight = null;
@@ -277,9 +293,9 @@ async function request<T>(
   let res = await attempt();
 
   // An expired guest access token is recoverable: rotate once and replay.
-  // Accounts never reach here — their 401 means the Supabase session is gone,
+  // Accounts never reach here â€” their 401 means the Supabase session is gone,
   // which only a re-login can fix.
-  if (res.status === 401 && allowRefresh && getStoredRefreshToken()) {
+  if (res.status === 401 && allowRefresh && getRefreshToken()) {
     if (await refreshOnce()) {
       res = await attempt();
     }
@@ -403,7 +419,8 @@ export const api = {
     return request<any>(`/games/${gameId}`);
   },
 
-  async linkGuest(guestId: string): Promise<{ success: boolean }> {
+  async linkGuest(guestId: string, accessToken?: string): Promise<{ success: boolean }> {
+    void accessToken;
     return request<{ success: boolean }>('/link', {
       method: 'POST',
       body: JSON.stringify({ guestId }),

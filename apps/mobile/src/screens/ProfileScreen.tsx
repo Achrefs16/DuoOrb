@@ -74,14 +74,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           [...gamesRes.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
         );
       } else {
+        // Offline or the server is unreachable. Show the CANONICAL identity —
+        // never a fabricated profile: inventing a fallback here is what let
+        // this screen disagree with Settings about who the player is.
         const winsCount = localGames.filter((g) => g.winnerName === 'You').length;
         const lossesCount = localGames.filter((g) => g.winnerName !== 'You').length;
         const total = localGames.length;
 
         setProfile({
-          id: identity.userId,
-          username: identity.username ?? identity.displayName,
-          displayName: identity.displayName,
+          id: identity?.userId ?? '',
+          username: identity?.username ?? '',
+          displayName: identity?.displayName ?? '',
           ratings: {
             CLASSIC_1V1: {
               rating: 1500,
@@ -99,7 +102,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [identity.userId, identity.username, identity.displayName]);
+  // Depend on the identity object itself, not its properties. The store
+  // returns the SAME object when nothing changed (patchIdentity is a no-op for
+  // an equal patch), so this reference is referentially stable and the
+  // refetch only happens when the account or its server names actually change.
+  }, [identity]);
 
   useEffect(() => {
     fetchProfileData();

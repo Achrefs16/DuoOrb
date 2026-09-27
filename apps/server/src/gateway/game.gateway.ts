@@ -955,19 +955,21 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       client.emit('game:error', { code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
       return;
     }
-    // No spectating: only seated players may join a game's channel.
+    // No spectating: only seated players may join a game's channel. The seat
+    // is looked up with THIS socket's server-verified id — never anything the
+    // client asserted — so a client whose local identity drifted simply is not
+    // seated, and is told so precisely instead of being left to guess.
     const existing = this.gameService.getGame(payload.gameId);
-    if (!existing || !existing.userPlayerIds[user.userId]) {
-      // The usual cause is an identity change between matchmaking and joining:
-      // the game is seated with the id captured at matchmaking:find, so a
-      // client that re-authenticated under a different id is no longer seated
-      // and can never attach. Logged because the client renders this as an
-      // indefinite "Connecting to match" with no explanation.
+    const seat = existing?.userPlayerIds[user.userId];
+    if (!existing || !seat) {
       this.logger.warn(
         `game:join rejected (not seated) socket=${client.id} userId=${user.userId} game=${payload.gameId} ` +
           `known=${existing ? Object.keys(existing.userPlayerIds).join(',') : 'game-not-found'}`
       );
-      client.emit('game:error', { code: 'GAME_NOT_IN_PROGRESS', message: 'Game not found.' });
+      client.emit('game:error', {
+        code: 'NOT_SEATED',
+        message: 'This match was created for a different account. Go back and find a new opponent.',
+      });
       return;
     }
     client.join(payload.gameId);
@@ -1011,11 +1013,18 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         this.server.to(payload.gameId).emit('game:opponentReconnected', { userId: user.userId });
         client.emit('game:sync', sync);
       } else {
-        const existingSync = this.gameService.getSyncState(payload.gameId, payload.lastSequence ?? 0);
+        const existingSync = this.gameService.getSyncState(
+          payload.gameId,
+          payload.lastSequence ?? 0,
+          user.userId
+        );
         if (existingSync) {
           client.emit('game:sync', existingSync);
         } else {
-          client.emit('game:error', { code: 'GAME_NOT_IN_PROGRESS', message: 'Game not found.' });
+          client.emit('game:error', {
+            code: 'GAME_NOT_IN_PROGRESS',
+            message: 'That match has already finished.',
+          });
         }
       }
     })();

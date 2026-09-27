@@ -130,7 +130,16 @@ export type GameErrorCode =
    * though the gateway has always sent it, so the client's `game:error` handler
    * could not narrow on it and silently failed to react.
    */
-  | 'UNAUTHENTICATED';
+  | 'UNAUTHENTICATED'
+  /**
+   * The socket is verified, but the match was created for a different
+   * account. Sending this distinctly (instead of a generic
+   * GAME_NOT_IN_PROGRESS) is what lets the client say "your identity changed"
+   * rather than showing an unexplained dead end.
+   */
+  | 'NOT_SEATED'
+  /** The player already has a live game they must finish first. */
+  | 'ALREADY_IN_GAME';
 
 export interface GameError {
   code: GameErrorCode;

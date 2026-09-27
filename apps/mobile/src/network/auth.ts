@@ -1,27 +1,64 @@
+import { useSyncExternalStore } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export interface UserIdentity {
+/**
+ * THE canonical client-side identity. One object, one owner, one source of
+ * truth for the whole app.
+ *
+ * Everything the app knows about "who am I" lives here and nowhere else:
+ * the socket handshake, every API bearer token, seat resolution, the profile
+ * and settings screens, friend search. There is deliberately no second copy
+ * and no locally-invented fallback.
+ *
+ * `username` and `displayName` are ALWAYS the values the server returned from
+ * `/api/me`. This module never generates a name, never derives one from the
+ * user id, and never keeps a name the server has not confirmed. That is what
+ * makes the profile screen, the settings screen and the friend list agree.
+ */
+export interface CanonicalIdentity {
+  /** Server-issued id. Empty string is impossible: a null identity is null. */
   userId: string;
+  /** Server-confirmed @handle. */
+  username: string;
+  /** Server-confirmed label opponents see. */
   displayName: string;
-  email: string;
-  /** Bearer token: a server-signed guest token, or a Supabase account JWT. */
-  token: string;
-  /** Public @handle, once the server profile has been loaded. */
-  username?: string;
-  /**
-   * Long-lived opaque token used to mint a new access token. Guest sessions
-   * only; accounts refresh through Supabase.
-   */
-  refreshToken?: string;
+  /** Bearer for every request and the socket handshake. */
+  accessToken: string;
+  /** Opaque token that mints the next access token. Guests only. */
+  refreshToken: string | null;
+  /** True when this identity was minted by `POST /api/guest`. */
+  isGuest: boolean;
 }
 
-const STORAGE_KEY_USER_ID = '@duoorb:auth:user_id';
-const STORAGE_KEY_DISPLAY_NAME = '@duoorb:auth:display_name';
-const STORAGE_KEY_TOKEN = '@duoorb:auth:token';
-const STORAGE_KEY_USERNAME = '@duoorb:auth:username';
-const STORAGE_KEY_REFRESH = '@duoorb:auth:refresh_token';
+/**
+ * The whole identity is persisted as ONE JSON document under ONE key.
+ *
+ * The previous layout spread it across five keys behind a `localStorage`
+ * shim whose native branch was a no-op reader, so every read returned `null`
+ * on Android. Splitting one object across several keys is also what allowed
+ * half-written identities on disk after a kill. One key, one atomic write,
+ * one read: there is no ordering to get wrong and nothing to reconcile.
+ */
+const IDENTITY_STORAGE_KEY = '@duoorb:identity:v2';
 
-function hasLocalStorage(): boolean {
+/** Bumped when the persisted shape changes incompatibly. */
+const IDENTITY_SCHEMA_VERSION = 2;
+
+interface PersistedIdentity {
+  v: number;
+  userId: string;
+  username: string;
+  displayName: string;
+  accessToken: string;
+  refreshToken: string | null;
+  isGuest: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Storage: one implementation, real persistence on both platforms            */
+/* -------------------------------------------------------------------------- */
+
+function hasWebStorage(): boolean {
   try {
     return typeof window !== 'undefined' && !!window.localStorage;
   } catch {
@@ -29,46 +66,26 @@ function hasLocalStorage(): boolean {
   }
 }
 
-const storage = {
-  getItem: (key: string): string | null => {
-    try {
-      if (hasLocalStorage()) {
-        return window.localStorage.getItem(key);
-      }
-    } catch {
-      // ignore
-    }
-    return null;
-  },
-  setItem: (key: string, value: string): void => {
-    try {
-      if (hasLocalStorage()) {
-        window.localStorage.setItem(key, value);
-        return;
-      }
-    } catch {
-      // ignore
-    }
-    // Native (no window.localStorage): persist async, ORDERED. The writes
-    // used to race (placeholder id landing after the server id), so the
-    // next boot could hydrate a phantom identity. Every native write goes
-    // through one chain, in call order.
-    enqueueWrite(() => AsyncStorage.setItem(key, value));
-  },
-  removeItem: (key: string): void => {
-    try {
-      if (hasLocalStorage()) {
-        window.localStorage.removeItem(key);
-        return;
-      }
-    } catch {
-      // ignore
-    }
-    enqueueWrite(() => AsyncStorage.removeItem(key));
-  },
-};
+function isValidPersisted(value: unknown): value is PersistedIdentity {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Partial<PersistedIdentity>;
+  return (
+    v.v === IDENTITY_SCHEMA_VERSION &&
+    typeof v.userId === 'string' &&
+    v.userId.length > 0 &&
+    typeof v.username === 'string' &&
+    typeof v.displayName === 'string' &&
+    typeof v.accessToken === 'string' &&
+    typeof v.isGuest === 'boolean' &&
+    (v.refreshToken === null || typeof v.refreshToken === 'string')
+  );
+}
 
-/** Serializes native storage writes so disk order always matches call order. */
+/**
+ * Serializes every persistence operation. AsyncStorage gives no ordering
+ * guarantee between independent `setItem` calls, and a kill mid-write used to
+ * leave a stale id next to a fresh token.
+ */
 let writeChain: Promise<void> = Promise.resolve();
 function enqueueWrite(op: () => Promise<unknown>): void {
   writeChain = writeChain.then(op, op).then(
@@ -77,306 +94,227 @@ function enqueueWrite(op: () => Promise<unknown>): void {
   );
 }
 
-/**
- * Resolves when every queued storage write has landed. Call on app
- * background (and before any destructive transition) so a kill can never
- * strand half an identity on disk.
- */
-export function flushStorage(): Promise<void> {
+async function readPersisted(): Promise<PersistedIdentity | null> {
+  try {
+    const raw = hasWebStorage()
+      ? window.localStorage.getItem(IDENTITY_STORAGE_KEY)
+      : await AsyncStorage.getItem(IDENTITY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return isValidPersisted(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writePersisted(value: PersistedIdentity): Promise<void> {
+  const raw = JSON.stringify(value);
+  enqueueWrite(async () => {
+    if (hasWebStorage()) window.localStorage.setItem(IDENTITY_STORAGE_KEY, raw);
+    else await AsyncStorage.setItem(IDENTITY_STORAGE_KEY, raw);
+  });
+}
+
+async function removePersisted(): Promise<void> {
+  enqueueWrite(async () => {
+    if (hasWebStorage()) window.localStorage.removeItem(IDENTITY_STORAGE_KEY);
+    else await AsyncStorage.removeItem(IDENTITY_STORAGE_KEY);
+  });
+}
+
+/** Resolves once every queued persistence write has landed. */
+export function flushIdentityStorage(): Promise<void> {
   return writeChain;
 }
 
-type IdentityListener = () => void;
-const identityListeners = new Set<IdentityListener>();
+/* -------------------------------------------------------------------------- */
+/* The store                                                                  */
+/* -------------------------------------------------------------------------- */
 
-/**
- * Single-source-of-truth subscription: every mutation below notifies, so
- * the session layer (and any screen reading identity) converges on the
- * latest values instead of holding a stale first-paint snapshot.
- */
-export function subscribeIdentity(fn: IdentityListener): () => void {
-  identityListeners.add(fn);
-  return () => {
-    identityListeners.delete(fn);
-  };
-}
+let current: CanonicalIdentity | null = null;
+let hydrated = false;
+let hydratePromise: Promise<CanonicalIdentity | null> | null = null;
 
-function emitIdentityChanged(): void {
-  for (const fn of [...identityListeners]) {
+const listeners = new Set<() => void>();
+
+function emit(): void {
+  for (const fn of [...listeners]) {
     try {
       fn();
     } catch {
-      // a listener must never break identity propagation
+      // A subscriber must never break identity propagation.
     }
   }
 }
 
-let cachedUser: UserIdentity | null = null;
+function toCanonical(p: PersistedIdentity): CanonicalIdentity {
+  return {
+    userId: p.userId,
+    username: p.username,
+    displayName: p.displayName,
+    accessToken: p.accessToken,
+    refreshToken: p.refreshToken,
+    isGuest: p.isGuest,
+  };
+}
+
+function toPersisted(i: CanonicalIdentity): PersistedIdentity {
+  return {
+    v: IDENTITY_SCHEMA_VERSION,
+    userId: i.userId,
+    username: i.username,
+    displayName: i.displayName,
+    accessToken: i.accessToken,
+    refreshToken: i.refreshToken,
+    isGuest: i.isGuest,
+  };
+}
 
 /**
- * There is deliberately no client-side id generator any more.
+ * Loads the persisted identity into memory. Idempotent and safe to call from
+ * several places: the first call does the work, the rest await it.
  *
- * The device used to mint its own `local_<random>` identity and cache it,
- * because the sync storage shim reports "no stored id" on native. That made
- * the app believe in an identity the server had never issued, which cost the
- * player the room host crown (granted by id equality) and their game:join
- * (rejected as unseated), and made every name fall back to `player_<id>`. The
- * server allocates guest identities; the client only ever holds what it is
- * given.
+ * MUST complete before anything reads the identity. Every consumer either
+ * awaits this or renders behind a gate that waits for it — that ordering is
+ * what stops the app from acting on a half-known identity.
  */
+export function hydrateIdentity(): Promise<CanonicalIdentity | null> {
+  if (hydratePromise) return hydratePromise;
+  hydratePromise = (async () => {
+    const persisted = await readPersisted();
+    if (persisted) current = toCanonical(persisted);
+    hydrated = true;
+    return current;
+  })();
+  return hydratePromise;
+}
 
-function generateRandomName(): string {
-  const adjectives = ['Swift', 'Bold', 'Silent', 'Cosmic', 'Solar', 'Lunar', 'Echo', 'Neon', 'Apex', 'Shadow'];
-  const nouns = ['Orb', 'Striker', 'Player', 'Tactician', 'Runner', 'Walker', 'Master', 'Spark', 'Pulse', 'Vanguard'];
-  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-  const noun = nouns[Math.floor(Math.random() * nouns.length)];
-  const num = Math.floor(10 + Math.random() * 90);
-  return `${adj}${noun}${num}`;
+/** True once `hydrateIdentity()` has settled. */
+export function isIdentityHydrated(): boolean {
+  return hydrated;
 }
 
 /**
- * Native hydration: AsyncStorage survives app restarts where
- * window.localStorage does not exist. Call once at startup and wait for it
- * before rendering so the very first socket uses the stable identity —
- * otherwise every relaunch orphans rooms, seats and host crowns.
- */
-export async function hydrateIdentity(): Promise<void> {
-  if (cachedUser || hasLocalStorage()) return;
-  try {
-    const [userId, displayName, customToken, username, refreshToken] = await Promise.all([
-      AsyncStorage.getItem(STORAGE_KEY_USER_ID),
-      AsyncStorage.getItem(STORAGE_KEY_DISPLAY_NAME),
-      AsyncStorage.getItem(STORAGE_KEY_TOKEN),
-      AsyncStorage.getItem(STORAGE_KEY_USERNAME),
-      AsyncStorage.getItem(STORAGE_KEY_REFRESH),
-    ]);
-    if (userId) {
-      const email = `${userId}@duoorb.local`;
-      cachedUser = {
-        userId,
-        displayName: displayName ?? generateRandomName(),
-        email,
-        token: customToken ?? '',
-        ...(username ? { username } : {}),
-        ...(refreshToken ? { refreshToken } : {}),
-      };
-      if (!displayName) {
-        void AsyncStorage.setItem(STORAGE_KEY_DISPLAY_NAME, cachedUser.displayName).catch(
-          () => {}
-        );
-      }
-    }
-  } catch {
-    // fall through to fresh guest below
-  }
-}
-
-/**
- * Retrieves the current user's identity.
+ * The live canonical identity, or null when this device has no session.
  *
- * The local id/display name are a fast, offline placeholder only. Authority
- * comes from the token: a guest must hold a server-issued one (see
- * `createGuestSession`), and a signed-in player holds a Supabase JWT. There is
- * deliberately no locally-minted fallback any more — the server would reject
- * it, and a self-asserted identity is exactly the hole this replaced.
+ * Always reads the current store value — it is never a snapshot of an
+ * earlier moment. Non-React callers (socket, api client) use this; React
+ * components use `useIdentity()` so they re-render on change.
  */
-export function getCurrentUser(): UserIdentity {
-  if (cachedUser) return cachedUser;
+export function getIdentity(): CanonicalIdentity | null {
+  return current;
+}
 
-  // Native has no window.localStorage, so the sync shim always reports "no
-  // stored id" here. The previous response was to invent a random one and
-  // cache it, which produced a device that believed in an identity the server
-  // had never issued: it could not become room host (the host crown is granted
-  // by id equality), its game:join was rejected as unseated, and every name
-  // fell back to `player_<id>`. It also explained why the fault moved between
-  // phones — it depended purely on whether that launch's guest bootstrap
-  // succeeded before this ran.
-  //
-  // An empty id is the honest answer: it means "no identity yet". The server
-  // assigns one via createGuestSession -> setGuestCredentials, which replaces
-  // this and re-renders consumers. Nothing may treat it as a real id.
-  let userId = storage.getItem(STORAGE_KEY_USER_ID) ?? '';
-  let displayName = storage.getItem(STORAGE_KEY_DISPLAY_NAME);
-  const customToken = storage.getItem(STORAGE_KEY_TOKEN);
-  const refreshToken = storage.getItem(STORAGE_KEY_REFRESH) ?? undefined;
+/** The live access token, or an empty string when there is no session. */
+export function getAccessTokenSync(): string {
+  return current?.accessToken ?? '';
+}
 
-  if (!displayName) {
-    displayName = generateRandomName();
-    storage.setItem(STORAGE_KEY_DISPLAY_NAME, displayName);
-  }
-
-  const email = `${userId}@duoorb.local`;
-  const username = storage.getItem(STORAGE_KEY_USERNAME) ?? undefined;
-
-  cachedUser = {
-    userId,
-    displayName,
-    email,
-    token: customToken ?? '',
-    ...(username ? { username } : {}),
-    ...(refreshToken ? { refreshToken } : {}),
-  };
-
-  return cachedUser;
+/** The live refresh token, or null. Reads memory, so it works on Android. */
+export function getRefreshToken(): string | null {
+  return current?.refreshToken ?? null;
 }
 
 /**
- * Stores the credentials the server issued for a guest, and adopts the
- * identity that came with them. The server is the source of truth for the id,
- * the generated handle and the display name.
- */
-export function setGuestCredentials(credentials: {
-  accessToken: string;
-  refreshToken: string;
-  userId: string;
-  displayName: string;
-}): UserIdentity {
-  storage.setItem(STORAGE_KEY_USER_ID, credentials.userId);
-  storage.setItem(STORAGE_KEY_TOKEN, credentials.accessToken);
-  storage.setItem(STORAGE_KEY_REFRESH, credentials.refreshToken);
-  storage.setItem(STORAGE_KEY_DISPLAY_NAME, credentials.displayName.slice(0, 24));
-  // The previous handle belonged to the old identity and must not carry over.
-  storage.removeItem(STORAGE_KEY_USERNAME);
-
-  cachedUser = {
-    userId: credentials.userId,
-    displayName: credentials.displayName.slice(0, 24),
-    email: `${credentials.userId}@duoorb.local`,
-    token: credentials.accessToken,
-    refreshToken: credentials.refreshToken,
-  };
-  emitIdentityChanged();
-  return cachedUser;
-}
-
-/**
- * Swaps in a freshly rotated access token. The refresh token rotates too, so
- * the previous one is worthless from this moment on.
- */
-export function updateGuestTokens(accessToken: string, refreshToken: string): void {
-  storage.setItem(STORAGE_KEY_TOKEN, accessToken);
-  storage.setItem(STORAGE_KEY_REFRESH, refreshToken);
-  if (cachedUser) {
-    cachedUser = { ...cachedUser, token: accessToken, refreshToken };
-    emitIdentityChanged();
-  }
-}
-
-/** The stored guest refresh token, if any. */
-export function getStoredRefreshToken(): string | null {
-  return storage.getItem(STORAGE_KEY_REFRESH);
-}
-
-/** Forgets guest credentials so the next boot requests a fresh identity. */
-export function clearGuestCredentials(): void {
-  storage.removeItem(STORAGE_KEY_REFRESH);
-  if (cachedUser && !cachedUser.refreshToken) return;
-  cachedUser = null;
-  emitIdentityChanged();
-}
-
-/**
- * Caches the server profile so the socket handshake, room slots and player
- * seats immediately use the name the player just chose. The session layer
- * fetches `/me` and calls this; `displayName` overrides whatever the identity
- * provider supplied, which is what opponents actually see in a match.
- */
-export function cacheProfile(profile: { username?: string; displayName?: string }): UserIdentity {
-  const current = getCurrentUser();
-
-  if (profile.username) {
-    storage.setItem(STORAGE_KEY_USERNAME, profile.username);
-  }
-  const displayName = profile.displayName?.trim().slice(0, 24);
-  if (displayName) {
-    storage.setItem(STORAGE_KEY_DISPLAY_NAME, displayName);
-  }
-
-  cachedUser = {
-    ...current,
-    ...(profile.username ? { username: profile.username } : {}),
-    ...(displayName ? { displayName } : {}),
-  };
-  emitIdentityChanged();
-  return cachedUser;
-}
-
-/**
- * Updates the user's local display name.
- */
-export function updateDisplayName(newName: string): UserIdentity {
-  const current = getCurrentUser();
-  const trimmed = newName.trim().slice(0, 24);
-  if (!trimmed) return current;
-
-  storage.setItem(STORAGE_KEY_DISPLAY_NAME, trimmed);
-  cachedUser = {
-    ...current,
-    displayName: trimmed,
-  };
-  emitIdentityChanged();
-  return cachedUser;
-}
-
-/**
- * Adopts the signed-in account as the canonical identity (replacing the
- * guest id everywhere: rooms, seats, host, queue). Keeps the local
- * display name so a claimed username survives sign-in. Returns the
- * previous id so the socket layer can hand it to the server for
- * live-state migration.
- */
-export function adoptAccountIdentity(accountId: string): string | null {
-  const current = getCurrentUser();
-  if (current.userId === accountId) return null;
-  const prevId = current.userId;
-  storage.setItem(STORAGE_KEY_USER_ID, accountId);
-  cachedUser = {
-    ...current,
-    userId: accountId,
-    email: `${accountId}@duoorb.local`,
-  };
-  emitIdentityChanged();
-  return prevId;
-}
-
-/**
- * Drops back to a brand-new guest (sign-out). Previous account rooms
- * stay under the account id by design.
+ * Installs a new canonical identity and persists it.
  *
- * Guest credentials are cleared too, so the next bootstrap asks the server
- * for a new identity instead of carrying the account's bearer token.
+ * This is the ONLY way an identity is created or replaced. Every path
+ * (guest creation, guest refresh, account sign-in, sign-out) goes through
+ * here, so there is exactly one code path that can change who the app is.
  */
-export function resetToNewGuest(): UserIdentity {
-  cachedUser = null;
-  // No fabricated id: the server allocates the next guest identity. Writing a
-  // random one here left the device asserting an identity that did not exist,
-  // which is what cost the player the room host crown and the match join.
-  const displayName = generateRandomName();
-  storage.setItem(STORAGE_KEY_DISPLAY_NAME, displayName);
-  // The signed-in account's handle must never leak onto the fresh guest.
-  storage.removeItem(STORAGE_KEY_USERNAME);
-  storage.removeItem(STORAGE_KEY_TOKEN);
-  storage.removeItem(STORAGE_KEY_REFRESH);
-  storage.removeItem(STORAGE_KEY_USER_ID);
-  const fresh = getCurrentUser();
-  emitIdentityChanged();
-  return fresh;
+export function setIdentity(next: CanonicalIdentity): CanonicalIdentity {
+  if (!next.userId) {
+    throw new Error('setIdentity requires a server-issued userId.');
+  }
+  current = next;
+  void writePersisted(toPersisted(next));
+  emit();
+  return next;
 }
 
 /**
- * Sets the bearer token used for every request (Supabase account JWT, or a
- * server-issued guest token).
+ * Patches the current identity. A no-op when there is no session, so a late
+ * profile response can never resurrect a cleared identity.
  */
-export function setAuthToken(token: string | null): void {
-  if (token) {
-    storage.setItem(STORAGE_KEY_TOKEN, token);
-  } else {
-    storage.removeItem(STORAGE_KEY_TOKEN);
+export function patchIdentity(patch: Partial<CanonicalIdentity>): CanonicalIdentity | null {
+  if (!current) return null;
+  const next: CanonicalIdentity = { ...current, ...patch };
+  if (
+    next.userId === current.userId &&
+    next.username === current.username &&
+    next.displayName === current.displayName &&
+    next.accessToken === current.accessToken &&
+    next.refreshToken === current.refreshToken &&
+    next.isGuest === current.isGuest
+  ) {
+    return current;
   }
-  // A Supabase session replaces any guest credentials, and the guest session
-  // was revoked server-side when the accounts were merged, so the local
-  // refresh token is dead weight from here on.
-  storage.removeItem(STORAGE_KEY_REFRESH);
-  cachedUser = null;
-  emitIdentityChanged();
+  current = next;
+  void writePersisted(toPersisted(next));
+  emit();
+  return next;
+}
+
+/**
+ * Records the server-confirmed profile. This is the ONLY way names enter the
+ * client, so the profile screen, the settings screen, the socket handshake
+ * and the seat all read one server-owned value.
+ */
+export function applyServerProfile(profile: {
+  username?: string | null;
+  displayName?: string | null;
+}): CanonicalIdentity | null {
+  const patch: Partial<CanonicalIdentity> = {};
+  if (typeof profile.username === 'string' && profile.username.trim()) {
+    patch.username = profile.username.trim();
+  }
+  if (typeof profile.displayName === 'string' && profile.displayName.trim()) {
+    patch.displayName = profile.displayName.trim().slice(0, 24);
+  }
+  return patchIdentity(patch);
+}
+
+/** Forgets the session locally. The caller decides whether to create one. */
+export function clearIdentity(): void {
+  current = null;
+  void removePersisted();
+  emit();
+}
+
+/** Replaces the token pair after a rotation, keeping the same account. */
+export function updateIdentityTokens(accessToken: string, refreshToken: string | null): void {
+  patchIdentity({ accessToken, refreshToken });
+}
+
+/* -------------------------------------------------------------------------- */
+/* React binding                                                              */
+/* -------------------------------------------------------------------------- */
+
+/** Subscribe to identity changes. Returns an unsubscribe function. */
+export function subscribeIdentity(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+/**
+ * The canonical identity, kept live across renders.
+ *
+ * This is the only sanctioned way for a component to learn who the user is.
+ * Reading the store directly inside a component body captures a value that
+ * goes stale the moment the session changes — which is exactly how a player
+ * ended up seated under one id while the UI believed in another.
+ */
+export function useIdentity(): CanonicalIdentity | null {
+  return useSyncExternalStore(subscribeIdentity, getIdentity, getIdentity);
+}
+
+/** Test seam: drops in-memory state without touching disk. */
+export function __resetIdentityForTests(): void {
+  current = null;
+  hydrated = false;
+  hydratePromise = null;
+  listeners.clear();
+  writeChain = Promise.resolve();
 }

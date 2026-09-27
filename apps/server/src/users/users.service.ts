@@ -250,15 +250,26 @@ export class UsersService {
     };
   }
 
-  async searchUsers(query: string) {
+  /**
+   * Player search. Excludes the searching account: finding yourself in the
+   * list is never useful, and the client hides only the CURRENT id, so an
+   * orphaned row for the same human would otherwise surface as a second
+   * "player" to add.
+   */
+  async searchUsers(query: string, selfUserId?: string) {
     if (!query || query.trim().length === 0) return [];
     if (!this.prisma.isConnected) return [];
 
     const profiles = await this.prisma.profile.findMany({
       where: {
-        OR: [
-          { username: { contains: query, mode: 'insensitive' } },
-          { displayName: { contains: query, mode: 'insensitive' } },
+        AND: [
+          {
+            OR: [
+              { username: { contains: query, mode: 'insensitive' } },
+              { displayName: { contains: query, mode: 'insensitive' } },
+            ],
+          },
+          ...(selfUserId ? [{ NOT: { userId: selfUserId } }] : []),
         ],
       },
       include: {

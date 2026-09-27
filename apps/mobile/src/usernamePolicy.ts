@@ -86,7 +86,16 @@ export function sanitizeUsernameInput(input: string): string {
  * suffix contain an underscore, while a real name like `player_one` is legal
  * and must not be flagged.
  */
+/**
+ * True while the account is still carrying a handle the SERVER generated,
+ * or none at all.
+ *
+ * A missing username counts as generated on purpose: a brand-new guest is
+ * handed `player_xxxxxx` by the server and must be offered the username step.
+ * Returning false for an absent handle would silently skip it and drop the
+ * player into the app with the seeded name.
+ */
 export function isGeneratedUsername(username: string | null | undefined, userId: string): boolean {
-  if (!username) return false;
+  if (!username) return true;
   return username === `player_${userId.slice(0, 6)}`;
 }

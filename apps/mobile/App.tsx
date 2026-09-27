@@ -15,7 +15,6 @@ import { ReplayScreen } from './src/screens/ReplayScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SplashScreen, SPLASH_MIN_MS } from './src/screens/SplashScreen';
 import { OnboardingFlow } from './src/screens/OnboardingFlow';
-import { hasCompletedOnboarding } from './src/storage/onboarding';
 import { FriendsScreen } from './src/screens/FriendsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { PlayerProfileScreen } from './src/screens/PlayerProfileScreen';
@@ -34,7 +33,7 @@ import {
 } from './src/storage/gameStorage';
 import { setSoundsMuted } from './src/audio/sounds';
 import { SessionProvider, useSession } from './src/network/session';
-import { flushStorage, hydrateIdentity } from './src/network/auth';
+import { flushIdentityStorage, hydrateIdentity } from './src/network/auth';
 import { THEME } from './src/theme';
 import { DEFAULT_TIME_CONTROL, TimeControl } from './src/timeControls';
 import { api } from './src/network/apiClient';
@@ -121,10 +120,9 @@ export default function App() {
   });
   const [settings, setSettings] = useState<UserSettings>({ ...DEFAULT_SETTINGS });
   const [identityReady, setIdentityReady] = useState(false);
-  // Boot state: the splash covers font loading, identity hydration and the
-  // onboarding check, so there is never a blank frame.
+  // Boot state: the splash covers font loading and identity hydration, so
+  // there is never a blank frame.
   const [splashElapsed, setSplashElapsed] = useState(false);
-  const [onboarded, setOnboarded] = useState<boolean | null>(null);
   // In-app navigation history for the Android hardware back button. Tab
   // switches are not recorded — backing out of any main tab asks to exit.
   const stackRef = useRef<NavLoc[]>([]);
@@ -183,17 +181,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!identityReady) return;
-    let cancelled = false;
-    hasCompletedOnboarding().then((done) => {
-      if (!cancelled) setOnboarded(done);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [identityReady]);
-
-  useEffect(() => {
     hydrateIdentity().finally(() => setIdentityReady(true));
   }, []);
 
@@ -202,7 +189,7 @@ export default function App() {
     // identity on disk (next boot hydrates a stranger). Flush every
     // write the moment the app leaves the foreground.
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'background') void flushStorage();
+      if (state === 'background') void flushIdentityStorage();
     });
     return () => sub.remove();
   }, []);
@@ -212,11 +199,6 @@ export default function App() {
       setSettings(s);
       setSoundsMuted(!s.soundEnabled);
     });
-
-    // Check pending friend requests count on mount
-    api.getFriendRequests()
-      .then((reqs) => setFriendRequestsCount(reqs.length))
-      .catch(() => {});
   }, []);
 
   const updateSettings = (patch: Partial<UserSettings>) => {
@@ -389,9 +371,10 @@ export default function App() {
     navigate(currentTab, 'REPLAY');
   };
 
-  // Splash holds until fonts, identity and the onboarding check are all
-  // ready AND the minimum time has elapsed.
-  if (!fontsLoaded || !identityReady || !splashElapsed || onboarded === null) {
+  // Splash holds until fonts and the persisted identity are hydrated, plus the
+  // minimum splash time. The session layer then decides between onboarding
+  // and the app; see the two render branches below.
+  if (!fontsLoaded || !identityReady || !splashElapsed) {
     return (
       <SafeAreaProvider>
         <SplashScreen />
@@ -399,23 +382,9 @@ export default function App() {
     );
   }
 
-  // First launch on this device: Welcome -> Choose Username.
-  if (!onboarded) {
-    return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-          {/* Light bar + dark buttons: with edge-to-edge the app
-              background shows through behind the system buttons. */}
-          <NavigationBar style="light" />
-          <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.background} />
-          <SessionProvider>
-            <OnboardingFlow onFinish={() => setOnboarded(true)} />
-          </SessionProvider>
-        </SafeAreaView>
-      </SafeAreaProvider>
-    );
-  }
-
+  // One SessionProvider for the whole app. It owns the identity lifecycle:
+  // `status === 'ready'` means a canonical identity is installed and `/me` has
+  // been read, and only then may the authenticated UI mount.
   return (
     <SafeAreaProvider>
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -424,7 +393,10 @@ export default function App() {
       <NavigationBar style="light" />
       <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.background} />
       <SessionProvider>
-        <SessionReady>
+        <SessionGate>
+          {/* Authenticated-only side effects: nothing here runs before a
+              canonical identity exists. */}
+          <SessionEffects onFriendRequests={setFriendRequestsCount} />
         <View style={styles.content}>
           {/* Main Tab Screens (when no subscreen is active) */}
           {subScreen === null && (
@@ -664,7 +636,7 @@ export default function App() {
             )}
           </View>
         </View>
-        </SessionReady>
+        </SessionGate>
       </SessionProvider>
     </SafeAreaView>
     </SafeAreaProvider>
@@ -672,14 +644,40 @@ export default function App() {
 }
 
 /**
- * Boot-then-reveal: the main UI waits for the session layer to settle
- * (guest minted or restored) instead of painting over a placeholder
- * identity that later snaps to something else.
+ * The single mount gate.
+ *
+ * `restoring` -> splash (no blank frame, no premature UI).
+ * `anonymous` -> onboarding, which is also where a guest account is created.
+ * `ready`     -> the app, rendered only once the canonical identity exists.
+ *
+ * Nothing else in the tree decides whether the user is signed in, so there is
+ * exactly one place where "is there a session?" is answered.
  */
-const SessionReady: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { loading } = useSession();
-  if (loading) return <SplashScreen />;
+const SessionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { status } = useSession();
+  if (status === 'restoring') return <SplashScreen />;
+  // Onboarding owns account creation and the username step. It calls
+  // `markOnboardingComplete` itself; nothing here needs to know.
+  if (status === 'anonymous') return <OnboardingFlow onFinish={() => {}} />;
   return <>{children}</>;
+};
+
+/**
+ * Runs only while a session exists. Kept out of the root component so no
+ * request is ever issued with a missing or stale identity.
+ */
+const SessionEffects: React.FC<{ onFriendRequests: (n: number) => void }> = ({
+  onFriendRequests,
+}) => {
+  const { identity } = useSession();
+  const userId = identity?.userId;
+  useEffect(() => {
+    if (!userId) return;
+    api.getFriendRequests()
+      .then((reqs) => onFriendRequests(reqs.length))
+      .catch(() => {});
+  }, [userId, onFriendRequests]);
+  return null;
 };
 
 const styles = StyleSheet.create({

@@ -105,6 +105,14 @@ export interface GameSyncDto {
   clock: ClockStateDto;
   missingActions: RecordedAction[];
   playerUserIds?: Record<string, string>;
+  /**
+   * The seat THIS socket is sitting in, resolved by the server from the
+   * verified token. The client must use this rather than searching
+   * `playerUserIds` for its own id: that comparison was made against a
+   * possibly stale local id, which left `onlinePlayerId` null and the board
+   * stuck behind a "Connecting to match" overlay while moves still arrived.
+   */
+  you?: string | null;
 }
 
 export interface ClientToServerEvents {

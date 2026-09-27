@@ -1,19 +1,81 @@
 import { io, Socket } from 'socket.io-client';
-import { ClientToServerEvents, ServerToClientEvents } from '@duoorb/protocol';
+// Type-only: the protocol package contributes no runtime code here, and
+// importing it for values would pull a CommonJS build into the bundle.
+import type { ClientToServerEvents, ServerToClientEvents } from '@duoorb/protocol';
 import { SERVER_URL } from './config';
-import { getCurrentUser } from './auth';
+import { getIdentity, subscribeIdentity } from './auth';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
 
 type StatusListener = (status: ConnectionStatus) => void;
+type RawSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+type AnyHandler = (...args: never[]) => void;
 
+/**
+ * The socket transport is a pure function of the canonical identity.
+ *
+ * Two problems are solved here, and they are the same problem:
+ *
+ * 1. socket.io freezes the handshake `query` and `auth` for the life of a
+ *    connection. Mutating them on a live socket never took effect, so a
+ *    reconnect after a credential change could re-present the PREVIOUS
+ *    identity. The raw socket is therefore rebuilt whenever (userId, token)
+ *    changes.
+ *
+ * 2. Every consumer holds the object returned by `getSocket()`. If that
+ *    object were the raw socket, a rebuild would silently detach every
+ *    listener that was attached before the session existed — which is
+ *    exactly what happens on a cold start, where the challenge and
+ *    room-invite hooks attach while there is no identity yet.
+ *
+ * So `getSocket()` returns a stable facade. Listeners are registered once,
+ * held in the manager, and replayed onto each new raw socket.
+ */
 class SocketManager {
-  private socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
+  private raw: RawSocket | null = null;
   private status: ConnectionStatus = 'disconnected';
   private statusListeners = new Set<StatusListener>();
-  // Real JWT when signed in, otherwise null (dev-token fallback is used).
-  private overrideToken: string | null = null;
-  private lastQueryUserId: string | null = null;
+  /** The (userId, token) pair the live raw socket was built from. */
+  private boundTo: { userId: string; token: string } | null = null;
+  private identityWatcher: (() => void) | null = null;
+  /** Event handlers registered by consumers, replayed on every rebuild. */
+  private handlers = new Map<string, Set<AnyHandler>>();
+
+  private facade: RawSocket;
+
+  constructor() {
+    const self = this;
+    // Only the surface consumers actually use. Anything else must go through
+    // the manager, so there is one place that knows about the raw socket.
+    this.facade = {
+      on(event: string, handler: AnyHandler) {
+        self.addHandler(event, handler);
+        return self.facade;
+      },
+      off(event: string, handler?: AnyHandler) {
+        self.removeHandler(event, handler);
+        return self.facade;
+      },
+      emit(event: string, ...args: unknown[]) {
+        (self.raw as unknown as { emit: (e: string, ...a: unknown[]) => void } | null)?.emit(
+          event,
+          ...args
+        );
+        return self.facade;
+      },
+      connect() {
+        self.ensureConnected();
+        return self.facade;
+      },
+      disconnect() {
+        self.disconnect();
+        return self.facade;
+      },
+      get connected() {
+        return self.raw?.connected ?? false;
+      },
+    } as unknown as RawSocket;
+  }
 
   public getStatus(): ConnectionStatus {
     return this.status;
@@ -32,80 +94,174 @@ class SocketManager {
     this.status = status;
     for (const listener of this.statusListeners) {
       try {
-        listener(status);
+        listener(this.status);
       } catch (e) {
         console.error('Error in socket status listener', e);
       }
     }
   }
 
-  /**
-   * Called by the session layer whenever auth changes.
-   *
-   * A reconnect is only needed when the server has to (re)verify this socket,
-   * i.e. when we are going from no credential to a real one. Refreshing a guest
-   * access token keeps the same `sub`, so the identity the server already
-   * verified is still correct — tearing the socket down for that produced a
-   * burst of sub-second connect/disconnect cycles and burned guest-creation
-   * quota. The new token is still written to `auth` so the next natural
-   * reconnect presents it.
-   */
-  public updateAuthToken(token: string | null): void {
-    const previous = this.overrideToken;
-    if (previous === token) return;
-    this.overrideToken = token;
-    const s = this.socket;
-    if (!s) return;
-    const user = getCurrentUser();
-    s.auth = {
-      token: token ?? user.token,
-    };
-    const wasUnverified = !previous;
-    if (s.connected && wasUnverified) {
-      this.setStatus('reconnecting');
-      s.disconnect();
-      s.connect();
+  private addHandler(event: string, handler: AnyHandler): void {
+    let set = this.handlers.get(event);
+    if (!set) {
+      set = new Set();
+      this.handlers.set(event, set);
     }
+    set.add(handler);
+    this.raw?.on(event as never, handler as never);
   }
 
-  /**
-   * Called after sign-in/out changes the canonical user id. Rebuilds the
-   * socket so the handshake carries the new id.
-   * Token-only changes (no id change) just re-auth the live socket.
-   */
-  public refreshIdentity(token: string | null): void {
-    const user = getCurrentUser();
-    if (this.lastQueryUserId === user.userId) {
-      this.updateAuthToken(token);
+  private removeHandler(event: string, handler?: AnyHandler): void {
+    if (!handler) {
+      this.handlers.delete(event);
+      this.raw?.off(event as never);
       return;
     }
-    this.overrideToken = token;
-    if (this.socket) {
-      this.socket.disconnect();
-      this.socket = null;
-    }
-    this.lastQueryUserId = user.userId;
-    this.setStatus('disconnected');
-    this.getSocket();
+    this.handlers.get(event)?.delete(handler);
+    this.raw?.off(event as never, handler as never);
+  }
+
+  private bindIdentityWatcher(): void {
+    if (this.identityWatcher) return;
+    this.identityWatcher = subscribeIdentity(() => this.syncWithIdentity());
   }
 
   /**
-   * Identity changed locally (guest minted, name chosen/edited,
-   * sign-in/out) without a reconnect: ask the server to re-read our
-   * verified profile and refresh its map, room slots and queue entry.
-   * No payload — the server trusts nothing client-asserted here.
+   * Reconciles the transport with the canonical identity.
+   *
+   * Called on every identity change and after a token rotation. Rebuilds when
+   * the account or credential actually changed, so a reconnect can never
+   * reintroduce a previous identity. With no session at all, the transport is
+   * torn down rather than handshaking as nobody.
+   */
+  public syncWithIdentity(): void {
+    const identity = getIdentity();
+    if (!identity || !identity.accessToken) {
+      this.disposeRaw();
+      this.boundTo = null;
+      this.setStatus('disconnected');
+      return;
+    }
+
+    const next = { userId: identity.userId, token: identity.accessToken };
+    if (this.raw && this.boundTo?.userId === next.userId && this.boundTo.token === next.token) {
+      // Same account, same credential: the connection is still correct. A
+      // changed display name needs no new handshake — `syncIdentity` tells
+      // the server to re-read the verified profile.
+      return;
+    }
+
+    this.disposeRaw();
+    this.boundTo = next;
+    this.raw = this.buildRaw(identity.userId, identity.displayName, next.token);
+    this.raw.connect();
+  }
+
+  private disposeRaw(): void {
+    if (!this.raw) return;
+    // Listeners survive in `this.handlers` and are replayed onto the next
+    // transport; clearing them here would silently break every consumer that
+    // attached before the session existed.
+    this.raw.removeAllListeners();
+    this.raw.disconnect();
+    this.raw = null;
+  }
+
+  private buildRaw(userId: string, displayName: string, token: string): RawSocket {
+    this.setStatus('connecting');
+    // `displayName` here is ADVISORY ONLY. The server resolves the real name
+    // from Postgres for any verified credential and ignores this field; it
+    // survives purely as a label for a socket that has not authenticated yet.
+    const s: RawSocket = io(SERVER_URL, {
+      auth: { token },
+      query: { userId, displayName },
+      autoConnect: false,
+      reconnection: true,
+      reconnectionAttempts: 15,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      transports: ['websocket', 'polling'],
+    });
+
+    // Replay every consumer handler onto the new transport.
+    for (const [event, set] of this.handlers) {
+      for (const handler of set) s.on(event as never, handler as never);
+    }
+
+    s.on('connect', () => this.setStatus('connected'));
+
+    s.on('disconnect', (reason) => {
+      if (reason === 'io client disconnect') this.setStatus('disconnected');
+      else this.setStatus('reconnecting');
+    });
+
+    s.on('connect_error', (err: Error) => {
+      // Auth rejections used to look identical to network drops because the
+      // reason was discarded. Log it so "not authenticated" is diagnosable.
+      console.warn(`[socket] connect_error: ${err?.message ?? 'unknown'}`);
+      this.setStatus('disconnected');
+    });
+
+    s.io.on('reconnect_attempt', () => this.setStatus('reconnecting'));
+    s.io.on('reconnect_failed', () => {
+      console.warn('[socket] reconnect_failed: giving up, staying disconnected');
+      this.setStatus('disconnected');
+    });
+    s.io.on('reconnect', () => {
+      this.setStatus('connected');
+      // A transport-level reconnect re-presents the current `auth`. Cover the
+      // case where the identity itself changed while we were down.
+      this.syncWithIdentity();
+    });
+
+    return s;
+  }
+
+  private ensureConnected(): void {
+    this.bindIdentityWatcher();
+    const identity = getIdentity();
+    if (!identity || !identity.accessToken) {
+      // No session: stay disconnected. Handshaking with an empty credential
+      // would create an unverified socket and could mask the real identity
+      // arriving moments later.
+      this.setStatus('disconnected');
+      return;
+    }
+    if (!this.raw) {
+      this.syncWithIdentity();
+      return;
+    }
+    if (!this.raw.connected && this.status !== 'connecting') {
+      this.setStatus('connecting');
+      this.raw.connect();
+    }
+  }
+
+  /**
+   * Returns the shared socket facade. The object identity is stable for the
+   * life of the app; only the transport underneath is replaced.
+   */
+  public getSocket(): RawSocket {
+    this.bindIdentityWatcher();
+    this.ensureConnected();
+    return this.facade;
+  }
+
+  /**
+   * Identity changed locally without a reconnect (name edited, profile
+   * refreshed): ask the server to re-read our verified profile and refresh
+   * its map, room slots and queue entry. No payload — the server trusts
+   * nothing client-asserted here.
    */
   public syncIdentity(): void {
-    const s = this.socket;
-    if (!s) return;
-    s.emit('session:sync');
+    if (!this.raw || !this.boundTo) return;
+    this.raw.emit('session:sync');
   }
 
   /**
    * Asks the server to migrate live state (rooms, seats, queue) from this
    * socket's verified identity to the new credential's identity — no
-   * reconnect, no client-asserted ids. Returns true when the server moved
-   * (or there was nothing to move).
+   * reconnect, no client-asserted ids.
    */
   public adoptSession(token: string): Promise<boolean> {
     const socket = this.getSocket();
@@ -128,99 +284,10 @@ class SocketManager {
     });
   }
 
-  private currentAuthToken(): string {
-    if (this.overrideToken) return this.overrideToken;
-    return getCurrentUser().token;
-  }
-
-  /**
-   * Returns the shared Socket.IO client instance, initializing it if necessary.
-   */
-  public getSocket(): Socket<ServerToClientEvents, ClientToServerEvents> {
-    if (this.socket) {
-      if (!this.socket.connected && this.status === 'disconnected') {
-        this.setStatus('connecting');
-        this.socket.connect();
-      }
-      return this.socket;
-    }
-
-    const user = getCurrentUser();
-    this.setStatus('connecting');
-
-    // displayName here is ADVISORY ONLY. The server resolves the real name
-    // from Postgres for any verified credential and ignores this field; it
-    // survives purely as a label for a socket that has not authenticated yet.
-    //
-    // It is captured once because socket.io fixes the handshake query for the
-    // life of the connection, and rebuilding it would mean a reconnect on every
-    // rename. That is precisely why it must not be trusted: while the server
-    // did trust it, a rename never reached the socket, the stale value was
-    // snapshotted by matchmaking and frozen into the game, and the same player
-    // appeared under different names in the friend list and in every match.
-    const query: Record<string, string> = {
-      userId: user.userId,
-      displayName: user.displayName,
-    };
-    this.lastQueryUserId = user.userId;
-
-    const s: Socket<ServerToClientEvents, ClientToServerEvents> = io(SERVER_URL, {
-      auth: {
-        token: this.currentAuthToken(),
-      },
-      query,
-      autoConnect: true,
-      reconnection: true,
-      reconnectionAttempts: 15,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      transports: ['websocket', 'polling'],
-    });
-
-    s.on('connect', () => {
-      this.setStatus('connected');
-    });
-
-    s.on('disconnect', (reason) => {
-      if (reason === 'io client disconnect') {
-        this.setStatus('disconnected');
-      } else {
-        this.setStatus('reconnecting');
-      }
-    });
-
-    s.on('connect_error', (err: Error) => {
-      // Auth rejections used to look identical to network drops because the
-      // reason was discarded. Log it so "not authenticated" is diagnosable.
-      console.warn(`[socket] connect_error: ${err?.message ?? 'unknown'}`);
-      this.setStatus('disconnected');
-    });
-
-    s.io.on('reconnect_attempt', () => {
-      this.setStatus('reconnecting');
-    });
-
-    s.io.on('reconnect_failed', () => {
-      // Retries exhausted: surface it instead of sticking forever on a
-      // stale "reconnecting" state with no further attempts coming.
-      console.warn('[socket] reconnect_failed: giving up, staying disconnected');
-      this.setStatus('disconnected');
-    });
-
-    s.io.on('reconnect', () => {
-      this.setStatus('connected');
-    });
-
-    this.socket = s;
-    return this.socket;
-  }
-
   public disconnect(): void {
-    if (this.socket) {
-      this.socket.disconnect();
-      this.socket = null;
-      this.setStatus('disconnected');
-    }
+    this.disposeRaw();
+    this.boundTo = null;
+    this.setStatus('disconnected');
   }
 }
 

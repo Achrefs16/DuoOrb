@@ -3,7 +3,7 @@ import { GameMode } from '@duoorb/game-core';
 import { RoomDto } from '@duoorb/protocol';
 import { TimeControl } from '../timeControls';
 import { socketManager } from './socket';
-import { getCurrentUser } from './auth';
+import { useIdentity } from './auth';
 
 interface UseRoomsOptions {
   onGameStarted: (roomId: string, gameId: string) => void;
@@ -14,7 +14,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
   const [activeRoom, setActiveRoom] = useState<RoomDto | null>(initialRoom);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const currentUser = getCurrentUser();
+  const identity = useIdentity();
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -137,7 +137,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
 
   /**
    * Ask the server for the room's real state. Needed whenever the lobby is
-   * (re)opened with a snapshot from before a match — that copy still says
+   * (re)opened with a snapshot from before a match ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â that copy still says
    * everyone is ready, which would let the host start a game that players who
    * are still on the previous board never joined.
    */
@@ -185,8 +185,8 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
     syncRoom(initialRoom.id);
   }, [initialRoom, syncRoom]);
 
-  const isHost = activeRoom ? activeRoom.hostId === currentUser.userId : false;
-  const mySlot = activeRoom ? activeRoom.slots.find((s) => s.userId === currentUser.userId) : null;
+  const isHost = activeRoom ? activeRoom.hostId === identity?.userId : false;
+  const mySlot = activeRoom ? activeRoom.slots.find((s) => s.userId === identity?.userId) ?? null : null;
   const isReady = mySlot?.isReady ?? false;
   // Never offer Start while the room is running a game, whatever the
   // snapshot claims.

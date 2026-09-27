@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { GameAction, GameError, GameState, RecordedAction, applyAction } from '@duoorb/game-core';
 import { ClockStateDto, GameEndedDto, GameSyncDto } from '@duoorb/protocol';
 import { socketManager, ConnectionStatus } from './socket';
-import { getCurrentUser } from './auth';
+import { getIdentity, useIdentity } from './auth';
 
 export interface UseOnlineGameOptions {
   gameId: string;
@@ -31,7 +31,15 @@ function sameAction(a: GameAction, b: GameAction): boolean {
 }
 
 export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOptions) {
-  const currentUser = getCurrentUser();
+  /**
+   * The canonical identity, subscribed. Reading it in a render body used to
+   * freeze a snapshot: if the session changed after mount, every later seat
+   * lookup compared the server's seats against a dead id, `myPlayerId` stayed
+   * null, and the screen sat on "Connecting to match" over a board that was
+   * receiving and playing moves normally. Subscribing fixes the staleness;
+   * `game:sync.you` below fixes the lookup itself.
+   */
+  const identity = useIdentity();
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [clocks, setClocks] = useState<Record<string, number>>({});
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
@@ -189,10 +197,21 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
       setClocks(secClocks);
       clockAnchorRef.current = { remainingMs: { ...sync.clock.remainingMs }, at: Date.now() };
 
-      // Resolve myPlayerId & seat
-      if (sync.playerUserIds) {
+      // Resolve myPlayerId & seat.
+      //
+      // `sync.you` is the seat the SERVER resolved from our verified token.
+      // It is authoritative and always correct. The id comparison below is
+      // only a fallback for a server that does not send it, and it reads the
+      // live identity rather than a value frozen at mount.
+      const serverSeat = sync.you ?? null;
+      if (serverSeat) {
+        setMyPlayerId(serverSeat);
+        const idx = sync.state.players.findIndex((p) => p.id === serverSeat);
+        if (idx >= 0) setMyPlayerIndex(idx);
+      } else if (sync.playerUserIds) {
+        const liveUserId = getIdentity()?.userId;
         for (const [pId, uId] of Object.entries(sync.playerUserIds)) {
-          if (uId === currentUser.userId) {
+          if (liveUserId && uId === liveUserId) {
             setMyPlayerId(pId);
             const idx = sync.state.players.findIndex((p) => p.id === pId);
             if (idx >= 0) setMyPlayerIndex(idx);
@@ -200,8 +219,10 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
           }
         }
       } else {
-        // Fallback: match by displayName
-        const idx = sync.state.players.findIndex((p) => p.displayName === currentUser.displayName);
+        // Legacy fallback: match by displayName.
+        const idx = sync.state.players.findIndex(
+          (p) => p.displayName === getIdentity()?.displayName
+        );
         if (idx >= 0) {
           setMyPlayerId(sync.state.players[idx].id);
           setMyPlayerIndex(idx);
@@ -322,14 +343,16 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
     // leaving it true pins the player on "Connecting to match" indefinitely
     // with no message, while their clock runs down and the game is eventually
     // forfeited in their name.
-    if (error.code === 'UNAUTHENTICATED' || error.code === 'GAME_NOT_IN_PROGRESS') {
-      setJoinError(
-        error.code === 'UNAUTHENTICATED'
-          ? 'Your session expired. Reconnect and try again.'
-          : 'That match is no longer available. Go back and search again.'
-      );
-      setIsSyncing(false);
-    }
+    const messages: Record<string, string> = {
+      UNAUTHENTICATED: 'Your session expired. Reconnect and try again.',
+      NOT_SEATED:
+        'This match belongs to a different account. Go back and find a new opponent.',
+      GAME_NOT_IN_PROGRESS: 'That match is no longer available. Go back and search again.',
+      ALREADY_IN_GAME: 'You are already in a match. Finish it first.',
+    };
+    const message = messages[error.code] ?? 'Could not join that match. Go back and try again.';
+    setJoinError(message);
+    setIsSyncing(false);
     if (onError) onError(error);
   };
 
@@ -358,7 +381,7 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
       if (graceTimerRef.current) clearInterval(graceTimerRef.current);
       if (rematchTimerRef.current) clearTimeout(rematchTimerRef.current);
     };
-  }, [gameId, currentUser.userId, currentUser.displayName, joinGame, onGameEnded, onError]);
+  }, [gameId, identity?.userId, identity?.displayName, joinGame, onGameEnded, onError]);
 
   const sendAction = useCallback(
     (action: GameAction) => {
@@ -368,7 +391,7 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
       // queued until the accepted echo (or a sync) proves it settled.
       actionCounterRef.current += 1;
       const historyLen = gameStateRef.current?.history.length ?? 0;
-      const clientActionId = `${currentUser.userId}-${Date.now()}-${actionCounterRef.current}`;
+      const clientActionId = `${identity?.userId ?? 'anon'}-${Date.now()}-${actionCounterRef.current}`;
       const expectedSequence = historyLen + 1;
       const list = pendingRef.current[gameId] ?? [];
       const nextList = [...list.slice(-19), { clientActionId, expectedSequence, action }];
@@ -382,7 +405,7 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
         expectedSequence,
       });
     },
-    [gameId]
+    [gameId, identity?.userId]
   );
 
   const resign = useCallback(() => {

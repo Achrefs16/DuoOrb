@@ -25,12 +25,12 @@ interface ChooseUsernameScreenProps {
 }
 
 /**
- * Username step. Every new identity — guest or signed in — passes through
+ * Username step. Every new identity Ã¢â‚¬â€ guest or signed in Ã¢â‚¬â€ passes through
  * here, so nobody reaches the app with an auto-generated handle unless they
  * explicitly skip.
  */
 export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDone }) => {
-  const { identity, profile, refreshProfile } = useSession();
+  const { identity, refreshProfile } = useSession();
 
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +48,9 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
     };
   }, []);
 
-  const currentUsername = profile?.username ?? identity.username ?? null;
+  // The canonical identity is the only source: the profile state mirrors it
+  // after `/me`, so both always agree.
+  const currentUsername = identity?.username ?? null;
 
   // Debounced availability probe. Only fires for a well-formed handle that is
   // not the one already saved.
@@ -105,7 +107,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
   }, [draft, availability, refreshProfile, onDone]);
 
   const hint = (() => {
-    if (availability === 'checking') return 'Checking availability…';
+    if (availability === 'checking') return 'Checking availabilityÃ¢â‚¬Â¦';
     if (availability === 'available') {
       return '@' + validateUsername(draft).value + ' is available';
     }
@@ -171,7 +173,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
           disabled={saving}
           onPress={() => void save()}
         >
-          <Text style={styles.primaryText}>{saving ? 'Saving…' : 'Continue'}</Text>
+          <Text style={styles.primaryText}>{saving ? 'SavingÃ¢â‚¬Â¦' : 'Continue'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.secondary} onPress={onDone} disabled={saving}>

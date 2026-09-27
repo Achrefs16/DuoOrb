@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME, playerColor } from '../theme';
-import { getCurrentUser } from '../network/auth';
+import { useIdentity } from '../network/auth';
 import {
   api,
   PublicProfileDto,
@@ -66,6 +66,9 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   const [removing, setRemoving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The canonical identity, so "your" name in head-to-head comparisons is
+  // never a value frozen at mount.
+  const identity = useIdentity();
 
   const loadPlayerData = useCallback(async () => {
     setLoading(true);
@@ -205,7 +208,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
       : 0;
 
   const initial = (profile?.displayName || profile?.username || 'O').charAt(0).toUpperCase();
-  const viewerName = getCurrentUser().displayName;
+  const viewerName = identity?.displayName ?? '';
 
   return (
     <View style={styles.container}>
@@ -235,7 +238,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 onPress={() => void handleRemoveFriend()}
               >
                 <Text style={styles.removeConfirmText}>
-                  {removing ? 'Removing…' : 'Remove friend'}
+                  {removing ? 'RemovingÃ¢â‚¬Â¦' : 'Remove friend'}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -250,7 +253,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
       </Modal>
 
       {loading ? (
-        <LoadingState message="Loading player profile…" />
+        <LoadingState message="Loading player profileÃ¢â‚¬Â¦" />
       ) : error ? (
         <ErrorState message={error} onRetry={loadPlayerData} />
       ) : (
@@ -296,7 +299,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </View>
               <View style={styles.statBox}>
                 <Text style={styles.statBoxNumber}>{gamesPlayed}</Text>
-                <Text style={styles.statBoxSub}>{wins}W · {losses}L</Text>
+                <Text style={styles.statBoxSub}>{wins}W Ã‚Â· {losses}L</Text>
               </View>
             </View>
 
@@ -475,7 +478,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                           </Text>
                           <Text style={styles.matchDateText}>
                             {clockDisplayName(match)}
-                            {match.isRanked ? ` · ${delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} pts` : ''}
+                            {match.isRanked ? ` Ã‚Â· ${delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} pts` : ''}
                           </Text>
                         </View>
                       </View>
