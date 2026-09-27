@@ -78,6 +78,8 @@ interface ReplayData {
   initialState: GameState;
   history: RecordedAction[];
   perspectiveIdx: number;
+  /** Seat-id ratings when the entry point knows them (win/lose modal). */
+  ratings?: Record<string, number>;
 }
 
 export default function App() {
@@ -102,6 +104,9 @@ export default function App() {
     aiDifficulty: 'normal',
   });
   const [replayData, setReplayData] = useState<ReplayData | null>(null);
+  // History/Profile entries open the bare match page (board + step
+  // controls, no analysis); the win/lose modal opens full review.
+  const [reviewBare, setReviewBare] = useState(false);
   const [setupKind, setSetupKind] = useState<'ai' | 'local' | 'challenge' | 'online'>('ai');
   const [challengeTarget, setChallengeTarget] = useState<{ id: string; username: string } | null>(null);
   const [onlineEntry, setOnlineEntry] = useState<{
@@ -362,8 +367,14 @@ export default function App() {
     handleOpenOnline(DEFAULT_TIME_CONTROL, 'rooms', player.username);
   };
 
-  const handleOpenReview = (initialState: GameState, history: RecordedAction[], perspectiveIdx = 0) => {
-    setReplayData({ initialState, history, perspectiveIdx });
+  const handleOpenReview = (
+    initialState: GameState,
+    history: RecordedAction[],
+    perspectiveIdx = 0,
+    ratings?: Record<string, number>
+  ) => {
+    setReplayData({ initialState, history, perspectiveIdx, ratings });
+    setReviewBare(false);
     navigate(currentTab, 'REVIEW');
   };
 
@@ -373,8 +384,9 @@ export default function App() {
       history: savedGame.history,
       perspectiveIdx: 0,
     });
-    // History/Profile replays open the full review screen (opponent
-    // header, step controls, autoplay) - the plain replay view is retired.
+    // History/Profile replays open the bare match page (board, HUD cards,
+    // step controls with speed) - no analysis panels.
+    setReviewBare(true);
     navigate(currentTab, 'REVIEW');
   };
 
@@ -384,6 +396,7 @@ export default function App() {
   if (!fontsLoaded || !identityReady || !splashElapsed) {
     return (
       <SafeAreaProvider>
+        <SystemChrome />
         <SplashScreen />
       </SafeAreaProvider>
     );
@@ -395,10 +408,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-      {/* Light bar + dark buttons: with edge-to-edge the app
-          background shows through behind the system buttons. */}
-      <NavigationBar style="light" />
-      <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.background} />
+      <SystemChrome />
       <SessionProvider>
         <SessionGate>
           {/* Authenticated-only side effects: nothing here runs before a
@@ -573,10 +583,13 @@ export default function App() {
 
           {subScreen === 'REVIEW' && replayData && (
             <GameReviewScreen
+              key={`${replayData.initialState.gameId}-${replayData.history.length}-${reviewBare ? 'bare' : 'full'}`}
               initialState={replayData.initialState}
               history={replayData.history}
               perspectiveIdx={replayData.perspectiveIdx}
               onBack={goBack}
+              bare={reviewBare}
+              ratings={replayData.ratings}
             />
           )}
 
@@ -643,6 +656,27 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+/**
+ * The real Android system chrome, configured identically everywhere.
+ *
+ * Rendered in BOTH root branches (splash and app): the splash branch used
+ * to mount with no bar configuration, so every launch flashed from the OS
+ * defaults into the app style the moment the session settled. One instance
+ * is ever mounted at a time (early return), so there is nothing to merge
+ * and no transition to flash.
+ *
+ * Light bar + dark buttons matches the light theme: with edge-to-edge the
+ * app background (#FAF8FF) shows through behind the system buttons, and
+ * the expo-navigation-bar config plugin sets this same style natively so
+ * even the cold-start frame agrees.
+ */
+const SystemChrome: React.FC = () => (
+  <>
+    <NavigationBar style="light" />
+    <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.background} />
+  </>
+);
 
 /**
  * The single mount gate.

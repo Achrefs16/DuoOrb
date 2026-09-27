@@ -30,7 +30,14 @@
     "owner": "achrefs",
     "plugins": [
       "expo-web-browser",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-navigation-bar",
+        {
+          "style": "light",
+          "enforceContrast": false
+        }
+      ]
     ]
   }
 }
