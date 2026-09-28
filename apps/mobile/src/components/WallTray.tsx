@@ -183,10 +183,10 @@ export const WallTray: React.FC<WallTrayProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
     padding: 12,
     ...THEME.shadows.card,
     width: '100%',
@@ -198,9 +198,9 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   pieceSlot: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: THEME.colors.boardBorder,
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
@@ -212,15 +212,15 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
   },
   pieceDisabled: {
     opacity: 0.35,
   },
   countBox: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.extraBold,
     fontSize: 18,
     fontWeight: '800',
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
     lineHeight: 22,
     fontVariant: ['tabular-nums'],
   },
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
     marginTop: 2,
   },
 });

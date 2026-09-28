@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   PanResponder,
   ScrollView,
@@ -28,6 +29,12 @@ import {
 import { TryAgainPanel } from '../components/TryAgainPanel';
 import { WinGraph } from '../components/WinGraph';
 import { GameBoard } from '../components/GameBoard';
+import {
+  playGoalSound,
+  playOpponentMoveSound,
+  playOwnMoveSound,
+  playWallSound,
+} from '../audio/sounds';
 import { THEME, playerColor } from '../theme';
 import { assessmentColor, cleanName, ordinal } from '../analysisUi';
 
@@ -36,6 +43,38 @@ interface GameReviewScreenProps {
   history: RecordedAction[];
   perspectiveIdx?: number;
   onBack: () => void;
+  /**
+   * Bare match page: board, HUD cards and step controls only. Hides the
+   * summary pill, analysis panels, try-again, details and win graph.
+   * Used for History/Profile replays; the win/lose modal keeps full review.
+   */
+  bare?: boolean;
+  /**
+   * Real ratings by seat id, when the entry point knows them (the win/lose
+   * modal hands over the live HUD numbers). Unknown seats render no rating
+   * at all — never a placeholder.
+   */
+  ratings?: Record<string, number>;
+}
+
+/**
+ * Full-review cache by game. Reopening a just-seen review skips the
+ * multi-second recompute entirely. Capped: analysis objects are heavy.
+ */
+const REVIEW_CACHE = new Map<string, GameReview>();
+const REVIEW_CACHE_LIMIT = 5;
+
+function reviewCacheKey(gameId: string, historyLength: number): string {
+  return `${gameId}:${historyLength}`;
+}
+
+function cacheReview(key: string, review: GameReview): void {
+  REVIEW_CACHE.set(key, review);
+  while (REVIEW_CACHE.size > REVIEW_CACHE_LIMIT) {
+    const oldest = REVIEW_CACHE.keys().next();
+    if (oldest.done) break;
+    REVIEW_CACHE.delete(oldest.value);
+  }
 }
 
 function actionsEqual(
@@ -61,18 +100,58 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   history,
   perspectiveIdx = 0,
   onBack,
+  bare = false,
+  ratings,
 }) => {
-  const review: GameReview = useMemo(() => {
-    return analyzeGame(initialState, history);
-  }, [initialState, history]);
+  // Full analysis, computed OFF the first paint. analyzeGame replays every
+  // move with a search per move (seconds on a phone CPU), and it used to run
+  // inside a useMemo during render — freezing the app from the Analyze tap
+  // until the whole page could appear at once. Now the board and step
+  // controls (which need only one cheap rebuild) paint immediately, and the
+  // analysis lands afterwards with skeletons in its place. Bare replay never
+  // computes it at all: it displays nothing from it.
+  const [currentStep, setCurrentStep] = useState<number>(() =>
+    history.length > 0 ? 1 : 0
+  );
+  // True once the user scrubs or plays: arriving analysis must not yank the
+  // board out from under them to the deciding moment.
+  const touchedRef = useRef(false);
 
-  const [currentStep, setCurrentStep] = useState<number>(() => {
-    const dm = review.decidingMoments[0];
-    if (history.length > 0 && dm && dm.importance >= 25) {
-      return Math.max(1, Math.min(history.length, dm.moveNumber));
-    }
-    return history.length > 0 ? 1 : 0;
-  });
+  const [review, setReview] = useState<GameReview | null>(null);
+  useEffect(() => {
+    // Bare replay never computes: it displays nothing from the analysis.
+    // (Initial state is already null, and the App key remounts per game,
+    // so there is nothing to reset here.)
+    if (bare) return;
+    let cancelled = false;
+    const key = reviewCacheKey(initialState.gameId, history.length);
+    // One deferred task for both paths (even a cache hit goes through it):
+    // setState never runs synchronously in this effect body, and the board
+    // paints before any of this lands.
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      const cached = REVIEW_CACHE.get(key);
+      const next =
+        cached ??
+        (() => {
+          const computed = analyzeGame(initialState, history);
+          cacheReview(key, computed);
+          return computed;
+        })();
+      if (cancelled) return;
+      setReview(next);
+      if (!touchedRef.current) {
+        const dm = next.decidingMoments[0];
+        if (history.length > 0 && dm && dm.importance >= 25) {
+          setCurrentStep(Math.max(1, Math.min(history.length, dm.moveNumber)));
+        }
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [bare, initialState, history]);
 
   const [isPlaying, setIsPlaying] = useState(false);
   // Playback speed, cycled 1x -> 1.5x -> 2x -> 1x by a single button.
@@ -87,6 +166,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     let timer: ReturnType<typeof setInterval> | null = null;
     if (isPlaying) {
       timer = setInterval(() => {
+        touchedRef.current = true;
         setCurrentStep((prev) => {
           if (prev >= history.length) {
             setIsPlaying(false);
@@ -114,7 +194,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   }, [initialState, history, currentStep]);
 
   const currentAnalysis: MoveAnalysis | undefined =
-    currentStep > 0 ? review.moveAnalyses[currentStep - 1] : undefined;
+    review && currentStep > 0 ? review.moveAnalyses[currentStep - 1] : undefined;
 
   /** State *before* the analyzed action — holds the mover's origin cell. */
   const preMoveState = useMemo(() => {
@@ -122,10 +202,34 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   }, [initialState, history, currentStep]);
 
   const goTo = (step: number) => {
+    touchedRef.current = true;
     setCurrentStep(Math.max(0, Math.min(history.length, step)));
     setShowWhyOpen(false);
     setTryOpen(false);
   };
+
+  // Movement sounds for replay: whenever the step advances (autoplay,
+  // next, forward chip tap, forward swipe), voice the move that just
+  // landed — same mapping as the live game. Scrubbing back stays silent.
+  const prevStepRef = useRef(currentStep);
+  useEffect(() => {
+    const prev = prevStepRef.current;
+    prevStepRef.current = currentStep;
+    if (currentStep <= prev) return;
+    const rec = history[currentStep - 1];
+    if (!rec) return;
+    if (rec.action.type === 'MOVE') {
+      if (currentStep === history.length && currentState.winnerId) {
+        void playGoalSound();
+        return;
+      }
+      const myId = initialState.players[perspectiveIdx]?.id ?? null;
+      if (myId && rec.playerId === myId) void playOwnMoveSound();
+      else void playOpponentMoveSound();
+    } else if (rec.action.type === 'PLACE_WALL') {
+      void playWallSound();
+    }
+  }, [currentStep, history, currentState.winnerId, initialState, perspectiveIdx]);
 
   const currentStepRef = useRef(currentStep);
   currentStepRef.current = currentStep;
@@ -164,7 +268,8 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
       bestDiffers);
 
   const moveMark = useMemo(() => {
-    if (!currentAnalysis) return null;
+    // Bare replay shows the plain board: no assessment-colored lines.
+    if (bare || !currentAnalysis) return null;
     const pa = currentAnalysis.playedAction;
     if (pa.type === 'MOVE') {
       const origin = preMoveState.players.find(
@@ -183,19 +288,21 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
       };
     }
     return null;
-  }, [currentAnalysis, markColor, preMoveState]);
+  }, [bare, currentAnalysis, markColor, preMoveState]);
 
   const altMark = useMemo(() => {
+    // Bare replay: no engine-best squares either.
+    if (bare) return null;
     if (!showAlt || !currentAnalysis?.bestAction) return null;
     const ba = currentAnalysis.bestAction;
     if (ba.type === 'MOVE') {
-      return { to: ba.to, color: '#004AC6' };
+      return { to: ba.to, color: THEME.colors.chartStroke };
     }
     if (ba.type === 'PLACE_WALL') {
-      return { wall: ba.wall, color: '#004AC6' };
+      return { wall: ba.wall, color: THEME.colors.chartStroke };
     }
     return null;
-  }, [showAlt, currentAnalysis]);
+  }, [bare, showAlt, currentAnalysis]);
 
   const opponentPlayer = currentState.players[1] || currentState.players[0];
   const userPlayer = currentState.players[0];
@@ -207,7 +314,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         <TouchableOpacity style={styles.backBtn} onPress={onBack}>
           <Feather name="arrow-left" size={20} color={THEME.colors.textSecondary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Match Review</Text>
+        <Text style={styles.headerTitle}>{bare ? 'Match Replay' : 'Match Review'}</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -216,7 +323,8 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Match Summary Pill Badge */}
+        {/* Match Summary Pill Badge (review only) */}
+        {!bare && (
         <View style={styles.summaryBadgeRow}>
           <View style={styles.resultPill}>
             <View style={styles.resultDot} />
@@ -224,6 +332,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           </View>
           <Text style={styles.modeSummaryText}>Classic · 3+0</Text>
         </View>
+        )}
 
         {/* Opponent HUD Card (Directly Above Board) */}
         {opponentPlayer && (
@@ -237,7 +346,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               <View style={styles.hudMeta}>
                 <Text style={styles.hudName}>{opponentPlayer.displayName}</Text>
                 <View style={styles.hudTagRow}>
-                  <Text style={styles.ratingText}>1500</Text>
+                  {ratings?.[opponentPlayer.id] !== undefined && (
+                    <Text style={styles.ratingText}>{ratings[opponentPlayer.id]}</Text>
+                  )}
                   <View style={styles.wallCountTag}>
                     <Text style={styles.wallCountText}>{opponentPlayer.wallsRemaining} walls</Text>
                   </View>
@@ -290,7 +401,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               <View style={styles.hudMeta}>
                 <Text style={styles.hudName}>{userPlayer.displayName} (You)</Text>
                 <View style={styles.hudTagRow}>
-                  <Text style={styles.ratingText}>1516</Text>
+                  {ratings?.[userPlayer.id] !== undefined && (
+                    <Text style={styles.ratingText}>{ratings[userPlayer.id]}</Text>
+                  )}
                   <View style={styles.wallCountTag}>
                     <Text style={styles.wallCountText}>{userPlayer.wallsRemaining} walls</Text>
                   </View>
@@ -345,7 +458,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               style={styles.playPauseBtn}
               onPress={() => setIsPlaying(!isPlaying)}
             >
-              <Feather name={isPlaying ? 'pause' : 'play'} size={20} color="#FFFFFF" />
+              <Feather name={isPlaying ? 'pause' : 'play'} size={20} color={THEME.colors.onPrimary} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -375,9 +488,18 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             >
               <Feather name="chevrons-right" size={18} color={THEME.colors.textSecondary} />
             </TouchableOpacity>
+
+            {/* Step counter, same as the match screen replay bar. */}
+            {bare && (
+              <Text style={styles.stepCounterText}>
+                {currentStep} / {history.length}
+              </Text>
+            )}
           </View>
 
-          {/* Move Strip Chips */}
+          {/* Move Strip Chips (review only — the bare match page keeps
+              just the step controls above, like the in-game replay bar) */}
+          {!bare && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -385,7 +507,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           >
             {Array.from({ length: history.length }, (_, i) => i + 1).map((stepNum) => {
               const isActive = currentStep === stepNum;
-              const analysis = review.moveAnalyses[stepNum - 1];
+              // Bare mode (or analysis still computing): plain step chips,
+              // no engine assessment dots.
+              const analysis = bare || !review ? undefined : review.moveAnalyses[stepNum - 1];
               const dotColor = analysis ? assessmentColor(analysis.assessment) : THEME.colors.primary;
 
               return (
@@ -394,7 +518,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                   style={[styles.moveChip, isActive && styles.moveChipActive]}
                   onPress={() => goTo(stepNum)}
                 >
-                  <View style={[styles.moveChipDot, { backgroundColor: dotColor }]} />
+                  {!bare && <View style={[styles.moveChipDot, { backgroundColor: dotColor }]} />}
                   <Text style={[styles.moveChipText, isActive && styles.moveChipTextActive]}>
                     {stepNum}
                   </Text>
@@ -402,10 +526,11 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               );
             })}
           </ScrollView>
+          )}
         </View>
 
-        {/* Engine Analysis Panels */}
-        {currentAnalysis && (
+        {/* Engine Analysis Panels (review only) */}
+        {!bare && currentAnalysis && (
           <View style={styles.analysisCard}>
             <View style={styles.analysisHeaderRow}>
               <AnalysisBadge assessment={currentAnalysis.assessment} />
@@ -457,7 +582,8 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           </View>
         )}
 
-        {/* Win Probability Graph */}
+        {/* Win Probability Graph (review only, once computed) */}
+        {!bare && review && (
         <View style={styles.graphCard}>
           <Text style={styles.graphTitle}>WIN PROBABILITY</Text>
           <WinGraph
@@ -466,6 +592,17 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             moments={review.decidingMoments.map((m) => m.moveNumber)}
           />
         </View>
+        )}
+
+        {/* Analysis loading skeleton: the board and step controls above
+            paint immediately; this holds the place of the gated sections
+            while the deferred compute runs. */}
+        {!bare && !review && (
+        <View style={styles.graphCard}>
+          <Text style={styles.graphTitle}>ANALYZING</Text>
+          <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
+        </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -685,7 +822,7 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.inverseSurface,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: THEME.colors.shadowBlack,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
@@ -695,6 +832,12 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 12,
     color: THEME.colors.textSecondary,
+  },
+  stepCounterText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
+    marginLeft: 4,
   },
   btnDisabled: {
     opacity: 0.4,

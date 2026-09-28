@@ -255,7 +255,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               activeOpacity={0.8}
               onPress={() => onOpenChallengeSetup({ id: friend.id, username: friend.username })}
             >
-              <MaterialCommunityIcons name="sword-cross" size={14} color="#FFFFFF" />
+              <MaterialCommunityIcons name="sword-cross" size={14} color={THEME.colors.onPrimary} />
               <Text style={styles.playButtonText}>Challenge</Text>
             </TouchableOpacity>
           )}
@@ -345,7 +345,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                             onPress={() => handleRespondRequest(req.id, true)}
                             accessibilityLabel="Accept friend request"
                           >
-                            <Feather name="check" size={16} color="#FFFFFF" />
+                            <Feather name="check" size={16} color={THEME.colors.onPrimary} />
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.declineBtn}
@@ -482,7 +482,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 onPress={() => void handleAddByName()}
                 accessibilityLabel="Search"
               >
-                <Feather name="search" size={20} color="#FFFFFF" />
+                <Feather name="search" size={20} color={THEME.colors.onPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -779,7 +779,7 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: THEME.colors.onPrimary,
   },
   friendMeta: {
     gap: 2,
@@ -827,7 +827,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 4,
-    backgroundColor: '#0F172A',
+    backgroundColor: THEME.colors.inverseLabel,
   },
   playButtonDisabled: {
     backgroundColor: THEME.colors.surfaceContainerHigh,
@@ -835,7 +835,7 @@ const styles = StyleSheet.create({
   },
   playButtonText: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -878,7 +878,7 @@ const styles = StyleSheet.create({
   },
   removeConfirmText: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -940,7 +940,7 @@ const styles = StyleSheet.create({
   },
   zeroAddBtnText: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1036,7 +1036,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
   },
   addFeedback: {
     fontFamily: THEME.fonts.medium,

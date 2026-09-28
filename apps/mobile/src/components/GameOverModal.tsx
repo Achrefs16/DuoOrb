@@ -161,7 +161,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               size={32}
               color={
                 outcomeWin
-                  ? '#D97706'
+                  ? THEME.colors.assessmentInaccuracy
                   : isDraw
                   ? THEME.colors.textSecondary
                   : THEME.colors.danger
@@ -203,7 +203,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                       </Text>
                     </View>
                     {(p.place ?? 99) === 1 && (
-                      <Feather name="award" size={16} color="#D97706" />
+                      <Feather name="award" size={16} color={THEME.colors.assessmentInaccuracy} />
                     )}
                   </View>
                 );
@@ -244,7 +244,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               activeOpacity={0.88}
               onPress={onRematch}
             >
-              <Feather name="rotate-ccw" size={16} color="#FFFFFF" />
+              <Feather name="rotate-ccw" size={16} color={THEME.colors.onPrimary} />
               <Text style={styles.rematchText}>Rematch</Text>
             </TouchableOpacity>
 
@@ -351,19 +351,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   iconCircleWin: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: THEME.colors.warningLight,
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: THEME.colors.warningBorder,
   },
   iconCircleLoss: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: THEME.colors.dangerLight,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: THEME.colors.dangerBorder,
   },
   iconCircleDraw: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
   },
   outcomeTitle: {
     fontFamily: THEME.fonts.extraBold,
@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
   },
   rematchText: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 15,
     fontWeight: '700',
   },

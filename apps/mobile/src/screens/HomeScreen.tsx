@@ -102,7 +102,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             activeOpacity={0.88}
             onPress={guarded(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'quick'))}
           >
-            <Feather name="play" size={20} color="#FFFFFF" />
+            <Feather name="play" size={20} color={THEME.colors.onPrimary} />
             <Text style={styles.quickMatchText}>Quick Match</Text>
           </TouchableOpacity>
         </View>
@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
   },
   quickMatchText: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#22C55E',
+    backgroundColor: THEME.colors.playerGreenBright,
   },
   presenceDotIdle: {
     backgroundColor: THEME.colors.textMuted,

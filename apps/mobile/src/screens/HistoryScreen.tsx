@@ -591,7 +591,7 @@ const styles = StyleSheet.create({
   },
   quickMatchBtnText: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 13,
     fontWeight: '700',
   },

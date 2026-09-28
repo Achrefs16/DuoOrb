@@ -232,6 +232,6 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
   },
 });

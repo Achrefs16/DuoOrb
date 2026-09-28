@@ -771,10 +771,10 @@ const styles = StyleSheet.create({
   exitCard: {
     width: '100%',
     maxWidth: 320,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
     padding: 20,
     alignItems: 'center',
     ...THEME.shadows.modal,
@@ -782,12 +782,12 @@ const styles = StyleSheet.create({
   exitTitle: {
     fontFamily: THEME.fonts.bold,
     fontSize: 17,
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
   },
   exitSub: {
     fontFamily: THEME.fonts.medium,
     fontSize: 13,
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
     marginTop: 6,
     textAlign: 'center',
   },
@@ -800,25 +800,25 @@ const styles = StyleSheet.create({
   exitStay: {
     flex: 1,
     borderRadius: 10,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     paddingVertical: 12,
     alignItems: 'center',
   },
   exitStayText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
-    color: '#475569',
+    color: THEME.colors.textOnMuted,
   },
   exitQuit: {
     flex: 1,
     borderRadius: 10,
-    backgroundColor: '#DC2626',
+    backgroundColor: THEME.colors.danger,
     paddingVertical: 12,
     alignItems: 'center',
   },
   exitQuitText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
   },
 });

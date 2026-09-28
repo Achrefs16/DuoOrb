@@ -803,9 +803,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   crown: {
-    backgroundColor: '#D9A62E',
+    backgroundColor: THEME.colors.player4Amber,
     transform: [{ rotate: '45deg' }],
-    shadowColor: '#D9A62E',
+    shadowColor: THEME.colors.player4Amber,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 6,

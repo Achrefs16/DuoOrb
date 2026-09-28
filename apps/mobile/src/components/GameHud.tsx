@@ -36,11 +36,26 @@ interface InGamePlayerChipProps {
 
 /** Avatar tint per ball color, matching the Stitch active-match design. */
 function avatarTint(ball: string): { bg: string; border: string; text: string } {
+  // Compared against the tokens, not literals: the ball colours come from
+  // THEME.colors.player1..4, so hardcoding the same hex here meant a palette
+  // change silently stopped tinting avatars.
   const b = ball.toUpperCase();
-  if (b === '#2563EB') return { bg: '#DBEAFE', border: '#BFDBFE', text: '#2563EB' };
-  if (b === '#E5484D' || b === '#EF4444') return { bg: '#FEE2E2', border: '#FECACA', text: '#BA1A1A' };
-  if (b === '#0E9F6E') return { bg: '#DCFCE7', border: '#BBF7D0', text: '#15803D' };
-  if (b === '#D9930D') return { bg: '#FEF3C7', border: '#FDE68A', text: '#B45309' };
+  if (b === THEME.colors.primary.toUpperCase()) {
+    return {
+      bg: THEME.colors.surfacePrimaryTintBorderSoft,
+      border: THEME.colors.surfacePrimaryTintBorder,
+      text: THEME.colors.primary,
+    };
+  }
+  if (b === THEME.colors.player2.toUpperCase() || b === THEME.colors.dangerBright.toUpperCase()) {
+    return { bg: THEME.colors.dangerLight, border: THEME.colors.dangerBorder, text: THEME.colors.error };
+  }
+  if (b === THEME.colors.player3.toUpperCase()) {
+    return { bg: THEME.colors.successTint, border: THEME.colors.winBorder, text: THEME.colors.win };
+  }
+  if (b === THEME.colors.player4.toUpperCase()) {
+    return { bg: THEME.colors.warningLight, border: THEME.colors.warningBorder, text: THEME.colors.warning };
+  }
   return { bg: hexToRgba(ball, 0.12), border: hexToRgba(ball, 0.3), text: ball };
 }
 
@@ -116,7 +131,7 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
       {/* Right: timer chip — identical on both cards, every turn. */}
       {timeLeft !== undefined && (
         <View style={styles.timerBox}>
-          <MaterialCommunityIcons name="timer-outline" size={17} color="#64748B" />
+          <MaterialCommunityIcons name="timer-outline" size={17} color={THEME.colors.textSecondaryStrong} />
           <Text style={styles.timerText}>
             {formatTimer(timeLeft)}
           </Text>
@@ -350,10 +365,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
     paddingVertical: 5,
     paddingHorizontal: 7,
     ...THEME.shadows.card,
@@ -379,7 +394,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 11,
     fontWeight: '600',
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
     maxWidth: 68,
   },
   compactSub: {
@@ -392,7 +407,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.medium,
     fontSize: 10,
     fontWeight: '500',
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
   },
   compactPlace: {
     fontFamily: THEME.fonts.extraBold,
@@ -405,7 +420,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
-    color: '#1E293B',
+    color: THEME.colors.slate[800],
     flexShrink: 0,
   },
   gridRow: {
@@ -433,7 +448,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 11,
     fontWeight: '600',
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
     flexShrink: 1,
     minWidth: 0,
   },
@@ -455,10 +470,10 @@ const styles = StyleSheet.create({
   },
   playerCard: {
     width: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
     padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -503,7 +518,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
     maxWidth: 120,
     flexShrink: 1,
     minWidth: 0,
@@ -516,14 +531,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 2,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     flexShrink: 0,
   },
   ratingText: {
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
   },
   turnDot: {
     width: 8,
@@ -553,9 +568,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 4,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
     flexShrink: 0,
     marginLeft: 8,
   },
@@ -564,7 +579,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
-    color: '#1E293B',
+    color: THEME.colors.slate[800],
   },
   bonusText: {
     fontFamily: THEME.fonts.bold,

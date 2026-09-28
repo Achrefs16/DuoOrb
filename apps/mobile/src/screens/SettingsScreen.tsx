@@ -282,7 +282,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           onPress={onBack}
           accessibilityLabel="Back"
         >
-          <Feather name="arrow-left" size={20} color="#334155" />
+          <Feather name="arrow-left" size={20} color={THEME.colors.slate[700]} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
         <View style={{ width: 36 }} />
@@ -598,7 +598,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: '#EEF1F6',
+    backgroundColor: THEME.colors.dividerSoft,
   },
   settingRow: {
     flexDirection: 'row',
@@ -613,7 +613,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: THEME.radius.sm,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -647,7 +647,7 @@ const styles = StyleSheet.create({
     borderRadius: THEME.radius.md,
     borderWidth: 1,
     borderColor: THEME.colors.outlineVariant,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
   },
   editButtonText: {
     fontFamily: THEME.fonts.semiBold,
@@ -680,7 +680,7 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     borderRadius: THEME.radius.md,
     borderWidth: 1,
     borderColor: THEME.colors.outlineVariant,
@@ -698,7 +698,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     color: THEME.colors.textPrimary,
     fontSize: 14,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     borderRadius: THEME.radius.md,
     borderWidth: 1,
     borderColor: THEME.colors.outlineVariant,
@@ -730,7 +730,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 13,
   },
   secondaryButton: {
@@ -776,7 +776,7 @@ const styles = StyleSheet.create({
     borderRadius: THEME.radius.md,
     borderWidth: 1,
     borderColor: THEME.colors.outlineVariant,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     alignItems: 'center',
   },
   authButtonPrimary: {
@@ -791,7 +791,7 @@ const styles = StyleSheet.create({
   authButtonPrimaryText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 13,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
   },
   disabled: {
     opacity: 0.35,
