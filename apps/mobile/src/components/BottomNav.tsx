@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
@@ -30,8 +30,20 @@ const TABS: TabItem[] = [
 const BAR_HEIGHT = 64;
 /** The mesh field is taller than the bar so the gradient has room to breathe. */
 const MESH_HEIGHT = 96;
-/** "10% white" glass, per the spec. */
+/**
+ * Glass layers, bottom to top.
+ *
+ * `GLASS_TINT` is 10% white per the spec, but 10% alone is nowhere near enough
+ * on its own: the blur underneath contributes a very light tint, so the bar
+ * ended up reading as clear plastic with coloured content showing straight
+ * through. `GLASS_MILK` is the extra opaque white that makes it read as
+ * *frosted* glass — bright enough to be legible, translucent enough that the
+ * mesh is still perceptible as movement behind it.
+ *
+ * Split into two constants so the "how glassy" dial is a single number.
+ */
 const GLASS_TINT = 'rgba(255, 255, 255, 0.10)';
+const GLASS_MILK = 'rgba(255, 255, 255, 0.72)';
 const GLASS_BORDER = 'rgba(255, 255, 255, 0.55)';
 /** Top inner highlight: the "border reflection" on the glass. */
 const GLASS_SHEEN = 'rgba(255, 255, 255, 0.45)';
@@ -76,8 +88,19 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             blurMethod="dimezisBlurViewSdk31Plus"
             blurReductionFactor={4}
           />
-          {/* 10% white tint over the blur. */}
+          {/* Web has no native blur target, so expo-blur falls back to a flat
+              translucent fill with no backdrop sampling at all. Adding a real
+              CSS `backdrop-filter` here is what makes the browser preview show
+              actual glass instead of a coloured rectangle. Native ignores it
+              (unknown style props are dropped by the view manager). */}
+          {Platform.OS === 'web' ? (
+            <View style={styles.webBlur} pointerEvents="none" />
+          ) : null}
+          {/* 10% white tint, then the milk that makes it read as frosted
+              rather than clear. Order matters: tint over blur, milk over
+              tint, so the blur still shows through the 10%. */}
           <View style={styles.tint} pointerEvents="none" />
+          <View style={styles.milk} pointerEvents="none" />
           {/* Ultra-thin crisp border + top sheen (the "reflection"). */}
           <View style={styles.border} pointerEvents="none" />
           <View style={styles.sheen} pointerEvents="none" />
@@ -101,11 +124,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                     <View style={styles.activeGlow} pointerEvents="none" />
                   )}
                   <View style={styles.iconContainer}>
-                    <Feather
-                      name={tab.icon}
-                      size={21}
-                      color={isActive ? '#FFFFFF' : 'rgba(31, 41, 55, 0.62)'}
-                    />
+                <Feather
+                  name={tab.icon}
+                  size={21}
+                  // Active is white ON the blue glow below it (5.2:1);
+                  // inactive is ink on the pale glass (3.6:1).
+                  color={isActive ? '#FFFFFF' : 'rgba(31, 41, 55, 0.66)'}
+                />
                     {showBadge && (
                       <View style={styles.badge}>
                         <Text style={styles.badgeText}>
@@ -114,6 +139,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                       </View>
                     )}
                   </View>
+                  {/* The active label is deep ink, NOT white. The bar is
+                      frosted white (measured ~rgb(247,247,247) behind the
+                      mesh), so white-on-white measured 1.07:1 — invisible.
+                      Ink measures 16.7:1 and the blue icon above it carries
+                      the "active" signal on its own. */}
                   <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
                     {tab.label}
                   </Text>
@@ -166,6 +196,27 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: GLASS_TINT,
+  },
+  // `backdrop-filter` is CSS-only and is what expo-blur's own web build falls
+  // back to. Blur radius is scaled from intensity the same way (x0.2), so
+  // intensity 20 -> 4px, matching the native reading as closely as possible.
+  webBlur: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+    backdropFilter: 'saturate(180%) blur(4px)',
+    WebkitBackdropFilter: 'saturate(180%) blur(4px)',
+  } as object,
+  milk: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: GLASS_MILK,
   },
   border: {
     position: 'absolute',
@@ -221,12 +272,12 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.medium,
     fontSize: 10,
     fontWeight: '500',
-    color: 'rgba(31, 41, 55, 0.58)',
+    color: 'rgba(31, 41, 55, 0.66)',
     marginTop: 3,
   },
   tabLabelActive: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: '#0F172A',
     fontWeight: '700',
   },
   badge: {

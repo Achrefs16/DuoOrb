@@ -21,12 +21,43 @@ interface MeshGradientProps {
   fadeToAppBackground?: string;
 }
 
+/**
+ * Deliberately MUTED.
+ *
+ * The first pass used the full-strength brand hues at 0.62-0.9 opacity, which
+ * produced a saturated rainbow strip rather than an ambient field: the glass
+ * bar sat on top of near-primary blue/coral/green, so the bar read as
+ * multicoloured plastic and the "10% white" tint did nothing for legibility.
+ *
+ * Two changes fixed it. Opacity is now 0.16-0.24, so the mesh is a whisper of
+ * colour — enough to see that something is behind the glass, not enough to
+ * compete with the icons. And the hues are blended toward the app background
+ * first (see `tint()`), because a pure #2563EB at low opacity over #FAF8FF
+ * still reads as blue; the mixed version reads as a cool neutral wash.
+ */
 const BLOBS = [
-  { id: 'b1', cx: '18%', cy: '8%', r: '62%', color: '#2563EB', opacity: 0.9 },
-  { id: 'b2', cx: '78%', cy: '0%', r: '58%', color: '#E5484D', opacity: 0.72 },
-  { id: 'b3', cx: '52%', cy: '96%', r: '66%', color: '#0E9F6E', opacity: 0.78 },
-  { id: 'b4', cx: '96%', cy: '74%', r: '52%', color: '#D9930D', opacity: 0.62 },
+  { id: 'b1', cx: '16%', cy: '6%', r: '64%', color: '#2563EB', opacity: 0.24 },
+  { id: 'b2', cx: '80%', cy: '0%', r: '58%', color: '#E5484D', opacity: 0.18 },
+  { id: 'b3', cx: '50%', cy: '98%', r: '68%', color: '#0E9F6E', opacity: 0.2 },
+  { id: 'b4', cx: '97%', cy: '76%', r: '52%', color: '#D9930D', opacity: 0.16 },
 ];
+
+/**
+ * Mixes a brand hue toward the app background, keeping only `amount` of its
+ * chroma. This is what turns four competing colours into one coherent tint.
+ */
+function tint(hex: string, background: string, amount: number): string {
+  const parse = (c: string) => parseInt(c.slice(1), 16);
+  const a = parse(hex);
+  const b = parse(background);
+  const ch = (shift: number) => {
+    const ca = (a >> shift) & 255;
+    const cb = (b >> shift) & 255;
+    return Math.round(cb + (ca - cb) * amount);
+  };
+  const to2 = (v: number) => v.toString(16).padStart(2, '0');
+  return `#${to2(ch(16))}${to2(ch(8))}${to2(ch(0))}`;
+}
 
 export const MeshGradient: React.FC<MeshGradientProps> = ({
   height,
@@ -46,9 +77,9 @@ export const MeshGradient: React.FC<MeshGradientProps> = ({
               ry={b.r}
               gradientUnits="objectBoundingBox"
             >
-              <Stop offset="0" stopColor={b.color} stopOpacity={b.opacity} />
-              <Stop offset="0.55" stopColor={b.color} stopOpacity={b.opacity * 0.45} />
-              <Stop offset="1" stopColor={b.color} stopOpacity="0" />
+              <Stop offset="0" stopColor={tint(b.color, fadeToAppBackground, 0.5)} stopOpacity={b.opacity} />
+              <Stop offset="0.55" stopColor={tint(b.color, fadeToAppBackground, 0.5)} stopOpacity={b.opacity * 0.45} />
+              <Stop offset="1" stopColor={tint(b.color, fadeToAppBackground, 0.5)} stopOpacity="0" />
             </RadialGradient>
           ))}
           {/* Vertical wash: the app background returns at the bottom edge so
