@@ -1,8 +1,9 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { RoomInviteDto } from '@duoorb/protocol';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { ToastAccept, ToastCard, ToastDecline, ToastOverlay } from './ui';
 
 export const RoomInviteToast: React.FC<{
@@ -37,7 +38,7 @@ export const RoomInviteToast: React.FC<{
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   copy: { flex: 1 },
   title: {
@@ -48,4 +49,4 @@ const styles = StyleSheet.create({
   },
   sub: { fontFamily: THEME.fonts.regular, fontSize: 11, color: THEME.colors.textSecondaryStrong, marginTop: 2 },
   actions: { flexDirection: 'row', gap: 6 },
-});
+}));

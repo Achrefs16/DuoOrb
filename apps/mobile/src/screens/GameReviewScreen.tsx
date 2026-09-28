@@ -1,14 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import {
-  ActivityIndicator,
-  Animated,
-  PanResponder,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Animated, PanResponder, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import {
   GameReview,
@@ -36,6 +27,7 @@ import {
   playWallSound,
 } from '../audio/sounds';
 import { THEME, playerColor } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { assessmentColor, cleanName, ordinal } from '../analysisUi';
 
 interface GameReviewScreenProps {
@@ -608,7 +600,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   screen: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -943,4 +935,4 @@ const styles = StyleSheet.create({
     color: THEME.colors.textMuted,
     letterSpacing: 1,
   },
-});
+}));

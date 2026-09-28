@@ -1,7 +1,8 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 
 export type MainTab = 'PLAY' | 'FRIENDS' | 'HISTORY' | 'PROFILE';
 
@@ -69,7 +70,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: {
     backgroundColor: THEME.colors.surfaceContainerLowest,
     borderTopWidth: 1,
@@ -143,4 +144,4 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
   },
-});
+}));

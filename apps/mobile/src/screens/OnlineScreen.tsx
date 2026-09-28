@@ -1,21 +1,10 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import {
-  ActivityIndicator,
-  Animated,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { TIME_CONTROLS, TimeControl } from '../timeControls';
 import { GameMode, playerCountForMode } from '@duoorb/game-core';
 import { RoomDto } from '@duoorb/protocol';
@@ -1079,7 +1068,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -2144,4 +2133,4 @@ const styles = StyleSheet.create({
   lobbyActionRow: {
     marginTop: 6,
   },
-});
+}));

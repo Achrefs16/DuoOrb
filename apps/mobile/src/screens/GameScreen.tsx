@@ -30,6 +30,7 @@ import { WallTray } from '../components/WallTray';
 import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
 import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
 import { THEME, playerColor, wallPreviewColor } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
 import { api } from '../network/apiClient';
@@ -1921,7 +1922,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.drawBg,
@@ -2334,4 +2335,4 @@ const styles = StyleSheet.create({
   rematchDeclineText: { fontFamily: THEME.fonts.semiBold, fontSize: 12, color: THEME.colors.textSecondaryStrong },
   rematchAcceptBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.primary },
   rematchAcceptText: { fontFamily: THEME.fonts.bold, fontSize: 12, color: THEME.colors.onPrimary },
-});
+}));

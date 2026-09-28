@@ -1,18 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { UserSettings } from '../storage/gameStorage';
 import { useSession } from '../network/session';
+import { useThemeMode } from '../theme/ThemeProvider';
 import { api, ApiError } from '../network/apiClient';
 import {
   isGeneratedUsername,
@@ -91,6 +84,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     refreshProfile,
     supabaseUser,
   } = useSession();
+  const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
 
   const [editingUsername, setEditingUsername] = useState(false);
   const [usernameDraft, setUsernameDraft] = useState('');
@@ -273,6 +267,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       </View>
     );
   };
+
+  /**
+   * Dark mode lives with the theme, not in UserSettings: it has to be readable
+   * before the app's first paint (otherwise the player sees a white flash),
+   * which the settings store — loaded after the splash — cannot provide.
+   */
+  const renderThemeRow = () => (
+    <View style={styles.settingRow}>
+      <View style={styles.settingIconBox}>
+        <Feather
+          name={themeMode === 'dark' ? 'moon' : 'sun'}
+          size={15}
+          color={THEME.colors.textSecondary}
+        />
+      </View>
+      <View style={styles.settingText}>
+        <Text style={styles.settingTitle}>Dark mode</Text>
+        <Text style={styles.settingDesc}>Dimmed surfaces for night play</Text>
+      </View>
+      <Switch
+        value={themeMode === 'dark'}
+        onValueChange={(v) => setThemeMode(v ? 'dark' : 'light')}
+      />
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -528,6 +547,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         {/* Feedback & testing */}
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>FEEDBACK &amp; TESTING</Text>
+          {renderThemeRow()}
+          <View style={styles.divider} />
           {APPEARANCE_ROWS.map((row, i) => (
             <View key={row.key as string}>
               {i > 0 && <View style={styles.divider} />}
@@ -540,7 +561,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -796,4 +817,4 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.35,
   },
-});
+}));

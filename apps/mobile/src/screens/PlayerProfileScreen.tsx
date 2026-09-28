@@ -1,16 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME, playerColor } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { useIdentity } from '../network/auth';
 import {
   api,
@@ -521,7 +515,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.drawBg,
@@ -1076,4 +1070,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: THEME.colors.inverseLabel,
   },
-});
+}));

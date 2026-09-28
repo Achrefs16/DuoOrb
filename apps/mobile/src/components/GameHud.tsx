@@ -1,14 +1,9 @@
 import React from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { GameState, PlayerState } from '@duoorb/game-core';
 import { THEME, hexToRgba, playerColor } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { nameInitial } from '../displayName';
 
 function formatTimer(seconds?: number): string {
@@ -349,7 +344,7 @@ export const PlayerStrip: React.FC<{
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   strip: {
     width: '100%',
     gap: 8,
@@ -588,4 +583,4 @@ const styles = StyleSheet.create({
     color: THEME.colors.tertiary,
     marginLeft: 2,
   },
-});
+}));

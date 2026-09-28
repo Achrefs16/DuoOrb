@@ -1,13 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { DuoOrbLogo } from '../components/DuoOrbLogo';
 import { KeyboardShift } from '../components/KeyboardShift';
 import { api, ApiError } from '../network/apiClient';
@@ -186,7 +181,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -296,4 +291,4 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.5,
   },
-});
+}));

@@ -101,12 +101,28 @@ export const FONTS = {
 /**
  * Factory function to build the full theme object dynamically from a primary color.
  */
-export function buildTheme(primary: string = PRIMARY_COLOR) {
+/**
+ * Per-theme colour overrides.
+ *
+ * A theme supplies only what differs; anything omitted falls through to
+ * `buildTheme`'s light values. That is deliberate: the light palette is the
+ * reference design, and a new theme states its differences rather than
+ * restating ~120 tokens.
+ */
+export interface ThemeOverrides {
+  colors?: Record<string, string>;
+  shadows?: Record<string, Record<string, unknown>>;
+}
+
+export function buildTheme(
+  primary: string = PRIMARY_COLOR,
+  overrides: ThemeOverrides = {}
+) {
   const primaryLight = hexToRgba(primary, 0.12);
   const primaryMedium = hexToRgba(primary, 0.22);
   const primaryDark = '#1D4ED8';
 
-  return {
+  const base = {
     fonts: FONTS,
     typography: {
       fontFamily: FONTS.medium,
@@ -362,22 +378,197 @@ export function buildTheme(primary: string = PRIMARY_COLOR) {
       fadeMs: 140,
     },
   };
+
+  return {
+    ...base,
+    colors: { ...base.colors, ...(overrides.colors ?? {}) },
+    shadows: { ...base.shadows, ...(overrides.shadows ?? {}) },
+  };
 }
 
 /**
- * Named themes. Adding a theme means adding one entry here (or calling
- * `buildTheme` with a different primary) — no screen changes, because every
- * screen reads `THEME`, which is the active entry below.
+ * Dark palette.
+ *
+ * Only the tokens that MUST differ are listed. Everything omitted is either
+ * already theme-neutral (player hues, status colours, board geometry) or was
+ * verified to read acceptably on a dark surface.
+ *
+ * Contrast notes: text is #E6EAF2 on #0F1523 (≈13:1). Muted text is #9AA6BC
+ * on #0F1523 (≈7:1). Every `*-Light` container is a dark translucent tint
+ * rather than a pale wash, so a "green pill" stays legible when inverted.
+ */
+const DARK_COLORS: Record<string, string> = {
+  // Brand: a lighter blue is needed to hold contrast on dark surfaces.
+  primary: '#60A5FA',
+  primaryDark: '#3B82F6',
+  primaryLight: 'rgba(96, 165, 250, 0.16)',
+  primaryMedium: 'rgba(96, 165, 250, 0.26)',
+  accent: '#60A5FA',
+  accentCyan: '#60A5FA',
+  onPrimary: '#0B1220',
+  onPrimaryContainer: '#0B1220',
+
+  // Surfaces, dark end first.
+  background: '#0B1220',
+  surface: '#0B1220',
+  surfaceBright: '#18213A',
+  surfaceDim: '#0F1523',
+  backgroundCard: '#141C2E',
+  backgroundElevated: '#1B2438',
+  surfaceContainerLowest: '#111827',
+  surfaceContainerLow: '#141C2E',
+  surfaceContainer: '#18213A',
+  surfaceContainerHigh: '#1E283F',
+  surfaceContainerHighest: '#263148',
+  inverseSurface: '#E6EAF2',
+  inverseOnSurface: '#0B1220',
+
+  // Text.
+  textPrimary: '#E6EAF2',
+  textSecondary: '#AEB9CC',
+  textMuted: '#8592A8',
+  onSurface: '#E6EAF2',
+  onSurfaceVariant: '#AEB9CC',
+  outline: '#8592A8',
+  outlineVariant: '#2E3A52',
+  textSecondaryStrong: '#9AA6BC',
+  textOnMuted: '#AEB9CC',
+  inverseLabel: '#E6EAF2',
+
+  // Shared fills.
+  surfaceMuted: '#1E283F',
+  surfaceHairline: '#2E3A52',
+  dividerSoft: '#263148',
+  surfacePrimaryTint: 'rgba(96, 165, 250, 0.14)',
+  surfacePrimaryTintBorder: 'rgba(96, 165, 250, 0.42)',
+  surfacePrimaryTintBorderSoft: 'rgba(96, 165, 250, 0.28)',
+
+  // Board: cells read as raised panels, not white squares.
+  boardBackground: '#0F1523',
+  boardBorder: '#2E3A52',
+  cell: '#18213A',
+  cellBorder: '#263148',
+  cellHover: '#1E283F',
+  cellLegalMove: 'rgba(96, 165, 250, 0.20)',
+  cellLastMove: 'rgba(96, 165, 250, 0.14)',
+
+  // Status pills and semantic containers.
+  secondary: '#F87171',
+  secondaryContainer: 'rgba(248, 113, 113, 0.18)',
+  secondaryBorder: 'rgba(248, 113, 113, 0.38)',
+  onSecondary: '#0B1220',
+  tertiary: '#4ADE80',
+  tertiaryContainer: '#15803D',
+  success: '#4ADE80',
+  warning: '#FBBF24',
+  warningLight: 'rgba(251, 191, 36, 0.16)',
+  warningBorder: 'rgba(251, 191, 36, 0.38)',
+  error: '#F87171',
+  danger: '#F87171',
+  errorContainer: 'rgba(248, 113, 113, 0.18)',
+  dangerLight: 'rgba(248, 113, 113, 0.16)',
+  dangerBorder: 'rgba(248, 113, 113, 0.36)',
+  dangerBright: '#F87171',
+
+  // Outcomes.
+  win: '#4ADE80',
+  winBg: 'rgba(74, 222, 128, 0.12)',
+  winBorder: 'rgba(74, 222, 128, 0.32)',
+  loss: '#F87171',
+  lossBg: 'rgba(248, 113, 113, 0.12)',
+  lossBorder: 'rgba(248, 113, 113, 0.32)',
+  draw: '#9AA6BC',
+  drawBg: '#18213A',
+  drawBorder: '#2E3A52',
+
+  // Live status.
+  statusOnline: '#4ADE80',
+  statusPlaying: '#60A5FA',
+  statusOffline: '#64748B',
+
+  // Walls keep their hue but gain contrast against the dark board.
+  wallPlaced: '#9A9382',
+  wallSlot: 'rgba(148, 163, 184, 0.26)',
+
+  // Engine assessment marks, lifted for dark.
+  assessmentBest: '#2DD4BF',
+  assessmentExcellent: '#4ADE80',
+  assessmentGood: '#A3E635',
+  assessmentInaccuracy: '#FBBF24',
+  assessmentBlunder: '#FB923C',
+  playerMint: '#6EE7B7',
+  playerGreenBright: '#4ADE80',
+  playerPink: '#FB7185',
+  neutralStone: '#94A3B8',
+  successTint: 'rgba(74, 222, 128, 0.16)',
+  successLight: 'rgba(74, 222, 128, 0.12)',
+  chartStroke: '#60A5FA',
+  chartInk: '#BFDBFE',
+
+  // Shadows become useless on dark; elevation is carried by borders.
+  shadow: 'rgba(0, 0, 0, 0.45)',
+};
+
+/**
+ * Named themes. Adding a theme means adding one entry here — no screen
+ * changes, because every screen reads `THEME`, which is the active entry.
  */
 export const THEMES = {
   light: buildTheme(PRIMARY_COLOR),
+  dark: buildTheme(PRIMARY_COLOR, {
+    colors: DARK_COLORS,
+    shadows: {
+      card: { shadowColor: '#000000', shadowOpacity: 0.3, elevation: 0 },
+      modal: { shadowColor: '#000000', shadowOpacity: 0.5, elevation: 0 },
+    },
+  }),
 } as const;
 
 export type ThemeName = keyof typeof THEMES;
 
-/** The active theme. Every import of THEME in the app resolves here. */
-export const THEME = THEMES.light;
-export type Theme = typeof THEME;
+export const THEME_SCHEME_KEY = '@duoorb:theme:v1';
+
+/**
+ * The active theme.
+ *
+ * A standalone mutable copy — deliberately NOT `THEMES.light` itself. Sharing
+ * that object meant the first `applyTheme('dark')` overwrote the light entry
+ * in place, so switching back could not restore it and `THEMES.light` was
+ * permanently corrupted.
+ *
+ * A mutable object (rather than a `const` binding) is what lets one assignment
+ * restyle every `THEME.*` reader in the app, instead of threading context
+ * through 28 files. Screens rebuild their styles via `useThemedStyles`.
+ */
+function cloneTheme(source: Theme): Theme {
+  const out = {} as Record<string, unknown>;
+  for (const [group, value] of Object.entries(source as Record<string, unknown>)) {
+    out[group] = value && typeof value === 'object' && !Array.isArray(value)
+      ? { ...(value as Record<string, unknown>) }
+      : value;
+  }
+  return out as unknown as Theme;
+}
+
+export const THEME: Theme = cloneTheme(THEMES.light as Theme);
+export type Theme = (typeof THEMES)['light'];
+
+/** Swaps every token in place. All existing `THEME.*` readers see the change. */
+export function applyTheme(name: ThemeName): void {
+  const next = cloneTheme(THEMES[name] as Theme);
+  const cur = THEME as unknown as Record<string, Record<string, unknown>>;
+  const dst = next as unknown as Record<string, Record<string, unknown>>;
+  for (const group of Object.keys(dst)) {
+    const target = cur[group];
+    if (!target) continue;
+    for (const key of Object.keys(target)) delete target[key];
+    Object.assign(target, dst[group]);
+  }
+}
+
+export function isThemeName(value: unknown): value is ThemeName {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(THEMES, value);
+}
 
 /** Player ball color by index (0-based). Falls back to palette cycling. */
 export function playerColor(index: number, fallback?: string): string {

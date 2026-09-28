@@ -1,14 +1,8 @@
 import React, { useMemo, useRef } from 'react';
-import {
-  GestureResponderEvent,
-  PanResponder,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { GestureResponderEvent, PanResponder, Text, View, useWindowDimensions } from 'react-native';
 import { Orientation } from '@duoorb/game-core';
 import { THEME, hexToRgba } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 
 interface WallTrayProps {
   /** Current player's ball color — both pieces share it. */
@@ -181,7 +175,7 @@ export const WallTray: React.FC<WallTrayProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   card: {
     backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 8,
@@ -241,4 +235,4 @@ const styles = StyleSheet.create({
     color: THEME.colors.textSecondaryStrong,
     marginTop: 2,
   },
-});
+}));

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Text, TouchableOpacity, View } from 'react-native';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 
 /**
  * Shared shells for the two overlays that are built from the same parts.
@@ -121,7 +122,7 @@ export const ToastNotice: React.FC<{ message: string }> = ({ message }) => (
   </View>
 );
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   overlay: {
     position: 'absolute',
     left: 12,
@@ -190,4 +191,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: THEME.colors.onPrimary,
   },
-});
+}));

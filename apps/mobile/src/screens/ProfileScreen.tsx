@@ -1,14 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { useSession } from '../network/session';
 import {
   api,
@@ -351,7 +346,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.drawBg,
@@ -691,4 +686,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: THEME.colors.inverseLabel,
   },
-});
+}));

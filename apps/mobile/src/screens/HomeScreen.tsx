@@ -1,14 +1,8 @@
 import React, { useRef } from 'react';
-import {
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { DEFAULT_TIME_CONTROL, TimeControl } from '../timeControls';
 import { OnlineMode } from './OnlineScreen';
 
@@ -288,7 +282,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   screen: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -617,4 +611,4 @@ const styles = StyleSheet.create({
     color: THEME.colors.onSurfaceVariant,
     lineHeight: 15,
   },
-});
+}));

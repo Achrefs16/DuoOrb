@@ -1,6 +1,7 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 
 interface LoadingStateProps {
   message?: string;
@@ -63,7 +64,7 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   centerContainer: {
     paddingVertical: 48,
     paddingHorizontal: 24,
@@ -153,4 +154,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-});
+}));

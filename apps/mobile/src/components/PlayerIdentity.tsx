@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { THEME, playerColor } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 
 interface PlayerAvatarOrbProps {
   size?: number;
@@ -148,7 +149,7 @@ export const PlayerIdentityChip: React.FC<PlayerIdentityChipProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   orbContainer: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -230,4 +231,4 @@ const styles = StyleSheet.create({
   outcomeTextSm: {
     fontSize: 9,
   },
-});
+}));

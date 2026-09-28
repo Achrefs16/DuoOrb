@@ -1,13 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  FlatList,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { FlatList, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { api, LeaderboardEntryDto } from '../network/apiClient';
 import { PlayerAvatarOrb } from '../components/PlayerIdentity';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
@@ -115,7 +110,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -202,4 +197,4 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
   },
-});
+}));

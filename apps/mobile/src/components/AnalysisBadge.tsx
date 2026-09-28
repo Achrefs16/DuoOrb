@@ -1,7 +1,8 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import type { MoveAssessment } from '@duoorb/game-core';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { assessmentColor } from '../analysisUi';
 
 /** Small classification pill: colored dot + label. No emoji, no giant cards. */
@@ -19,7 +20,7 @@ export const AnalysisBadge: React.FC<{ assessment: MoveAssessment }> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -38,4 +39,4 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-});
+}));

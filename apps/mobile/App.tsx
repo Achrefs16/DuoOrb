@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, BackHandler, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { createThemedStyles } from './src/theme/themedStyles';
+import { AppState, BackHandler, StatusBar, Text, TouchableOpacity, View } from 'react-native';
 import { NavigationBar } from 'expo-navigation-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AIDifficulty, GameMode, GameState, RecordedAction } from '@duoorb/game-core';
 import { RoomDto } from '@duoorb/protocol';
 import { GameReviewScreen } from './src/screens/GameReviewScreen';
 import { GameScreen } from './src/screens/GameScreen';
-import { MatchSetupScreen } from './src/screens/MatchSetupScreen';
 import { OnlineMode, OnlineScreen } from './src/screens/OnlineScreen';
-import { SideChoice } from './src/screens/MatchSetupScreen';
+import { MatchSetupScreen, SideChoice } from './src/screens/MatchSetupScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
@@ -32,6 +32,7 @@ import {
 } from './src/storage/gameStorage';
 import { setSoundsMuted } from './src/audio/sounds';
 import { SessionProvider, useSession } from './src/network/session';
+import { ThemeProvider } from './src/theme/ThemeProvider';
 import { flushIdentityStorage, hydrateIdentity } from './src/network/auth';
 import { THEME } from './src/theme';
 import { DEFAULT_TIME_CONTROL, TimeControl } from './src/timeControls';
@@ -410,6 +411,7 @@ export default function App() {
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <SystemChrome />
       <SessionProvider>
+        <ThemeProvider>
         <SessionGate>
           {/* Authenticated-only side effects: nothing here runs before a
               canonical identity exists. */}
@@ -651,6 +653,7 @@ export default function App() {
           </View>
         </View>
         </SessionGate>
+        </ThemeProvider>
       </SessionProvider>
     </SafeAreaView>
     </SafeAreaProvider>
@@ -736,7 +739,7 @@ const SessionEffects: React.FC<{
   return null;
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   root: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -821,4 +824,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: THEME.colors.onPrimary,
   },
-});
+}));

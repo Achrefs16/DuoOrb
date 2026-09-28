@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Modal, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { GameState } from '@duoorb/game-core';
 import { THEME, playerColor } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { modeLabel } from '../matchModes';
 import { nameInitial } from '../displayName';
 
@@ -312,7 +313,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
@@ -588,4 +589,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: THEME.colors.textMuted,
   },
-});
+}));

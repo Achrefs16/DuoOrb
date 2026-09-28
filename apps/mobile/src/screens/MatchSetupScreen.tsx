@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { AIDifficulty, GameMode } from '@duoorb/game-core';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { TIME_CONTROLS, TimeControl } from '../timeControls';
 import { resolveMode } from '../matchModes';
 
@@ -312,7 +313,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   screen: {
     flex: 1,
     backgroundColor: THEME.colors.drawBg,
@@ -459,4 +460,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: THEME.colors.onPrimary,
   },
-});
+}));

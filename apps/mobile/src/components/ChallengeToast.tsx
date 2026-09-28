@@ -1,8 +1,9 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ChallengeDto } from '@duoorb/protocol';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { modeLabel } from '../matchModes';
 import { OutgoingChallenge } from '../network/useChallenge';
 import {
@@ -127,7 +128,7 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   card: { maxWidth: 380, gap: 10 },
   topRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   avatar: {
@@ -184,4 +185,4 @@ const styles = StyleSheet.create({
     color: THEME.colors.textOnMuted,
   },
   btnRow: { flexDirection: 'row', gap: 8 },
-});
+}));

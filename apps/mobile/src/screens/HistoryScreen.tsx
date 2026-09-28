@@ -1,14 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import {
-  FlatList,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { FlatList, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 import { modeDisplayName } from '../matchModes';
 import { api, GameHistoryItemDto } from '../network/apiClient';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
@@ -356,7 +351,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -615,4 +610,4 @@ const styles = StyleSheet.create({
     color: THEME.colors.onSurface,
     fontVariant: ['tabular-nums'],
   },
-});
+}));

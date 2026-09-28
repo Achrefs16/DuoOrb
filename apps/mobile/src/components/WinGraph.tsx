@@ -1,7 +1,8 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { Circle, Line, Polyline, Svg } from 'react-native-svg';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 
 interface WinGraphProps {
   /** Win chance 0..1 per step, including step 0. */
@@ -76,9 +77,9 @@ export const WinGraph: React.FC<WinGraphProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   wrap: {
     width: '100%',
     paddingHorizontal: 4,
   },
-});
+}));

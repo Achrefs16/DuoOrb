@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, LayoutChangeEvent } from 'react-native';
+import { Text, View, LayoutChangeEvent } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { THEME } from '../theme';
+import { createThemedStyles } from '../theme/themedStyles';
 
 interface RatingPoint {
   ratingAfter: number;
@@ -226,7 +227,7 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createThemedStyles(() => ({
   card: {
     backgroundColor: THEME.colors.backgroundCard,
     borderRadius: THEME.radius.lg,
@@ -307,4 +308,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
-});
+}));
