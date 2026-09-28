@@ -1,8 +1,7 @@
 import React from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 
 export type MainTab = 'PLAY' | 'FRIENDS' | 'HISTORY' | 'PROFILE';
 
@@ -70,7 +69,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     backgroundColor: THEME.colors.surfaceContainerLowest,
     borderTopWidth: 1,
@@ -136,12 +135,12 @@ const styles = createThemedStyles(() => ({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: THEME.colors.onPrimary,
+    borderColor: '#FFFFFF',
   },
   badgeText: {
     fontFamily: THEME.fonts.extraBold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '800',
   },
-}));
+});

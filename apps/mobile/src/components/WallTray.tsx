@@ -1,8 +1,14 @@
 import React, { useMemo, useRef } from 'react';
-import { GestureResponderEvent, PanResponder, Text, View, useWindowDimensions } from 'react-native';
+import {
+  GestureResponderEvent,
+  PanResponder,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { Orientation } from '@duoorb/game-core';
 import { THEME, hexToRgba } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 
 interface WallTrayProps {
   /** Current player's ball color — both pieces share it. */
@@ -175,12 +181,12 @@ export const WallTray: React.FC<WallTrayProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   card: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
     padding: 12,
     ...THEME.shadows.card,
     width: '100%',
@@ -192,9 +198,9 @@ const styles = createThemedStyles(() => ({
     width: '100%',
   },
   pieceSlot: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: THEME.colors.boardBorder,
+    borderColor: '#CBD5E1',
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
@@ -206,15 +212,15 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   pieceDisabled: {
     opacity: 0.35,
   },
   countBox: {
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
@@ -224,7 +230,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.extraBold,
     fontSize: 18,
     fontWeight: '800',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     lineHeight: 22,
     fontVariant: ['tabular-nums'],
   },
@@ -232,7 +238,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     marginTop: 2,
   },
-}));
+});

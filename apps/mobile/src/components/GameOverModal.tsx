@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Animated, Modal, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { GameState } from '@duoorb/game-core';
 import { THEME, playerColor } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { modeLabel } from '../matchModes';
 import { nameInitial } from '../displayName';
 
@@ -162,7 +161,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               size={32}
               color={
                 outcomeWin
-                  ? THEME.colors.assessmentInaccuracy
+                  ? '#D97706'
                   : isDraw
                   ? THEME.colors.textSecondary
                   : THEME.colors.danger
@@ -204,7 +203,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                       </Text>
                     </View>
                     {(p.place ?? 99) === 1 && (
-                      <Feather name="award" size={16} color={THEME.colors.assessmentInaccuracy} />
+                      <Feather name="award" size={16} color="#D97706" />
                     )}
                   </View>
                 );
@@ -245,7 +244,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               activeOpacity={0.88}
               onPress={onRematch}
             >
-              <Feather name="rotate-ccw" size={16} color={THEME.colors.onPrimary} />
+              <Feather name="rotate-ccw" size={16} color="#FFFFFF" />
               <Text style={styles.rematchText}>Rematch</Text>
             </TouchableOpacity>
 
@@ -313,7 +312,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
@@ -352,19 +351,19 @@ const styles = createThemedStyles(() => ({
     marginBottom: 12,
   },
   iconCircleWin: {
-    backgroundColor: THEME.colors.warningLight,
+    backgroundColor: '#FEF3C7',
     borderWidth: 1,
-    borderColor: THEME.colors.warningBorder,
+    borderColor: '#FDE68A',
   },
   iconCircleLoss: {
-    backgroundColor: THEME.colors.dangerLight,
+    backgroundColor: '#FEE2E2',
     borderWidth: 1,
-    borderColor: THEME.colors.dangerBorder,
+    borderColor: '#FECACA',
   },
   iconCircleDraw: {
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
   },
   outcomeTitle: {
     fontFamily: THEME.fonts.extraBold,
@@ -514,7 +513,7 @@ const styles = createThemedStyles(() => ({
   },
   rematchText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
   },
@@ -589,4 +588,4 @@ const styles = createThemedStyles(() => ({
     fontWeight: '600',
     color: THEME.colors.textMuted,
   },
-}));
+});

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Animated, Easing, Text, View } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { DuoOrbLogo } from '../components/DuoOrbLogo';
 
 /** Minimum time the mark stays up. Kept short and fixed — no spinner. */
@@ -54,7 +53,7 @@ export const SplashScreen: React.FC = () => {
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -71,4 +70,4 @@ const styles = createThemedStyles(() => ({
     letterSpacing: -0.5,
     color: THEME.colors.textPrimary,
   },
-}));
+});

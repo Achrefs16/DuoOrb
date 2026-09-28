@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Animated, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   GameState,
   RecordedAction,
@@ -9,7 +9,6 @@ import {
 } from '@duoorb/game-core';
 import { GameBoard } from '../components/GameBoard';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 
 interface ReplayScreenProps {
   initialState: GameState;
@@ -102,7 +101,7 @@ export const ReplayScreen: React.FC<ReplayScreenProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -169,4 +168,4 @@ const styles = createThemedStyles(() => ({
     fontSize: 14,
     fontWeight: '600',
   },
-}));
+});

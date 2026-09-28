@@ -1,9 +1,8 @@
 import React from 'react';
-import { Modal, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { modeDisplayName } from '../matchModes';
 import { GameHistoryItemDto } from '../network/apiClient';
 
@@ -120,7 +119,7 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
@@ -233,6 +232,6 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
   },
-}));
+});

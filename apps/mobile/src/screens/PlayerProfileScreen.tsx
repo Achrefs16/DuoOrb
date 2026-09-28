@@ -1,10 +1,16 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME, playerColor } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { useIdentity } from '../network/auth';
 import {
   api,
@@ -282,7 +288,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 )}
                 {formatJoinedAt(profile?.createdAt) && (
                   <View style={styles.joinedRow}>
-                    <Feather name="calendar" size={14} color={THEME.colors.textSecondaryStrong} />
+                    <Feather name="calendar" size={14} color="#64748B" />
                     <Text style={styles.joinedText}>{formatJoinedAt(profile?.createdAt)}</Text>
                   </View>
                 )}
@@ -296,7 +302,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 <Text style={styles.statBoxLabel}>Rating</Text>
               </View>
               <View style={styles.statBox}>
-                <Text style={[styles.statBoxNumber, { color: THEME.colors.primary }]}>{winRate}%</Text>
+                <Text style={[styles.statBoxNumber, { color: '#2563EB' }]}>{winRate}%</Text>
                 <Text style={styles.statBoxLabel}>Win Rate</Text>
               </View>
               <View style={styles.statBox}>
@@ -315,7 +321,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 activeOpacity={0.88}
                 onPress={() => onChallenge({ id: profile!.id, username: profile!.username })}
               >
-                <MaterialCommunityIcons name="sword-cross" size={20} color={THEME.colors.onPrimary} />
+                <MaterialCommunityIcons name="sword-cross" size={20} color="#FFFFFF" />
                 <Text style={styles.challengeBtnText}>Challenge</Text>
               </TouchableOpacity>
               )}
@@ -369,7 +375,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
 
             <View style={styles.h2hBox}>
               <View style={styles.h2hSide}>
-                <Text style={[styles.h2hScore, { color: THEME.colors.danger }]}>
+                <Text style={[styles.h2hScore, { color: '#DC2626' }]}>
                   {headToHead?.theirWins ?? 0}
                 </Text>
                 <Text style={styles.h2hSideLabel}>
@@ -378,14 +384,14 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </View>
 
               <View style={[styles.h2hSide, styles.h2hSideBorders]}>
-                <Text style={[styles.h2hScore, { color: THEME.colors.primary }]}>
+                <Text style={[styles.h2hScore, { color: '#2563EB' }]}>
                   {headToHead?.myWinRate ?? 0}%
                 </Text>
                 <Text style={styles.h2hSideLabel}>Your Win Rate</Text>
               </View>
 
               <View style={styles.h2hSide}>
-                <Text style={[styles.h2hScore, { color: THEME.colors.tertiaryContainer }]}>
+                <Text style={[styles.h2hScore, { color: '#007F36' }]}>
                   {headToHead?.myWins ?? 0}
                 </Text>
                 <Text style={styles.h2hSideLabel}>You Won</Text>
@@ -489,7 +495,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                         </View>
                       </View>
 
-                      <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
+                      <Feather name="chevron-right" size={20} color="#64748B" />
                     </TouchableOpacity>
                   );
                 })}
@@ -515,10 +521,10 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.drawBg,
+    backgroundColor: '#F8FAFC',
   },
   header: {
     height: 64,
@@ -526,9 +532,9 @@ const styles = createThemedStyles(() => ({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceMuted,
+    borderBottomColor: '#F1F5F9',
   },
   backBtn: {
     width: 40,
@@ -541,7 +547,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     letterSpacing: -0.2,
   },
   scrollArea: {
@@ -557,10 +563,10 @@ const styles = createThemedStyles(() => ({
     gap: 16,
   },
   identityCard: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     padding: 16,
     gap: 16,
     ...THEME.shadows.card,
@@ -574,10 +580,10 @@ const styles = createThemedStyles(() => ({
     width: 56,
     height: 56,
     borderRadius: 8,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: THEME.colors.chartStroke,
+    shadowColor: '#004AC6',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
     shadowRadius: 6,
@@ -587,7 +593,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.extraBold,
     fontSize: 22,
     fontWeight: '800',
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
   },
   identityMeta: {
     gap: 3,
@@ -597,13 +603,13 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     letterSpacing: -0.2,
   },
   handleText: {
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   joinedRow: {
     flexDirection: 'row',
@@ -614,7 +620,7 @@ const styles = createThemedStyles(() => ({
   joinedText: {
     fontFamily: THEME.fonts.regular,
     fontSize: 14,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   statBoxes: {
     flexDirection: 'row',
@@ -622,7 +628,7 @@ const styles = createThemedStyles(() => ({
   },
   statBox: {
     flex: 1,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderRadius: 4,
     paddingVertical: 12,
     alignItems: 'center',
@@ -632,7 +638,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     letterSpacing: -0.2,
     fontVariant: ['tabular-nums'],
   },
@@ -640,7 +646,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginTop: 2,
@@ -649,7 +655,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.regular,
     fontSize: 11,
     fontWeight: '400',
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
     marginTop: 2,
   },
   ratingBadge: {
@@ -704,7 +710,7 @@ const styles = createThemedStyles(() => ({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 4,
-    backgroundColor: THEME.colors.inverseLabel,
+    backgroundColor: '#0F172A',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -713,7 +719,7 @@ const styles = createThemedStyles(() => ({
   },
   challengeBtnText: {
     fontFamily: THEME.fonts.semiBold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -722,7 +728,7 @@ const styles = createThemedStyles(() => ({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 4,
-    backgroundColor: THEME.colors.slate[200],
+    backgroundColor: '#E2E8F0',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -735,16 +741,16 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
   },
   friendBtnTextActive: {
     color: THEME.colors.textMuted,
   },
   h2hCard: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     padding: 16,
     gap: 12,
     ...THEME.shadows.card,
@@ -758,19 +764,19 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     letterSpacing: -0.2,
   },
   h2hSub: {
     fontFamily: THEME.fonts.regular,
     fontSize: 14,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     marginTop: 2,
   },
   recordPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: THEME.colors.slate[200],
+    backgroundColor: '#E2E8F0',
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -779,18 +785,18 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   recordValue: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 11,
     fontWeight: '600',
-    color: THEME.colors.primary,
+    color: '#2563EB',
     fontVariant: ['tabular-nums'],
   },
   h2hBox: {
     flexDirection: 'row',
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderRadius: 4,
     padding: 12,
   },
@@ -802,20 +808,20 @@ const styles = createThemedStyles(() => ({
   h2hSideBorders: {
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
   },
   h2hScore: {
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     fontVariant: ['tabular-nums'],
   },
   h2hSideLabel: {
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     textAlign: 'center',
   },
   sectionHeading: {
@@ -840,7 +846,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     letterSpacing: -0.2,
   },
   progDelta: {
@@ -857,7 +863,7 @@ const styles = createThemedStyles(() => ({
   matchesSub: {
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   streakBanner: {
     flexDirection: 'row',
@@ -865,19 +871,19 @@ const styles = createThemedStyles(() => ({
     gap: 6,
     padding: 10,
     borderRadius: 4,
-    backgroundColor: THEME.colors.surfacePrimaryTint,
+    backgroundColor: '#EFF6FF',
   },
   streakText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 11,
     fontWeight: '600',
-    color: THEME.colors.primaryDark,
+    color: '#1D4ED8',
   },
   chartCard: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     padding: 16,
     gap: 8,
     ...THEME.shadows.card,
@@ -888,7 +894,7 @@ const styles = createThemedStyles(() => ({
   filterPillsRow: {
     flexDirection: 'row',
     gap: 4,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderRadius: 12,
     padding: 4,
     alignSelf: 'flex-start',
@@ -899,23 +905,23 @@ const styles = createThemedStyles(() => ({
     borderRadius: 12,
   },
   filterPillActive: {
-    backgroundColor: THEME.colors.slate[950],
+    backgroundColor: '#131B2E',
   },
   filterPillText: {
     fontFamily: THEME.fonts.medium,
     fontSize: 12,
     fontWeight: '500',
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
   },
   filterPillTextActive: {
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontWeight: '600',
   },
   matchesList: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     overflow: 'hidden',
     ...THEME.shadows.card,
   },
@@ -926,7 +932,7 @@ const styles = createThemedStyles(() => ({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceMuted,
+    borderBottomColor: '#F1F5F9',
   },
   matchLeft: {
     flexDirection: 'row',
@@ -962,24 +968,24 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
   },
   ownRatingBlue: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: THEME.colors.primary,
+    color: '#2563EB',
   },
   oppRatingMuted: {
     fontFamily: THEME.fonts.regular,
     fontSize: 14,
     fontWeight: '400',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   matchDateText: {
     fontFamily: THEME.fonts.regular,
     fontSize: 14,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     marginTop: 2,
   },
   emptyCard: {
@@ -1005,7 +1011,7 @@ const styles = createThemedStyles(() => ({
   removeCard: {
     width: '100%',
     maxWidth: 320,
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
   },
@@ -1013,13 +1019,13 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 16,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     textAlign: 'center',
   },
   removeDesc: {
     fontFamily: THEME.fonts.regular,
     fontSize: 13,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     textAlign: 'center',
     marginTop: 6,
     marginBottom: 16,
@@ -1029,7 +1035,7 @@ const styles = createThemedStyles(() => ({
     gap: 8,
   },
   removeConfirm: {
-    backgroundColor: THEME.colors.danger,
+    backgroundColor: '#DC2626',
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: 'center',
@@ -1039,19 +1045,19 @@ const styles = createThemedStyles(() => ({
   },
   removeConfirmText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
   },
   removeCancel: {
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: 'center',
   },
   removeCancelText: {
     fontFamily: THEME.fonts.semiBold,
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -1059,15 +1065,15 @@ const styles = createThemedStyles(() => ({
     marginTop: 8,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     alignItems: 'center',
   },
   loadMoreText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 13,
     fontWeight: '600',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
   },
-}));
+});

@@ -17,16 +17,4 @@ export const AppState = {
   addEventListener: () => ({ remove: () => {} }),
 };
 
-/**
- * Identity pass-through, matching the real implementation closely enough for
- * the theme tests: `createThemedStyles` depends on it rebuilding, and a stub
- * that returned a constant would hide exactly the bug under test.
- */
-export const StyleSheet = {
-  create: <T,>(styles: T): T => styles,
-  absoluteFill: {},
-  absoluteFillObject: {},
-  hairlineWidth: 1,
-};
-
-export default { Platform, AppState, StyleSheet };
+export default { Platform, AppState };

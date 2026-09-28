@@ -1,7 +1,6 @@
 import React from 'react';
-import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 
 interface LoadingStateProps {
   message?: string;
@@ -64,7 +63,7 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   centerContainer: {
     paddingVertical: 48,
     paddingHorizontal: 24,
@@ -129,7 +128,7 @@ const styles = createThemedStyles(() => ({
   },
   emptyButtonText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -154,4 +153,4 @@ const styles = createThemedStyles(() => ({
     fontSize: 13,
     fontWeight: '700',
   },
-}));
+});

@@ -1,10 +1,19 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { FlatList, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  FlatList,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import {
   api,
   FriendItemDto,
@@ -246,7 +255,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               activeOpacity={0.8}
               onPress={() => onOpenChallengeSetup({ id: friend.id, username: friend.username })}
             >
-              <MaterialCommunityIcons name="sword-cross" size={14} color={THEME.colors.onPrimary} />
+              <MaterialCommunityIcons name="sword-cross" size={14} color="#FFFFFF" />
               <Text style={styles.playButtonText}>Challenge</Text>
             </TouchableOpacity>
           )}
@@ -336,7 +345,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                             onPress={() => handleRespondRequest(req.id, true)}
                             accessibilityLabel="Accept friend request"
                           >
-                            <Feather name="check" size={16} color={THEME.colors.onPrimary} />
+                            <Feather name="check" size={16} color="#FFFFFF" />
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.declineBtn}
@@ -473,7 +482,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 onPress={() => void handleAddByName()}
                 accessibilityLabel="Search"
               >
-                <Feather name="search" size={20} color={THEME.colors.onPrimary} />
+                <Feather name="search" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
 
@@ -555,7 +564,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -770,7 +779,7 @@ const styles = createThemedStyles(() => ({
     height: 10,
     borderRadius: 5,
     borderWidth: 2,
-    borderColor: THEME.colors.onPrimary,
+    borderColor: '#FFFFFF',
   },
   friendMeta: {
     gap: 2,
@@ -818,7 +827,7 @@ const styles = createThemedStyles(() => ({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 4,
-    backgroundColor: THEME.colors.inverseLabel,
+    backgroundColor: '#0F172A',
   },
   playButtonDisabled: {
     backgroundColor: THEME.colors.surfaceContainerHigh,
@@ -826,7 +835,7 @@ const styles = createThemedStyles(() => ({
   },
   playButtonText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -869,7 +878,7 @@ const styles = createThemedStyles(() => ({
   },
   removeConfirmText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -931,7 +940,7 @@ const styles = createThemedStyles(() => ({
   },
   zeroAddBtnText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1027,7 +1036,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
   },
   addFeedback: {
     fontFamily: THEME.fonts.medium,
@@ -1163,4 +1172,4 @@ const styles = createThemedStyles(() => ({
     fontSize: 13,
     fontWeight: '600',
   },
-}));
+});

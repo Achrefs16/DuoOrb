@@ -1,6 +1,5 @@
 import React from 'react';
-import { createThemedStyles } from '../theme/themedStyles';
-import { Image, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
 interface DuoOrbLogoProps {
   size?: number;
@@ -35,9 +34,9 @@ export const DuoOrbLogo: React.FC<DuoOrbLogoProps> = ({ size = 96, inset = 0 }) 
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   wrap: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-}));
+});

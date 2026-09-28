@@ -1,6 +1,5 @@
 import React from 'react';
-import { createThemedStyles } from '../theme/themedStyles';
-import { KeyboardAvoidingView, Platform } from 'react-native';
+import { KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 
 /**
  * Lifts content above the on-screen keyboard.
@@ -18,6 +17,6 @@ export const KeyboardShift: React.FC<{ children: React.ReactNode }> = ({ childre
   </KeyboardAvoidingView>
 );
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   fill: { flex: 1 },
-}));
+});

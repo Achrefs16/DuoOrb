@@ -1,9 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { useSession } from '../network/session';
 import {
   api,
@@ -309,7 +314,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         </View>
                       </View>
 
-                      <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
+                      <Feather name="chevron-right" size={20} color="#64748B" />
                     </TouchableOpacity>
                   );
                 })}
@@ -346,10 +351,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.drawBg,
+    backgroundColor: '#F8FAFC',
   },
   header: {
     height: 64,
@@ -357,15 +362,15 @@ const styles = createThemedStyles(() => ({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceMuted,
+    borderBottomColor: '#F1F5F9',
   },
   title: {
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     letterSpacing: -0.2,
   },
   settingsIconBtn: {
@@ -389,10 +394,10 @@ const styles = createThemedStyles(() => ({
     gap: 16,
   },
   identityCard: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     padding: 16,
     gap: 16,
     ...THEME.shadows.card,
@@ -410,10 +415,10 @@ const styles = createThemedStyles(() => ({
     width: 56,
     height: 56,
     borderRadius: 8,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: THEME.colors.chartStroke,
+    shadowColor: '#004AC6',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
     shadowRadius: 6,
@@ -423,7 +428,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.extraBold,
     fontSize: 22,
     fontWeight: '800',
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
   },
   onlineBadge: {
     position: 'absolute',
@@ -434,7 +439,7 @@ const styles = createThemedStyles(() => ({
     borderRadius: 7,
     backgroundColor: THEME.colors.tertiary,
     borderWidth: 2,
-    borderColor: THEME.colors.onPrimary,
+    borderColor: '#FFFFFF',
   },
   identityInfo: {
     gap: 3,
@@ -444,13 +449,13 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     letterSpacing: -0.2,
   },
   handleText: {
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   joinDateRow: {
     flexDirection: 'row',
@@ -461,7 +466,7 @@ const styles = createThemedStyles(() => ({
   joinDateText: {
     fontFamily: THEME.fonts.regular,
     fontSize: 14,
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
   },
   editBtn: {
     width: 36,
@@ -476,7 +481,7 @@ const styles = createThemedStyles(() => ({
   },
   statCard: {
     flex: 1,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderRadius: 4,
     paddingVertical: 12,
     alignItems: 'center',
@@ -486,7 +491,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     letterSpacing: -0.2,
     fontVariant: ['tabular-nums'],
   },
@@ -494,7 +499,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginTop: 2,
@@ -503,7 +508,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.regular,
     fontSize: 11,
     fontWeight: '400',
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
     marginTop: 2,
   },
   chartSection: {
@@ -538,7 +543,7 @@ const styles = createThemedStyles(() => ({
   recentPillsRow: {
     flexDirection: 'row',
     gap: 4,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderRadius: 12,
     padding: 4,
     alignSelf: 'flex-start',
@@ -549,16 +554,16 @@ const styles = createThemedStyles(() => ({
     borderRadius: 12,
   },
   recentPillActive: {
-    backgroundColor: THEME.colors.slate[950],
+    backgroundColor: '#131B2E',
   },
   recentPillText: {
     fontFamily: THEME.fonts.medium,
     fontSize: 12,
     fontWeight: '500',
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
   },
   recentPillTextActive: {
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontWeight: '600',
   },
   unratedText: {
@@ -579,10 +584,10 @@ const styles = createThemedStyles(() => ({
     paddingHorizontal: 2,
   },
   recentList: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     overflow: 'hidden',
     ...THEME.shadows.card,
   },
@@ -593,7 +598,7 @@ const styles = createThemedStyles(() => ({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceMuted,
+    borderBottomColor: '#F1F5F9',
   },
   matchItemLeft: {
     flexDirection: 'row',
@@ -633,18 +638,18 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
   },
   matchItemOppRating: {
     fontFamily: THEME.fonts.regular,
     fontSize: 14,
     fontWeight: '400',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   matchItemMode: {
     fontFamily: THEME.fonts.regular,
     fontSize: 14,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     marginTop: 2,
   },
   matchItemRight: {
@@ -675,15 +680,15 @@ const styles = createThemedStyles(() => ({
     marginTop: 8,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     alignItems: 'center',
   },
   loadMoreText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 13,
     fontWeight: '600',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
   },
-}));
+});

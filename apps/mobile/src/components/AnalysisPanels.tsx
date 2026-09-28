@@ -1,8 +1,7 @@
 import React from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { MoveAnalysis } from '@duoorb/game-core';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { ordinal } from '../analysisUi';
 
 /** Tiny before → after rows. Numbers do the talking, not prose. */
@@ -154,7 +153,7 @@ export const SummaryBlock: React.FC<{
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   impact: {
     alignSelf: 'stretch',
     gap: 2,
@@ -332,7 +331,7 @@ const styles = createThemedStyles(() => ({
   },
   primaryButtonText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -350,4 +349,4 @@ const styles = createThemedStyles(() => ({
     fontSize: 14,
     fontWeight: '600',
   },
-}));
+});

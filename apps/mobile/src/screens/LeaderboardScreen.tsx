@@ -1,8 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { FlatList, Text, TouchableOpacity, View } from 'react-native';
+import {
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { api, LeaderboardEntryDto } from '../network/apiClient';
 import { PlayerAvatarOrb } from '../components/PlayerIdentity';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
@@ -41,11 +46,11 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
     const isTop3 = item.rank <= 3;
     const rankColor =
       item.rank === 1
-        ? THEME.colors.assessmentInaccuracy // Gold
+        ? '#D97706' // Gold
         : item.rank === 2
-        ? THEME.colors.textSecondaryStrong // Silver
+        ? '#64748B' // Silver
         : item.rank === 3
-        ? THEME.colors.warning // Bronze
+        ? '#B45309' // Bronze
         : THEME.colors.textMuted;
 
     return (
@@ -110,7 +115,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -197,4 +202,4 @@ const styles = createThemedStyles(() => ({
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
   },
-}));
+});

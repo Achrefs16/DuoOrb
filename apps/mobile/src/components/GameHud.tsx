@@ -1,9 +1,14 @@
 import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { GameState, PlayerState } from '@duoorb/game-core';
 import { THEME, hexToRgba, playerColor } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { nameInitial } from '../displayName';
 
 function formatTimer(seconds?: number): string {
@@ -31,26 +36,11 @@ interface InGamePlayerChipProps {
 
 /** Avatar tint per ball color, matching the Stitch active-match design. */
 function avatarTint(ball: string): { bg: string; border: string; text: string } {
-  // Compared against the tokens, not literals: the ball colours come from
-  // THEME.colors.player1..4, so hardcoding the same hex here meant a palette
-  // change silently stopped tinting avatars.
   const b = ball.toUpperCase();
-  if (b === THEME.colors.primary.toUpperCase()) {
-    return {
-      bg: THEME.colors.surfacePrimaryTintBorderSoft,
-      border: THEME.colors.surfacePrimaryTintBorder,
-      text: THEME.colors.primary,
-    };
-  }
-  if (b === THEME.colors.player2.toUpperCase() || b === THEME.colors.dangerBright.toUpperCase()) {
-    return { bg: THEME.colors.dangerLight, border: THEME.colors.dangerBorder, text: THEME.colors.error };
-  }
-  if (b === THEME.colors.player3.toUpperCase()) {
-    return { bg: THEME.colors.successTint, border: THEME.colors.winBorder, text: THEME.colors.win };
-  }
-  if (b === THEME.colors.player4.toUpperCase()) {
-    return { bg: THEME.colors.warningLight, border: THEME.colors.warningBorder, text: THEME.colors.warning };
-  }
+  if (b === '#2563EB') return { bg: '#DBEAFE', border: '#BFDBFE', text: '#2563EB' };
+  if (b === '#E5484D' || b === '#EF4444') return { bg: '#FEE2E2', border: '#FECACA', text: '#BA1A1A' };
+  if (b === '#0E9F6E') return { bg: '#DCFCE7', border: '#BBF7D0', text: '#15803D' };
+  if (b === '#D9930D') return { bg: '#FEF3C7', border: '#FDE68A', text: '#B45309' };
   return { bg: hexToRgba(ball, 0.12), border: hexToRgba(ball, 0.3), text: ball };
 }
 
@@ -126,7 +116,7 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
       {/* Right: timer chip — identical on both cards, every turn. */}
       {timeLeft !== undefined && (
         <View style={styles.timerBox}>
-          <MaterialCommunityIcons name="timer-outline" size={17} color={THEME.colors.textSecondaryStrong} />
+          <MaterialCommunityIcons name="timer-outline" size={17} color="#64748B" />
           <Text style={styles.timerText}>
             {formatTimer(timeLeft)}
           </Text>
@@ -344,7 +334,7 @@ export const PlayerStrip: React.FC<{
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   strip: {
     width: '100%',
     gap: 8,
@@ -360,10 +350,10 @@ const styles = createThemedStyles(() => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
     paddingVertical: 5,
     paddingHorizontal: 7,
     ...THEME.shadows.card,
@@ -389,7 +379,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 11,
     fontWeight: '600',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     maxWidth: 68,
   },
   compactSub: {
@@ -402,7 +392,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.medium,
     fontSize: 10,
     fontWeight: '500',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   compactPlace: {
     fontFamily: THEME.fonts.extraBold,
@@ -415,7 +405,7 @@ const styles = createThemedStyles(() => ({
     fontSize: 11,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
-    color: THEME.colors.slate[800],
+    color: '#1E293B',
     flexShrink: 0,
   },
   gridRow: {
@@ -443,7 +433,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 11,
     fontWeight: '600',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     flexShrink: 1,
     minWidth: 0,
   },
@@ -465,10 +455,10 @@ const styles = createThemedStyles(() => ({
   },
   playerCard: {
     width: '100%',
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
     padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -513,7 +503,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     maxWidth: 120,
     flexShrink: 1,
     minWidth: 0,
@@ -526,14 +516,14 @@ const styles = createThemedStyles(() => ({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 2,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     flexShrink: 0,
   },
   ratingText: {
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   turnDot: {
     width: 8,
@@ -563,9 +553,9 @@ const styles = createThemedStyles(() => ({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 4,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
     flexShrink: 0,
     marginLeft: 8,
   },
@@ -574,7 +564,7 @@ const styles = createThemedStyles(() => ({
     fontSize: 15,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
-    color: THEME.colors.slate[800],
+    color: '#1E293B',
   },
   bonusText: {
     fontFamily: THEME.fonts.bold,
@@ -583,4 +573,4 @@ const styles = createThemedStyles(() => ({
     color: THEME.colors.tertiary,
     marginLeft: 2,
   },
-}));
+});

@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createThemedStyles } from './src/theme/themedStyles';
-import { AppState, BackHandler, StatusBar, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, BackHandler, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NavigationBar } from 'expo-navigation-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AIDifficulty, GameMode, GameState, RecordedAction } from '@duoorb/game-core';
 import { RoomDto } from '@duoorb/protocol';
 import { GameReviewScreen } from './src/screens/GameReviewScreen';
 import { GameScreen } from './src/screens/GameScreen';
+import { MatchSetupScreen } from './src/screens/MatchSetupScreen';
 import { OnlineMode, OnlineScreen } from './src/screens/OnlineScreen';
-import { MatchSetupScreen, SideChoice } from './src/screens/MatchSetupScreen';
+import { SideChoice } from './src/screens/MatchSetupScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
@@ -32,7 +32,6 @@ import {
 } from './src/storage/gameStorage';
 import { setSoundsMuted } from './src/audio/sounds';
 import { SessionProvider, useSession } from './src/network/session';
-import { ThemeProvider } from './src/theme/ThemeProvider';
 import { flushIdentityStorage, hydrateIdentity } from './src/network/auth';
 import { THEME } from './src/theme';
 import { DEFAULT_TIME_CONTROL, TimeControl } from './src/timeControls';
@@ -411,7 +410,6 @@ export default function App() {
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <SystemChrome />
       <SessionProvider>
-        <ThemeProvider>
         <SessionGate>
           {/* Authenticated-only side effects: nothing here runs before a
               canonical identity exists. */}
@@ -653,7 +651,6 @@ export default function App() {
           </View>
         </View>
         </SessionGate>
-        </ThemeProvider>
       </SessionProvider>
     </SafeAreaView>
     </SafeAreaProvider>
@@ -739,7 +736,7 @@ const SessionEffects: React.FC<{
   return null;
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -774,10 +771,10 @@ const styles = createThemedStyles(() => ({
   exitCard: {
     width: '100%',
     maxWidth: 320,
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
     padding: 20,
     alignItems: 'center',
     ...THEME.shadows.modal,
@@ -785,12 +782,12 @@ const styles = createThemedStyles(() => ({
   exitTitle: {
     fontFamily: THEME.fonts.bold,
     fontSize: 17,
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
   },
   exitSub: {
     fontFamily: THEME.fonts.medium,
     fontSize: 13,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     marginTop: 6,
     textAlign: 'center',
   },
@@ -803,25 +800,25 @@ const styles = createThemedStyles(() => ({
   exitStay: {
     flex: 1,
     borderRadius: 10,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     paddingVertical: 12,
     alignItems: 'center',
   },
   exitStayText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
   },
   exitQuit: {
     flex: 1,
     borderRadius: 10,
-    backgroundColor: THEME.colors.danger,
+    backgroundColor: '#DC2626',
     paddingVertical: 12,
     alignItems: 'center',
   },
   exitQuitText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
   },
-}));
+});

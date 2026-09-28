@@ -1,8 +1,7 @@
 import React from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Circle, Line, Polyline, Svg } from 'react-native-svg';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 
 interface WinGraphProps {
   /** Win chance 0..1 per step, including step 0. */
@@ -46,7 +45,7 @@ export const WinGraph: React.FC<WinGraphProps> = ({
         <Polyline
           points={line}
           fill="none"
-          stroke={THEME.colors.assessmentBest}
+          stroke="#0D9488"
           strokeWidth={2}
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -59,7 +58,7 @@ export const WinGraph: React.FC<WinGraphProps> = ({
               cx={x(i)}
               cy={y(points[i] ?? 0.5)}
               r={3}
-              fill={THEME.colors.assessmentInaccuracy}
+              fill="#D97706"
             />
           );
         })}
@@ -77,9 +76,9 @@ export const WinGraph: React.FC<WinGraphProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   wrap: {
     width: '100%',
     paddingHorizontal: 4,
   },
-}));
+});

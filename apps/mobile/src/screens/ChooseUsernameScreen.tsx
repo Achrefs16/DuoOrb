@@ -1,8 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { DuoOrbLogo } from '../components/DuoOrbLogo';
 import { KeyboardShift } from '../components/KeyboardShift';
 import { api, ApiError } from '../network/apiClient';
@@ -181,7 +186,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -274,7 +279,7 @@ const styles = createThemedStyles(() => ({
   primaryText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 15,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
   },
   secondary: {
     height: 44,
@@ -291,4 +296,4 @@ const styles = createThemedStyles(() => ({
   disabled: {
     opacity: 0.5,
   },
-}));
+});

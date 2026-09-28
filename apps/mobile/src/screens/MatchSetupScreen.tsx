@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { AIDifficulty, GameMode } from '@duoorb/game-core';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { TIME_CONTROLS, TimeControl } from '../timeControls';
 import { resolveMode } from '../matchModes';
 
@@ -87,7 +86,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityLabel="Go back"
           >
-            <Feather name="chevron-left" size={24} color={THEME.colors.slate[700]} />
+            <Feather name="chevron-left" size={24} color="#334155" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
             {vsType === 'challenge'
@@ -193,7 +192,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                   onPress={() => setSide('blue')}
                 >
                   <View style={styles.sideRow}>
-                    <View style={[styles.sideDot, { backgroundColor: THEME.colors.primary }]} />
+                    <View style={[styles.sideDot, { backgroundColor: '#2563EB' }]} />
                     <Text style={[styles.optText, side === 'blue' && styles.optTextActive]}>
                       Blue
                     </Text>
@@ -204,7 +203,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                   onPress={() => setSide('red')}
                 >
                   <View style={styles.sideRow}>
-                    <View style={[styles.sideDot, { backgroundColor: THEME.colors.playerPink }]} />
+                    <View style={[styles.sideDot, { backgroundColor: '#F43F5E' }]} />
                     <Text style={[styles.optText, side === 'red' && styles.optTextActive]}>
                       Red
                     </Text>
@@ -218,7 +217,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                     <MaterialCommunityIcons
                       name="shuffle"
                       size={15}
-                      color={side === 'random' ? THEME.colors.primary : THEME.colors.textSecondaryStrong}
+                      color={side === 'random' ? '#2563EB' : '#64748B'}
                     />
                     <Text style={[styles.optText, side === 'random' && styles.optTextActive]}>
                       Random
@@ -273,7 +272,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
 
           {/* Rules banner */}
           <View style={styles.hintBanner}>
-            <Feather name="info" size={20} color={THEME.colors.primary} />
+            <Feather name="info" size={20} color="#2563EB" />
             <View style={styles.hintTextWrap}>
               <Text style={styles.hintTitle}>{desc.title}</Text>
               <Text style={styles.hintText}>{desc.body}</Text>
@@ -296,7 +295,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
               })
             }
           >
-            <MaterialCommunityIcons name="play" size={20} color={THEME.colors.onPrimary} />
+            <MaterialCommunityIcons name="play" size={20} color="#FFFFFF" />
             <Text style={styles.ctaText}>
               {vsType === 'ai'
                 ? 'Play vs AI'
@@ -313,15 +312,15 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: THEME.colors.drawBg,
+    backgroundColor: '#F8FAFC',
   },
   header: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceMuted,
+    borderBottomColor: '#F1F5F9',
     paddingHorizontal: 16,
     height: 56,
     flexDirection: 'row',
@@ -337,7 +336,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     letterSpacing: -0.2,
   },
   scroll: {
@@ -349,10 +348,10 @@ const styles = createThemedStyles(() => ({
     paddingBottom: 24,
   },
   card: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     padding: 16,
     gap: 16,
   },
@@ -363,7 +362,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 11,
     fontWeight: '700',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
@@ -376,11 +375,11 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: THEME.colors.statusOffline,
+    color: '#94A3B8',
   },
   track: {
     flexDirection: 'row',
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderRadius: 12,
     padding: 4,
     gap: 4,
@@ -393,19 +392,19 @@ const styles = createThemedStyles(() => ({
     justifyContent: 'center',
   },
   optActive: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     ...THEME.shadows.card,
   },
   optText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
     textAlign: 'center',
   },
   optTextActive: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.primary,
+    color: '#2563EB',
     fontWeight: '700',
   },
   sideRow: {
@@ -423,7 +422,7 @@ const styles = createThemedStyles(() => ({
     gap: 10,
     backgroundColor: 'rgba(239, 246, 255, 0.7)',
     borderWidth: 1,
-    borderColor: THEME.colors.surfacePrimaryTintBorderSoft,
+    borderColor: '#DBEAFE',
     borderRadius: 12,
     padding: 12,
   },
@@ -435,7 +434,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 12,
     fontWeight: '700',
-    color: THEME.colors.chartInk,
+    color: '#172554',
   },
   hintText: {
     fontFamily: THEME.fonts.regular,
@@ -449,7 +448,7 @@ const styles = createThemedStyles(() => ({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: '#2563EB',
     borderRadius: 12,
     paddingVertical: 14,
     marginTop: 4,
@@ -458,6 +457,6 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
   },
-}));
+});

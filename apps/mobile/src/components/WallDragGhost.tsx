@@ -1,6 +1,5 @@
 import React, { createContext, memo, useContext } from 'react';
-import { createThemedStyles } from '../theme/themedStyles';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import type { WallCoord } from '@duoorb/game-core';
 import { wallRect } from './GameBoard';
 
@@ -69,10 +68,10 @@ export const WallDragGhost = memo(function WallDragGhost({ cell, gap }: DragGhos
   );
 });
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   previewWall: {
     position: 'absolute',
     borderRadius: 4,
     zIndex: 30,
   },
-}));
+});

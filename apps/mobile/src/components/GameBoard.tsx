@@ -1,7 +1,13 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { WallDragGhost } from './WallDragGhost';
 import {
-  Animated, LayoutChangeEvent, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+  Animated,
+  LayoutChangeEvent,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import {
   BOARD_SIZE,
   BOARD_CENTER,
@@ -13,7 +19,6 @@ import {
   isLegalWallPlacement,
 } from '@duoorb/game-core';
 import { THEME, playerColor, wallColorForPlayer, wallPreviewColor } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 
 interface GameBoardProps {
   state: GameState;
@@ -772,7 +777,7 @@ function hexA(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   outer: {
     width: '100%',
     alignItems: 'center',
@@ -798,9 +803,9 @@ const styles = createThemedStyles(() => ({
     borderRadius: 999,
   },
   crown: {
-    backgroundColor: THEME.colors.player4Amber,
+    backgroundColor: '#D9A62E',
     transform: [{ rotate: '45deg' }],
-    shadowColor: THEME.colors.player4Amber,
+    shadowColor: '#D9A62E',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 6,
@@ -884,4 +889,4 @@ const styles = createThemedStyles(() => ({
     borderRadius: 2,
     backgroundColor: THEME.colors.wallSlot,
   },
-}));
+});

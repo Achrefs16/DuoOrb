@@ -1,8 +1,13 @@
 import React from 'react';
-import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { DuoOrbLogo } from '../components/DuoOrbLogo';
 
 interface WelcomeScreenProps {
@@ -53,7 +58,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             disabled={busy}
             accessibilityLabel="Continue with Google"
           >
-            <MaterialCommunityIcons name="google" size={19} color={THEME.colors.googleBlue} />
+            <MaterialCommunityIcons name="google" size={19} color="#4285F4" />
             <Text style={styles.googleButtonText}>Continue with Google</Text>
           </TouchableOpacity>
         )}
@@ -81,7 +86,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -159,4 +164,4 @@ const styles = createThemedStyles(() => ({
     textAlign: 'center',
     marginTop: 4,
   },
-}));
+});

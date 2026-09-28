@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   GameState,
   analyzeMove,
@@ -8,7 +8,6 @@ import {
 } from '@duoorb/game-core';
 import { GameBoard } from './GameBoard';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { ENGINE_TEAL, assessmentColor, cleanName } from '../analysisUi';
 
 interface TryAgainPanelProps {
@@ -126,7 +125,7 @@ export const TryAgainPanel: React.FC<TryAgainPanelProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   panel: {
     alignSelf: 'stretch',
     alignItems: 'center',
@@ -163,4 +162,4 @@ const styles = createThemedStyles(() => ({
     fontSize: 12,
     fontWeight: '700',
   },
-}));
+});

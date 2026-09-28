@@ -30,10 +30,8 @@ import { WallTray } from '../components/WallTray';
 import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
 import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
 import { THEME, playerColor, wallPreviewColor } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
-import { api } from '../network/apiClient';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
 import { useIdentity } from '../network/auth';
 import { socketManager } from '../network/socket';
@@ -54,12 +52,7 @@ interface GameScreenProps {
   onHome: () => void;
   onNewGame: () => void;
   onRematchAccepted?: (newGameId: string) => void;
-  onAnalyze: (
-    initialState: GameState,
-    history: any[],
-    perspectiveIdx: number,
-    ratings?: Record<string, number>
-  ) => void;
+  onAnalyze: (initialState: GameState, history: any[], perspectiveIdx: number) => void;
   /** Opens the shared player profile for a seat that has an account behind it. */
   onOpenPlayerProfile?: (player: { userId: string; username: string }) => void;
   wallsEach?: number;
@@ -1187,30 +1180,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     return () => clearTimeout(t);
   }, [replaying, viewingStep, totalSteps]);
 
-  // Movement sounds for step-through replay: whenever the viewed step
-  // advances (autoplay, next, forward swipe), voice the move that landed —
-  // same mapping as live play. Entering replay and scrubbing back stay
-  // silent; the live history-growth effect never fires mid-replay.
-  const prevViewStepRef = useRef<number | null>(null);
-  useEffect(() => {
-    const prev = prevViewStepRef.current;
-    prevViewStepRef.current = viewingStep;
-    if (viewingStep === null || prev === null || viewingStep <= prev) return;
-    const rec = state.history[viewingStep - 1];
-    if (!rec) return;
-    if (rec.action.type === 'MOVE') {
-      if (viewingStep >= totalSteps && state.winnerId) {
-        void playGoalSound();
-        return;
-      }
-      const myId = online.myPlayerId ?? state.players[humanIdx]?.id ?? null;
-      if (myId && rec.playerId === myId) void playOwnMoveSound();
-      else void playOpponentMoveSound();
-    } else if (rec.action.type === 'PLACE_WALL') {
-      void playWallSound();
-    }
-  }, [viewingStep, state.history, state.winnerId, state.players, totalSteps, humanIdx, online.myPlayerId]);
-
   const topList = state.players.filter((_, i) => i !== seatIdx);
   const activeId = state.players[state.currentPlayerIndex]?.id;
   // 4 seats: top 2 opponents, bottom you + 1 opponent. 3 seats: top 1
@@ -1235,70 +1204,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       : null;
 
   const aiRating = aiDifficulty === 'hard' ? 1750 : aiDifficulty === 'easy' ? 1250 : 1500;
-  // Real ratings, not placeholders. Mine comes from /me; online opponents
-  // resolve through their public profiles (seats map to accounts via the
-  // server-sent playerUserIds). AI seats keep difficulty-based bot numbers
-  // and local seats have no accounts — those two stay as displayed.
-  const [myRating, setMyRating] = useState<number | null>(null);
-  const [oppRatings, setOppRatings] = useState<Record<string, number>>({});
-  useEffect(() => {
-    let cancelled = false;
-    api.getMe()
-      .then((me) => {
-        const r = me?.ratings?.CLASSIC_1V1?.rating;
-        if (!cancelled && typeof r === 'number') setMyRating(Math.round(r));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  const oppUserIds = type === 'online' ? Object.values(online.playerUserIds ?? {}) : [];
-  // Stable key for the effect below: seats arrive asynchronously after the
-  // join sync, so the fetch must re-run when they land, not just on mount.
-  const oppSeatsKey = oppUserIds.slice().sort().join(',');
-  useEffect(() => {
-    if (type !== 'online' || oppUserIds.length === 0) return;
-    let cancelled = false;
-    void Promise.all(
-      oppUserIds.map((id) =>
-        api.getPublicProfile(id).then(
-          (p) => {
-            const r = p?.ratings?.CLASSIC_1V1?.rating;
-            return { id, rating: typeof r === 'number' ? Math.round(r) : null };
-          },
-          () => ({ id, rating: null as number | null })
-        )
-      )
-    ).then((rows) => {
-      if (cancelled) return;
-      const next: Record<string, number> = {};
-      for (const r of rows) if (r.rating !== null) next[r.id] = r.rating;
-      setOppRatings(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-    // oppSeatsKey is the stable projection of oppUserIds; depending on the
-    // array itself would refetch every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, oppSeatsKey]);
   const playerRatings: Record<string, number> = {};
-  const myUserId = identity?.userId ?? null;
   state.players.forEach((p, idx) => {
-    if (type === 'ai') {
-      playerRatings[p.id] = isAiSide(idx) ? aiRating : myRating ?? 1500;
-    } else if (type === 'online') {
-      const userId = online.playerUserIds[p.id];
-      playerRatings[p.id] =
-        userId && oppRatings[userId] !== undefined
-          ? oppRatings[userId]
-          : userId !== null && userId === myUserId && myRating !== null
-            ? myRating
-            : 1500;
-    } else {
-      playerRatings[p.id] = 1500;
-    }
+    playerRatings[p.id] = type === 'ai' ? (isAiSide(idx) ? aiRating : 1500) : 1500;
   });
 
   // A board seat id ('p2') is not a user id. The server sends the seat ->
@@ -1413,7 +1321,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (online.joinError) {
       return (
         <View style={styles.container}>
-          <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.backgroundCard} />
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
           <View style={styles.skeletonTop}>
             <Text style={styles.syncingText}>{online.joinError}</Text>
             <TouchableOpacity
@@ -1429,10 +1337,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.backgroundCard} />
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.header}>
           <View style={styles.headerInner}>
-            <Feather name="chevron-left" size={24} color={THEME.colors.slate[700]} />
+            <Feather name="chevron-left" size={24} color="#334155" />
           </View>
         </View>
         <View style={styles.skeletonTop}>
@@ -1469,11 +1377,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       style={styles.container}
     >
       {/* White status strip on Android so the header truly reaches the top. */}
-      <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.backgroundCard} />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       {/* Network Banners */}
       {type === 'online' && (online.connStatus === 'reconnecting' || online.connStatus === 'disconnected') && (
         <View style={styles.bannerWarning}>
-          <ActivityIndicator size="small" color={THEME.colors.onPrimary} style={{ marginRight: 8 }} />
+          <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
           <Text style={styles.bannerText}>
             Connection lost · Reconnecting…{online.pendingCount > 0 ? ` · ${online.pendingCount} pending` : ''}
           </Text>
@@ -1515,7 +1423,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityLabel="Go back"
           >
-            <Feather name="chevron-left" size={24} color={THEME.colors.slate[700]} />
+            <Feather name="chevron-left" size={24} color="#334155" />
           </TouchableOpacity>
         </View>
       </View>
@@ -1641,7 +1549,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   }}
                   accessibilityLabel="First move"
                 >
-                  <Feather name="chevrons-left" size={18} color={THEME.colors.slate[700]} />
+                  <Feather name="chevrons-left" size={18} color="#334155" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.replayBtn, (viewingStep ?? totalSteps) <= 0 && styles.replayBtnDisabled]}
@@ -1652,7 +1560,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   }}
                   accessibilityLabel="Previous move"
                 >
-                  <Feather name="chevron-left" size={18} color={THEME.colors.slate[700]} />
+                  <Feather name="chevron-left" size={18} color="#334155" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.replayBtn}
@@ -1668,7 +1576,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   }}
                   accessibilityLabel={replaying ? 'Pause replay' : 'Play replay'}
                 >
-                  <Feather name={replaying ? 'pause' : 'play'} size={18} color={THEME.colors.slate[700]} />
+                  <Feather name={replaying ? 'pause' : 'play'} size={18} color="#334155" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.replayBtn, (viewingStep ?? totalSteps) >= totalSteps && styles.replayBtnDisabled]}
@@ -1679,7 +1587,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   }}
                   accessibilityLabel="Next move"
                 >
-                  <Feather name="chevron-right" size={18} color={THEME.colors.slate[700]} />
+                  <Feather name="chevron-right" size={18} color="#334155" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.replayBtn, (viewingStep ?? totalSteps) >= totalSteps && styles.replayBtnDisabled]}
@@ -1690,7 +1598,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   }}
                   accessibilityLabel="Last move"
                 >
-                  <Feather name="chevrons-right" size={18} color={THEME.colors.slate[700]} />
+                  <Feather name="chevrons-right" size={18} color="#334155" />
                 </TouchableOpacity>
                 <Text style={styles.replayStep}>
                   {(viewingStep ?? totalSteps)} / {totalSteps}
@@ -1711,7 +1619,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityLabel="Resign game"
               >
-                <Feather name="flag" size={17} color={THEME.colors.textSecondaryStrong} />
+                <Feather name="flag" size={17} color="#64748B" />
                 <Text style={styles.resignText}>Resign game</Text>
               </TouchableOpacity>
             </View>
@@ -1724,7 +1632,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityLabel="Leave match"
               >
-                <Feather name="log-out" size={17} color={THEME.colors.textSecondaryStrong} />
+                <Feather name="log-out" size={17} color="#64748B" />
                 <Text style={styles.resignText}>Leave match</Text>
               </TouchableOpacity>
             </View>
@@ -1737,7 +1645,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         <SafeAreaView style={styles.resignOverlay} edges={['top', 'bottom']}>
           <View style={styles.resignCard}>
             <View style={styles.resignIconCircle}>
-              <Feather name="flag" size={28} color={THEME.colors.error} />
+              <Feather name="flag" size={28} color="#BA1A1A" />
             </View>
             <Text style={styles.resignTitle}>Resign Match?</Text>
             <Text style={styles.resignDesc}>
@@ -1788,7 +1696,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         <SafeAreaView style={styles.resignOverlay} edges={['top', 'bottom']}>
           <View style={styles.finishCard}>
             <View style={styles.finishIconCircle}>
-              <Feather name="award" size={30} color={THEME.colors.assessmentInaccuracy} />
+              <Feather name="award" size={30} color="#D97706" />
             </View>
             <Text style={styles.finishTitle}>
               {finishModal?.place === 1 ? '1st Place' : `${finishModal?.place ?? ''} Place`}
@@ -1850,9 +1758,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         }
         onAnalyze={() => {
           setShowGameOver(false);
-          // Hand over the same real ratings the HUD just showed, so the
-          // review never falls back to placeholders.
-          onAnalyze(initialState, state.history, seatIdx, { ...playerRatings });
+          onAnalyze(initialState, state.history, seatIdx);
         }}
         onHome={() => {
           setShowGameOver(false);
@@ -1873,7 +1779,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       >
         <SafeAreaView style={styles.rematchToastOverlay} edges={['top', 'bottom']} pointerEvents="box-none">
           <View style={styles.rematchToast}>
-            <Feather name="rotate-ccw" size={18} color={THEME.colors.assessmentInaccuracy} />
+            <Feather name="rotate-ccw" size={18} color="#2563EB" />
             <Text style={styles.rematchToastText}>
               {online.rematchOffered && !rematchIncomingDismissed
                 ? 'Opponent wants a rematch'
@@ -1922,10 +1828,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.drawBg,
+    backgroundColor: '#F8FAFC',
     paddingTop: 0,
     paddingBottom: 8,
     paddingHorizontal: 12,
@@ -1941,9 +1847,9 @@ const styles = createThemedStyles(() => ({
   skeletonHud: {
     height: 48,
     borderRadius: 8,
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
   },
   skeletonBoard: {
     flex: 1,
@@ -1952,9 +1858,9 @@ const styles = createThemedStyles(() => ({
     width: '100%',
     maxWidth: 420,
     borderRadius: 8,
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
   },
   skeletonBottom: {
     gap: 8,
@@ -1962,16 +1868,16 @@ const styles = createThemedStyles(() => ({
   skeletonTray: {
     height: 78,
     borderRadius: 8,
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
   },
   skeletonButton: {
     height: 42,
     borderRadius: 8,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
   },
   syncingOverlay: {
     position: 'absolute',
@@ -1985,9 +1891,9 @@ const styles = createThemedStyles(() => ({
     backgroundColor: 'rgba(248,250,252,0.72)',
   },
   header: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceHairline,
+    borderBottomColor: '#E2E8F0',
     marginHorizontal: -12,
     paddingHorizontal: 12,
     // Exact status height on Android; SafeAreaView owns the inset on iOS.
@@ -2036,13 +1942,13 @@ const styles = createThemedStyles(() => ({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
   },
   resignText: {
     fontFamily: THEME.fonts.medium,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     fontSize: 12,
     fontWeight: '500',
   },
@@ -2054,10 +1960,10 @@ const styles = createThemedStyles(() => ({
     padding: 16,
   },
   resignCard: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: THEME.colors.boardBorder,
+    borderColor: '#CBD5E1',
     padding: 24,
     maxWidth: 320,
     width: '100%',
@@ -2068,18 +1974,18 @@ const styles = createThemedStyles(() => ({
     width: 56,
     height: 56,
     borderRadius: 12,
-    backgroundColor: THEME.colors.dangerLight,
+    backgroundColor: '#FEE2E2',
     borderWidth: 1,
-    borderColor: THEME.colors.dangerBorder,
+    borderColor: '#FECACA',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   finishCard: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: THEME.colors.boardBorder,
+    borderColor: '#CBD5E1',
     padding: 24,
     width: '100%',
     maxWidth: 320,
@@ -2090,23 +1996,23 @@ const styles = createThemedStyles(() => ({
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: THEME.colors.warningLight,
+    backgroundColor: '#FEF3C7',
     borderWidth: 1,
-    borderColor: THEME.colors.warningBorder,
+    borderColor: '#FDE68A',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
   },
   finishTitle: {
     fontFamily: THEME.fonts.extraBold,
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     fontSize: 22,
     fontWeight: '800',
     letterSpacing: 0.4,
   },
   finishDesc: {
     fontFamily: THEME.fonts.medium,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     fontSize: 13,
     lineHeight: 19,
     textAlign: 'center',
@@ -2117,12 +2023,12 @@ const styles = createThemedStyles(() => ({
     width: '100%',
     paddingVertical: 12,
     borderRadius: 8,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: '#2563EB',
     alignItems: 'center',
   },
   finishPrimaryText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -2135,20 +2041,20 @@ const styles = createThemedStyles(() => ({
   },
   finishSecondaryText: {
     fontFamily: THEME.fonts.semiBold,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     fontSize: 14,
     fontWeight: '600',
   },
   resignTitle: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     fontSize: 18,
     fontWeight: '700',
     textAlign: 'center',
   },
   resignDesc: {
     fontFamily: THEME.fonts.regular,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     fontSize: 14,
     lineHeight: 21,
     textAlign: 'center',
@@ -2164,12 +2070,12 @@ const styles = createThemedStyles(() => ({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
-    backgroundColor: THEME.colors.dangerBright,
+    backgroundColor: '#EF4444',
     alignItems: 'center',
   },
   resignConfirmText: {
     fontFamily: THEME.fonts.semiBold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -2182,16 +2088,16 @@ const styles = createThemedStyles(() => ({
   },
   resignCancelText: {
     fontFamily: THEME.fonts.medium,
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
     fontSize: 14,
     fontWeight: '500',
   },
   replayBar: {
     width: '100%',
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
     paddingVertical: 8,
     paddingHorizontal: 8,
     gap: 4,
@@ -2209,9 +2115,9 @@ const styles = createThemedStyles(() => ({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
   },
   replayBtnDisabled: {
     opacity: 0.35,
@@ -2220,7 +2126,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 13,
     fontWeight: '700',
-    color: THEME.colors.slate[700],
+    color: '#334155',
     fontVariant: ['tabular-nums'],
     marginLeft: 8,
     minWidth: 52,
@@ -2235,7 +2141,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   disabled: {
     opacity: 0.4,
@@ -2304,7 +2210,7 @@ const styles = createThemedStyles(() => ({
   },
   bannerText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -2322,17 +2228,17 @@ const styles = createThemedStyles(() => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: THEME.colors.surfacePrimaryTintBorderSoft,
+    borderColor: '#DBEAFE',
     paddingHorizontal: 12,
     paddingVertical: 10,
     ...THEME.shadows.card,
   },
-  rematchToastText: { flex: 1, fontFamily: THEME.fonts.semiBold, fontSize: 13, color: THEME.colors.inverseLabel },
-  rematchDeclineBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.surfaceMuted },
-  rematchDeclineText: { fontFamily: THEME.fonts.semiBold, fontSize: 12, color: THEME.colors.textSecondaryStrong },
-  rematchAcceptBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.primary },
-  rematchAcceptText: { fontFamily: THEME.fonts.bold, fontSize: 12, color: THEME.colors.onPrimary },
-}));
+  rematchToastText: { flex: 1, fontFamily: THEME.fonts.semiBold, fontSize: 13, color: '#0F172A' },
+  rematchDeclineBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: '#F1F5F9' },
+  rematchDeclineText: { fontFamily: THEME.fonts.semiBold, fontSize: 12, color: '#64748B' },
+  rematchAcceptBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: '#2563EB' },
+  rematchAcceptText: { fontFamily: THEME.fonts.bold, fontSize: 12, color: '#FFFFFF' },
+});

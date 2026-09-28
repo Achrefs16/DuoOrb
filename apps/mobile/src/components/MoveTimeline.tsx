@@ -1,8 +1,7 @@
 import React from 'react';
-import { ScrollView, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import type { MoveAssessment } from '@duoorb/game-core';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { assessmentColor } from '../analysisUi';
 
 interface MoveTimelineProps {
@@ -45,11 +44,11 @@ export const MoveTimeline: React.FC<MoveTimelineProps> = ({
 function timelineColor(a: MoveAssessment): string {
   switch (a) {
     case 'BEST':
-      return THEME.colors.assessmentBest;
+      return '#0D9488';
     case 'EXCELLENT':
-      return THEME.colors.playerMint;
+      return '#34D399';
     case 'GOOD':
-      return THEME.colors.neutralStone;
+      return '#D6D3D1';
     case 'INACCURACY':
     case 'MISTAKE':
     case 'BLUNDER':
@@ -57,7 +56,7 @@ function timelineColor(a: MoveAssessment): string {
   }
 }
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -82,4 +81,4 @@ const styles = createThemedStyles(() => ({
     height: 9,
     borderRadius: 4.5,
   },
-}));
+});

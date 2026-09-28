@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { ActivityIndicator, Animated, PanResponder, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, PanResponder, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import {
   GameReview,
@@ -27,7 +27,6 @@ import {
   playWallSound,
 } from '../audio/sounds';
 import { THEME, playerColor } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { assessmentColor, cleanName, ordinal } from '../analysisUi';
 
 interface GameReviewScreenProps {
@@ -288,10 +287,10 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     if (!showAlt || !currentAnalysis?.bestAction) return null;
     const ba = currentAnalysis.bestAction;
     if (ba.type === 'MOVE') {
-      return { to: ba.to, color: THEME.colors.chartStroke };
+      return { to: ba.to, color: '#004AC6' };
     }
     if (ba.type === 'PLACE_WALL') {
-      return { wall: ba.wall, color: THEME.colors.chartStroke };
+      return { wall: ba.wall, color: '#004AC6' };
     }
     return null;
   }, [bare, showAlt, currentAnalysis]);
@@ -450,7 +449,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               style={styles.playPauseBtn}
               onPress={() => setIsPlaying(!isPlaying)}
             >
-              <Feather name={isPlaying ? 'pause' : 'play'} size={20} color={THEME.colors.onPrimary} />
+              <Feather name={isPlaying ? 'pause' : 'play'} size={20} color="#FFFFFF" />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -600,7 +599,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -814,7 +813,7 @@ const styles = createThemedStyles(() => ({
     backgroundColor: THEME.colors.inverseSurface,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: THEME.colors.shadowBlack,
+      shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
@@ -935,4 +934,4 @@ const styles = createThemedStyles(() => ({
     color: THEME.colors.textMuted,
     letterSpacing: 1,
   },
-}));
+});

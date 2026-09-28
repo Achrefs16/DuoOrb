@@ -1,10 +1,21 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Animated,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { TIME_CONTROLS, TimeControl } from '../timeControls';
 import { GameMode, playerCountForMode } from '@duoorb/game-core';
 import { RoomDto } from '@duoorb/protocol';
@@ -428,7 +439,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             onPress={handleBack}
             accessibilityLabel="Cancel matchmaking"
           >
-            <Feather name="x" size={20} color={THEME.colors.slate[700]} />
+            <Feather name="x" size={20} color="#334155" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
             {isMatched
@@ -618,7 +629,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   findMatch(matchConfig.mode, matchConfig.clock, matchConfig.wallsEach);
                 }}
               >
-                <Feather name="search" size={16} color={THEME.colors.onPrimary} />
+                <Feather name="search" size={16} color="#FFFFFF" />
                 <Text style={styles.retrySearchText}>Search Again</Text>
               </TouchableOpacity>
             ) : null}
@@ -648,7 +659,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity style={styles.closeBtn} onPress={handleBack}>
-            <Feather name="arrow-left" size={20} color={THEME.colors.slate[700]} />
+            <Feather name="arrow-left" size={20} color="#334155" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{activeRoom ? 'Private Room' : 'Private Rooms'}</Text>
         </View>
@@ -659,7 +670,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               onPress={() => void copyCode(activeRoom.code, 'Code copied!')}
             >
               <Text style={styles.codePillText}>{activeRoom.code}</Text>
-              <Feather name="copy" size={13} color={THEME.colors.primary} />
+              <Feather name="copy" size={13} color="#2563EB" />
             </TouchableOpacity>
           </View>
         ) : (
@@ -685,7 +696,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             {/* Config summary card */}
             <View style={styles.lobbySummary}>
               <View style={styles.lobbySummaryIcon}>
-                <Feather name="compass" size={22} color={THEME.colors.primary} />
+                <Feather name="compass" size={22} color="#2563EB" />
               </View>
               <View>
                 <Text style={styles.lobbySummaryTitle}>{lobbyModeName}</Text>
@@ -722,7 +733,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                       </View>
                       {isHost && isFirstOpenSlot ? (
                         <TouchableOpacity style={styles.quickAddBtn} onPress={() => void openQuickAdd()}>
-                          <Feather name="user-plus" size={15} color={THEME.colors.primary} />
+                          <Feather name="user-plus" size={15} color="#2563EB" />
                           <Text style={styles.quickAddText}>Quick Add</Text>
                         </TouchableOpacity>
                       ) : (
@@ -746,7 +757,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                           </Text>
                           {slot.isHost && (
                             <View style={styles.hostBadge}>
-                              <MaterialCommunityIcons name="crown" size={11} color={THEME.colors.primaryDark} />
+                              <MaterialCommunityIcons name="crown" size={11} color="#1D4ED8" />
                               <Text style={styles.hostBadgeText}>Host</Text>
                             </View>
                           )}
@@ -766,7 +777,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         <Feather
                           name="check"
                           size={14}
-                          color={slot.isReady ? THEME.colors.assessmentExcellent : THEME.colors.textSecondaryStrong}
+                          color={slot.isReady ? '#059669' : '#64748B'}
                         />
                         <Text
                           style={[
@@ -782,7 +793,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         <Feather
                           name="check"
                           size={14}
-                          color={slot.isReady ? THEME.colors.assessmentExcellent : THEME.colors.textSecondaryStrong}
+                          color={slot.isReady ? '#059669' : '#64748B'}
                         />
                         <Text
                           style={[
@@ -807,7 +818,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         accessibilityLabel={`Remove ${slot.displayName}`}
                       >
-                        <Feather name="more-vertical" size={18} color={THEME.colors.statusOffline} />
+                        <Feather name="more-vertical" size={18} color="#94A3B8" />
                       </TouchableOpacity>
                     )}
                     </View>
@@ -825,10 +836,10 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   onPress={() => void startRoom()}
                 >
                   {roomLoading ? (
-                    <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
+                    <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
                     <>
-                      <MaterialCommunityIcons name="play" size={20} color={THEME.colors.onPrimary} />
+                      <MaterialCommunityIcons name="play" size={20} color="#FFFFFF" />
                       <Text style={styles.lobbyCtaText}>Start Game</Text>
                     </>
                   )}
@@ -868,7 +879,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 <TextInput
                   style={styles.rmJoinInput}
                   placeholder="Enter room code"
-                  placeholderTextColor={THEME.colors.statusOffline}
+                  placeholderTextColor="#94A3B8"
                   value={roomCodeInput}
                   onChangeText={(t) => setRoomCodeInput(t.toUpperCase())}
                   maxLength={7}
@@ -988,7 +999,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 }
               >
                 {roomLoading ? (
-                  <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
+                  <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <Text style={styles.rmCtaText}>Create Room</Text>
                 )}
@@ -1005,7 +1016,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           <View style={styles.confirmCard}>
             {confirmMode !== null && typeof confirmMode === 'object' && (
               <View style={styles.kickIconCircle}>
-                <MaterialCommunityIcons name="account-remove" size={22} color={THEME.colors.danger} />
+                <MaterialCommunityIcons name="account-remove" size={22} color="#DC2626" />
               </View>
             )}
             <Text style={styles.confirmTitle}>{confirmTitle}</Text>
@@ -1053,7 +1064,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                       </View>
                     </View>
                     <TouchableOpacity style={styles.quickAddBtn} onPress={() => void inviteFriend(friend.id)}>
-                      <Feather name="user-plus" size={15} color={THEME.colors.primary} />
+                      <Feather name="user-plus" size={15} color="#2563EB" />
                       <Text style={styles.quickAddText}>Invite</Text>
                     </TouchableOpacity>
                   </View>
@@ -1068,7 +1079,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -1128,24 +1139,24 @@ const styles = createThemedStyles(() => ({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
   },
   codePillText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: THEME.colors.slate[700],
+    color: '#334155',
     letterSpacing: 1,
     fontVariant: ['tabular-nums'],
   },
   lobbySummary: {
     width: '100%',
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1156,9 +1167,9 @@ const styles = createThemedStyles(() => ({
     width: 40,
     height: 40,
     borderRadius: 8,
-    backgroundColor: THEME.colors.surfacePrimaryTint,
+    backgroundColor: '#EFF6FF',
     borderWidth: 1,
-    borderColor: THEME.colors.surfacePrimaryTintBorderSoft,
+    borderColor: '#DBEAFE',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1166,13 +1177,13 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
   },
   lobbySummarySub: {
     fontFamily: THEME.fonts.medium,
     fontSize: 12,
     fontWeight: '500',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     marginTop: 2,
   },
   slotsHeader: {
@@ -1186,13 +1197,13 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
   },
   slotsCount: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     fontVariant: ['tabular-nums'],
   },
   slotsList: {
@@ -1201,10 +1212,10 @@ const styles = createThemedStyles(() => ({
   },
   slotItem: {
     width: '100%',
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1213,7 +1224,7 @@ const styles = createThemedStyles(() => ({
   },
   slotEmptyCard: {
     borderStyle: 'dashed',
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: '#E2E8F0',
   },
   slotLeft: {
     flexDirection: 'row',
@@ -1225,9 +1236,9 @@ const styles = createThemedStyles(() => ({
     width: 40,
     height: 40,
     borderRadius: 8,
-    backgroundColor: THEME.colors.surfacePrimaryTint,
+    backgroundColor: '#EFF6FF',
     borderWidth: 1,
-    borderColor: THEME.colors.surfacePrimaryTintBorderSoft,
+    borderColor: '#DBEAFE',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1235,17 +1246,17 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 15,
     fontWeight: '700',
-    color: THEME.colors.primary,
+    color: '#2563EB',
   },
   slotAvatarEmpty: {
-    backgroundColor: THEME.colors.surfaceMuted,
-    borderColor: THEME.colors.surfaceHairline,
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
   },
   slotInitialEmpty: {
     fontFamily: THEME.fonts.bold,
     fontSize: 15,
     fontWeight: '700',
-    color: THEME.colors.statusOffline,
+    color: '#94A3B8',
   },
   slotNameRow: {
     flexDirection: 'row',
@@ -1256,7 +1267,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     maxWidth: 130,
   },
   hostBadge: {
@@ -1266,31 +1277,31 @@ const styles = createThemedStyles(() => ({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
-    backgroundColor: THEME.colors.surfacePrimaryTint,
+    backgroundColor: '#EFF6FF',
   },
   hostBadgeText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 10,
     fontWeight: '700',
-    color: THEME.colors.primaryDark,
+    color: '#1D4ED8',
   },
   slotRole: {
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     marginTop: 1,
   },
   slotWaiting: {
     fontFamily: THEME.fonts.medium,
     fontSize: 13,
     fontWeight: '500',
-    color: THEME.colors.statusOffline,
+    color: '#94A3B8',
   },
   slotOpenTag: {
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: THEME.colors.statusOffline,
+    color: '#94A3B8',
   },
   slotRight: {
     flexDirection: 'row',
@@ -1307,7 +1318,7 @@ const styles = createThemedStyles(() => ({
   slotRating: {
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     marginTop: 1,
     fontVariant: ['tabular-nums'],
   },
@@ -1315,7 +1326,7 @@ const styles = createThemedStyles(() => ({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: THEME.colors.dangerLight,
+    backgroundColor: '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -1329,10 +1340,10 @@ const styles = createThemedStyles(() => ({
     borderRadius: 999,
   },
   readyOn: {
-    backgroundColor: THEME.colors.successLight,
+    backgroundColor: '#ECFDF5',
   },
   readyOff: {
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
   },
   readyPillText: {
     fontFamily: THEME.fonts.bold,
@@ -1340,10 +1351,10 @@ const styles = createThemedStyles(() => ({
     fontWeight: '700',
   },
   readyOnText: {
-    color: THEME.colors.assessmentExcellent,
+    color: '#059669',
   },
   readyOffText: {
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
   },
   lobbyCta: {
     width: '100%',
@@ -1351,24 +1362,24 @@ const styles = createThemedStyles(() => ({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: '#2563EB',
     borderRadius: 12,
     paddingVertical: 14,
   },
   lobbyCtaReady: {
-    backgroundColor: THEME.colors.textSecondaryStrong,
+    backgroundColor: '#64748B',
   },
   lobbyCtaText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
   },
   lobbyHint: {
     fontFamily: THEME.fonts.medium,
     fontSize: 12,
     fontWeight: '500',
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     textAlign: 'center',
   },
   lobbyCloseBtn: {
@@ -1392,10 +1403,10 @@ const styles = createThemedStyles(() => ({
   },
   rmCard: {
     width: '100%',
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
+    borderColor: '#F1F5F9',
     padding: 16,
     gap: 12,
     ...THEME.shadows.card,
@@ -1407,13 +1418,13 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
   rmTrack: {
     flexDirection: 'row',
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderRadius: 12,
     padding: 4,
     gap: 4,
@@ -1426,24 +1437,24 @@ const styles = createThemedStyles(() => ({
     justifyContent: 'center',
   },
   rmOptActive: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     ...THEME.shadows.card,
   },
   rmOptText: {
     fontFamily: THEME.fonts.medium,
     fontSize: 12,
     fontWeight: '500',
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
     textAlign: 'center',
   },
   rmOptTextActive: {
     fontFamily: THEME.fonts.semiBold,
-    color: THEME.colors.primary,
+    color: '#2563EB',
     fontWeight: '600',
   },
   rmCta: {
     width: '100%',
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: '#2563EB',
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
@@ -1454,7 +1465,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
   },
   rmJoinRow: {
     flexDirection: 'row',
@@ -1463,18 +1474,18 @@ const styles = createThemedStyles(() => ({
   },
   rmJoinInput: {
     flex: 1,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
     letterSpacing: 1,
   },
   rmJoinBtn: {
-    backgroundColor: THEME.colors.slate[200],
+    backgroundColor: '#E2E8F0',
     borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 10,
@@ -1485,7 +1496,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
   },
   confirmOverlay: {
     position: 'absolute',
@@ -1501,7 +1512,7 @@ const styles = createThemedStyles(() => ({
   confirmCard: {
     width: '100%',
     maxWidth: 320,
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
   },
@@ -1509,12 +1520,12 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 16,
     fontWeight: '700',
-    color: THEME.colors.inverseLabel,
+    color: '#0F172A',
   },
   confirmDesc: {
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
-    color: THEME.colors.textSecondaryStrong,
+    color: '#64748B',
     lineHeight: 18,
     marginTop: 6,
     marginBottom: 20,
@@ -1524,7 +1535,7 @@ const styles = createThemedStyles(() => ({
   },
   confirmDanger: {
     width: '100%',
-    backgroundColor: THEME.colors.danger,
+    backgroundColor: '#DC2626',
     borderRadius: 8,
     paddingVertical: 10,
     alignItems: 'center',
@@ -1533,11 +1544,11 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.bold,
     fontSize: 12,
     fontWeight: '700',
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
   },
   confirmCancel: {
     width: '100%',
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
     borderRadius: 8,
     paddingVertical: 10,
     alignItems: 'center',
@@ -1546,7 +1557,7 @@ const styles = createThemedStyles(() => ({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: THEME.colors.textOnMuted,
+    color: '#475569',
   },
   // Matchmaking Styling (DuoOrb card-based, square letter avatars)
   mmScroll: {
@@ -1577,7 +1588,7 @@ const styles = createThemedStyles(() => ({
   },
   mmConfigDivider: {
     height: 1,
-    backgroundColor: THEME.colors.dividerSoft,
+    backgroundColor: '#EEF1F6',
   },
   mmConfigLabel: {
     fontFamily: THEME.fonts.bold,
@@ -1646,7 +1657,7 @@ const styles = createThemedStyles(() => ({
     width: 58,
     height: 58,
     borderRadius: THEME.radius.lg,
-    backgroundColor: THEME.colors.drawBg,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1.5,
     borderColor: THEME.colors.outlineVariant,
     alignItems: 'center',
@@ -1673,7 +1684,7 @@ const styles = createThemedStyles(() => ({
     width: 46,
     height: 46,
     borderRadius: THEME.radius.md,
-    backgroundColor: THEME.colors.drawBg,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1.5,
     borderColor: THEME.colors.outlineVariant,
     alignItems: 'center',
@@ -1727,7 +1738,7 @@ const styles = createThemedStyles(() => ({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: THEME.radius.xs,
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: '#F1F5F9',
   },
   mmRatingText: {
     fontFamily: THEME.fonts.bold,
@@ -1807,7 +1818,7 @@ const styles = createThemedStyles(() => ({
   retrySearchText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
   },
   // Card & Private Rooms styling
   card: {
@@ -1886,7 +1897,7 @@ const styles = createThemedStyles(() => ({
   },
   primaryActionBtnText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
   },
@@ -1937,12 +1948,12 @@ const styles = createThemedStyles(() => ({
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 6,
-    backgroundColor: THEME.colors.surfacePrimaryTint,
+    backgroundColor: '#EFF6FF',
   },
   quickAddText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 11,
-    color: THEME.colors.primary,
+    color: '#2563EB',
   },
   quickAddSub: {
     fontFamily: THEME.fonts.regular,
@@ -2133,4 +2144,4 @@ const styles = createThemedStyles(() => ({
   lobbyActionRow: {
     marginTop: 6,
   },
-}));
+});

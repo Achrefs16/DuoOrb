@@ -1,8 +1,14 @@
 import React, { useRef } from 'react';
-import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 import { DEFAULT_TIME_CONTROL, TimeControl } from '../timeControls';
 import { OnlineMode } from './OnlineScreen';
 
@@ -96,7 +102,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             activeOpacity={0.88}
             onPress={guarded(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'quick'))}
           >
-            <Feather name="play" size={20} color={THEME.colors.onPrimary} />
+            <Feather name="play" size={20} color="#FFFFFF" />
             <Text style={styles.quickMatchText}>Quick Match</Text>
           </TouchableOpacity>
         </View>
@@ -282,7 +288,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -394,7 +400,7 @@ const styles = createThemedStyles(() => ({
   },
   quickMatchText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
@@ -415,7 +421,7 @@ const styles = createThemedStyles(() => ({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: THEME.colors.playerGreenBright,
+    backgroundColor: '#22C55E',
   },
   presenceDotIdle: {
     backgroundColor: THEME.colors.textMuted,
@@ -611,4 +617,4 @@ const styles = createThemedStyles(() => ({
     color: THEME.colors.onSurfaceVariant,
     lineHeight: 15,
   },
-}));
+});

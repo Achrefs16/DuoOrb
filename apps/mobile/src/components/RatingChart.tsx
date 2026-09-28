@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Text, View, LayoutChangeEvent } from 'react-native';
+import { StyleSheet, Text, View, LayoutChangeEvent } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 
 interface RatingPoint {
   ratingAfter: number;
@@ -134,8 +133,8 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
         <Svg width={containerWidth} height={height}>
           <Defs>
             <LinearGradient id="ratingGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="0%" stopColor={THEME.colors.chartStroke} stopOpacity={0.14} />
-              <Stop offset="100%" stopColor={THEME.colors.chartStroke} stopOpacity={0.0} />
+              <Stop offset="0%" stopColor="#004AC6" stopOpacity={0.14} />
+              <Stop offset="100%" stopColor="#004AC6" stopOpacity={0.0} />
             </LinearGradient>
           </Defs>
 
@@ -149,7 +148,7 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
                 x2={yLabelW + paddingX + chartW}
                 y1={gy}
                 y2={gy}
-                stroke={THEME.colors.surfaceContainerHighest}
+                stroke="#DAE2FD"
                 strokeWidth={1}
                 strokeDasharray="3 3"
               />
@@ -160,7 +159,7 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
           {linePath ? (
             <Path
               d={linePath}
-              stroke={THEME.colors.chartStroke}
+              stroke="#004AC6"
               strokeWidth={2.5}
               fill="none"
               strokeLinecap="round"
@@ -178,8 +177,8 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
                 cx={pt.x}
                 cy={pt.y}
                 r={isLast ? 4.5 : 4}
-                fill={isLast ? THEME.colors.tertiaryContainer : THEME.colors.backgroundCard}
-                stroke={isLast ? THEME.colors.backgroundCard : THEME.colors.chartStroke}
+                fill={isLast ? '#007F36' : '#FFFFFF'}
+                stroke={isLast ? '#FFFFFF' : '#004AC6'}
                 strokeWidth={2}
               />
             );
@@ -190,7 +189,7 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
             <SvgText
               x={coords[0].x + 2}
               y={coords[0].y - 4}
-              fill={THEME.colors.slate[950]}
+              fill="#131B2E"
               fontSize={10}
               fontWeight="600"
               fontFamily={THEME.fonts.semiBold}
@@ -202,7 +201,7 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
             <SvgText
               x={Math.max(yLabelW, coords[coords.length - 1].x - 32)}
               y={coords[coords.length - 1].y - 2}
-              fill={THEME.colors.tertiaryContainer}
+              fill="#007F36"
               fontSize={10}
               fontWeight="600"
               fontFamily={THEME.fonts.semiBold}
@@ -227,7 +226,7 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   card: {
     backgroundColor: THEME.colors.backgroundCard,
     borderRadius: THEME.radius.lg,
@@ -308,4 +307,4 @@ const styles = createThemedStyles(() => ({
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
-}));
+});

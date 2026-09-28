@@ -1,7 +1,6 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { THEME } from '../theme';
-import { createThemedStyles } from '../theme/themedStyles';
 
 interface EvaluationMeterProps {
   evaluation: number; // positive = P1 advantage, negative = P2 advantage
@@ -34,7 +33,7 @@ export const EvaluationMeter: React.FC<EvaluationMeterProps> = ({
   );
 };
 
-const styles = createThemedStyles(() => ({
+const styles = StyleSheet.create({
   container: {
     width: '100%',
     backgroundColor: THEME.colors.backgroundCard,
@@ -66,4 +65,4 @@ const styles = createThemedStyles(() => ({
     height: '100%',
     backgroundColor: THEME.colors.player1,
   },
-}));
+});
