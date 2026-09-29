@@ -102,7 +102,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             activeOpacity={0.88}
             onPress={guarded(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'quick'))}
           >
-            <Feather name="play" size={20} color="#FFFFFF" />
+            <Feather name="play" size={20} color="#0F172A" />
             <Text style={styles.quickMatchText}>Quick Match</Text>
           </TouchableOpacity>
         </View>
@@ -386,13 +386,15 @@ const styles = StyleSheet.create({
   quickMatchButton: {
     flex: 1,
     height: 52,
-    backgroundColor: THEME.colors.tertiary,
+    // Lime brand fill. The label MUST stay dark ink: white on this lime
+    // measures 1.31:1 (invisible); #0F172A measures 13.67:1.
+    backgroundColor: '#76FF03',
     borderRadius: THEME.radius.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: THEME.colors.tertiary,
+    shadowColor: '#76FF03',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -400,7 +402,7 @@ const styles = StyleSheet.create({
   },
   quickMatchText: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: '#0F172A',
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
