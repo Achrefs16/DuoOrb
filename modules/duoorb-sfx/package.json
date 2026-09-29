@@ -1,0 +1,13 @@
+{
+  "name": "duoorb-sfx",
+  "version": "1.0.0",
+  "description": "Preloaded multi-voice game SFX for DuoOrb (Android SoundPool / iOS AVAudioPlayer pool)",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {},
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}
