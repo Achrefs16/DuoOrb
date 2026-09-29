@@ -2023,12 +2023,12 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingVertical: 12,
     borderRadius: 8,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.brandLime,
     alignItems: 'center',
   },
   finishPrimaryText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: THEME.colors.onBrandLime,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -2239,6 +2239,6 @@ const styles = StyleSheet.create({
   rematchToastText: { flex: 1, fontFamily: THEME.fonts.semiBold, fontSize: 13, color: THEME.colors.inverseLabel },
   rematchDeclineBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.surfaceMuted },
   rematchDeclineText: { fontFamily: THEME.fonts.semiBold, fontSize: 12, color: THEME.colors.textSecondaryStrong },
-  rematchAcceptBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.primary },
-  rematchAcceptText: { fontFamily: THEME.fonts.bold, fontSize: 12, color: THEME.colors.onPrimary },
+  rematchAcceptBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.brandLime },
+  rematchAcceptText: { fontFamily: THEME.fonts.bold, fontSize: 12, color: THEME.colors.onBrandLime },
 });

@@ -244,7 +244,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               activeOpacity={0.88}
               onPress={onRematch}
             >
-              <Feather name="rotate-ccw" size={16} color={THEME.colors.onPrimary} />
+              <Feather name="rotate-ccw" size={16} color={THEME.colors.onBrandLime} />
               <Text style={styles.rematchText}>Rematch</Text>
             </TouchableOpacity>
 
@@ -499,13 +499,13 @@ const styles = StyleSheet.create({
   rematchBtn: {
     width: '100%',
     height: 48,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.brandLime,
     borderRadius: THEME.radius.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: THEME.colors.primary,
+    shadowColor: THEME.colors.brandLime,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 6,
@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
   },
   rematchText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: THEME.colors.onBrandLime,
     fontSize: 15,
     fontWeight: '700',
   },

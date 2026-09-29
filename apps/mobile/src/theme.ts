@@ -125,6 +125,11 @@ export function buildTheme(primary: string = PRIMARY_COLOR) {
       accent: primary,
       accentCyan: primary,
 
+      // 1b. Lime brand for primary actions. Labels on lime MUST be dark ink:
+      // white on #76FF03 measures 1.31:1 (invisible), #0F172A measures 13.67:1.
+      brandLime: '#76FF03',
+      onBrandLime: '#0F172A',
+
       // 1b. Raw ramp. Referenced by name so a second theme can remap the
       //     whole scale; the semantic tokens below are the ones to use.
       slate: SLATE,

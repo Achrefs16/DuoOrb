@@ -225,13 +225,13 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingVertical: 12,
     borderRadius: THEME.radius.md,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.brandLime,
     alignItems: 'center',
   },
   doneText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: THEME.colors.onPrimary,
+    color: THEME.colors.onBrandLime,
   },
 });

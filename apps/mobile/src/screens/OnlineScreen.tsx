@@ -629,7 +629,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   findMatch(matchConfig.mode, matchConfig.clock, matchConfig.wallsEach);
                 }}
               >
-                <Feather name="search" size={16} color={THEME.colors.onPrimary} />
+                <Feather name="search" size={16} color={THEME.colors.onBrandLime} />
                 <Text style={styles.retrySearchText}>Search Again</Text>
               </TouchableOpacity>
             ) : null}
@@ -836,10 +836,10 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   onPress={() => void startRoom()}
                 >
                   {roomLoading ? (
-                    <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
+                    <ActivityIndicator size="small" color={THEME.colors.onBrandLime} />
                   ) : (
                     <>
-                      <MaterialCommunityIcons name="play" size={20} color={THEME.colors.onPrimary} />
+                      <MaterialCommunityIcons name="play" size={20} color={THEME.colors.onBrandLime} />
                       <Text style={styles.lobbyCtaText}>Start Game</Text>
                     </>
                   )}
@@ -999,7 +999,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 }
               >
                 {roomLoading ? (
-                  <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
+                  <ActivityIndicator size="small" color={THEME.colors.onBrandLime} />
                 ) : (
                   <Text style={styles.rmCtaText}>Create Room</Text>
                 )}
@@ -1362,7 +1362,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.brandLime,
     borderRadius: 12,
     paddingVertical: 14,
   },
@@ -1373,7 +1373,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: THEME.colors.onPrimary,
+    color: THEME.colors.onBrandLime,
   },
   lobbyHint: {
     fontFamily: THEME.fonts.medium,
@@ -1454,7 +1454,7 @@ const styles = StyleSheet.create({
   },
   rmCta: {
     width: '100%',
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.brandLime,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
@@ -1465,7 +1465,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: THEME.colors.onPrimary,
+    color: THEME.colors.onBrandLime,
   },
   rmJoinRow: {
     flexDirection: 'row',
@@ -1809,7 +1809,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 46,
     borderRadius: THEME.radius.md,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.brandLime,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1818,7 +1818,7 @@ const styles = StyleSheet.create({
   retrySearchText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
-    color: THEME.colors.onPrimary,
+    color: THEME.colors.onBrandLime,
   },
   // Card & Private Rooms styling
   card: {
@@ -1883,13 +1883,13 @@ const styles = StyleSheet.create({
   },
   primaryActionBtn: {
     height: 48,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.brandLime,
     borderRadius: THEME.radius.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: THEME.colors.primary,
+    shadowColor: THEME.colors.brandLime,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 6,
@@ -1897,7 +1897,7 @@ const styles = StyleSheet.create({
   },
   primaryActionBtnText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
+    color: THEME.colors.onBrandLime,
     fontSize: 14,
     fontWeight: '700',
   },

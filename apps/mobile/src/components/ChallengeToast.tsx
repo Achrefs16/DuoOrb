@@ -85,7 +85,7 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
                 label="Accept"
                 onPress={onAccept}
                 flex
-                icon={<Feather name="check" size={15} color={THEME.colors.onPrimary} />}
+                icon={<Feather name="check" size={15} color={THEME.colors.onBrandLime} />}
               />
               <ToastDecline label="Decline" onPress={onDecline} />
             </View>
