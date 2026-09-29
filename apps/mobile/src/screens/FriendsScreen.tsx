@@ -936,11 +936,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 8,
     borderRadius: THEME.radius.md,
-    backgroundColor: THEME.colors.brandLime,
+    backgroundColor: THEME.colors.primary,
   },
   zeroAddBtnText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onBrandLime,
+    color: THEME.colors.onPrimary,
     fontSize: 13,
     fontWeight: '700',
   },

@@ -722,7 +722,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     flex: 1,
-    backgroundColor: THEME.colors.brandLime,
+    backgroundColor: THEME.colors.primary,
     paddingVertical: 11,
     borderRadius: THEME.radius.md,
     alignItems: 'center',
@@ -730,7 +730,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onBrandLime,
+    color: THEME.colors.onPrimary,
     fontSize: 13,
   },
   secondaryButton: {
@@ -780,8 +780,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   authButtonPrimary: {
-    backgroundColor: THEME.colors.brandLime,
-    borderColor: THEME.colors.brandLime,
+    backgroundColor: THEME.colors.primary,
+    borderColor: THEME.colors.primary,
   },
   authButtonText: {
     fontFamily: THEME.fonts.bold,
@@ -791,7 +791,7 @@ const styles = StyleSheet.create({
   authButtonPrimaryText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 13,
-    color: THEME.colors.onBrandLime,
+    color: THEME.colors.onPrimary,
   },
   disabled: {
     opacity: 0.35,

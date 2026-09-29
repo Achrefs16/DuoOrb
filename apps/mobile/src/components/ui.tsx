@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: THEME.colors.brandLime,
+    backgroundColor: THEME.colors.primary,
     borderRadius: THEME.controls.radius,
     paddingVertical: THEME.controls.paddingVertical,
   },
@@ -153,7 +153,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: THEME.controls.fontSize,
     fontWeight: '700',
-    color: THEME.colors.onBrandLime,
+    color: THEME.colors.onPrimary,
   },
   decline: {
     paddingHorizontal: 18,

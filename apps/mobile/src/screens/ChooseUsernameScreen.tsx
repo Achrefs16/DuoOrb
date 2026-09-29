@@ -272,14 +272,14 @@ const styles = StyleSheet.create({
   primary: {
     height: 50,
     borderRadius: THEME.radius.md,
-    backgroundColor: THEME.colors.brandLime,
+    backgroundColor: THEME.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   primaryText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 15,
-    color: THEME.colors.onBrandLime,
+    color: THEME.colors.onPrimary,
   },
   secondary: {
     height: 44,

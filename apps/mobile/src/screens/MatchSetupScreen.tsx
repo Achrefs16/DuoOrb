@@ -295,7 +295,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
               })
             }
           >
-            <MaterialCommunityIcons name="play" size={20} color={THEME.colors.onBrandLime} />
+            <MaterialCommunityIcons name="play" size={20} color={THEME.colors.onPrimary} />
             <Text style={styles.ctaText}>
               {vsType === 'ai'
                 ? 'Play vs AI'
@@ -448,7 +448,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: THEME.colors.brandLime,
+    backgroundColor: THEME.colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
     marginTop: 4,
@@ -457,6 +457,6 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: THEME.colors.onBrandLime,
+    color: THEME.colors.onPrimary,
   },
 });
