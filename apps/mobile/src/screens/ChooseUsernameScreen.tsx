@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
   primaryText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 15,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
   },
   secondary: {
     height: 44,

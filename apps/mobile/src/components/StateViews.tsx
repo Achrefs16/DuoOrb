@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   },
   emptyButtonText: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 13,
     fontWeight: '700',
   },

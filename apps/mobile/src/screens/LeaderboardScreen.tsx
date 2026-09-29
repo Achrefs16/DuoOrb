@@ -46,11 +46,11 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
     const isTop3 = item.rank <= 3;
     const rankColor =
       item.rank === 1
-        ? '#D97706' // Gold
+        ? THEME.colors.assessmentInaccuracy // Gold
         : item.rank === 2
-        ? '#64748B' // Silver
+        ? THEME.colors.textSecondaryStrong // Silver
         : item.rank === 3
-        ? '#B45309' // Bronze
+        ? THEME.colors.warning // Bronze
         : THEME.colors.textMuted;
 
     return (

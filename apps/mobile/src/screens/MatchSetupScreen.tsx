@@ -86,7 +86,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityLabel="Go back"
           >
-            <Feather name="chevron-left" size={24} color="#334155" />
+            <Feather name="chevron-left" size={24} color={THEME.colors.slate[700]} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
             {vsType === 'challenge'
@@ -192,7 +192,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                   onPress={() => setSide('blue')}
                 >
                   <View style={styles.sideRow}>
-                    <View style={[styles.sideDot, { backgroundColor: '#2563EB' }]} />
+                    <View style={[styles.sideDot, { backgroundColor: THEME.colors.primary }]} />
                     <Text style={[styles.optText, side === 'blue' && styles.optTextActive]}>
                       Blue
                     </Text>
@@ -203,7 +203,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                   onPress={() => setSide('red')}
                 >
                   <View style={styles.sideRow}>
-                    <View style={[styles.sideDot, { backgroundColor: '#F43F5E' }]} />
+                    <View style={[styles.sideDot, { backgroundColor: THEME.colors.playerPink }]} />
                     <Text style={[styles.optText, side === 'red' && styles.optTextActive]}>
                       Red
                     </Text>
@@ -217,7 +217,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                     <MaterialCommunityIcons
                       name="shuffle"
                       size={15}
-                      color={side === 'random' ? '#2563EB' : '#64748B'}
+                      color={side === 'random' ? THEME.colors.primary : THEME.colors.textSecondaryStrong}
                     />
                     <Text style={[styles.optText, side === 'random' && styles.optTextActive]}>
                       Random
@@ -272,7 +272,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
 
           {/* Rules banner */}
           <View style={styles.hintBanner}>
-            <Feather name="info" size={20} color="#2563EB" />
+            <Feather name="info" size={20} color={THEME.colors.primary} />
             <View style={styles.hintTextWrap}>
               <Text style={styles.hintTitle}>{desc.title}</Text>
               <Text style={styles.hintText}>{desc.body}</Text>
@@ -295,7 +295,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
               })
             }
           >
-            <MaterialCommunityIcons name="play" size={20} color="#FFFFFF" />
+            <MaterialCommunityIcons name="play" size={20} color={THEME.colors.onPrimary} />
             <Text style={styles.ctaText}>
               {vsType === 'ai'
                 ? 'Play vs AI'
@@ -315,12 +315,12 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: THEME.colors.drawBg,
   },
   header: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: THEME.colors.surfaceMuted,
     paddingHorizontal: 16,
     height: 56,
     flexDirection: 'row',
@@ -336,7 +336,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
     letterSpacing: -0.2,
   },
   scroll: {
@@ -348,10 +348,10 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: THEME.colors.surfaceMuted,
     padding: 16,
     gap: 16,
   },
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 11,
     fontWeight: '700',
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
@@ -375,11 +375,11 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: '#94A3B8',
+    color: THEME.colors.statusOffline,
   },
   track: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     borderRadius: 12,
     padding: 4,
     gap: 4,
@@ -392,19 +392,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   optActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     ...THEME.shadows.card,
   },
   optText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
+    color: THEME.colors.textOnMuted,
     textAlign: 'center',
   },
   optTextActive: {
     fontFamily: THEME.fonts.bold,
-    color: '#2563EB',
+    color: THEME.colors.primary,
     fontWeight: '700',
   },
   sideRow: {
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     gap: 10,
     backgroundColor: 'rgba(239, 246, 255, 0.7)',
     borderWidth: 1,
-    borderColor: '#DBEAFE',
+    borderColor: THEME.colors.surfacePrimaryTintBorder,
     borderRadius: 12,
     padding: 12,
   },
@@ -434,7 +434,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 12,
     fontWeight: '700',
-    color: '#172554',
+    color: THEME.colors.chartInk,
   },
   hintText: {
     fontFamily: THEME.fonts.regular,
@@ -448,7 +448,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#2563EB',
+    backgroundColor: THEME.colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
     marginTop: 4,
@@ -457,6 +457,6 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
   },
 });

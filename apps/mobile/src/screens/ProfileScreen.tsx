@@ -314,7 +314,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         </View>
                       </View>
 
-                      <Feather name="chevron-right" size={20} color="#64748B" />
+                      <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
                     </TouchableOpacity>
                   );
                 })}
@@ -354,7 +354,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: THEME.colors.drawBg,
   },
   header: {
     height: 64,
@@ -362,15 +362,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: THEME.colors.surfaceMuted,
   },
   title: {
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
     letterSpacing: -0.2,
   },
   settingsIconBtn: {
@@ -394,10 +394,10 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   identityCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: THEME.colors.surfaceMuted,
     padding: 16,
     gap: 16,
     ...THEME.shadows.card,
@@ -415,10 +415,10 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 8,
-    backgroundColor: '#2563EB',
+    backgroundColor: THEME.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#004AC6',
+    shadowColor: THEME.colors.chartStroke,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
     shadowRadius: 6,
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.extraBold,
     fontSize: 22,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
   },
   onlineBadge: {
     position: 'absolute',
@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: THEME.colors.tertiary,
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: THEME.colors.onPrimary,
   },
   identityInfo: {
     gap: 3,
@@ -449,13 +449,13 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
     letterSpacing: -0.2,
   },
   handleText: {
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
   },
   joinDateRow: {
     flexDirection: 'row',
@@ -466,7 +466,7 @@ const styles = StyleSheet.create({
   joinDateText: {
     fontFamily: THEME.fonts.regular,
     fontSize: 14,
-    color: '#475569',
+    color: THEME.colors.textOnMuted,
   },
   editBtn: {
     width: 36,
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     borderRadius: 4,
     paddingVertical: 12,
     alignItems: 'center',
@@ -491,7 +491,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
     letterSpacing: -0.2,
     fontVariant: ['tabular-nums'],
   },
@@ -499,7 +499,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
     fontWeight: '500',
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginTop: 2,
@@ -508,7 +508,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.regular,
     fontSize: 11,
     fontWeight: '400',
-    color: '#475569',
+    color: THEME.colors.textOnMuted,
     marginTop: 2,
   },
   chartSection: {
@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
   recentPillsRow: {
     flexDirection: 'row',
     gap: 4,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     borderRadius: 12,
     padding: 4,
     alignSelf: 'flex-start',
@@ -554,16 +554,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   recentPillActive: {
-    backgroundColor: '#131B2E',
+    backgroundColor: THEME.colors.slate[950],
   },
   recentPillText: {
     fontFamily: THEME.fonts.medium,
     fontSize: 12,
     fontWeight: '500',
-    color: '#475569',
+    color: THEME.colors.textOnMuted,
   },
   recentPillTextActive: {
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontWeight: '600',
   },
   unratedText: {
@@ -584,10 +584,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   recentList: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: THEME.colors.surfaceMuted,
     overflow: 'hidden',
     ...THEME.shadows.card,
   },
@@ -598,7 +598,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: THEME.colors.surfaceMuted,
   },
   matchItemLeft: {
     flexDirection: 'row',
@@ -638,18 +638,18 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
   },
   matchItemOppRating: {
     fontFamily: THEME.fonts.regular,
     fontSize: 14,
     fontWeight: '400',
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
   },
   matchItemMode: {
     fontFamily: THEME.fonts.regular,
     fontSize: 14,
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
     marginTop: 2,
   },
   matchItemRight: {
@@ -680,15 +680,15 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: THEME.colors.surfaceMuted,
     alignItems: 'center',
   },
   loadMoreText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 13,
     fontWeight: '600',
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
   },
 });

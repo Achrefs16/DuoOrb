@@ -135,11 +135,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#FFFFFF',
+    borderColor: THEME.colors.onPrimary,
   },
   badgeText: {
     fontFamily: THEME.fonts.extraBold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 9,
     fontWeight: '800',
   },

@@ -165,13 +165,13 @@ const styles = StyleSheet.create({
   },
   orbInitial: {
     fontFamily: THEME.fonts.extraBold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontWeight: '800',
     letterSpacing: -0.5,
   },
   statusDot: {
     borderWidth: 1.5,
-    borderColor: '#FFFFFF',
+    borderColor: THEME.colors.onPrimary,
   },
   chipRow: {
     flexDirection: 'row',

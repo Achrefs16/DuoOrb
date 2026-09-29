@@ -45,7 +45,7 @@ export const WinGraph: React.FC<WinGraphProps> = ({
         <Polyline
           points={line}
           fill="none"
-          stroke="#0D9488"
+          stroke={THEME.colors.assessmentBest}
           strokeWidth={2}
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -58,7 +58,7 @@ export const WinGraph: React.FC<WinGraphProps> = ({
               cx={x(i)}
               cy={y(points[i] ?? 0.5)}
               r={3}
-              fill="#D97706"
+              fill={THEME.colors.assessmentInaccuracy}
             />
           );
         })}

@@ -37,6 +37,56 @@ const PLAYER_GREEN = '#0E9F6E';
 const PLAYER_AMBER = '#D9930D';
 
 /**
+ * The Slate ramp the app actually uses, as tokens.
+ *
+ * These existed only as hex literals inside 28 files (#FFFFFF x99, #F1F5F9
+ * x49, #64748B x48 …) while the semantic tokens below already described the
+ * same colours. Naming them here is what lets a future palette remap the whole
+ * ramp by editing this one file. Values are unchanged — a token that resolved
+ * to a different colour would be a design change, not a refactor.
+ */
+const SLATE = {
+  0: '#FFFFFF',
+  25: '#FAF8FF',
+  50: '#F8FAFC',
+  100: '#F1F5F9',
+  200: '#E2E8F0',
+  300: '#CBD5E1',
+  400: '#94A3B8',
+  500: '#64748B',
+  600: '#475569',
+  700: '#334155',
+  800: '#1E293B',
+  900: '#0F172A',
+  950: '#131B2E',
+} as const;
+
+/** Blue tints used for "you", avatars, pills and chart strokes. */
+const BLUE = {
+  50: '#EFF6FF',
+  100: '#DBEAFE',
+  200: '#BFDBFE',
+  300: '#004AC6',
+  900: '#172554',
+} as const;
+
+/** Shared raised-surface / control fills used by toasts, cards and buttons. */
+const SURFACE = {
+  /** Neutral fill for secondary controls, pills and pressed states. */
+  muted: SLATE[100],
+  /** Hairline divider and card outline. */
+  hairline: SLATE[200],
+  /** Toast/near-white tint behind primary iconography. */
+  primaryTint: BLUE[50],
+  primaryTintBorder: BLUE[200],
+  /**
+   * Card-level primary border. Distinct from primaryTintBorder by one step
+   * (BLUE[100] vs BLUE[200]) — collapsing them was a real colour change.
+   */
+  primaryTintBorderSoft: BLUE[100],
+} as const;
+
+/**
  * Font Family Tokens - Manrope
  */
 export const FONTS = {
@@ -74,6 +124,11 @@ export function buildTheme(primary: string = PRIMARY_COLOR) {
       onPrimaryContainer: '#EEEFFF',
       accent: primary,
       accentCyan: primary,
+
+      // 1b. Raw ramp. Referenced by name so a second theme can remap the
+      //     whole scale; the semantic tokens below are the ones to use.
+      slate: SLATE,
+      blue: BLUE,
 
       // 2. Stitch Surface & Container Hierarchy
       background: '#FAF8FF',
@@ -171,6 +226,49 @@ export function buildTheme(primary: string = PRIMARY_COLOR) {
 
       // 13. Shadows
       shadow: 'rgba(15, 23, 42, 0.08)',
+
+      // 14. Shared component fills
+      //     These were duplicated as hex inside toasts, cards, buttons and
+      //     pills. Every value is identical to the literal it replaces.
+      surfaceMuted: SURFACE.muted,
+      surfaceHairline: SURFACE.hairline,
+      surfacePrimaryTint: SURFACE.primaryTint,
+      surfacePrimaryTintBorder: SURFACE.primaryTintBorder,
+      surfacePrimaryTintBorderSoft: SURFACE.primaryTintBorderSoft,
+      /** Text/icon colour on a dark or saturated fill. */
+      onSurfaceInverse: SLATE[0],
+      /** Deep ink for a notice pill or inverse button label. */
+      inverseLabel: SLATE[900],
+      /** Secondary body text on light surfaces (was #64748B = SLATE[500]). */
+      textSecondaryStrong: SLATE[500],
+      /** Neutral icon + label colour (was #475569 = SLATE[600]). */
+      textOnMuted: SLATE[600],
+      /** Chart stroke blue, deeper than `primary` so lines read on white. */
+      chartStroke: BLUE[300],
+      chartInk: BLUE[900],
+
+      // 15. Engine assessment markers (analysisUi.ts + review screen)
+      assessmentBest: '#0D9488',
+      assessmentExcellent: '#059669',
+      assessmentGood: '#16A34A',
+      assessmentInaccuracy: '#D97706',
+      assessmentBlunder: '#EA580C',
+      /** Alert-toned marks on the board. */
+      playerPink: '#F43F5E',
+      playerGreenBright: '#22C55E',
+      playerMint: '#34D399',
+      player4Amber: '#D9A62E',
+      /** Third-party brand colour (Google sign-in). Never themed. */
+      googleBlue: '#4285F4',
+      dangerBright: '#EF4444',
+      warningBorder: '#FDE68A',
+      neutralStone: '#D6D3D1',
+      /** Hairline between list rows. */
+      dividerSoft: '#EEF1F6',
+      successLight: '#ECFDF5',
+      /** Green avatar tint. Distinct from `winBg` (#F0FDF4) by one step. */
+      successTint: '#DCFCE7',
+      shadowBlack: '#000',
     },
     radius: {
       xs: 2,
@@ -178,7 +276,32 @@ export function buildTheme(primary: string = PRIMARY_COLOR) {
       md: 6,
       lg: 8,
       xl: 12,
+      // Toast/card corners were 12 and 16 as literals in three files.
+      toast: 16,
       full: 9999,
+    },
+    /**
+     * Control metrics shared by every button, toast action and pill.
+     *
+     * The two toasts and SettingsScreen each declared their own `acceptBtn`
+     * / `declineBtn` with the same fills and the same 10px corner — identical
+     * design, repeated code. These are the values they were already using.
+     */
+    controls: {
+      /** Corner radius of a filled action button. */
+      radius: 10,
+      /** Corner radius of a compact toast action. */
+      radiusCompact: 8,
+      /** Vertical padding of a standard action button. */
+      paddingVertical: 11,
+      /** Vertical padding of a compact toast action. */
+      paddingVerticalCompact: 8,
+      /** Height of a full-width primary action. */
+      height: 50,
+      /** Label size of a primary action button. */
+      fontSize: 14,
+      /** Label size of a compact toast action. */
+      fontSizeCompact: 12,
     },
     spacing: {
       xs: 4,
@@ -240,7 +363,18 @@ export function buildTheme(primary: string = PRIMARY_COLOR) {
   };
 }
 
-export const THEME = buildTheme(PRIMARY_COLOR);
+/**
+ * Named themes. Adding a theme means adding one entry here — no screen
+ * changes, because every screen reads `THEME`, which is the active entry.
+ */
+export const THEMES = {
+  light: buildTheme(PRIMARY_COLOR),
+} as const;
+
+export type ThemeName = keyof typeof THEMES;
+
+/** The active theme. Every import of THEME in the app resolves here. */
+export const THEME = THEMES.light;
 export type Theme = typeof THEME;
 
 /** Player ball color by index (0-based). Falls back to palette cycling. */

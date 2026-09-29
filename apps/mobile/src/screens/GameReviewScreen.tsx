@@ -287,10 +287,10 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     if (!showAlt || !currentAnalysis?.bestAction) return null;
     const ba = currentAnalysis.bestAction;
     if (ba.type === 'MOVE') {
-      return { to: ba.to, color: '#004AC6' };
+      return { to: ba.to, color: THEME.colors.chartStroke };
     }
     if (ba.type === 'PLACE_WALL') {
-      return { wall: ba.wall, color: '#004AC6' };
+      return { wall: ba.wall, color: THEME.colors.chartStroke };
     }
     return null;
   }, [bare, showAlt, currentAnalysis]);
@@ -449,7 +449,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               style={styles.playPauseBtn}
               onPress={() => setIsPlaying(!isPlaying)}
             >
-              <Feather name={isPlaying ? 'pause' : 'play'} size={20} color="#FFFFFF" />
+              <Feather name={isPlaying ? 'pause' : 'play'} size={20} color={THEME.colors.onPrimary} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -813,7 +813,7 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.inverseSurface,
     alignItems: 'center',
     justifyContent: 'center',
-      shadowColor: '#000',
+      shadowColor: THEME.colors.shadowBlack,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,

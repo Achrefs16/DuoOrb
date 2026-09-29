@@ -1321,7 +1321,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (online.joinError) {
       return (
         <View style={styles.container}>
-          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.backgroundCard} />
           <View style={styles.skeletonTop}>
             <Text style={styles.syncingText}>{online.joinError}</Text>
             <TouchableOpacity
@@ -1337,10 +1337,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.backgroundCard} />
         <View style={styles.header}>
           <View style={styles.headerInner}>
-            <Feather name="chevron-left" size={24} color="#334155" />
+            <Feather name="chevron-left" size={24} color={THEME.colors.slate[700]} />
           </View>
         </View>
         <View style={styles.skeletonTop}>
@@ -1377,11 +1377,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       style={styles.container}
     >
       {/* White status strip on Android so the header truly reaches the top. */}
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.backgroundCard} />
       {/* Network Banners */}
       {type === 'online' && (online.connStatus === 'reconnecting' || online.connStatus === 'disconnected') && (
         <View style={styles.bannerWarning}>
-          <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+          <ActivityIndicator size="small" color={THEME.colors.onPrimary} style={{ marginRight: 8 }} />
           <Text style={styles.bannerText}>
             Connection lost · Reconnecting…{online.pendingCount > 0 ? ` · ${online.pendingCount} pending` : ''}
           </Text>
@@ -1423,7 +1423,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityLabel="Go back"
           >
-            <Feather name="chevron-left" size={24} color="#334155" />
+            <Feather name="chevron-left" size={24} color={THEME.colors.slate[700]} />
           </TouchableOpacity>
         </View>
       </View>
@@ -1549,7 +1549,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   }}
                   accessibilityLabel="First move"
                 >
-                  <Feather name="chevrons-left" size={18} color="#334155" />
+                  <Feather name="chevrons-left" size={18} color={THEME.colors.slate[700]} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.replayBtn, (viewingStep ?? totalSteps) <= 0 && styles.replayBtnDisabled]}
@@ -1560,7 +1560,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   }}
                   accessibilityLabel="Previous move"
                 >
-                  <Feather name="chevron-left" size={18} color="#334155" />
+                  <Feather name="chevron-left" size={18} color={THEME.colors.slate[700]} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.replayBtn}
@@ -1576,7 +1576,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   }}
                   accessibilityLabel={replaying ? 'Pause replay' : 'Play replay'}
                 >
-                  <Feather name={replaying ? 'pause' : 'play'} size={18} color="#334155" />
+                  <Feather name={replaying ? 'pause' : 'play'} size={18} color={THEME.colors.slate[700]} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.replayBtn, (viewingStep ?? totalSteps) >= totalSteps && styles.replayBtnDisabled]}
@@ -1587,7 +1587,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   }}
                   accessibilityLabel="Next move"
                 >
-                  <Feather name="chevron-right" size={18} color="#334155" />
+                  <Feather name="chevron-right" size={18} color={THEME.colors.slate[700]} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.replayBtn, (viewingStep ?? totalSteps) >= totalSteps && styles.replayBtnDisabled]}
@@ -1598,7 +1598,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   }}
                   accessibilityLabel="Last move"
                 >
-                  <Feather name="chevrons-right" size={18} color="#334155" />
+                  <Feather name="chevrons-right" size={18} color={THEME.colors.slate[700]} />
                 </TouchableOpacity>
                 <Text style={styles.replayStep}>
                   {(viewingStep ?? totalSteps)} / {totalSteps}
@@ -1619,7 +1619,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityLabel="Resign game"
               >
-                <Feather name="flag" size={17} color="#64748B" />
+                <Feather name="flag" size={17} color={THEME.colors.textSecondaryStrong} />
                 <Text style={styles.resignText}>Resign game</Text>
               </TouchableOpacity>
             </View>
@@ -1632,7 +1632,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityLabel="Leave match"
               >
-                <Feather name="log-out" size={17} color="#64748B" />
+                <Feather name="log-out" size={17} color={THEME.colors.textSecondaryStrong} />
                 <Text style={styles.resignText}>Leave match</Text>
               </TouchableOpacity>
             </View>
@@ -1645,7 +1645,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         <SafeAreaView style={styles.resignOverlay} edges={['top', 'bottom']}>
           <View style={styles.resignCard}>
             <View style={styles.resignIconCircle}>
-              <Feather name="flag" size={28} color="#BA1A1A" />
+              <Feather name="flag" size={28} color={THEME.colors.error} />
             </View>
             <Text style={styles.resignTitle}>Resign Match?</Text>
             <Text style={styles.resignDesc}>
@@ -1696,7 +1696,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         <SafeAreaView style={styles.resignOverlay} edges={['top', 'bottom']}>
           <View style={styles.finishCard}>
             <View style={styles.finishIconCircle}>
-              <Feather name="award" size={30} color="#D97706" />
+              <Feather name="award" size={30} color={THEME.colors.assessmentInaccuracy} />
             </View>
             <Text style={styles.finishTitle}>
               {finishModal?.place === 1 ? '1st Place' : `${finishModal?.place ?? ''} Place`}
@@ -1779,7 +1779,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       >
         <SafeAreaView style={styles.rematchToastOverlay} edges={['top', 'bottom']} pointerEvents="box-none">
           <View style={styles.rematchToast}>
-            <Feather name="rotate-ccw" size={18} color="#2563EB" />
+            <Feather name="rotate-ccw" size={18} color={THEME.colors.primary} />
             <Text style={styles.rematchToastText}>
               {online.rematchOffered && !rematchIncomingDismissed
                 ? 'Opponent wants a rematch'
@@ -1831,7 +1831,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: THEME.colors.drawBg,
     paddingTop: 0,
     paddingBottom: 8,
     paddingHorizontal: 12,
@@ -1847,9 +1847,9 @@ const styles = StyleSheet.create({
   skeletonHud: {
     height: 48,
     borderRadius: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
   },
   skeletonBoard: {
     flex: 1,
@@ -1858,9 +1858,9 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 420,
     borderRadius: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
   },
   skeletonBottom: {
     gap: 8,
@@ -1868,16 +1868,16 @@ const styles = StyleSheet.create({
   skeletonTray: {
     height: 78,
     borderRadius: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
   },
   skeletonButton: {
     height: 42,
     borderRadius: 8,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
   },
   syncingOverlay: {
     position: 'absolute',
@@ -1891,9 +1891,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(248,250,252,0.72)',
   },
   header: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: THEME.colors.surfaceHairline,
     marginHorizontal: -12,
     paddingHorizontal: 12,
     // Exact status height on Android; SafeAreaView owns the inset on iOS.
@@ -1942,13 +1942,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
   },
   resignText: {
     fontFamily: THEME.fonts.medium,
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
     fontSize: 12,
     fontWeight: '500',
   },
@@ -1960,10 +1960,10 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   resignCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: THEME.colors.boardBorder,
     padding: 24,
     maxWidth: 320,
     width: '100%',
@@ -1974,18 +1974,18 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 12,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: THEME.colors.dangerLight,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: THEME.colors.dangerBorder,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   finishCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: THEME.colors.boardBorder,
     padding: 24,
     width: '100%',
     maxWidth: 320,
@@ -1996,23 +1996,23 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: '#FEF3C7',
+    backgroundColor: THEME.colors.warningLight,
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: THEME.colors.warningBorder,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
   },
   finishTitle: {
     fontFamily: THEME.fonts.extraBold,
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
     fontSize: 22,
     fontWeight: '800',
     letterSpacing: 0.4,
   },
   finishDesc: {
     fontFamily: THEME.fonts.medium,
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
     fontSize: 13,
     lineHeight: 19,
     textAlign: 'center',
@@ -2023,12 +2023,12 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingVertical: 12,
     borderRadius: 8,
-    backgroundColor: '#2563EB',
+    backgroundColor: THEME.colors.primary,
     alignItems: 'center',
   },
   finishPrimaryText: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -2041,20 +2041,20 @@ const styles = StyleSheet.create({
   },
   finishSecondaryText: {
     fontFamily: THEME.fonts.semiBold,
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
     fontSize: 14,
     fontWeight: '600',
   },
   resignTitle: {
     fontFamily: THEME.fonts.bold,
-    color: '#0F172A',
+    color: THEME.colors.inverseLabel,
     fontSize: 18,
     fontWeight: '700',
     textAlign: 'center',
   },
   resignDesc: {
     fontFamily: THEME.fonts.regular,
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
     fontSize: 14,
     lineHeight: 21,
     textAlign: 'center',
@@ -2070,12 +2070,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
-    backgroundColor: '#EF4444',
+    backgroundColor: THEME.colors.dangerBright,
     alignItems: 'center',
   },
   resignConfirmText: {
     fontFamily: THEME.fonts.semiBold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -2088,16 +2088,16 @@ const styles = StyleSheet.create({
   },
   resignCancelText: {
     fontFamily: THEME.fonts.medium,
-    color: '#475569',
+    color: THEME.colors.textOnMuted,
     fontSize: 14,
     fontWeight: '500',
   },
   replayBar: {
     width: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
     paddingVertical: 8,
     paddingHorizontal: 8,
     gap: 4,
@@ -2115,9 +2115,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: THEME.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceHairline,
   },
   replayBtnDisabled: {
     opacity: 0.35,
@@ -2126,7 +2126,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 13,
     fontWeight: '700',
-    color: '#334155',
+    color: THEME.colors.slate[700],
     fontVariant: ['tabular-nums'],
     marginLeft: 8,
     minWidth: 52,
@@ -2141,7 +2141,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: THEME.colors.textSecondaryStrong,
   },
   disabled: {
     opacity: 0.4,
@@ -2210,7 +2210,7 @@ const styles = StyleSheet.create({
   },
   bannerText: {
     fontFamily: THEME.fonts.bold,
-    color: '#FFFFFF',
+    color: THEME.colors.onPrimary,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -2228,17 +2228,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#DBEAFE',
+    borderColor: THEME.colors.surfacePrimaryTintBorder,
     paddingHorizontal: 12,
     paddingVertical: 10,
     ...THEME.shadows.card,
   },
-  rematchToastText: { flex: 1, fontFamily: THEME.fonts.semiBold, fontSize: 13, color: '#0F172A' },
-  rematchDeclineBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: '#F1F5F9' },
-  rematchDeclineText: { fontFamily: THEME.fonts.semiBold, fontSize: 12, color: '#64748B' },
-  rematchAcceptBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: '#2563EB' },
-  rematchAcceptText: { fontFamily: THEME.fonts.bold, fontSize: 12, color: '#FFFFFF' },
+  rematchToastText: { flex: 1, fontFamily: THEME.fonts.semiBold, fontSize: 13, color: THEME.colors.inverseLabel },
+  rematchDeclineBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.surfaceMuted },
+  rematchDeclineText: { fontFamily: THEME.fonts.semiBold, fontSize: 12, color: THEME.colors.textSecondaryStrong },
+  rematchAcceptBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.primary },
+  rematchAcceptText: { fontFamily: THEME.fonts.bold, fontSize: 12, color: THEME.colors.onPrimary },
 });

@@ -1,25 +1,26 @@
 import type { MoveAssessment } from '@duoorb/game-core';
+import { THEME } from './theme';
 
 /** Restrained assessment colors — only markers use them, never whole screens. */
 export function assessmentColor(a: MoveAssessment): string {
   switch (a) {
     case 'BEST':
-      return '#0D9488';
+      return THEME.colors.assessmentBest;
     case 'EXCELLENT':
-      return '#059669';
+      return THEME.colors.assessmentExcellent;
     case 'GOOD':
-      return '#16A34A';
+      return THEME.colors.assessmentGood;
     case 'INACCURACY':
-      return '#D97706';
+      return THEME.colors.assessmentInaccuracy;
     case 'MISTAKE':
-      return '#EA580C';
+      return THEME.colors.assessmentBlunder;
     case 'BLUNDER':
-      return '#DC2626';
+      return THEME.colors.danger;
   }
 }
 
 /** Engine alternative markers always use teal to contrast actual-move marks. */
-export const ENGINE_TEAL = '#0D9488';
+export const ENGINE_TEAL = THEME.colors.assessmentBest;
 
 /** 'AI (NORMAL)' -> 'AI'. Real display names only, never invented. */
 export function cleanName(displayName?: string): string {

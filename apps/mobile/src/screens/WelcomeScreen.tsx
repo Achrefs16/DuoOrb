@@ -58,7 +58,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             disabled={busy}
             accessibilityLabel="Continue with Google"
           >
-            <MaterialCommunityIcons name="google" size={19} color="#4285F4" />
+            <MaterialCommunityIcons name="google" size={19} color={THEME.colors.googleBlue} />
             <Text style={styles.googleButtonText}>Continue with Google</Text>
           </TouchableOpacity>
         )}

@@ -44,11 +44,11 @@ export const MoveTimeline: React.FC<MoveTimelineProps> = ({
 function timelineColor(a: MoveAssessment): string {
   switch (a) {
     case 'BEST':
-      return '#0D9488';
+      return THEME.colors.assessmentBest;
     case 'EXCELLENT':
-      return '#34D399';
+      return THEME.colors.playerMint;
     case 'GOOD':
-      return '#D6D3D1';
+      return THEME.colors.neutralStone;
     case 'INACCURACY':
     case 'MISTAKE':
     case 'BLUNDER':
