@@ -1287,7 +1287,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               </View>
             </View>
             <TouchableOpacity
-              style={[styles.rmCta, setupSaving && styles.btnDisabled]}
+              style={[styles.rmCta, styles.sheetSaveBtn, setupSaving && styles.btnDisabled]}
               activeOpacity={0.88}
               disabled={setupSaving}
               onPress={() => void saveRoomSetup()}
@@ -1713,6 +1713,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: THEME.colors.onPrimary,
+  },
+  // Breathing room between the last sheet section (walls) and Save Setup.
+  // Scoped to the sheet so the create form's tighter stacking is untouched.
+  sheetSaveBtn: {
+    marginTop: 16,
   },
   rmJoinRow: {
     flexDirection: 'row',
