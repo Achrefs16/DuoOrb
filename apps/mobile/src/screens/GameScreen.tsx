@@ -51,7 +51,6 @@ interface GameScreenProps {
   aiDifficulty?: AIDifficulty;
   timeControl?: TimeControl;
   incrementEnabled?: boolean;
-  autoFlip?: boolean;
   premoveEnabled?: boolean;
   extendedQueue?: boolean;
   testThink?: boolean;
@@ -112,27 +111,37 @@ function thinkMsFor(difficulty: AIDifficulty, testThink: boolean): number {
   }
 }
 
+/**
+ * Board perspective from a seat's goal direction — the one seat attribute
+ * that never changes mid-game.
+ *
+ * Your spawn sits at the bottom in every mode: a TOP goal means you start
+ * bottom (0°), BOTTOM means you start top (180°), RIGHT means you start left
+ * (270°), LEFT means you start right (90°).
+ *
+ * This deliberately reads NOTHING positional. An earlier version derived the
+ * angle from the pawn's spawn cell with a live-position fallback, so any seat
+ * outside the locally built layout (e.g. green/yellow in a joined room whose
+ * local mode defaulted to 2p) flipped the whole board the moment the pawn
+ * left its spawn column — and a wrong local mode rotated Race goals onto the
+ * side or bottom. Goal direction is set once at creation on every state the
+ * server, snapshots and replays ever produce, so the angle is stable from the
+ * first frame to the last.
+ */
 function desiredRotationDeg(
-  mode: GameMode,
-  type: 'local' | 'ai' | 'online',
-  seatIdx: number,
-  currentPlayerIndex: number,
-  autoFlip: boolean,
-  startPosition?: CellCoord
+  goalDirection?: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT'
 ): number {
-  if (type === 'local') {
-    return mode === '2p' && autoFlip && currentPlayerIndex === 1 ? 180 : 0;
+  switch (goalDirection) {
+    case 'BOTTOM':
+      return 180;
+    case 'RIGHT':
+      return 270;
+    case 'LEFT':
+      return 90;
+    case 'TOP':
+    default:
+      return 0;
   }
-  // Derive perspective from the seat's actual starting edge, not from a
-  // mode-specific table: bottom=0°, top=180°, left=270°, right=90°.
-  // This covers Blue/Red/Green/Yellow Rush Center seats and Race seats
-  // (Race starts on the bottom row, so it correctly stays at 0°).
-  if (!startPosition) return 0;
-  if (startPosition.row === 8) return 0;
-  if (startPosition.row === 0) return 180;
-  if (startPosition.col === 0) return 270;
-  if (startPosition.col === 8) return 90;
-  return 0;
 }
 
 export const GameScreen: React.FC<GameScreenProps> = ({
@@ -144,7 +153,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   aiDifficulty = 'normal',
   timeControl = DEFAULT_TIME_CONTROL,
   incrementEnabled = true,
-  autoFlip = false,
   premoveEnabled = true,
   extendedQueue = true,
   testThink = false,
@@ -193,19 +201,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [initialState] = useState<GameState>(() =>
     createInitialState({ mode, playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You'), wallsEach })
   );
-  // Static board orientation. Online/AI never animate a flip: the board
-  // initializes directly in the player's perspective after the server seat
-  // is known. Local 1v1 keeps the existing pass-and-play flip.
-  const initialRotationDeg = desiredRotationDeg(
-    mode,
-    type,
-    humanIdx,
-    initialState.currentPlayerIndex,
-    autoFlip,
-    initialState.players[humanIdx]?.position
-  );
-  const flipAnim = useRef(new Animated.Value(initialRotationDeg === 180 ? 1 : 0)).current;
-  const flipTargetRef = useRef(initialRotationDeg === 180 ? 1 : 0);
 
   const [state, setState] = useState<GameState>(initialState);
 
@@ -495,37 +490,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     state.currentPlayerIndex !== activeHumanIdx;
   const queueOn = premoveEnabled && extendedQueue;
 
-  // Pass-and-play flip: local 1v1 animates between sides. Online/AI
-  // perspective changes are direct, stable setValue assignments.
+  // Board perspective, read from the seat's goal direction only. It never
+  // moves mid-game, never depends on the pawn's position, and never depends
+  // on the locally built layout matching the server's — the three properties
+  // that made the old position-based angle flip side seats after their first
+  // move. Unknown seat (shouldn't happen) renders unrotated, never crashes.
   const rotationTargetDeg = desiredRotationDeg(
-    mode,
-    type,
-    activeHumanIdx,
-    state.currentPlayerIndex,
-    autoFlip,
-    initialState.players[activeHumanIdx]?.position ?? state.players[activeHumanIdx]?.position
+    state.players[activeHumanIdx]?.goalDirection
   );
-  const [flipping, setFlipping] = useState(false);
-  useEffect(() => {
-    const animateLocalFlip = type === 'local' && mode === '2p' && autoFlip;
-    const target = rotationTargetDeg === 180 ? 1 : 0;
-    if (!animateLocalFlip) {
-      flipTargetRef.current = target;
-      flipAnim.setValue(target);
-      setFlipping(false);
-      return;
-    }
-    if (flipTargetRef.current === target) return;
-    flipTargetRef.current = target;
-    setFlipping(true);
-    const anim = Animated.timing(flipAnim, {
-      toValue: target,
-      duration: 350,
-      useNativeDriver: true,
-    });
-    anim.start(() => setFlipping(false));
-    return () => anim.stop();
-  }, [rotationTargetDeg, type, mode, autoFlip, flipAnim]);
+  // On a 90°/270° board the logical axes run across the screen: a logical-H
+  // wall renders screen-vertical. The tray pieces and the finger chip are
+  // drawn in screen space, so they render swapped to match — the drag value
+  // itself stays logical ('H' means game-H all the way to the server).
+  const swapWallVisuals = rotationTargetDeg === 90 || rotationTargetDeg === 270;
 
   // Destinations show automatically for the player to move.
   // Queueing UI stays visible while a queue exists (even with nothing
@@ -1337,11 +1314,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [dragSlot, currentPlayer, displayState, trayColor]);
 
   // Screen overlay chip so the held wall follows the finger continuously.
-  // Matches the (responsive) tray piece size.
+  // Matches the (responsive) tray piece size — and the board's rotation: on
+  // a 90°/270° board a logical-H wall renders screen-vertical, so the chip
+  // swaps aspect with it. Otherwise the chip shows one shape while the ghost
+  // and the placed wall show the other.
   let chipStyle: { left: number; top: number; width: number; height: number } | null = null;
   if (wallDrag && rootRectRef.current) {
     const trayScale = Math.max(0.72, Math.min(1, windowWidth / 390));
-    const isH = wallDrag.orientation === 'H';
+    const isH = (wallDrag.orientation === 'H') !== swapWallVisuals;
     const w = (isH ? 56 : 12) * trayScale;
     const h = (isH ? 12 : 56) * trayScale;
     chipStyle = {
@@ -1473,17 +1453,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             key={`board-perspective-${activeHumanIdx}`}
             collapsable={false}
             style={{
-              transform: [
-                {
-                  rotate:
-                    type === 'local' && mode === '2p' && autoFlip
-                      ? flipAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ['0deg', '180deg'],
-                        })
-                      : `${rotationTargetDeg}deg`,
-                },
-              ],
+              transform: [{ rotate: `${rotationTargetDeg}deg` }],
             }}
           >
           <WallDragGhostProvider value={dragGhostValue}>
@@ -1492,14 +1462,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             legalMoves={viewingStep !== null ? EMPTY_CELL_LIST : legalMoves}
             previewWall={null}
             selectedCell={viewingStep !== null ? null : selectedCellMemo}
-            interactive={(humanTurn || canPremove) && !wallDrag && !flipping && viewingStep === null}
+            interactive={(humanTurn || canPremove) && !wallDrag && viewingStep === null}
             moveHintColor={wallDrag ? trayColor : hintColor}            premoveMarks={viewingStep !== null ? EMPTY_PREMOVE_MARKS : premoveMarks}
             hideDots={hideDots}
             queuedWalls={viewingStep !== null ? EMPTY_QUEUED_WALLS : queuedWallEntries}
             onQueuedWallPress={canPremove && viewingStep === null ? handleQueuedWallPress : undefined}
             size={measuredBoardSize}
-            flipAnim={type === 'local' && mode === '2p' && autoFlip ? flipAnim : null}
-            rotationDeg={type === 'local' && mode === '2p' && autoFlip ? 0 : rotationTargetDeg}
+            rotationDeg={rotationTargetDeg}
             onCellPress={viewingStep !== null ? undefined : handleCellPress}
             onMetricsChange={handleMetricsChange}
           />
@@ -1534,15 +1503,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           {!isCompleted && (
             <View style={styles.traySlot}>
               {trayPlayer && (
-                <WallTray
-                  color={trayColor}
-                  count={trayPlayer.wallsRemaining}
-                  held={wallDrag?.orientation ?? null}
-                  disabled={!(humanTurn || (canPremove && queueOn))}
-                  onDragStart={handleTrayStart}
-                  onDragMove={handleTrayMove}
-                  onDragEnd={handleTrayEnd}
-                />
+              <WallTray
+                color={trayColor}
+                count={trayPlayer.wallsRemaining}
+                held={wallDrag?.orientation ?? null}
+                disabled={!(humanTurn || (canPremove && queueOn))}
+                swapVisuals={swapWallVisuals}
+                onDragStart={handleTrayStart}
+                onDragMove={handleTrayMove}
+                onDragEnd={handleTrayEnd}
+              />
               )}
             </View>
           )}

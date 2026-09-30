@@ -42,8 +42,6 @@ export interface UserSettings {
   aiDifficulty: 'easy' | 'normal' | 'hard';
   /** Per-move Fischer increment: +N sec after every move when the clock has one. */
   incrementEnabled: boolean;
-  /** Auto-rotate the board for each side in local 1v1. */
-  autoFlip: boolean;
   /** Queue moves while the AI or your online opponent is thinking (chess.com-style premove). */
   premoveEnabled: boolean;
   /** Chain several premoves and wall pre-drops in a row. */
@@ -58,7 +56,6 @@ export const DEFAULT_SETTINGS: UserSettings = {
   timeControlMinutes: 3,
   aiDifficulty: 'normal',
   incrementEnabled: true,
-  autoFlip: false,
   // Premove is opt-in. Queuing a move for your opponent's turn is a
   // power-user affordance and confusing when you have not asked for it, so it
   // starts off and is enabled explicitly in Settings.

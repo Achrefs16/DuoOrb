@@ -15,9 +15,18 @@ interface WallTrayProps {
   color: string;
   /** Walls remaining for the current player. */
   count: number;
-  /** Which piece is currently being dragged. */
+  /** Which piece is currently being dragged (logical orientation). */
   held: Orientation | null;
   disabled?: boolean;
+  /**
+   * Render pieces swapped to match a 90°/270° board rotation. The drag value
+   * stays logical ('H' means game-H all the way to the server) — only the
+   * drawn shape and label follow what that wall looks like on the rotated
+   * board. Without this, the tray shows a screen-horizontal piece whose ghost
+   * and placed wall render screen-vertical, i.e. picking "horizontal" appears
+   * to produce a vertical wall.
+   */
+  swapVisuals?: boolean;
   onDragStart: (orientation: Orientation, pageX: number, pageY: number) => void;
   onDragMove: (pageX: number, pageY: number) => void;
   onDragEnd: (pageX: number, pageY: number) => void;
@@ -125,6 +134,7 @@ export const WallTray: React.FC<WallTrayProps> = ({
   count,
   held,
   disabled,
+  swapVisuals = false,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -145,11 +155,11 @@ export const WallTray: React.FC<WallTrayProps> = ({
           color={color}
           held={held === 'H'}
           disabled={inactive}
-          barW={36 * s}
-          barH={8 * s}
+          barW={(swapVisuals ? 8 : 36) * s}
+          barH={(swapVisuals ? 20 : 8) * s}
           touchW={slotW}
           touchH={slotH}
-          label="Horizontal"
+          label={swapVisuals ? 'Vertical' : 'Horizontal'}
           onDragStart={onDragStart}
           onDragMove={onDragMove}
           onDragEnd={onDragEnd}
@@ -167,11 +177,11 @@ export const WallTray: React.FC<WallTrayProps> = ({
           color={color}
           held={held === 'V'}
           disabled={inactive}
-          barW={8 * s}
-          barH={20 * s}
+          barW={(swapVisuals ? 36 : 8) * s}
+          barH={(swapVisuals ? 8 : 20) * s}
           touchW={slotW}
           touchH={slotH}
-          label="Vertical"
+          label={swapVisuals ? 'Horizontal' : 'Vertical'}
           onDragStart={onDragStart}
           onDragMove={onDragMove}
           onDragEnd={onDragEnd}

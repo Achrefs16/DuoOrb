@@ -52,12 +52,6 @@ const GAMEPLAY_ROWS: ToggleRow[] = [
     title: 'Wall pre-drops',
     desc: 'Chain several moves in a row and queue walls while you wait',
   },
-  {
-    key: 'autoFlip',
-    icon: 'rotate-cw',
-    title: 'Auto-flip board',
-    desc: 'Rotate for each side in local 1v1',
-  },
 ];
 
 const APPEARANCE_ROWS: ToggleRow[] = [

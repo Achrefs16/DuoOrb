@@ -515,7 +515,6 @@ export default function App() {
               sideChoice={gameConfig.sideChoice}
               wallsEach={gameConfig.wallsEach}
               incrementEnabled={settings.incrementEnabled}
-              autoFlip={settings.autoFlip}
               premoveEnabled={settings.premoveEnabled}
               extendedQueue={settings.extendedQueue}
               testThink={settings.testThink}
