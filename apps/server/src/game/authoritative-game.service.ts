@@ -929,22 +929,35 @@ export class AuthoritativeGameService {
 
     const totalPlayers = Object.keys(game.userPlayerIds).length;
     if (game.rematchOffers.size >= totalPlayers) {
-      // Both accepted! Swap player colors / orders for the rematch
-      const u1 = game.playerUserIds['p1'];
-      const u2 = game.playerUserIds['p2'];
+      // Every seat accepted. Rotate seat order by one so first-move advantage
+      // moves around the table. For 1v1 this is exactly the old p1/p2 swap;
+      // for 3-4P tables it is what keeps every player seated. The previous
+      // code hardcoded p1/p2 here, so players 3 and 4 were silently dropped
+      // from the rematch and their join was rejected as "not seated" — the
+      // "different account" dead-end on the client.
+      const seatIds = game.state.players.map((p) => p.id);
+      const rotatedIds = [...seatIds.slice(1), seatIds[0]];
+      const rotatedUsers = rotatedIds.map((playerId) => {
+        const userId = game.playerUserIds[playerId];
+        const seat = game.state.players.find((p) => p.id === playerId);
+        return {
+          userId,
+          // Carry the live name (including any mid-game rename), not a
+          // generated placeholder: the old code froze every rematch as
+          // "Player ab12" until a later re-sync happened to fix it.
+          displayName: seat?.displayName ?? `Player ${userId.slice(0, 4)}`,
+          rating: game.ratings[userId],
+        };
+      });
 
       const newGameId = `game-rematch-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      const swappedUsers = [
-        { userId: u2, displayName: `Player ${u2.slice(0, 4)}`, rating: game.ratings[u2] },
-        { userId: u1, displayName: `Player ${u1.slice(0, 4)}`, rating: game.ratings[u1] },
-      ];
 
       return {
         offered: true,
         newGameParams: {
           gameId: newGameId,
           mode: game.mode,
-          users: swappedUsers,
+          users: rotatedUsers,
           timeControlMinutes: game.timeControlMinutes,
           incrementSeconds: game.incrementSeconds,
           isRanked: game.isRanked,

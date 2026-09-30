@@ -1112,7 +1112,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
     if (result.offered) {
       if (result.newGameParams) {
-        // Both accepted! Create new game and notify players
+        // All seats accepted! Create new game and notify players
         const params = result.newGameParams;
         await this.gameService.createGame({
           ...params,
