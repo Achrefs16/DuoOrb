@@ -18,9 +18,12 @@ interface ChallengeToastProps {
   incoming: ChallengeDto | null;
   outgoing: OutgoingChallenge | null;
   notice: string | null;
+  /** Accepted challenge waiting on its first sync — accept already happened. */
+  joining: boolean;
   onAccept: () => void;
   onDecline: () => void;
   onCancelWaiting: () => void;
+  onCancelJoining: () => void;
 }
 
 function clockLabel(minutes: number, incrementSeconds: number): string {
@@ -31,14 +34,38 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
   incoming,
   outgoing,
   notice,
+  joining,
   onAccept,
   onDecline,
   onCancelWaiting,
+  onCancelJoining,
 }) => {
-  if (!incoming && !outgoing && !notice) return null;
+  if (!incoming && !outgoing && !notice && !joining) return null;
 
   return (
     <ToastOverlay top={64}>
+      {/* Joining an accepted challenge — the game screen is entered with the
+          board, so this spinner in place is the whole wait. No page. */}
+      {joining && (
+        <ToastAnimatedCard>
+          <ToastCard
+            radius={THEME.radius.toast}
+            padding={14}
+            borderColor={THEME.colors.surfacePrimaryTintBorderSoft}
+          >
+            <View style={styles.topRow}>
+              <ActivityIndicator size="small" color={THEME.colors.primary} />
+              <View style={styles.meta}>
+                <Text style={styles.title} numberOfLines={1}>
+                  Joining match…
+                </Text>
+                <Text style={styles.sub}>Getting the board ready</Text>
+              </View>
+              <ToastDecline label="Cancel" onPress={onCancelJoining} />
+            </View>
+          </ToastCard>
+        </ToastAnimatedCard>
+      )}
       {/* Incoming challenge — Accept starts the game, Decline stops it. */}
       {incoming && (
         <ToastAnimatedCard>
@@ -122,7 +149,7 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
       )}
 
       {/* Transient notice (declined / expired / offline). */}
-      {!incoming && !outgoing && notice && <ToastNotice message={notice} />}
+      {!incoming && !outgoing && !joining && notice && <ToastNotice message={notice} />}
     </ToastOverlay>
   );
 };

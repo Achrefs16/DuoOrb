@@ -6,6 +6,14 @@ import { getIdentity, useIdentity } from './auth';
 
 export interface UseOnlineGameOptions {
   gameId: string;
+  /**
+   * A sync snapshot captured by the pre-game join gate (matchmaking, lobby,
+   * challenge accept). Seeding from it means the board renders on the first
+   * frame instead of behind a connecting page; game:join is still emitted on
+   * mount to attach the room channel for live events. Null (rematch switch,
+   * reconnect) keeps whatever the hook already holds.
+   */
+  initialSync?: GameSyncDto | null;
   onGameEnded?: (result: GameEndedDto) => void;
   onError?: (error: GameError) => void;
 }
@@ -30,7 +38,7 @@ function sameAction(a: GameAction, b: GameAction): boolean {
   return true;
 }
 
-export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOptions) {
+export function useOnlineGame({ gameId, initialSync, onGameEnded, onError }: UseOnlineGameOptions) {
   /**
    * The canonical identity, subscribed. Reading it in a render body used to
    * freeze a snapshot: if the session changed after mount, every later seat
@@ -40,17 +48,49 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
    * `game:sync.you` below fixes the lookup itself.
    */
   const identity = useIdentity();
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [clocks, setClocks] = useState<Record<string, number>>({});
-  const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
-  const [myPlayerIndex, setMyPlayerIndex] = useState<number>(0);
+  const [gameState, setGameState] = useState<GameState | null>(() => initialSync?.state ?? null);
+  const [clocks, setClocks] = useState<Record<string, number>>(() => {
+    const seeded: Record<string, number> = {};
+    if (initialSync) {
+      for (const [pId, ms] of Object.entries(initialSync.clock.remainingMs)) {
+        seeded[pId] = Math.ceil(ms / 1000);
+      }
+    }
+    return seeded;
+  });
+  const [myPlayerId, setMyPlayerId] = useState<string | null>(() => {
+    if (!initialSync) return null;
+    if (initialSync.you) return initialSync.you;
+    const liveUserId = getIdentity()?.userId;
+    for (const [pId, uId] of Object.entries(initialSync.playerUserIds ?? {})) {
+      if (liveUserId && uId === liveUserId) return pId;
+    }
+    return null;
+  });
+  const [myPlayerIndex, setMyPlayerIndex] = useState<number>(() => {
+    if (!initialSync) return 0;
+    const seat =
+      initialSync.you ??
+      (() => {
+        const liveUserId = getIdentity()?.userId;
+        for (const [pId, uId] of Object.entries(initialSync.playerUserIds ?? {})) {
+          if (liveUserId && uId === liveUserId) return pId;
+        }
+        return null;
+      })();
+    if (!seat) return 0;
+    const idx = initialSync.state.players.findIndex((p) => p.id === seat);
+    return idx >= 0 ? idx : 0;
+  });
   /**
    * Seat id ('p1', 'p2', ...) -> userId, straight from the server. A
    * PlayerState only carries a displayName, so this is the ONE mapping that
    * turns a board seat into a real account: without it the opponent's name on
    * the match board and in the result modal cannot reach their profile.
    */
-  const [playerUserIds, setPlayerUserIds] = useState<Record<string, string>>({});
+  const [playerUserIds, setPlayerUserIds] = useState<Record<string, string>>(
+    () => initialSync?.playerUserIds ?? {}
+  );
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('connecting');
   const [opponentGrace, setOpponentGrace] = useState<{ userId: string; seconds: number } | null>(null);
   const [rematchOffered, setRematchOffered] = useState<boolean>(false);
@@ -58,7 +98,10 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
   const [rematchGameId, setRematchGameId] = useState<string | null>(null);
   const rematchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [gameEndedResult, setGameEndedResult] = useState<GameEndedDto | null>(null);
-  const [isSyncing, setIsSyncing] = useState<boolean>(true);
+  // Seeded by the join gate: the first sync already happened pre-navigation,
+  // so there is nothing to wait for. The mount join below still runs to
+  // attach the room channel for live events.
+  const [isSyncing, setIsSyncing] = useState<boolean>(() => !initialSync);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [lastFinished, setLastFinished] = useState<{ gameId: string; playerId: string; userId: string; place: number } | null>(null);
@@ -78,7 +121,28 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
   // Deadline anchor for the DISPLAY ticker: server ms remaining + the
   // local timestamp we received it at. The ticker below only derives
   // from this — the server deadline stays the single source of truth.
+  // Seeded after mount (not in the initializer — the render must stay pure).
+  // Until it lands, the display ticker simply doesn't advance; the seeded
+  // second-clocks above are already correct, and the mount join's live sync
+  // replaces all of this within milliseconds anyway.
   const clockAnchorRef = useRef<{ remainingMs: Record<string, number>; at: number } | null>(null);
+  useEffect(() => {
+    if (initialSync && !clockAnchorRef.current) {
+      clockAnchorRef.current = {
+        remainingMs: { ...initialSync.clock.remainingMs },
+        at: Date.now(),
+      };
+    }
+    // Runs once per mount: the seed belongs to the mounted game.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  /**
+   * Latest authoritative clock map, for handoff snapshots. The display
+   * `clocks` state holds derived seconds; gates need the raw ms deadlines.
+   */
+  const getSyncClockMs = useCallback((): Record<string, number> => {
+    return { ...(clockAnchorRef.current?.remainingMs ?? {}) };
+  }, []);
   const everConnectedRef = useRef(false);
   const gameStateRef = useRef<GameState | null>(null);
   gameStateRef.current = gameState;
@@ -175,6 +239,26 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
       everConnectedRef.current = true;
     }
   }, [connStatus, joinGame]);
+
+  /**
+   * Switching games without remounting (rematch): the subscription effect
+   * rejoins on the new gameId and the previous board stays visible as the
+   * waiting visual — but terminal states from the old game must not leak
+   * across. An old joinError would otherwise pin an error banner over a game
+   * that hasn't even been joined yet.
+   */
+  const prevGameIdRef = useRef(gameId);
+  useEffect(() => {
+    if (prevGameIdRef.current === gameId) return;
+    prevGameIdRef.current = gameId;
+    joinAttemptsRef.current = 0;
+    setJoinError(null);
+    setGameEndedResult(null);
+    setRematchOffered(false);
+    setRematchGameId(null);
+    setOpponentGrace(null);
+    setLastFinished(null);
+  }, [gameId]);
 
   useEffect(() => {
     const socket = socketManager.getSocket();
@@ -452,5 +536,6 @@ export function useOnlineGame({ gameId, onGameEnded, onError }: UseOnlineGameOpt
     resign,
     offerRematch,
     resync: joinGame,
+    getSyncClockMs,
   };
 }

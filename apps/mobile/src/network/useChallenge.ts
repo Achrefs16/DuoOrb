@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { GameMode } from '@duoorb/game-core';
-import { ChallengeDto } from '@duoorb/protocol';
+import { ChallengeDto, GameSyncDto } from '@duoorb/protocol';
 import { TimeControl } from '../timeControls';
 import { socketManager } from './socket';
 import { playNotifySound } from '../audio/sounds';
@@ -11,7 +11,12 @@ export interface OutgoingChallenge {
 }
 
 interface UseChallengeOptions {
-  onGameStart: (gameId: string, mode: GameMode, clock: TimeControl) => void;
+  onGameStart: (
+    gameId: string,
+    mode: GameMode,
+    clock: TimeControl,
+    initialSync?: GameSyncDto | null
+  ) => void;
 }
 
 function clockFromParts(minutes: number, incrementSeconds: number): TimeControl {
@@ -28,6 +33,16 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
   const [incoming, setIncoming] = useState<ChallengeDto | null>(null);
   const [outgoing, setOutgoing] = useState<OutgoingChallenge | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * Accepted challenge waiting on its first sync. The game screen is entered
+   * only after the join gate confirms it — accepting must never drop the
+   * player onto a connecting page. Null when not joining.
+   */
+  const [joining, setJoining] = useState<{
+    gameId: string;
+    mode: GameMode;
+    clock: TimeControl;
+  } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Stable ref: resubscribing listeners on every parent render would
   // clear the notice dismiss-timer and stick every toast forever.
@@ -102,7 +117,13 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
     }) => {
       setIncoming(null);
       setOutgoing(null);
-      onGameStartRef.current(p.gameId, p.mode, clockFromParts(p.timeControlMinutes, p.incrementSeconds));
+      // Hold the handoff until the join gate (rendered by App) confirms the
+      // sync with a snapshot. The toast shows a joining state meanwhile.
+      setJoining({
+        gameId: p.gameId,
+        mode: p.mode,
+        clock: clockFromParts(p.timeControlMinutes, p.incrementSeconds),
+      });
     };
     const onDeclined = (p: { challengeId: string }) => {
       setOutgoing((prev) => {
@@ -155,5 +176,34 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
     };
   }, [flashNotice]);
 
-  return { incoming, outgoing, notice, sendChallenge, respond, cancelWaiting };
+  /**
+   * The gate confirmed the join: hand off with the board snapshot. Clears
+   * the joining state first so the toast is gone before navigation lands.
+   */
+  const confirmJoining = useCallback(
+    (sync: GameSyncDto) => {
+      setJoining((prev) => {
+        if (prev) onGameStartRef.current(prev.gameId, prev.mode, prev.clock, sync);
+        return null;
+      });
+    },
+    []
+  );
+
+  /**
+   * Abandons a joining challenge (gate failure or user cancel). The gate's
+   * unmount releases any seat it holds; the toast falls back to a notice so
+   * the player knows the match didn't happen.
+   */
+  const cancelJoining = useCallback(
+    (message?: string) => {
+      setJoining((prev) => {
+        if (prev && message) flashNotice(message);
+        return null;
+      });
+    },
+    [flashNotice]
+  );
+
+  return { incoming, outgoing, notice, joining, sendChallenge, respond, cancelWaiting, confirmJoining, cancelJoining };
 }

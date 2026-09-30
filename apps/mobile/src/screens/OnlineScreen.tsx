@@ -22,50 +22,12 @@ import { RoomDto } from '@duoorb/protocol';
 import { MatchType, modeLabel, resolveMode } from '../matchModes';
 import { useMatchmaking } from '../network/useMatchmaking';
 import type { MatchedOpponent } from '../network/useMatchmaking';
-import { useOnlineGame } from '../network/useOnlineGame';
+import type { GameSyncDto } from '@duoorb/protocol';
+import { OnlineJoinGate } from '../components/OnlineJoinGate';
 import { useRooms } from '../network/useRooms';
 import { api } from '../network/apiClient';
 import { useIdentity } from '../network/auth';
 import { nameInitial, resolveName } from '../displayName';
-
-/**
- * Headless join: runs the normal game channel (join + sync) without any UI
- * so the finding screen only hands off once the match is actually joined.
- * After the sync lands, the opponent card stays up briefly, then the game
- * starts directly — no blank connecting page in between.
- */
-const MatchJoinGate: React.FC<{ gameId: string; onSynced: () => void }> = ({
-  gameId,
-  onSynced,
-}) => {
-  const online = useOnlineGame({ gameId });
-  const firedRef = useRef(false);
-  const onSyncedRef = useRef(onSynced);
-  useEffect(() => {
-    onSyncedRef.current = onSynced;
-  });
-  useEffect(() => {
-    if (firedRef.current) return undefined;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    if (online.gameState) {
-      firedRef.current = true;
-      timer = setTimeout(() => onSyncedRef.current(), 1400);
-    } else {
-      // Sync safety net: if the join never lands, still enter after a
-      // while — GameScreen's own join + skeleton take over from there.
-      timer = setTimeout(() => {
-        if (!firedRef.current) {
-          firedRef.current = true;
-          onSyncedRef.current();
-        }
-      }, 10000);
-    }
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [online.gameState, gameId]);
-  return null;
-};
 
 export type OnlineMode = 'quick' | 'rooms';
 
@@ -121,7 +83,12 @@ interface OnlineScreenProps {
     mode: GameMode,
     clock: TimeControl,
     source?: 'quick' | 'custom' | 'room',
-    room?: RoomDto | null
+    room?: RoomDto | null,
+    /**
+     * First sync snapshot from the join gate, when the entry was gated.
+     * Lets the game screen render the board on its first frame.
+     */
+    initialSync?: GameSyncDto | null
   ) => void;
 }
 
@@ -182,12 +149,36 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
   const lastRoomRef = useRef<RoomDto | null>(null);
 
+  /**
+   * Room game waiting on its first sync. Declared before the callbacks that
+   * set it — hooks below must never reach above their own declarations.
+   * While set, the lobby Start button reads Starting and the gate below
+   * joins in the background — the game screen is entered with the board,
+   * never with a spinner.
+   */
+  const [pendingRoomGame, setPendingRoomGame] = useState<{ gameId: string } | null>(null);
+
   const handleGameStarted = useCallback(
     (_roomId: string, gameId: string) => {
-      onStartOnlineGame(gameId, roomType, clock, 'room', lastRoomRef.current);
+      // Don't navigate yet: the lobby holds with a Starting state while the
+      // join gate below confirms the sync, then hands off with the board.
+      setPendingRoomGame({ gameId });
     },
-    [onStartOnlineGame, roomType, clock]
+    []
   );
+
+  const startPendingRoomGame = useCallback((sync: GameSyncDto) => {
+    if (!pendingRoomGame) return;
+    onStartOnlineGame(
+      pendingRoomGame.gameId,
+      roomType,
+      clock,
+      'room',
+      lastRoomRef.current,
+      sync
+    );
+    setPendingRoomGame(null);
+  }, [pendingRoomGame, onStartOnlineGame, roomType, clock]);
 
   const {
     state: mmState,
@@ -296,16 +287,27 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
   // Starts a found match: same snapshot logic as onMatched (entry props
   // were consumed on search start, so matchConfig may hold lobby defaults).
-  const startFoundGame = useCallback(() => {
+  // The sync arrives from the join gate — the game was already joined there,
+  // so this hands off instantly with the board in hand. No delays.
+  const startFoundGame = useCallback((sync: GameSyncDto) => {
     if (!foundGame) return;
     const spec = searchSpec;
     onStartOnlineGame(
       foundGame.gameId,
       spec?.mode ?? matchConfig.mode,
       spec?.clock ?? matchConfig.clock,
-      spec ? (spec.custom ? 'custom' : 'quick') : autoMatch ? 'custom' : 'quick'
+      spec ? (spec.custom ? 'custom' : 'quick') : autoMatch ? 'custom' : 'quick',
+      null,
+      sync
     );
   }, [foundGame, searchSpec, matchConfig.mode, matchConfig.clock, autoMatch, onStartOnlineGame]);
+
+  // The gate rejected the join definitively (unseated, expired, gone game).
+  // Drop back to the finding state with a retry — never enter a dead game.
+  const failFoundGame = useCallback(() => {
+    setFoundGame(null);
+    cancelMatch();
+  }, [cancelMatch]);
 
   useEffect(() => {
     return () => {
@@ -597,11 +599,28 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           <View style={styles.radarActionRow}>
             {foundGame ? (
               <>
-                <MatchJoinGate gameId={foundGame.gameId} onSynced={startFoundGame} />
+                <OnlineJoinGate
+                  gameId={foundGame.gameId}
+                  onSynced={startFoundGame}
+                  onFailed={failFoundGame}
+                />
                 <View style={styles.startingRow}>
                   <ActivityIndicator size="small" color={THEME.colors.primary} />
                   <Text style={styles.startingText}>Starting match…</Text>
                 </View>
+                {/* No timed net here by design — but never trap the player:
+                    cancel drops the gate (releasing the seat) and re-arms. */}
+                <TouchableOpacity
+                  style={styles.cancelSearchBtn}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    setFoundGame(null);
+                    cancelMatch();
+                  }}
+                >
+                  <Feather name="x" size={16} color={THEME.colors.onSurface} />
+                  <Text style={styles.cancelSearchText}>Cancel</Text>
+                </TouchableOpacity>
               </>
             ) : isSearching ? (
               <TouchableOpacity
@@ -828,7 +847,34 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             </View>
 
             {/* Lobby action */}
-            {isHost ? (
+            {pendingRoomGame ? (
+              <>
+                <OnlineJoinGate
+                  gameId={pendingRoomGame.gameId}
+                  onSynced={startPendingRoomGame}
+                  onFailed={() => setPendingRoomGame(null)}
+                />
+                <View style={[styles.lobbyCta, styles.btnDisabled]}>
+                  <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
+                  <Text style={styles.lobbyCtaText}>Starting…</Text>
+                </View>
+                {/* Same no-trap rule as the quick view: backing out releases
+                    both the lobby seat (leaveRoom) and the match seat (the
+                    gate's unmount). */}
+                <TouchableOpacity
+                  style={styles.lobbyCloseBtn}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setPendingRoomGame(null);
+                    void leaveRoom();
+                  }}
+                  accessibilityLabel="Cancel start"
+                >
+                  <Feather name="x" size={15} color={THEME.colors.textSecondary} />
+                  <Text style={styles.lobbyCloseText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            ) : isHost ? (
               <>
                 <TouchableOpacity
                   style={[styles.lobbyCta, (!canStart || roomLoading) && styles.btnDisabled]}

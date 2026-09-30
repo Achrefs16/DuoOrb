@@ -3,7 +3,7 @@ import { AppState, BackHandler, StatusBar, StyleSheet, Text, TouchableOpacity, V
 import { NavigationBar } from 'expo-navigation-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AIDifficulty, GameMode, GameState, RecordedAction } from '@duoorb/game-core';
-import { RoomDto } from '@duoorb/protocol';
+import { GameSyncDto, RoomDto } from '@duoorb/protocol';
 import { GameReviewScreen } from './src/screens/GameReviewScreen';
 import { GameScreen } from './src/screens/GameScreen';
 import { MatchSetupScreen } from './src/screens/MatchSetupScreen';
@@ -20,9 +20,11 @@ import { PlayerProfileScreen } from './src/screens/PlayerProfileScreen';
 import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
 import { BottomNav, MainTab } from './src/components/BottomNav';
 import { ChallengeToast } from './src/components/ChallengeToast';
+import { OnlineJoinGate } from './src/components/OnlineJoinGate';
 import { RoomInviteToast } from './src/components/RoomInviteToast';
 import { useRoomInvites } from './src/network/useRoomInvites';
 import { useChallenge } from './src/network/useChallenge';
+import { socketManager } from './src/network/socket';
 import { SavedGameRecord } from './src/storage/gameStorage';
 import {
   DEFAULT_SETTINGS,
@@ -72,6 +74,11 @@ interface ActiveGameConfig {
   timeControl?: TimeControl;
   sideChoice?: SideChoice;
   wallsEach?: number;
+  /**
+   * First sync snapshot from the pre-game join gate, when the entry was
+   * gated. Lets the game screen render the board on its first frame.
+   */
+  initialSync?: GameSyncDto | null;
 }
 
 interface ReplayData {
@@ -212,15 +219,47 @@ export default function App() {
   };
 
   const handleStartGame = (config: ActiveGameConfig) => {
+    // Abandoned gate game: if two join gates race (e.g. a challenge accepted
+    // mid-matchmaking), the loser's game screen never mounts, so its unmount
+    // seat-release never runs. Free it here. Landing on a screen for the
+    // previous game first (normal flow) already released it on unmount, and
+    // a leave for a game we're not seated in is a server-side no-op.
+    const prevOnlineId = gameConfig.type === 'online' ? gameConfig.onlineGameId : undefined;
+    if (
+      config.type === 'online' &&
+      config.onlineGameId &&
+      prevOnlineId &&
+      prevOnlineId !== config.onlineGameId
+    ) {
+      try {
+        socketManager.getSocket().emit('game:leave', { gameId: prevOnlineId });
+      } catch {
+        // offline — server grace path covers it
+      }
+    }
     setGameConfig(config);
+    // A fresh entry mounts a fresh game screen. Rematches (via
+    // handleFreshOnlineGame below) deliberately skip this: the finished board
+    // stays mounted as the waiting visual while the new game syncs.
+    setMatchSession((n) => n + 1);
     navigate(currentTab, 'GAME');
   };
+  // Counts fresh game mounts. Rematches reuse the mounted screen, so only
+  // fresh entries bump this — it is what keeps the rematch from remounting.
+  const [matchSession, setMatchSession] = useState(0);
 
-  // Global friend-challenge line: toast overlay works from any tab, and
-  // accepting drops both players straight into the game.
+  // Global friend-challenge line: the toast holds a joining state while the
+  // gate below confirms the sync, and both players enter with the board —
+  // accepting never drops anyone onto a connecting page.
   const challenge = useChallenge({
-    onGameStart: (gameId, mode, clock) => {
-      handleStartGame({ mode, type: 'online', onlineGameId: gameId, timeControl: clock });
+    onGameStart: (gameId, mode, clock, initialSync) => {
+      handleStartGame({
+        mode,
+        type: 'online',
+        onlineGameId: gameId,
+        timeControl: clock,
+        initialSync: initialSync ?? null,
+      });
     },
   });
 
@@ -317,7 +356,9 @@ export default function App() {
   };
 
   // Rematch accepted (online): the finished game is REPLACED by the new
-  // one — stacking it would send Back into the dead match.
+  // one — stacking it would send Back into the dead match. Same mounted
+  // screen (no session bump): the finished board stays visible until the new
+  // sync lands. No snapshot here — the hook rejoins and the banner covers it.
   const handleFreshOnlineGame = (newGameId: string) => {
     const clock = gameConfig.timeControl ?? DEFAULT_TIME_CONTROL;
     setGameConfig({
@@ -327,6 +368,7 @@ export default function App() {
       onlineSource: gameConfig.onlineSource,
       wallsEach: gameConfig.wallsEach,
       timeControl: clock,
+      initialSync: null,
     });
     setOnlineEntry({
       clock,
@@ -460,13 +502,14 @@ export default function App() {
             <GameScreen
               key={
                 gameConfig.type === 'online'
-                  ? `online-${gameConfig.onlineGameId ?? 'lobby'}`
+                  ? `online-session-${matchSession}`
                   : `local-${gameConfig.mode}-${gameConfig.type}-${gameConfig.aiDifficulty ?? 'none'}-${gameConfig.sideChoice ?? 'blue'}`
               }
               mode={gameConfig.mode}
               type={gameConfig.type}
               onlineGameId={gameConfig.onlineGameId}
               onlineSource={gameConfig.onlineSource}
+              initialOnlineSnapshot={gameConfig.initialSync ?? null}
               aiDifficulty={gameConfig.aiDifficulty}
               timeControl={gameConfig.timeControl}
               sideChoice={gameConfig.sideChoice}
@@ -567,7 +610,7 @@ export default function App() {
               initialRoom={onlineEntry.initialRoom}
               onBack={goBack}
               onConsumeAutoEntry={consumeOnlineEntryTransients}
-              onStartOnlineGame={(gameId, mode, clock, source, room) => {
+              onStartOnlineGame={(gameId, mode, clock, source, room, initialSync) => {
                 handleStartGame({
                   mode,
                   type: 'online',
@@ -576,6 +619,7 @@ export default function App() {
                   room,
                   wallsEach: room?.wallsEach,
                   timeControl: clock,
+                  initialSync: initialSync ?? null,
                 });
               }}
             />
@@ -614,10 +658,24 @@ export default function App() {
               incoming={challenge.incoming}
               outgoing={challenge.outgoing}
               notice={challenge.notice}
+              joining={!!challenge.joining}
               onAccept={() => challenge.respond(true)}
               onDecline={() => challenge.respond(false)}
               onCancelWaiting={challenge.cancelWaiting}
+              onCancelJoining={() => challenge.cancelJoining()}
             />
+            {/* Accepted-challenge join gate: holds navigation until the first
+                sync lands with the board snapshot. Cancelling releases the
+                seat via the gate's unmount. */}
+            {challenge.joining && (
+              <OnlineJoinGate
+                gameId={challenge.joining.gameId}
+                onSynced={(sync) => challenge.confirmJoining(sync)}
+                onFailed={() =>
+                  challenge.cancelJoining('Could not join that match. Go back and try again.')
+                }
+              />
+            )}
             <RoomInviteToast
               invite={roomInvites.incoming}
               notice={roomInvites.notice}

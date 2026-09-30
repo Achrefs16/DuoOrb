@@ -21,6 +21,7 @@ import {
   rebuildStateAtStep,
 } from '@duoorb/game-core';
 import { Feather } from '@expo/vector-icons';
+import type { GameSyncDto } from '@duoorb/protocol';
 import { GameBoard, isInsideBoard, nearestWallSlot } from '../components/GameBoard';
 import { PlayerStrip } from '../components/GameHud';
 import { GameOverModal } from '../components/GameOverModal';
@@ -41,6 +42,12 @@ interface GameScreenProps {
   type: 'local' | 'ai' | 'online';
   onlineGameId?: string;
   onlineSource?: 'quick' | 'custom' | 'room';
+  /**
+   * First sync snapshot from the pre-game join gate, when the entry was
+   * gated. The board renders from it on the first frame — this screen never
+   * shows a connecting state.
+   */
+  initialOnlineSnapshot?: GameSyncDto | null;
   aiDifficulty?: AIDifficulty;
   timeControl?: TimeControl;
   incrementEnabled?: boolean;
@@ -133,6 +140,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   type,
   onlineGameId,
   onlineSource = 'quick',
+  initialOnlineSnapshot = null,
   aiDifficulty = 'normal',
   timeControl = DEFAULT_TIME_CONTROL,
   incrementEnabled = true,
@@ -155,6 +163,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const online = useOnlineGame({
     gameId: onlineGameId || '',
+    // Online only: a stale snapshot from a previous match must never seed a
+    // local/AI board (or a rematch-less remount) with a foreign seat.
+    initialSync: type === 'online' ? initialOnlineSnapshot ?? null : null,
   });
   // Stable pieces of the (fresh-every-render) online hook object, so
   // memoized callbacks below don't churn with every parent render.
@@ -217,8 +228,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [type, onlineGameId, online.gameState]);
 
   // Persist the minimum useful recovery data whenever live truth arrives.
+  // Guarded to the matching game: during a rematch switch the hook still
+  // holds the previous board, which must never be saved under the new id.
   useEffect(() => {
-    if (type === 'online' && onlineGameId && online.gameState) {
+    if (type === 'online' && onlineGameId && online.gameState && online.gameState.gameId === onlineGameId) {
       void saveOnlineGameSnapshot({
         gameId: onlineGameId,
         state: online.gameState,
@@ -274,6 +287,30 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [premoveQueue, setPremoveQueue] = useState<QueuedStep[]>([]);
   const [premoveSel, setPremoveSel] = useState<string | null>(null);
   const executedPremoveRef = useRef('');
+
+  /**
+   * New game on the same mounted screen (rematch switch, no remount). The
+   * finished board underneath stays visible as the waiting visual, but every
+   * finished-state flag from the old game must go: a lingering game-over
+   * modal would cover the new match's first seconds, and a stale offline
+   * snapshot would resolve seats for the wrong game. Placed after every
+   * setter it touches — hooks below must never reach above their own
+   * declarations.
+   */
+  const prevOnlineGameIdRef = useRef(onlineGameId);
+  useEffect(() => {
+    if (type !== 'online' || prevOnlineGameIdRef.current === onlineGameId) return;
+    prevOnlineGameIdRef.current = onlineGameId;
+    setShowGameOver(false);
+    setFinishModal(null);
+    setOfflineSnapshot(null);
+    setRematchSent(false);
+    setRematchIncomingDismissed(true);
+    setViewingStep(null);
+    setReplaying(false);
+    setPremoveQueue([]);
+    setPremoveSel(null);
+  }, [type, onlineGameId]);
 
   const [timers, setTimers] = useState<Record<string, number>>(() => {
     const defaultSec = timeControl.minutes * 60;
@@ -1138,10 +1175,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       }
       if (
         type === 'online' &&
-        (!onlinePlayerId || (!online.gameState && !offlineSnapshot?.myPlayerId))
+        !online.gameState &&
+        !offlineSnapshot
       ) {
-        // Still connecting: cancel the join, like the skeleton's Cancel.
-        onHome();
+        // No board at all yet (join still in flight): back releases the seat
+        // and goes home, same as the old Cancel did.
+        leaveFinishedAndHome();
         return true;
       }
       handleBackPress();
@@ -1162,6 +1201,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     online.gameState,
     offlineSnapshot,
     onHome,
+    leaveFinishedAndHome,
     handleBackPress,
     exitReplay,
   ]);
@@ -1312,62 +1352,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     };
   }
 
-  if (
-    type === 'online' &&
-    (!onlinePlayerId || (!online.gameState && !offlineSnapshot?.myPlayerId))
-  ) {
-    // Once the join has definitively failed there is nothing to connect to, so
-    // render a plain message instead of a spinner that can never resolve.
-    if (online.joinError) {
-      return (
-        <View style={styles.container}>
-          <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.backgroundCard} />
-          <View style={styles.skeletonTop}>
-            <Text style={styles.syncingText}>{online.joinError}</Text>
-            <TouchableOpacity
-              style={styles.syncingBack}
-              onPress={leaveFinishedAndHome}
-              accessibilityRole="button"
-            >
-              <Text style={styles.syncingBackText}>Back to menu</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      );
-    }
-    return (
-      <View style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.backgroundCard} />
-        <View style={styles.header}>
-          <View style={styles.headerInner}>
-            <Feather name="chevron-left" size={24} color={THEME.colors.slate[700]} />
-          </View>
-        </View>
-        <View style={styles.skeletonTop}>
-          <View style={styles.skeletonHud} />
-          <View style={styles.skeletonBoard} />
-          <View style={styles.skeletonBottom}>
-            <View style={styles.skeletonTray} />
-            <View style={styles.skeletonButton} />
-          </View>
-        </View>
-        <View style={styles.syncingOverlay}>
-          <ActivityIndicator size="large" color={THEME.colors.textPrimary} />
-          <Text style={styles.syncingText}>Connecting to match…</Text>
-          {/* Must release the seat, not just navigate. Plain onHome left the
-              player seated in a live game, so their clock kept running and
-              the game was forfeited in their name. */}
-          <TouchableOpacity
-            style={styles.syncingBack}
-            onPress={leaveFinishedAndHome}
-            accessibilityRole="button"
-          >
-            <Text style={styles.syncingBackText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
+  // No connecting page exists on this screen anymore: every entry is gated
+  // pre-navigation and arrives with the board (or, for a rematch switch,
+  // keeps the finished board visible). The banners below cover the only two
+  // degraded states — a definitively rejected join, and a new game whose
+  // first sync has not landed yet.
 
   return (
     <View
@@ -1387,6 +1376,28 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           </Text>
         </View>
       )}
+
+      {/* Definitively rejected join (unseated, expired, gone game). A banner,
+          not a page: the board underneath is the last known truth, and Back
+          releases the seat instead of just navigating away. */}
+      {type === 'online' && !!online.joinError && (
+        <TouchableOpacity style={styles.bannerDanger} onPress={leaveFinishedAndHome}>
+          <Text style={styles.bannerText}>{online.joinError} — tap to leave.</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* New game syncing over a finished board (rematch switch). The old
+          board stays visible; this banner is the whole wait. */}
+      {type === 'online' &&
+        !online.joinError &&
+        !!onlineGameId &&
+        !!online.gameState &&
+        online.gameState.gameId !== onlineGameId && (
+          <View style={styles.bannerWarning}>
+            <ActivityIndicator size="small" color={THEME.colors.onPrimary} style={{ marginRight: 8 }} />
+            <Text style={styles.bannerText}>Starting match…</Text>
+          </View>
+        )}
 
       {/* Seat miss: sync arrived but neither your id nor name matches a
           seat (changed identity mid-flow). Never silently play as P1 —
@@ -1839,57 +1850,6 @@ const styles = StyleSheet.create({
     // No text selection anywhere while dragging walls around the board.
     userSelect: 'none',
   },
-  skeletonTop: {
-    flex: 1,
-    paddingTop: 8,
-    gap: 8,
-  },
-  skeletonHud: {
-    height: 48,
-    borderRadius: 8,
-    backgroundColor: THEME.colors.backgroundCard,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
-  },
-  skeletonBoard: {
-    flex: 1,
-    alignSelf: 'center',
-    aspectRatio: 1,
-    width: '100%',
-    maxWidth: 420,
-    borderRadius: 8,
-    backgroundColor: THEME.colors.backgroundCard,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
-  },
-  skeletonBottom: {
-    gap: 8,
-  },
-  skeletonTray: {
-    height: 78,
-    borderRadius: 8,
-    backgroundColor: THEME.colors.backgroundCard,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
-  },
-  skeletonButton: {
-    height: 42,
-    borderRadius: 8,
-    backgroundColor: THEME.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
-  },
-  syncingOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(248,250,252,0.72)',
-  },
   header: {
     backgroundColor: THEME.colors.backgroundCard,
     borderBottomWidth: 1,
@@ -2156,27 +2116,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
-  },
-  syncingText: {
-    fontFamily: THEME.fonts.bold,
-    color: THEME.colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  syncingBack: {
-    marginTop: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: THEME.radius.sm,
-    backgroundColor: THEME.colors.backgroundCard,
-    borderWidth: 1,
-    borderColor: THEME.colors.boardBorder,
-  },
-  syncingBackText: {
-    fontFamily: THEME.fonts.semiBold,
-    color: THEME.colors.danger,
-    fontSize: 13,
-    fontWeight: '600',
   },
   bannerWarning: {
     flexDirection: 'row',
