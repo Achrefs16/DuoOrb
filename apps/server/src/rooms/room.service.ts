@@ -1,6 +1,20 @@
 import { GameMode, playerCountForMode } from '@duoorb/game-core';
 import { RoomDto, RoomInviteDto, RoomSlot } from '@duoorb/protocol';
 
+/**
+ * Fisher-Yates shuffle returning a new array. Used when a room starts so
+ * seat order (colors + first move) is random every match instead of
+ * slot order, where the host would always be blue and always start first.
+ */
+export function shuffleSeats<T>(seats: T[]): T[] {
+  const out = [...seats];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 export class RoomService {
   private rooms = new Map<string, RoomDto>();
   private codeToId = new Map<string, string>();
@@ -201,6 +215,96 @@ export class RoomService {
       slot.isReady = isReady;
     }
     return room;
+  }
+
+  /**
+   * Host-only setup edit from the lobby (mode, clock, walls) so a table can
+   * switch from Center Rush to Race without disbanding and re-inviting.
+   * WAITING rooms only; a running game keeps the config it started with.
+   *
+   * Changing the player count resizes the seats: occupants keep their order
+   * with the host pinned to slot 0, empties pad the rest. Shrinking below the
+   * seated headcount fails instead of evicting anyone silently. Any change
+   * disarms non-host readiness — a ready flag given for 2P Classic is not
+   * consent for 4P Race.
+   */
+  public configureRoom(
+    roomId: string,
+    hostUserId: string,
+    patch: { mode?: GameMode; timeControlMinutes?: number; incrementSeconds?: number; wallsEach?: number }
+  ): { success: true; room: RoomDto } | { success: false; error: string } {
+    const room = this.rooms.get(roomId);
+    if (!room) return { success: false, error: 'Room not found.' };
+    if (room.hostId !== hostUserId) return { success: false, error: 'Only the host can change the setup.' };
+    if (room.status !== 'WAITING') return { success: false, error: 'This room already started a game.' };
+
+    const VALID_MODES: GameMode[] = ['2p', '4p', 'race2', 'race3', 'race4', 'center2', 'center3'];
+    if (patch.mode !== undefined) {
+      if (!VALID_MODES.includes(patch.mode)) return { success: false, error: 'Unknown game mode.' };
+    }
+    if (patch.timeControlMinutes !== undefined) {
+      if (!Number.isInteger(patch.timeControlMinutes) || patch.timeControlMinutes < 0 || patch.timeControlMinutes > 30) {
+        return { success: false, error: 'Clock must be 0–30 minutes.' };
+      }
+    }
+    if (patch.incrementSeconds !== undefined) {
+      if (!Number.isInteger(patch.incrementSeconds) || patch.incrementSeconds < 0 || patch.incrementSeconds > 60) {
+        return { success: false, error: 'Increment must be 0–60 seconds.' };
+      }
+    }
+    if (patch.wallsEach !== undefined) {
+      if (!Number.isInteger(patch.wallsEach) || patch.wallsEach < 0 || patch.wallsEach > 99) {
+        return { success: false, error: 'Walls must be 0–99.' };
+      }
+    }
+
+    let disarmed = false;
+    if (patch.mode !== undefined && patch.mode !== room.mode) {
+      const newCount = playerCountForMode(patch.mode);
+      const occupants = room.slots.filter((s) => s.userId !== null);
+      if (occupants.length > newCount) {
+        return {
+          success: false,
+          error: `${occupants.length} players are seated — that mode only fits ${newCount}.`,
+        };
+      }
+      const host = occupants.find((s) => s.userId === room.hostId) ?? occupants[0];
+      const rest = occupants.filter((s) => s !== host);
+      room.slots = Array.from({ length: newCount }).map((_, idx) => {
+        if (idx === 0 && host) {
+          return { index: 0, userId: host.userId, displayName: host.displayName, isReady: true, isHost: true };
+        }
+        const next = rest[idx - 1];
+        return {
+          index: idx,
+          userId: next?.userId ?? null,
+          displayName: next?.displayName ?? null,
+          isReady: false,
+          isHost: false,
+        };
+      });
+      room.mode = patch.mode;
+      disarmed = true;
+    }
+    if (patch.timeControlMinutes !== undefined && patch.timeControlMinutes !== room.timeControlMinutes) {
+      room.timeControlMinutes = patch.timeControlMinutes;
+      disarmed = true;
+    }
+    if (patch.incrementSeconds !== undefined && patch.incrementSeconds !== room.incrementSeconds) {
+      room.incrementSeconds = patch.incrementSeconds;
+      disarmed = true;
+    }
+    if (patch.wallsEach !== undefined && patch.wallsEach !== room.wallsEach) {
+      room.wallsEach = Math.max(0, Math.min(99, Math.floor(patch.wallsEach)));
+      disarmed = true;
+    }
+
+    if (disarmed) {
+      for (const slot of room.slots) {
+        if (slot.userId !== null) slot.isReady = slot.isHost;
+      }
+    }
+    return { success: true, room };
   }
 
   /**

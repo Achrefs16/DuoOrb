@@ -14,7 +14,7 @@ import { AuthoritativeGameService } from '../game/authoritative-game.service.js'
 import { MatchmakingService } from '../matchmaking/matchmaking.service.js';
 import { GuestService } from '../guest/guest.service.js';
 import { resolveCorsOrigins } from '../config/cors.js';
-import { RoomService } from '../rooms/room.service.js';
+import { RoomService, shuffleSeats } from '../rooms/room.service.js';
 import { ChallengeService } from '../challenge/challenge.service.js';
 import { AuthService } from '../auth/auth.service.js';
 import { PrismaService } from '../database/prisma.service.js';
@@ -450,6 +450,34 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     }
   }
 
+  @SubscribeMessage('room:configure')
+  handleRoomConfigure(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    payload: {
+      roomId: string;
+      mode?: GameMode;
+      timeControlMinutes?: number;
+      incrementSeconds?: number;
+      wallsEach?: number;
+    }
+  ) {
+    const user = this.getUser(client);
+    const denied = this.requireVerified(user);
+    if (denied) return denied;
+    const result = this.roomService.configureRoom(payload.roomId, user.userId, {
+      mode: payload.mode,
+      timeControlMinutes: payload.timeControlMinutes,
+      incrementSeconds: payload.incrementSeconds,
+      wallsEach: payload.wallsEach,
+    });
+    if (!result.success) return result;
+    // Every member's lobby re-renders from this broadcast, so the table sees
+    // the new setup (and the disarmed ready flags) immediately.
+    this.server.to(result.room.id).emit('room:state', this.enrichRoom(result.room));
+    return result;
+  }
+
   @SubscribeMessage('room:leave')
   handleRoomLeave(
     @ConnectedSocket() client: Socket,
@@ -551,10 +579,15 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       }))
     );
 
+    // Random seat order every match. Seats map to colors and to first move in
+    // order, so without this the host is always blue and always starts. The
+    // host crown is untouched — only table positions shuffle.
+    const shuffled = shuffleSeats(usersWithRatings);
+
     await this.gameService.createGame({
       gameId,
       mode: result.room.mode,
-      users: usersWithRatings,
+      users: shuffled,
       timeControlMinutes: result.room.timeControlMinutes,
       incrementSeconds: result.room.incrementSeconds,
       wallsEach: result.room.wallsEach,

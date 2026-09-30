@@ -168,17 +168,31 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   );
 
   const startPendingRoomGame = useCallback((sync: GameSyncDto) => {
-    if (!pendingRoomGame) return;
+    const room = lastRoomRef.current;
+    if (!pendingRoomGame || !room) return;
+    // Navigate from the REAL room, never the create-form defaults: a player
+    // who joined (rather than created) this room has default kind/count/clock
+    // locally, so those would describe a different game than the one running.
+    const roomClock =
+      TIME_CONTROLS.find(
+        (tc) => tc.minutes === room.timeControlMinutes && tc.incrementSeconds === room.incrementSeconds
+      ) ?? {
+        id: `room-${room.timeControlMinutes}-${room.incrementSeconds}`,
+        name: `Room ${room.timeControlMinutes}+${room.incrementSeconds}`,
+        short: `${room.timeControlMinutes}+${room.incrementSeconds}`,
+        minutes: room.timeControlMinutes,
+        incrementSeconds: room.incrementSeconds,
+      };
     onStartOnlineGame(
       pendingRoomGame.gameId,
-      roomType,
-      clock,
+      room.mode,
+      roomClock,
       'room',
-      lastRoomRef.current,
+      room,
       sync
     );
     setPendingRoomGame(null);
-  }, [pendingRoomGame, onStartOnlineGame, roomType, clock]);
+  }, [pendingRoomGame, onStartOnlineGame]);
 
   const {
     state: mmState,
@@ -216,6 +230,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
     startRoom,
     kickPlayer,
     leaveRoom,
+    configureRoom,
   } = useRooms({
     onGameStarted: handleGameStarted,
     initialRoom,
@@ -424,6 +439,55 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       : confirmMode === 'close'
       ? 'Close Room'
       : 'Leave';
+
+  // Room setup editor (host only). Same pickers as the create form, in the
+  // same Quick-Add bottom sheet — a table can switch Center Rush to Race
+  // without disbanding and re-inviting everyone. Declared here, BEFORE the
+  // quick-view early return below: hooks must never run conditionally.
+  const [showRoomSetup, setShowRoomSetup] = useState(false);
+  const [setupKind, setSetupKind] = useState<MatchType>('classic');
+  const [setupCount, setSetupCount] = useState<2 | 3 | 4>(2);
+  const [setupWalls, setSetupWalls] = useState<10 | 15 | 'unlimited'>(10);
+  const [setupClock, setSetupClock] = useState<TimeControl>(initialClock);
+  const [setupSaving, setSetupSaving] = useState(false);
+
+  const openRoomSetup = useCallback(() => {
+    if (!activeRoom || !isHost) return;
+    const m = activeRoom.mode;
+    if (m === '2p') {
+      setSetupKind('classic');
+      setSetupCount(2);
+    } else if (m === '4p' || m === 'center2' || m === 'center3') {
+      setSetupKind('center');
+      setSetupCount(m === '4p' ? 4 : m === 'center3' ? 3 : 2);
+    } else {
+      setSetupKind('race');
+      setSetupCount(m === 'race4' ? 4 : m === 'race3' ? 3 : 2);
+    }
+    setSetupWalls(activeRoom.wallsEach >= 99 ? 'unlimited' : activeRoom.wallsEach === 15 ? 15 : 10);
+    setSetupClock(
+      TIME_CONTROLS.find(
+        (tc) => tc.minutes === activeRoom.timeControlMinutes && tc.incrementSeconds === activeRoom.incrementSeconds
+      ) ?? TIME_CONTROLS[0]
+    );
+    setShowRoomSetup(true);
+  }, [activeRoom, isHost]);
+
+  const saveRoomSetup = useCallback(async () => {
+    if (!activeRoom || setupSaving) return;
+    setSetupSaving(true);
+    try {
+      const res = await configureRoom({
+        mode: resolveMode(setupKind, setupCount),
+        timeControlMinutes: setupClock.minutes,
+        incrementSeconds: setupClock.incrementSeconds ?? 0,
+        wallsEach: setupWalls === 'unlimited' ? 99 : setupWalls,
+      });
+      if (res.success) setShowRoomSetup(false);
+    } finally {
+      setSetupSaving(false);
+    }
+  }, [activeRoom, setupSaving, configureRoom, setupKind, setupCount, setupClock, setupWalls]);
 
   // -------------------------------------------------------------
   // 1. QUICK MATCH (STITCH RADAR MATCHMAKING LOADING)
@@ -717,12 +781,22 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               <View style={styles.lobbySummaryIcon}>
                 <Feather name="compass" size={22} color={THEME.colors.primary} />
               </View>
-              <View>
+              <View style={styles.lobbySummaryText}>
                 <Text style={styles.lobbySummaryTitle}>{lobbyModeName}</Text>
                 <Text style={styles.lobbySummarySub}>
                   {activeRoom.slots.length} Players · {lobbyClock}
                 </Text>
               </View>
+              {isHost && (
+                <TouchableOpacity
+                  style={styles.lobbySetupBtn}
+                  onPress={openRoomSetup}
+                  accessibilityLabel="Change room setup"
+                >
+                  <Feather name="sliders" size={16} color={THEME.colors.primary} />
+                  <Text style={styles.lobbySetupText}>Setup</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Players header + count */}
@@ -847,34 +921,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             </View>
 
             {/* Lobby action */}
-            {pendingRoomGame ? (
-              <>
-                <OnlineJoinGate
-                  gameId={pendingRoomGame.gameId}
-                  onSynced={startPendingRoomGame}
-                  onFailed={() => setPendingRoomGame(null)}
-                />
-                <View style={[styles.lobbyCta, styles.btnDisabled]}>
-                  <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
-                  <Text style={styles.lobbyCtaText}>Starting…</Text>
-                </View>
-                {/* Same no-trap rule as the quick view: backing out releases
-                    both the lobby seat (leaveRoom) and the match seat (the
-                    gate's unmount). */}
-                <TouchableOpacity
-                  style={styles.lobbyCloseBtn}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    setPendingRoomGame(null);
-                    void leaveRoom();
-                  }}
-                  accessibilityLabel="Cancel start"
-                >
-                  <Feather name="x" size={15} color={THEME.colors.textSecondary} />
-                  <Text style={styles.lobbyCloseText}>Cancel</Text>
-                </TouchableOpacity>
-              </>
-            ) : isHost ? (
+            {isHost ? (
               <>
                 <TouchableOpacity
                   style={[styles.lobbyCta, (!canStart || roomLoading) && styles.btnDisabled]}
@@ -1056,6 +1103,35 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* Room game gate. Lives at the view root ON PURPOSE, not inside the
+          lobby branch: room:started clears activeRoom immediately, so anything
+          rendered under `activeRoom ?` unmounts at exactly the moment the
+          gate must mount — Start would appear to do nothing. The floating bar
+          below is the whole wait; cancel releases both seats. */}
+      {pendingRoomGame && (
+        <>
+          <OnlineJoinGate
+            gameId={pendingRoomGame.gameId}
+            onSynced={startPendingRoomGame}
+            onFailed={() => setPendingRoomGame(null)}
+          />
+          <View style={styles.roomStartingBar}>
+            <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
+            <Text style={styles.roomStartingText}>Starting match…</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setPendingRoomGame(null);
+                void leaveRoom();
+              }}
+              accessibilityLabel="Cancel start"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Feather name="x" size={18} color={THEME.colors.onPrimary} />
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
       {/* Close / Leave / Kick confirm */}
       {confirmMode && (
         <View style={styles.confirmOverlay}>
@@ -1117,6 +1193,112 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 ))
               )}
             </ScrollView>
+          </View>
+          </SafeAreaView>
+        </Modal>
+      )}
+      {showRoomSetup && (
+        <Modal visible transparent animationType="none">
+          <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
+          <View style={styles.sheetCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Room Setup</Text>
+              <TouchableOpacity style={styles.sheetClose} onPress={() => setShowRoomSetup(false)}>
+                <Feather name="x" size={20} color={THEME.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.quickAddSub}>
+              Changing the setup clears ready states — everyone confirms again.
+            </Text>
+            {/* Mode — same segmented control as the create form. */}
+            <View style={styles.rmSection}>
+              <Text style={styles.rmLabel}>Mode</Text>
+              <View style={styles.rmTrack}>
+                {(
+                  [
+                    { id: 'classic', label: 'Classic' },
+                    { id: 'center', label: 'Center Rush' },
+                    { id: 'race', label: 'Race' },
+                  ] as const
+                ).map((m) => (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[styles.rmOpt, setupKind === m.id && styles.rmOptActive]}
+                    onPress={() => setSetupKind(m.id)}
+                  >
+                    <Text style={[styles.rmOptText, setupKind === m.id && styles.rmOptTextActive]}>
+                      {m.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            {/* Players — hidden for Classic, which is always head-to-head. */}
+            {setupKind !== 'classic' && (
+              <View style={styles.rmSection}>
+                <Text style={styles.rmLabel}>Players</Text>
+                <View style={styles.rmTrack}>
+                  {([2, 3, 4] as const).map((n) => (
+                    <TouchableOpacity
+                      key={n}
+                      style={[styles.rmOpt, setupCount === n && styles.rmOptActive]}
+                      onPress={() => setSetupCount(n)}
+                    >
+                      <Text style={[styles.rmOptText, setupCount === n && styles.rmOptTextActive]}>
+                        {n} Players
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+            {/* Time Control */}
+            <View style={styles.rmSection}>
+              <Text style={styles.rmLabel}>Time Control</Text>
+              <View style={styles.rmTrack}>
+                {TIME_CONTROLS.slice(0, 3).map((tc) => (
+                  <TouchableOpacity
+                    key={tc.id}
+                    style={[styles.rmOpt, setupClock.id === tc.id && styles.rmOptActive]}
+                    onPress={() => setSetupClock(tc)}
+                  >
+                    <Text style={[styles.rmOptText, setupClock.id === tc.id && styles.rmOptTextActive]}>
+                      {tc.short}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            {/* Walls */}
+            <View style={styles.rmSection}>
+              <Text style={styles.rmLabel}>Walls</Text>
+              <View style={styles.rmTrack}>
+                {([10, 15, 'unlimited'] as const).map((w) => (
+                  <TouchableOpacity
+                    key={w}
+                    style={[styles.rmOpt, setupWalls === w && styles.rmOptActive]}
+                    onPress={() => setSetupWalls(w)}
+                  >
+                    <Text style={[styles.rmOptText, setupWalls === w && styles.rmOptTextActive]}>
+                      {w === 'unlimited' ? 'Unlimited ∞' : `${w} Walls`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.rmCta, setupSaving && styles.btnDisabled]}
+              activeOpacity={0.88}
+              disabled={setupSaving}
+              onPress={() => void saveRoomSetup()}
+            >
+              {setupSaving ? (
+                <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
+              ) : (
+                <Text style={styles.rmCtaText}>Save Setup</Text>
+              )}
+            </TouchableOpacity>
+            {!!roomError && <Text style={styles.errorText}>{roomError}</Text>}
           </View>
           </SafeAreaView>
         </Modal>
@@ -1224,6 +1406,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: THEME.colors.inverseLabel,
+  },
+  lobbySummaryText: { flex: 1 },
+  // Host-only setup entry: same pill language as the invite action.
+  lobbySetupBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: THEME.radius.md,
+    backgroundColor: THEME.colors.surfacePrimaryTint,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfacePrimaryTintBorder,
+  },
+  lobbySetupText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.primary,
   },
   lobbySummarySub: {
     fontFamily: THEME.fonts.medium,
@@ -1850,6 +2051,30 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     color: THEME.colors.textSecondary,
+  },
+  // Floating room-start bar: primary fill so it reads above the rooms list
+  // while the gate joins. Same language as the bannerWarning in GameScreen.
+  roomStartingBar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: THEME.colors.primary,
+    borderRadius: THEME.radius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    ...THEME.shadows.modal,
+  },
+  roomStartingText: {
+    flex: 1,
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 14,
+    color: THEME.colors.onPrimary,
+    textAlign: 'center',
   },
   retrySearchBtn: {
     width: '100%',

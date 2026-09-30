@@ -150,6 +150,14 @@ export interface ClientToServerEvents {
   'room:create': (payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
   'room:join': (payload: { code: string }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
   'room:ready': (payload: { roomId: string; isReady: boolean }) => void;
+  /**
+   * Host-only setup edit (mode/clock/walls) from a WAITING lobby. Returns
+   * the updated room; every member also gets it via room:state broadcast.
+   */
+  'room:configure': (
+    payload: { roomId: string; mode?: GameMode; timeControlMinutes?: number; incrementSeconds?: number; wallsEach?: number },
+    callback?: (res: { success: boolean; room?: RoomDto; error?: string }) => void
+  ) => void;
   'room:start': (payload: { roomId: string }) => void;
   'room:leave': (payload: { roomId: string }, callback?: (res: { success: boolean; error?: string }) => void) => void;
   'room:kick': (payload: { roomId: string; userId: string }, callback?: (res: { success: boolean; error?: string }) => void) => void;

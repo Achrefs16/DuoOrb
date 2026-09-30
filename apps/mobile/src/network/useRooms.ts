@@ -110,6 +110,38 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
     [activeRoom]
   );
 
+  /**
+   * Host-only setup edit (mode/clock/walls) from the lobby. Resolves with
+   * the updated room; the lobby re-renders from the room:state broadcast,
+   * so this promise is only for error display, not for state.
+   */
+  const configureRoom = useCallback(
+    (patch: {
+      mode?: GameMode;
+      timeControlMinutes?: number;
+      incrementSeconds?: number;
+      wallsEach?: number;
+    }): Promise<{ success: boolean; error?: string }> => {
+      return new Promise((resolve) => {
+        if (!activeRoom) {
+          resolve({ success: false, error: 'No active room.' });
+          return;
+        }
+        const socket = socketManager.getSocket();
+        socket.emit('room:configure', { roomId: activeRoom.id, ...patch }, (res) => {
+          if (res && !res.success) {
+            setError(res.error || 'Could not change the setup.');
+            resolve({ success: false, error: res.error });
+            return;
+          }
+          if (res?.room) setActiveRoom(res.room);
+          resolve({ success: true });
+        });
+      });
+    },
+    [activeRoom]
+  );
+
   const startRoom = useCallback(() => {
     if (!activeRoom) return;
     const socket = socketManager.getSocket();
@@ -211,6 +243,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
     respondToInvite,
     joinRoom,
     setReady,
+    configureRoom,
     startRoom,
     kickPlayer,
     leaveRoom,
