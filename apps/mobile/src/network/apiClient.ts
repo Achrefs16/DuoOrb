@@ -145,6 +145,8 @@ export interface BadgeDto {
   code: string;
   name: string;
   description: string;
+  /** How to earn it, shown in the badge detail view. */
+  requirement: string;
   /** Feather icon name. */
   icon: string;
 }
@@ -162,6 +164,8 @@ export interface ProfileBadgesDto {
 export interface AiWinReward {
   win: { id: string; mode: string; totalPlies: number; playedAt: string };
   alreadyRecorded: boolean;
+  /** Same winning sequence already stored: counted once, no new rewards. */
+  duplicate: boolean;
   newAchievements: BadgeDto[];
   stats: {
     hardWins: number;
@@ -194,6 +198,9 @@ export interface AchievementsResponseDto {
   earned: (BadgeDto & { earnedAt?: string })[];
   equipped: EquippedBadgeDto[];
   catalog: (BadgeDto & { earned: boolean })[];
+  stats: { hardWins: number; fastestPlies: number | null };
+  /** Badge owners per code — rarity for detail views. */
+  owners: Record<string, number>;
 }
 
 export interface SubmitAiWinBody {

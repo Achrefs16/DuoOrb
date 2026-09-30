@@ -11,3 +11,5 @@ export * from './ai.js';
 export * from './ai-threat.js';
 export * from './mcts.js';
 export * from './analysis.js';
+/** Structural route reads the app uses for honest UI (taunt thresholds). */
+export { boardOf, routeOf } from './ai-structure.js';

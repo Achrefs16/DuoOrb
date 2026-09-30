@@ -40,6 +40,7 @@
  */
 import type { GameAction, GameState, RecordedAction } from './types.js';
 import { applyAction } from './ruleset.js';
+import { AI_BUILD } from './ai.js';
 
 const FILES = 'abcdefghi';
 const RANKS = '123456789';
@@ -88,7 +89,7 @@ export function formatGame(state: GameState): string {
   lines.push(
     `DuoOrb ${state.mode} | ${state.players
       .map((p) => `${seatLetter(p.index)}=${p.displayName}`)
-      .join(' ')} | ${state.status.toLowerCase()}`
+      .join(' ')} | ${state.status.toLowerCase()} | eng${AI_BUILD}`
   );
   const placements = state.players
     .filter((p) => p.place !== null)

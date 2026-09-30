@@ -4,6 +4,7 @@ import {
   RouteProfile,
   beginEpoch,
   boardOf,
+  openNeighbours,
   packCell,
   packSlot,
   packedSlotsBlockingStep,
@@ -28,9 +29,18 @@ import { getLegalMoves } from './movement.js';
 import { isCenterGoalMode, isGoalCell } from './pathfinding.js';
 import { applyAction, bestRemainingPlace } from './ruleset.js';
 import { CellCoord, GameAction, GameMode, GameState, WallCoord } from './types.js';
+import type { PlayerState } from './types.js';
 import { isLegalWallPlacement } from './walls.js';
 
 export type AIDifficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * Engine build number. Bump on every scoring or search change, and it shows
+ * in the notation header of every game (`eng7`) plus the result modal — so a
+ * pasted loss always says which engine lost it, and a stale phone build can
+ * never again be mistaken for the current one.
+ */
+export const AI_BUILD = 13;
 
 export interface AIProfile {
   difficulty: AIDifficulty;
@@ -145,7 +155,69 @@ const STRUCTURE_SHARE = 0.5;
  * to order equally-bad shuffles toward the least-recent square, always below
  * the value of a real step (2 * perStep in the evaluation).
  */
+/**
+ * Landing penalty for a square with a single exit toward the goal while a
+ * wall-holding rival is close enough to seal it this turn. In step units, so
+ * below one step: it reorders close choices, it never overrules a genuinely
+ * safe march.
+ *
+ * Measured on a loss the engine repeated identically across three engine
+ * builds. Ply 7, the decisive ply: the engine stood at (3,4) five steps out
+ * against a rival four steps out who was sitting on (4,4) holding ten walls.
+ * It jumped the rival to (5,4), which cut its own distance from five to three
+ * and scored -12 against -60 for every alternative — correct by every number
+ * the evaluation owns. It also landed with exactly ONE open exit toward its
+ * goal, one step from a wall-holding rival directly above it. The rival then
+ * played H(5,3), and that single wall severed both of the engine's descent
+ * lanes at once. The engine spent the rest of the game oscillating between
+ * two squares with no progress move available, and lost.
+ *
+ * Distance cannot see this, and neither can the search: the rival's seal is
+ * one ply of theirs, and a square with one exit is only fragile in proportion
+ * to how close the wall-holding rival is. That pairing is what is priced here.
+ */
+const FRAGILE_LANDING = 0.8;
+/** How close (in steps) a wall-holding rival must be for a one-exit square to count. */
+const FRAGILE_RIVAL_RANGE = 2;
+/** Shared scratch for the open-neighbour count. */
+const fragileScratch = new Int32Array(8);
+/**
+ * Scale on the anti-loop penalty, which is expressed in step units and so is
+ * multiplied by the profile's per-step value at the call site. Kept as a named
+ * constant so the trade against a real step stays visible in one place.
+ */
 const REPETITION_SCALE = 1.0;
+
+/**
+ * True when `to` has a single open exit toward our goal and a wall-holding
+ * rival is within `FRAGILE_RIVAL_RANGE`: the square can be sealed by one wall
+ * this turn, and somebody is close enough to play it.
+ */
+function isFragileLanding(
+  board: BoardStructure,
+  state: GameState,
+  playerId: string,
+  goal: PlayerState['goalDirection'],
+  to: CellCoord
+): boolean {
+  const n = openNeighbours(board.field.index, to.row, to.col, fragileScratch);
+  let exits = 0;
+  for (let i = 0; i < n; i++) {
+    const cell = fragileScratch[i];
+    const r = Math.floor(cell / 9);
+    const c = cell % 9;
+    if (goal === 'BOTTOM' ? r > to.row : goal === 'TOP' ? r < to.row : goal === 'LEFT' ? c < to.col : c > to.col) {
+      exits++;
+    }
+  }
+  if (exits > 1) return false;
+  for (const p of state.players) {
+    if (p.id === playerId || p.status !== 'ACTIVE' || p.wallsRemaining <= 0) continue;
+    const d = Math.abs(p.position.row - to.row) + Math.abs(p.position.col - to.col);
+    if (d <= FRAGILE_RIVAL_RANGE) return true;
+  }
+  return false;
+}
 const ON_PATH_BONUS = 4;
 const RACING_BONUS = 3;
 
@@ -557,8 +629,42 @@ export function evaluateState(state: GameState, activePlayerId: string, profile:
 
   // 1. Absolute progress: marching pays whoever is ahead.
   const progress = -own.distance * perStep;
-  // 2. Linear race lead: the gap is worth its face value at every margin.
-  const lead = (minOpponentDist - own.distance) * perStep;
+  // 2. Race lead — OUTCOME-AWARE, and this is the core of the whole engine.
+  //
+  // It used to be linear in distance: `lead = (minOpponentDist - own.distance)
+  // * perStep`, paying full value at every margin. That single line is the
+  // source of every bug this engine has shown, because it cannot tell
+  // "improved a losing position" from "changed the result". A wall that
+  // delayed the rival one step moved the margin from -3 to -2 and was paid in
+  // full, even though -3 and -2 are the same game: a loss. That is why the
+  // engine spent a ply it did not have on a block that could not work, why it
+  // decorated positions it was losing, and why roughly twenty later constants
+  // existed only to claw the reward back — each one unstable across search
+  // depth, because they were compensating for the flaw rather than removing
+  // it.
+  //
+  // The fix needs no new information. A race is decided in PLIES, and plies
+  // are derivable from the two distances plus who moves first: I arrive on ply
+  // `2 * ownDistance - 1` when I move first, the rival on `2 * rivalDistance`.
+  // So the margin in plies is `2 * (rival - own) ± 1`, and a one-step change
+  // flips the result ONLY when that margin is within one ply.
+  //
+  // Below is the only place this is decided, and every downstream term
+  // inherits it for free: a decided race is worth its SIGN, not its margin, so
+  // a wall that cannot change who arrives first earns exactly nothing for the
+  // race and is left carrying its own tempo cost. `emergency`, `pressuring`,
+  // `flips`, `affordable` and the structure caps are all downstream of this
+  // and are now redundant rather than wrong.
+  const iMoveFirst = state.players[state.currentPlayerIndex]?.id === activePlayerId ? 1 : -1;
+  const leadSteps = minOpponentDist - own.distance;
+  const plyMargin = 2 * leadSteps + iMoveFirst;
+  const raceLive = Math.abs(plyMargin) <= 1;
+  // A decided race keeps a small constant worth so that "winning" still beats
+  // "losing" and the engine still knows which side it is on; the margin itself
+  // is discarded because no reachable amount of it changes the result.
+  const lead = raceLive
+    ? leadSteps * perStep
+    : Math.sign(plyMargin) * perStep * 0.5;
 
   // 3. Structure, soft-capped below the value of one step.
   //
@@ -596,6 +702,29 @@ export function evaluateState(state: GameState, activePlayerId: string, profile:
 // Anti-loop and path helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Anti-loop penalty, in STEP UNITS, for stepping back onto a square this player
+ * left in its last few moves.
+ *
+ * Measured on two consecutive replayed defeats, both lost by one or two plies,
+ * both with the same signature — the engine oscillating between two squares:
+ * (5,5)->(5,6)->(5,5)->(5,4)->(5,6) and (5,4)->(5,5)->(5,4)->(5,5)->(5,6).
+ * It had the right destination and spent five and six moves reaching it while
+ * the rival walked home.
+ *
+ * Why it happened: the evaluation is symmetric in distance, so a sideways step
+ * that holds distance level is not visibly worse than the step that commits to
+ * a long detour, and an immediate undo costs the old flat 6 points — HALF a
+ * step at hard. Whenever the alternative looked better by more than half a
+ * step, the undo was profitable and the engine shuffled. Nothing in `lead`,
+ * `progress` or the search prices revisiting, because from any single ply the
+ * shuffle is locally reasonable; only the ply budget sees it.
+ *
+ * So the immediate undo now costs MORE than a step (1.2), which makes it
+ * unprofitable against any candidate that does not strictly beat it, while the
+ * 2- and 3-ply revisits stay cheap enough to leave genuine retreats — a
+ * retreat that continues somewhere new is not an undo and is not penalised.
+ */
 export function repetitionPenalty(
   state: GameState,
   playerId: string,
@@ -615,9 +744,9 @@ export function repetitionPenalty(
   for (let k = 1; k < recent.length; k++) {
     const t = recent[k];
     if (t.row === to.row && t.col === to.col) {
-      if (k === 1) return 6;
-      if (k === 2) return 3;
-      return 1;
+      if (k === 1) return 1.2;
+      if (k === 2) return 0.6;
+      return 0.2;
     }
   }
   return 0;
@@ -846,6 +975,15 @@ export interface ScoredCandidate {
   wall: WallInsight | null;
   rank: number;
   order: number;
+  /**
+   * This wall is one of the slots the strategic layer says the rival is
+   * building. Such a wall denies nobody today, so it ranks below every wall
+   * that already delays — which is exactly how it used to be cut from the kept
+   * list before the search ever saw it. Measured on a replayed 27-ply defeat:
+   * the seal H(5,4) was detected (it was in `counters`) yet absent from all
+   * eight generated walls, so the rival sealed the lane unopposed.
+   */
+  planSlot?: boolean;
 }
 
 function moveOrder(to: CellCoord): number {
@@ -1270,12 +1408,23 @@ function buildRootCandidates(
       wall: { slot, delay, selfCost, narrowAdv, forkDeny, extendsChain, turnsChain, bridgesChains, shapesSelf, contested, structure, planSuppression: 0 },
       rank: delay * perStep + structure - selfCost * perStep,
       order: wallOrder(slot),
+      planSlot: (ideas[i].reason & SLOT_RIVAL_PLAN) !== 0,
     });
     wallNextStates.set(wallOrder(slot), next);
   }
 
   walls.sort(compareCandidates);
-  const kept = walls.slice(0, profile.maxCandidateWalls);
+  // Plan slots are kept BEFORE rank, not after it. They deny nobody today, so
+  // on rank alone they sit below every wall that already delays and get cut
+  // when the list overflows — which is how a detected seal ended up absent
+  // from the generated set. Filling by rank first and only then topping up
+  // with plan slots keeps the strong walls AND the denial.
+  const planKept = walls.filter((c) => c.planSlot).slice(0, profile.maxCandidateWalls);
+  const planOrders = new Set(planKept.map((c) => c.order));
+  const restKept = walls
+    .filter((c) => !planOrders.has(c.order))
+    .slice(0, Math.max(0, profile.maxCandidateWalls - planKept.length));
+  const kept = planKept.concat(restKept).sort(compareCandidates);
 
   // Counterfactual pass, over the KEPT walls only. Re-projecting a plan is one
   // hypothetical board per surviving continuation, so paying for it across the
@@ -1300,13 +1449,38 @@ function buildRootCandidates(
   let all = moves.concat(kept);
   all.sort(compareCandidates);
 
+  /**
+   * May a "rival is one step from the line" read remove our moves outright?
+   *
+   * No — not unless blocking can actually change the result. This filter is the
+   * reason the engine lost the same game byte-for-byte across four builds: at
+   * ply 17 it stood four steps out against a rival one step out, the tactical
+   * read fired `BLOCK`, and the candidate list was replaced with WALLS ONLY. The
+   * engine was never offered a move. It did not choose the wall over a march;
+   * the march had been deleted three lines above the scoring.
+   *
+   * The gate is the same parity test the whole engine now runs on: if we are
+   * further from the line than the rival plus the single step we could deny, the
+   * rival arrives next ply whatever we do, the block is decoration, and the
+   * position is scored normally so the outcome-aware lead can prefer the march.
+   * When the race is genuinely live — level, or one step behind — the block is
+   * how the game is saved and the restriction stays.
+   */
+  let nearestRivalDistance = Infinity;
+  for (const rival of rivals) {
+    const r = routeOf(state, board, rival);
+    if (r.hasGoalAccess && r.distance < nearestRivalDistance) nearestRivalDistance = r.distance;
+  }
+  const blockCanChangeResult =
+    !Number.isFinite(nearestRivalDistance) || own.distance <= nearestRivalDistance + 1;
+
   if (tactical.restrict) {
     let filtered: ScoredCandidate[] = [];
     if (tactical.intent === 'WIN') {
       filtered = all.filter(
         (c) => c.action.type === 'MOVE' && tactical.winningCells.has(packCell(c.action.to))
       );
-    } else if (tactical.intent === 'BLOCK') {
+    } else if (tactical.intent === 'BLOCK' && blockCanChangeResult) {
       filtered = all.filter(
         (c) =>
           c.action.type === 'PLACE_WALL' &&
@@ -1355,6 +1529,16 @@ function buildRootCandidates(
  * the board, and the band test is array filtering over `route.nearCells`. No
  * legality BFS and no route recomputation happens here, which is what keeps
  * this affordable. A quiet node sees exactly the moves it always saw.
+ *
+ * At an OPPONENT's node the band is anchored on the ROOT seat's square, not
+ * the mover's route. Extensions are generated around whoever is moving, so a
+ * rival building far from itself — a wall on MY lane from across the board,
+ * the standard funnel shape — never appeared in its own tree, and the search
+ * evaluated "they march" lines while blind to "they wall me" lines. That is
+ * the depth-shaped hole the replayed losses kept falling into: each human
+ * wall priced small alone, the compound invisible. The anchor is a position
+ * lookup only, never a route recomputation, so volatile nodes cost the same
+ * two slots as before — only WHICH two changed.
  */
 const INNER_PLAN_WALLS = 2;
 
@@ -1363,23 +1547,46 @@ function innerPlanWalls(
   board: BoardStructure,
   own: RouteProfile,
   moverId: string,
+  rootId: string,
+  sealSlots: number[] | null,
   depth: number
 ): ScoredCandidate[] {
   const mover = state.players[state.currentPlayerIndex];
   if (!mover || mover.wallsRemaining <= 0) return [];
   if (depth <= 1) return [];
 
+  // Opponent node: aim their two slots at my lane, not theirs (see docblock).
+  // Looked up here because the volatility gate below needs it too.
+  let anchorRow = -1;
+  let anchorCol = -1;
+  if (moverId !== rootId) {
+    const root = state.players.find((p) => p.id === rootId);
+    if (root && root.status === 'ACTIVE') {
+      anchorRow = root.position.row;
+      anchorCol = root.position.col;
+    }
+  }
+
+  const nearOwn = (s: { row: number; col: number }): boolean => {
+    for (const cell of own.nearCells) {
+      if (Math.abs(s.row - cell.row) <= 2 && Math.abs(s.col - cell.col) <= 2) return true;
+    }
+    return false;
+  };
   const volatile =
     own.hasGoalAccess &&
     (own.tightest <= 2 ||
       board.field.chains.some((c) =>
         c.slots.some((s) => {
           const packed = packSlot(s);
-          for (const cell of own.nearCells) {
-            if (Math.abs(s.row - cell.row) <= 2 && Math.abs(s.col - cell.col) <= 2) {
-              void packed;
-              return true;
-            }
+          void packed;
+          if (nearOwn(s)) return true;
+          // A chain reaching MY lane makes this node volatile even when the
+          // mover runs free: without this, a rival building far from itself
+          // never sees a volatile node and its lane attack stays out of the
+          // tree — the exact funnel shape.
+          if (anchorRow >= 0 && Math.abs(s.row - anchorRow) <= 2 && Math.abs(s.col - anchorCol) <= 2) {
+            return true;
           }
           return false;
         })
@@ -1390,11 +1597,33 @@ function innerPlanWalls(
   if (!volatile) return [];
 
   const out: ScoredCandidate[] = [];
+  // Opponent node with a live forecast: their plan slots go first. These are
+  // the two walls that measurably hurt the root — offering them here is what
+  // puts "their best move against me" into the tree. Conflict-checked against
+  // this node's board only; applyAction in the search loop rejects the rest.
+  if (anchorRow >= 0 && sealSlots) {
+    for (const packed of sealSlots) {
+      if (out.length >= INNER_PLAN_WALLS) break;
+      const slot = unpackSlot(packed);
+      if (slotConflicts(board.field.index, slot)) continue;
+      if (out.some((c) => c.action.type === 'PLACE_WALL' && sameGameAction(c.action, { type: 'PLACE_WALL', wall: slot }))) continue;
+      out.push({
+        action: { type: 'PLACE_WALL', wall: slot },
+        onPath: false,
+        wall: null,
+        rank: 0,
+        order: wallOrder(slot),
+      });
+    }
+  }
   for (const slot of board.field.extensions) {
     if (out.length >= INNER_PLAN_WALLS) break;
-    const near = own.nearCells.some(
-      (c) => Math.abs(slot.row - c.row) <= 2 && Math.abs(slot.col - c.col) <= 2
-    );
+    let near: boolean;
+    if (anchorRow >= 0) {
+      near = Math.abs(slot.row - anchorRow) <= 2 && Math.abs(slot.col - anchorCol) <= 2;
+    } else {
+      near = nearOwn(slot);
+    }
     if (!near) continue;
     if (slotConflicts(board.field.index, slot)) continue;
     // Deliberately NOT isLegalWallPlacement() here: that runs a path-existence
@@ -1420,12 +1649,14 @@ function buildSearchCandidates(
   own: RouteProfile,
   playerId: string,
   profile: AIProfile,
-  depth: number
+  depth: number,
+  rootId: string,
+  sealSlots: number[] | null
 ): ScoredCandidate[] {
   const moves = moveCandidates(state, playerId, own);
   moves.sort(compareCandidates);
   if (profile.maxCandidateWalls <= 0) return moves;
-  const walls = innerPlanWalls(state, board, own, playerId, depth);
+  const walls = innerPlanWalls(state, board, own, playerId, rootId, sealSlots, depth);
   if (walls.length === 0) return moves;
   return moves.concat(walls).sort(compareCandidates);
 }
@@ -1481,6 +1712,12 @@ export interface SearchContext {
   /** Wall-clock end of the current slice; checked per node (cheap). */
   sliceDeadline: number;
   suspended: boolean;
+  /**
+   * The root's forecasted plan slots (packed), offered at opponent inner
+   * nodes. Set per rankActions call from the root strategic read; null in
+   * quiet positions, where inner nodes stay moves-only.
+   */
+  sealSlots: number[] | null;
 }
 
 function newSearchContext(
@@ -1503,6 +1740,7 @@ function newSearchContext(
     sliceStart: 0,
     sliceDeadline: 0,
     suspended: false,
+    sealSlots: null,
   };
 }
 
@@ -1693,7 +1931,7 @@ function searchNode(
   const own = routeOf(state, board, mover);
   const killers = ctx.killers[ply] ?? [];
   const candidates = orderCandidates(
-    buildSearchCandidates(state, board, own, mover.id, ctx.profile, depth),
+    buildSearchCandidates(state, board, own, mover.id, ctx.profile, depth, ctx.rootId, ctx.sealSlots),
     ttMove,
     killers
   );
@@ -1897,6 +2135,11 @@ export function rankActions(
   }
 
   const racing = own.distance < minOpponentDist;
+  // The race as an outcome, in plies — the same quantity `evaluateState` scores
+  // on, needed here so a wall can be judged by whether denying changes the
+  // result. I arrive on ply `2*d-1` when I move first, the rival on `2*d`.
+  const iMoveFirst = state.players[state.currentPlayerIndex]?.id === playerId ? 1 : -1;
+  const plyMarginRoot = 2 * (minOpponentDist - own.distance) + iMoveFirst;
   const rivalPressure = rivalPressureOnMe(state, playerId);
   const focus = 1 - profile.randomness;
   const tuning = { ...DEFAULT_WALL_TUNING, ...(opts.tuning ?? {}) };
@@ -1913,6 +2156,10 @@ export function rankActions(
   // in which case every prevention block below is skipped and scoring is
   // exactly what it was.
   const seal = forecastSeal(state, me, own.distance, opts.strategic ?? null, rivalPressure);
+  // Threaded into the search: opponent inner nodes offer these exact slots,
+  // so "their best move against me" exists as a real line in the tree rather
+  // than only as a root-level heuristic.
+  ctx.sealSlots = seal ? seal.slots : null;
 
   interface Entry {
     candidate: ScoredCandidate;
@@ -1957,6 +2204,8 @@ export function rankActions(
   const scored = entries.map((entry) => {
     let { score } = entry;
     const { candidate } = entry;
+    let affordable = true;
+    let wallCredit = 0;
 
     // Prevention (weaknesses 1+2+4): what of the rival's forecasted future this
     // candidate erases. Measured, not guessed: the forecast's two slots
@@ -1990,7 +2239,10 @@ export function rankActions(
         // Converting beats everything, always — no heuristic may outvote it.
         score = finishScore;
       } else {
-        score -= repetitionPenalty(state, playerId, candidate.action.to) * REPETITION_SCALE;
+        score -= repetitionPenalty(state, playerId, candidate.action.to) * REPETITION_SCALE * perStep;
+        if (isFragileLanding(board, state, playerId, me.goalDirection, candidate.action.to)) {
+          score -= FRAGILE_LANDING * perStep * focus;
+        }
         if (entry.progress) {
           score += ON_PATH_BONUS * focus;
           if (racing) score += RACING_BONUS * focus;
@@ -2005,12 +2257,45 @@ export function rankActions(
       }
     } else if (candidate.action.type === 'PLACE_WALL' && candidate.wall) {
       const insight = candidate.wall;
+      /**
+       * Everything this wall earns or costs ABOVE its searched value, kept
+       * separately so the exchange re-rank cannot discard it.
+       *
+       * This is the last bug in the chain, and it is why the engine only ever
+       * stopped walling when it was losing. `useExchange` fires exactly when a
+       * plan is live against us — the positions where denying the leader is
+       * the only thing that matters — and it REPLACED `score` with
+       * `exchangeScore`, which sees only the two distances after a one-ply
+       * reply. A wall that lengthens the leader's route and a shuffle that does
+       * not leave those two distances identical, so the exchange scored them
+       * EQUAL and threw away the credit the wall had earned for denying.
+       * Measured on a replayed loss: at ply 11, eight delaying walls were
+       * generated and the engine played a shuffle instead.
+       */
+      const baseScore = score;
+      const emergency = minOpponentDist <= 1;
       // Tempo, fix 1 of 2. Only a wall that denies nobody costs a turn: a wall
       // that pushes the rival back a step has already bought the tempo it costs.
       const denies = insight.delay > 0;
       if (hasProgressMove && !(tuning.denialIsTempo && denies)) score -= perStep;
 
       const delay = insight.delay;
+      const wasFirst = own.distance < minOpponentDist;
+      // A delay of D steps pulls the rival D closer, which is 2*D plies of race
+      // margin. It is worth a ply only if it moves the race toward a flip, i.e.
+      // if the ply margin is within reach of the live band after the delay.
+      // Derived, not tuned: no new constant, and it is the same ply arithmetic
+      // `evaluateState` runs.
+      //
+      // This is what lets the engine keep defending a race it is LOSING, which
+      // it had stopped doing. In a replayed defeat it sat on a plateau where
+      // no step reduced its distance — sealed into a five-wide strip by two
+      // rival walls — and shuffled for five plies while the rival walked home,
+      // because the clamp read every delay as decoration. A 3-ply deficit is
+      // exactly where denying three steps wins the game, and the rule now says
+      // so: a delay is affordable whenever it can still reach parity.
+      const delayReachesFlip = plyMarginRoot >= -2 * delay - 1;
+      affordable = wasFirst || delayReachesFlip;
       if (delay > 0) {
         // Horizon credit ONLY where the delay changes the RESULT:
         //   emergency  rival one step out: full weight, whatever the race.
@@ -2027,9 +2312,7 @@ export function rankActions(
         //              center-rush engine played a shaping wall while six
         //              out with the leader at two, instead of marching.
         //   already won: ZERO. Inflating a margin is not progress.
-        const emergency = minOpponentDist <= 1;
         const pressuring = rivalPressure >= RIVAL_PRESSURE_STEPS;
-        const wasFirst = own.distance < minOpponentDist;
         const flips = !wasFirst && own.distance < minOpponentDist + delay;
         if (emergency) {
           score += Math.min(perStep * 3, delay * perStep) * 2.5 * focus;
@@ -2043,7 +2326,16 @@ export function rankActions(
           // Threshold is ONE recent wall on me, not two: waiting for a second
           // one is how the replayed games reached ply 20 before the engine
           // placed a wall at all, by which time the lane was already shut.
-          score += Math.min(perStep * 2, delay * perStep) * 1.8 * focus;
+          //
+          // Gate: the wall must at least TIE the race (the `flips` bar, minus
+          // the behind-only requirement, so defending a lead still counts). A
+          // wall that cuts a 3-step deficit to 2 converts a loss into a loss:
+          // the replayed 31-ply defeat decorated exactly this way at plies 15
+          // and 17 while 5-vs-2 down — and the ply-15 wall then occupied the
+          // slot its own only endgame block needed. March instead.
+          if (delayReachesFlip) {
+            score += Math.min(perStep * 2, delay * perStep) * 1.8 * focus;
+          }
         } else if (flips) {
           score += Math.min(perStep * 3, delay * perStep) * focus;
         }
@@ -2054,6 +2346,11 @@ export function rankActions(
       if (structure > cap) structure = cap;
       // Leading and the wall delays nobody: that is decorating, not shaping.
       if (racing && delay === 0) structure = 0;
+      // Behind and the wall cannot reach parity: shaping a position we are
+      // losing is decoration too, and the search's own value does not know
+      // that — it prices the rival's longer route and ignores that ours did
+      // not shorten. Zeroed here so the clamp below sees a bare candidate.
+      if (!affordable) structure = 0;
       score += structure;
 
       // Self-protection credit was tried here and removed: a wall only ever
@@ -2106,6 +2403,7 @@ export function rankActions(
       if (seal !== null && insight.selfCost === 0 && me.wallsRemaining >= SPARE_WALLS) {
         score += perStep * SPEND_TIEBREAK * focus;
       }
+      wallCredit = score - baseScore;
     }
 
     // Fragility, fix 2 of 2. Applied to MOVES as well as walls, because the
@@ -2133,6 +2431,15 @@ export function rankActions(
       winsNow: entry.winsNow,
       prevention,
       after: entry.after,
+      /**
+       * True when this candidate is allowed to outrank our own march even
+       * while we are behind: an emergency block, a wall that reaches parity,
+       * or one that breaks / pre-empts a real plan. Everything else is a wall
+       * we cannot afford, and `clampUnaffordableWalls` holds it below the best
+       * progress move.
+       */
+      affordable,
+      wallCredit,
       order: candidate.order,
     };
   });
@@ -2208,10 +2515,47 @@ export function rankActions(
     }
     return {
       ...entry,
-      score: entry.winsNow ? entry.score : exchangeScore + residual - overhang,
+      score: entry.winsNow ? entry.score : exchangeScore + residual - overhang + entry.wallCredit,
       exchange: { myDistance: mine, theirDistance: theirs },
     };
   });
+
+  /**
+   * Affordability clamp — the fix for the measured 27-ply defeat.
+   *
+   * The trace of that game: at ply 15 the engine was 5 steps out against 2, it
+   * had a real march available (`MOVE 5,4`, the best candidate at depth 1), and
+   * it played a far wall instead. It did the same at ply 17. Those two walls
+   * cost it two plies and bought the human one, which is the whole game: the
+   * engine arrived one ply short and lost.
+   *
+   * The cause is not the heuristics — it is that the evaluation is symmetric in
+   * the wrong place. A wall lengthens the RIVAL's route, and `lead` rewards
+   * that, while our own distance stands still. At 3 steps down that trade is
+   * arithmetic suicide, and the search cannot see it because `lead` treats both
+   * sides' distance symmetrically at every depth. More depth does not help: the
+   * same wall won at depth 3, 5, 7 and 9.
+   *
+   * So it is enforced here, in ranking, where the question is actually asked:
+   * a wall that does not reach parity, is not an emergency block, and buys no
+   * plan break or prevention may not outrank our best march. Affordable walls
+   * (parity, emergency, suppression, prevention) are untouched, and so is every
+   * move. When there is no progress move at all, nothing is clamped — a walled-in
+   * engine is not made to shuffle by this.
+   */
+  if (hasProgressMove) {
+    let bestProgress = -Infinity;
+    for (const entry of reRanked) {
+      if (entry.winsNow || entry.progress) bestProgress = Math.max(bestProgress, entry.score);
+    }
+    if (Number.isFinite(bestProgress)) {
+      const ceiling = bestProgress - TIE_EPSILON;
+      for (const entry of reRanked) {
+        if (entry.affordable) continue;
+        if (entry.score > ceiling) entry.score = ceiling;
+      }
+    }
+  }
 
   // Score first. Ties: win, then progress, then moves before walls (a tied
   // wall spends inventory for nothing), then a deterministic total order.

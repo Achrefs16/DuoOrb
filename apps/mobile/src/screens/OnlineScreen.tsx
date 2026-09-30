@@ -815,7 +815,9 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 const initial = nameInitial(slot.displayName);
 
                 if (!isOccupied) {
-                  const isFirstOpenSlot = activeRoom.slots.findIndex((s) => s.userId === null) === slot.index;
+                  // Every open slot carries Quick Add, for the host and for
+                  // members alike: anyone in the lobby can pull an online
+                  // friend in from their own list.
                   return (
                     <View key={slot.index} style={[styles.slotItem, styles.slotEmptyCard]}>
                       <View style={styles.slotLeft}>
@@ -824,14 +826,10 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         </View>
                         <Text style={styles.slotWaiting}>Waiting for player…</Text>
                       </View>
-                      {isHost && isFirstOpenSlot ? (
-                        <TouchableOpacity style={styles.quickAddBtn} onPress={() => void openQuickAdd()}>
-                          <Feather name="user-plus" size={15} color={THEME.colors.primary} />
-                          <Text style={styles.quickAddText}>Quick Add</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <Text style={styles.slotOpenTag}>Open slot</Text>
-                      )}
+                      <TouchableOpacity style={styles.quickAddBtn} onPress={() => void openQuickAdd()}>
+                        <Feather name="user-plus" size={15} color={THEME.colors.primary} />
+                        <Text style={styles.quickAddText}>Quick Add</Text>
+                      </TouchableOpacity>
                     </View>
                   );
                 }

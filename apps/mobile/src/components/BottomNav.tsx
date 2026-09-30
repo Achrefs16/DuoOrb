@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME } from '../theme';
 
 export type MainTab = 'PLAY' | 'FRIENDS' | 'HISTORY' | 'PROFILE';
@@ -28,9 +29,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     { id: 'HISTORY', label: 'History', icon: 'clock' },
     { id: 'PROFILE', label: 'Profile', icon: 'user' },
   ];
+  // Extend the nav background through the bottom inset to the screen edge.
+  // The root SafeAreaView stops above the system navbar zone, so that strip
+  // used to show the window background (grey) under the white bar — the
+  // sandwich. A negative margin paints this background over the inset area
+  // instead; siblings above are unaffected.
+  const bottomInset = useSafeAreaInsets().bottom;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { marginBottom: -bottomInset, paddingBottom: 6 + bottomInset }]}>
       <View style={styles.navBar}>
         {tabs.map((tab) => {
           const isActive = currentTab === tab.id;

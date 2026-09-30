@@ -156,7 +156,12 @@ export class RoomService {
     const room = this.rooms.get(roomId);
     if (!room) return { success: false, error: 'Room not found.' };
     if (room.status !== 'WAITING') return { success: false, error: 'Game already started.' };
-    if (room.hostId !== fromUserId) return { success: false, error: 'Only the host can invite players.' };
+    // Any seated member can invite from their own friends — not just the
+    // host. The invite still targets one open slot and one offline-checked
+    // friend, so a member can never overfill or hijack the lobby.
+    if (!room.slots.some((slot) => slot.userId === fromUserId)) {
+      return { success: false, error: 'Only room members can invite players.' };
+    }
     if (room.slots.some((slot) => slot.userId === toUserId)) {
       return { success: false, error: 'Player is already in this room.' };
     }

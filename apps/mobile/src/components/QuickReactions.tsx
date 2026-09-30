@@ -1,9 +1,8 @@
 import React, { memo, useEffect, useRef } from 'react';
-import { Animated, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { THEME } from '../theme';
 import {
-  REACTION_ICONS,
+  REACTION_EMOJI,
   REACTION_ORDER,
   reactionLabel,
   type IncomingReaction,
@@ -11,16 +10,16 @@ import {
 } from '../network/useQuickReactions';
 
 /**
- * Quick-reaction UI: two separate areas, both online-only.
+ * Quick-reaction UI: two separate areas.
  *
  * `ReactionDock` is the reserved receiving space between the top bar and the
- * opponent card. Fixed height, visually almost empty, pointer-transparent —
- * bubbles pop in from the opponent-card direction, float up slightly, fade,
- * and remove themselves. Never toasts, never needs dismissal, never shifts
- * layout (absolute positioning inside a fixed-height dock).
+ * opponent card. Fixed, compact height, pointer-transparent — bubbles pop in
+ * from the opponent-card direction with a speech tail, float up slightly,
+ * fade, and remove themselves. Never a toast, never needs dismissal, never
+ * shifts layout (absolute positioning inside a fixed-height dock).
  *
- * `ReactionTray` is the sending row under the Resign button: six compact
- * icon buttons, no card, no labels, no gradients.
+ * `ReactionTray` is the sending card under the Resign button: six round
+ * emoji buttons on one rounded card. No labels, no gradients.
  */
 
 // ---------------------------------------------------------------------------
@@ -32,7 +31,7 @@ const HOLD_MS = 1200;
 const EXIT_MS = 350;
 
 const ReactionBubble: React.FC<{ kind: ReactionKind; onDone: () => void }> = memo(
-  ({ kind, onDone }) => {
+  function ReactionBubble({ kind, onDone }) {
     const scale = useRef(new Animated.Value(0.6)).current;
     const dy = useRef(new Animated.Value(10)).current;
     const opacity = useRef(new Animated.Value(1)).current;
@@ -63,14 +62,14 @@ const ReactionBubble: React.FC<{ kind: ReactionKind; onDone: () => void }> = mem
     return (
       <Animated.View
         pointerEvents="none"
-        style={[styles.bubble, { transform: [{ scale }, { translateY: dy }], opacity }]}
+        style={[styles.bubbleWrap, { transform: [{ scale }, { translateY: dy }], opacity }]}
         accessibilityLabel={`Opponent reacted ${reactionLabel(kind)}`}
       >
-        <MaterialCommunityIcons
-          name={REACTION_ICONS[kind] as 'emoticon-lol-outline'}
-          size={20}
-          color={THEME.colors.textSecondaryStrong}
-        />
+        <View style={styles.bubble}>
+          <Text style={styles.bubbleEmoji}>{REACTION_EMOJI[kind]}</Text>
+          {/* Speech tail pointing down at the opponent card it came from. */}
+          <View style={styles.bubbleTail} />
+        </View>
       </Animated.View>
     );
   }
@@ -99,7 +98,7 @@ export const ReactionDock: React.FC<{
 export const ReactionTray: React.FC<{ onSend: (kind: ReactionKind) => void }> = memo(
   function ReactionTray({ onSend }) {
     return (
-      <View style={styles.tray} accessibilityLabel="Quick reactions">
+      <View style={styles.trayCard} accessibilityLabel="Quick reactions">
         {REACTION_ORDER.map((kind) => (
           <TouchableOpacity
             key={kind}
@@ -110,11 +109,7 @@ export const ReactionTray: React.FC<{ onSend: (kind: ReactionKind) => void }> = 
             accessibilityRole="button"
             accessibilityLabel={`Send ${reactionLabel(kind)} reaction`}
           >
-            <MaterialCommunityIcons
-              name={REACTION_ICONS[kind] as 'emoticon-lol-outline'}
-              size={22}
-              color={THEME.colors.textSecondary}
-            />
+            <Text style={styles.trayEmoji}>{REACTION_EMOJI[kind]}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -123,10 +118,10 @@ export const ReactionTray: React.FC<{ onSend: (kind: ReactionKind) => void }> = 
 );
 
 const styles = StyleSheet.create({
-  // Reserved receiving space: fixed height so a bubble never shifts layout.
-  // Transparent and quiet when empty — it borrows breathing room, not board.
+  // Reserved receiving space: fixed and compact so a bubble never shifts
+  // layout or steals board room.
   dock: {
-    height: 30,
+    height: 26,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -136,28 +131,61 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  // Small speech-bubble-like pill around the icon.
+  bubbleWrap: {
+    paddingBottom: 4,
+  },
+  // White speech pill: emoji, hairline border, tail at the opponent side.
   bubble: {
     backgroundColor: THEME.colors.backgroundCard,
     borderWidth: 1,
     borderColor: THEME.colors.surfaceHairline,
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    borderRadius: THEME.radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     ...THEME.shadows.card,
   },
-  // Sending row: no card, no labels — six evenly spaced tap targets.
-  tray: {
+  bubbleEmoji: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  bubbleTail: {
+    position: 'absolute',
+    bottom: -4,
+    left: 12,
+    width: 8,
+    height: 8,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderBottomWidth: 1,
+    borderRightWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+    transform: [{ rotate: '45deg' }],
+  },
+  // Sending card: one rounded card, six square buttons, emoji only.
+  trayCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-evenly',
     width: '100%',
-    paddingVertical: 2,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    borderRadius: THEME.radius.lg,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    ...THEME.shadows.card,
   },
   trayBtn: {
-    width: 44,
+    width: 40,
     height: 40,
+    borderRadius: THEME.radius.md,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  trayEmoji: {
+    fontSize: 20,
+    lineHeight: 24,
   },
 });

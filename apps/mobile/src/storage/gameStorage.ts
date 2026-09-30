@@ -9,6 +9,13 @@ export interface SavedGameRecord {
   aiDifficulty?: string;
   winnerId: string | null;
   winnerName: string;
+  /**
+   * The device player's seat id for AI games (null for local pass-and-play,
+   * which has no single "you"). Win/loss is decided by comparing this to
+   * winnerId — never by matching display names, which breaks the moment the
+   * player sets a real name instead of the default 'You'.
+   */
+  myPlayerId?: string | null;
   totalMoves: number;
   durationSeconds: number;
   initialState: GameState;

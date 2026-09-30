@@ -17,14 +17,14 @@ import { socketManager } from './socket';
 
 export type ReactionKind = 'laugh' | 'wow' | 'cry' | 'angry' | 'clap' | 'fire';
 
-/** Flat 2D vector icons, one family (MaterialCommunityIcons, already used). */
-export const REACTION_ICONS: Record<ReactionKind, string> = {
-  laugh: 'emoticon-lol-outline',
-  wow: 'emoticon-excited-outline',
-  cry: 'emoticon-cry-outline',
-  angry: 'emoticon-angry-outline',
-  clap: 'hand-clap',
-  fire: 'fire',
+/** Platform emoji glyphs, one per meaning — no icon-font approximations. */
+export const REACTION_EMOJI: Record<ReactionKind, string> = {
+  laugh: '😂',
+  wow: '😮',
+  cry: '😭',
+  angry: '😡',
+  clap: '👏',
+  fire: '🔥',
 };
 
 export const REACTION_ORDER: ReactionKind[] = ['laugh', 'wow', 'cry', 'angry', 'clap', 'fire'];
@@ -59,34 +59,45 @@ export interface IncomingReaction {
 }
 
 /** Max bubbles stacked in the receiving area: newer ones evict older. */
-const MAX_STACK = 2;
+const MAX_STACK = 5;
 
 interface UseQuickReactionsOptions {
+  /** UI visible (online live match, or AI match for local testing). */
   enabled: boolean;
+  /** Socket live: online matches only. AI taps echo locally instead. */
+  socketLive: boolean;
   gameId: string;
   myUserId: string | null;
 }
 
-export function useQuickReactions({ enabled, gameId, myUserId }: UseQuickReactionsOptions) {
+export function useQuickReactions({ enabled, socketLive, gameId, myUserId }: UseQuickReactionsOptions) {
   const [incoming, setIncoming] = useState<IncomingReaction[]>([]);
   const idRef = useRef(0);
 
+  const push = useCallback(
+    (kind: ReactionKind) => {
+      if (!enabled || !isReactionKind(kind)) return;
+      idRef.current += 1;
+      const item: IncomingReaction = { id: idRef.current, kind };
+      setIncoming((prev) => [...prev.slice(-(MAX_STACK - 1)), item]);
+    },
+    [enabled]
+  );
+
   useEffect(() => {
-    if (!enabled || !gameId) return;
+    if (!enabled || !socketLive || !gameId) return;
     const socket = socketManager.getSocket();
     const onReaction = (p: { gameId?: string; reaction?: string; fromUserId?: string }) => {
       if (!p || p.gameId !== gameId) return;
       if (p.fromUserId && myUserId && p.fromUserId === myUserId) return;
       if (!isReactionKind(p.reaction)) return;
-      idRef.current += 1;
-      const item: IncomingReaction = { id: idRef.current, kind: p.reaction };
-      setIncoming((prev) => [...prev.slice(-(MAX_STACK - 1)), item]);
+      push(p.reaction);
     };
     socket.on('game:reaction', onReaction);
     return () => {
       socket.off('game:reaction', onReaction);
     };
-  }, [enabled, gameId, myUserId]);
+  }, [enabled, socketLive, gameId, myUserId, push]);
 
   const dismiss = useCallback((id: number) => {
     setIncoming((prev) => prev.filter((r) => r.id !== id));
@@ -94,15 +105,23 @@ export function useQuickReactions({ enabled, gameId, myUserId }: UseQuickReactio
 
   const send = useCallback(
     (kind: ReactionKind) => {
-      if (!enabled || !gameId) return;
+      if (!enabled || !socketLive || !gameId) return;
       try {
         socketManager.getSocket().emit('game:reaction', { gameId, reaction: kind });
       } catch {
         // Ephemeral by design: a failed send is dropped, never retried.
       }
     },
-    [enabled, gameId]
+    [enabled, socketLive, gameId]
   );
 
-  return { incoming, dismiss, send };
+  /** Local echo for AI-match testing: shows the bubble with no socket. */
+  const preview = useCallback(
+    (kind: ReactionKind) => {
+      push(kind);
+    },
+    [push]
+  );
+
+  return { incoming, dismiss, send, preview };
 }

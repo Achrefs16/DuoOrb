@@ -3,18 +3,21 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { PrismaService } from '../database/prisma.service.js';
 import {
   ACHIEVEMENTS,
   BADGE_SLOTS,
-  GRINDER_WINS,
+  WIN_MILESTONES,
   achievementByCode,
   swiftPliesFor,
 } from './achievements.catalog.js';
 import {
+  applyAction,
   createInitialState,
   parseGame,
-  rebuildFromNotation,
+  seatLetter,
+  type GameAction,
   type GameMode,
 } from '@duoorb/game-core';
 
@@ -33,6 +36,7 @@ export interface EarnedBadgeDto {
   code: string;
   name: string;
   description: string;
+  requirement: string;
   icon: string;
 }
 
@@ -44,8 +48,11 @@ export interface SubmitAiWinResult {
     playedAt: string;
   };
   alreadyRecorded: boolean;
+  /** Same winning sequence already stored for this account: +0, no rewards. */
+  duplicate: boolean;
   newAchievements: EarnedBadgeDto[];
   stats: {
+    /** Unique hard-AI winning sequences on this account. */
     hardWins: number;
     fastestPlies: number | null;
     /** Owners per newly earned code — the rarity behind the message. */
@@ -62,6 +69,20 @@ function seatsForMode(mode: string): number {
   if (mode.includes('4')) return 4;
   if (mode.includes('3')) return 3;
   return 2;
+}
+
+/**
+ * One ply as canonical text. Seat letters, player ids, dates and names are
+ * deliberately absent: the mover's seat INDEX plus the bare action is what
+ * makes the same exact game hash the same on every device, every time, while
+ * two genuinely different games can never collide into one signature.
+ */
+function canonicalToken(action: GameAction): string {
+  if (action.type === 'MOVE') return `M${action.to.row},${action.to.col}`;
+  if (action.type === 'PLACE_WALL') {
+    return `W${action.wall.row},${action.wall.col},${action.wall.orientation}`;
+  }
+  return action.type;
 }
 
 const NOTATION_LIMIT = 50_000;
@@ -131,34 +152,53 @@ export class AiwinsService {
           playedAt: existing.playedAt.toISOString(),
         },
         alreadyRecorded: true,
+        duplicate: false,
         newAchievements: [],
         stats,
         message: '',
       };
     }
 
-    // Verify: the notation must replay to a completed game the claimed seat won.
+    // Verify AND fingerprint in one replay: every ply must apply, the game
+    // must complete with the claimed seat winning, and each ply contributes
+    // its canonical token to the sequence signature. A fabricated game fails
+    // here and earns nothing.
     const seats = seatsForMode(mode);
     let winnerSeat = -1;
     let replayedPlies = 0;
+    let sequenceHash = '';
     try {
       const moves = parseGame(movesNotation);
-      const initial = createInitialState({
+      let state = createInitialState({
         mode: mode as GameMode,
         gameId: 'verify',
         playerNames: Array.from({ length: seats }, (_, i) => `Seat ${i + 1}`),
       });
-      const rebuilt = rebuildFromNotation(initial, movesNotation);
-      if (rebuilt.problem || rebuilt.stoppedAt !== null) {
-        throw new BadRequestException(`Win could not be verified: ${rebuilt.problem ?? 'replay stopped'}.`);
+      const parts = [`${mode}|${seats}`];
+      for (const move of moves) {
+        const mover = state.players[state.currentPlayerIndex];
+        if (!mover) throw new BadRequestException('Win could not be verified: bad turn order.');
+        if (move.seat && move.seat !== seatLetter(mover.index)) {
+          throw new BadRequestException(
+            `Win could not be verified: ply ${parts.length} names the wrong seat.`
+          );
+        }
+        parts.push(`${mover.index}:${canonicalToken(move.action)}`);
+        const applied = applyAction(state, move.action);
+        if (!applied.success) {
+          throw new BadRequestException(
+            `Win could not be verified: ply ${parts.length - 1} is not legal here.`
+          );
+        }
+        state = applied.state;
       }
-      const final = rebuilt.state;
-      if (final.status !== 'COMPLETED' || !final.winnerId) {
+      if (state.status !== 'COMPLETED' || !state.winnerId) {
         throw new BadRequestException('Win could not be verified: the game is not complete.');
       }
-      const winner = final.players.find((p) => p.id === final.winnerId);
+      const winner = state.players.find((p) => p.id === state.winnerId);
       winnerSeat = winner ? winner.index : -1;
       replayedPlies = moves.length;
+      sequenceHash = createHash('sha256').update(parts.join('|')).digest('hex');
     } catch (e) {
       if (e instanceof BadRequestException) throw e;
       throw new BadRequestException('Win could not be verified.');
@@ -170,6 +210,29 @@ export class AiwinsService {
       throw new BadRequestException('Win could not be verified: ply count mismatch.');
     }
 
+    // Duplicate sequence for this account: same exact game, +0. No storage,
+    // no milestone check, no reward — but also no error. Another account
+    // using this sequence is irrelevant: the lookup is scoped to this user.
+    const seen = await this.prisma.aiWin.findUnique({
+      where: { userId_sequenceHash: { userId, sequenceHash } },
+    });
+    if (seen) {
+      const stats = await this.winStats(userId, {});
+      return {
+        win: {
+          id: seen.id,
+          mode: seen.mode,
+          totalPlies: seen.totalPlies,
+          playedAt: seen.playedAt.toISOString(),
+        },
+        alreadyRecorded: false,
+        duplicate: true,
+        newAchievements: [],
+        stats,
+        message: '',
+      };
+    }
+
     const win = await this.prisma.aiWin.create({
       data: {
         userId,
@@ -178,6 +241,7 @@ export class AiwinsService {
         aiDifficulty: 'hard',
         playerSeat: playerSeat as number,
         movesNotation,
+        sequenceHash,
         totalPlies: totalPlies as number,
         durationSeconds: durationSeconds as number,
         playedAt,
@@ -193,7 +257,13 @@ export class AiwinsService {
     const newAchievements: EarnedBadgeDto[] = newCodes
       .map(achievementByCode)
       .filter((d): d is NonNullable<typeof d> => !!d)
-      .map((d) => ({ code: d.code, name: d.name, description: d.description, icon: d.icon }));
+      .map((d) => ({
+        code: d.code,
+        name: d.name,
+        description: d.description,
+        requirement: d.requirement,
+        icon: d.icon,
+      }));
     const message = this.celebration(newAchievements, stats, totalPlies as number);
 
     return {
@@ -204,6 +274,7 @@ export class AiwinsService {
         playedAt: win.playedAt.toISOString(),
       },
       alreadyRecorded: false,
+      duplicate: false,
       newAchievements,
       stats,
       message,
@@ -252,26 +323,48 @@ export class AiwinsService {
     };
   }
 
-  /** Earned badges, equipped slots, and the full catalog with earned flags. */
+  /**
+   * Earned badges, equipped slots, the full catalog with earned flags, the
+   * unique-win counter, and owner counts per code (rarity for detail views).
+   */
   async getMyAchievements(userId: string) {
     if (!this.prisma.isConnected) {
-      return { earned: [], equipped: [], catalog: ACHIEVEMENTS.map((a) => ({ ...a, earned: false })) };
+      return {
+        earned: [],
+        equipped: [],
+        catalog: ACHIEVEMENTS.map((a) => ({ ...a, earned: false })),
+        stats: { hardWins: 0, fastestPlies: null as number | null },
+        owners: {} as Record<string, number>,
+      };
     }
-    const [earned, equipped] = await Promise.all([
+    const [earned, equipped, stats, ownerGroups] = await Promise.all([
       this.prisma.achievement.findMany({ where: { userId }, orderBy: { earnedAt: 'asc' } }),
       this.prisma.equippedBadge.findMany({ where: { userId }, orderBy: { slot: 'asc' } }),
+      this.winStats(userId, {}),
+      this.prisma.achievement.groupBy({ by: ['code'], _count: { code: true } }),
     ]);
     const earnedSet = new Set(earned.map((e) => e.code));
     const byCode = new Map(earned.map((e) => [e.code, e.earnedAt.toISOString()]));
+    const owners: Record<string, number> = {};
+    for (const g of ownerGroups) owners[g.code] = g._count.code;
+    const withMeta = (d: NonNullable<ReturnType<typeof achievementByCode>>) => ({
+      code: d.code,
+      name: d.name,
+      description: d.description,
+      requirement: d.requirement,
+      icon: d.icon,
+    });
     return {
       earned: earned
         .map((e) => achievementByCode(e.code))
         .filter((d): d is NonNullable<typeof d> => !!d)
-        .map((d) => ({ ...d, earnedAt: byCode.get(d.code) })),
+        .map((d) => ({ ...withMeta(d), earnedAt: byCode.get(d.code) })),
       equipped: equipped
-        .map((b) => ({ ...(achievementByCode(b.code) ?? { code: b.code, name: b.code, description: '', icon: 'award' }), slot: b.slot }))
+        .map((b) => ({ ...(achievementByCode(b.code) ?? { code: b.code, name: b.code, description: '', requirement: '', icon: 'award' }), slot: b.slot }))
         .sort((a, b) => a.slot - b.slot),
       catalog: ACHIEVEMENTS.map((a) => ({ ...a, earned: earnedSet.has(a.code) })),
+      stats: { hardWins: stats.hardWins, fastestPlies: stats.fastestPlies },
+      owners,
     };
   }
 
@@ -334,7 +427,12 @@ export class AiwinsService {
 
   // -------------------------------------------------------------------------
 
-  /** Award whatever this win earns. Returns the newly earned codes. */
+  /**
+   * Award whatever this NEW UNIQUE win earns. Only called for a sequence this
+   * account has never stored: repeats never reach here, so milestones can
+   * only ever move forward. Counts are unique sequences by construction —
+   * every stored row is a different game.
+   */
   private async evaluateWins(userId: string, mode: string, totalPlies: number): Promise<string[]> {
     const [count, existing] = await Promise.all([
       this.prisma.aiWin.count({ where: { userId } }),
@@ -342,9 +440,10 @@ export class AiwinsService {
     ]);
     const owned = new Set(existing.map((e) => e.code));
     const earn: string[] = [];
-    if (count >= 1 && !owned.has('giant-slayer')) earn.push('giant-slayer');
+    for (const milestone of WIN_MILESTONES) {
+      if (count >= milestone.at && !owned.has(milestone.code)) earn.push(milestone.code);
+    }
     if (totalPlies <= swiftPliesFor(mode) && !owned.has('blitzmind')) earn.push('blitzmind');
-    if (count >= GRINDER_WINS && !owned.has('unbreakable')) earn.push('unbreakable');
     if (mode !== '2p' && !owned.has('arena-master')) earn.push('arena-master');
     for (const code of earn) {
       try {

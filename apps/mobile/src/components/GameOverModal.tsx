@@ -34,6 +34,10 @@ interface GameOverModalProps {
   onHome: () => void;
   /** Dismiss the modal and stay on the finished match screen. */
   onClose: () => void;
+  /** Copies the finished game as chess-style move notation to the clipboard. */
+  onCopyMoves?: () => void;
+  /** Label flips to "Copied" briefly after a successful copy. */
+  movesCopied?: boolean;
   /**
    * Hard-AI victory reward, set only when the win was uploaded while online.
    * Null while offline or when no badge was earned: the reward UI renders
@@ -66,6 +70,8 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onAnalyze,
   onHome,
   onClose,
+  onCopyMoves,
+  movesCopied = false,
   reward = null,
 }) => {
   const winner = state.players.find((p) => p.id === state.winnerId);
@@ -273,7 +279,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 <Text style={styles.rewardMessage}>{reward.message}</Text>
               )}
               <Text style={styles.rewardStats}>
-                {`Win #${reward.stats.hardWins} vs Hard`}
+                {`${reward.stats.hardWins} different Hard AI win${reward.stats.hardWins === 1 ? '' : 's'}`}
                 {reward.stats.fastestPlies !== null
                   ? ` · fastest ${reward.stats.fastestPlies} moves`
                   : ''}
@@ -324,6 +330,23 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 <Feather name="activity" size={14} color={THEME.colors.primary} />
                 <Text style={styles.utilityText}>Analyze</Text>
               </TouchableOpacity>
+
+              {onCopyMoves && (
+                <TouchableOpacity
+                  style={styles.utilityBtn}
+                  activeOpacity={0.7}
+                  onPress={onCopyMoves}
+                  accessibilityRole="button"
+                  accessibilityLabel="Copy game moves as text"
+                >
+                  <Feather
+                    name={movesCopied ? 'check' : 'copy'}
+                    size={14}
+                    color={movesCopied ? THEME.colors.success : THEME.colors.textSecondary}
+                  />
+                  <Text style={styles.utilityText}>{movesCopied ? 'Copied' : 'Copy Moves'}</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Opponent identity: the one place a finished online match can

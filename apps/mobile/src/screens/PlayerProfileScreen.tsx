@@ -14,6 +14,7 @@ import { THEME, playerColor } from '../theme';
 import { useIdentity } from '../network/auth';
 import {
   api,
+  EquippedBadgeDto,
   PublicProfileDto,
   RatingHistoryPointDto,
   HeadToHeadStats,
@@ -72,6 +73,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   const [recentVisible, setRecentVisible] = useState(5);
   const [showRemove, setShowRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [detailBadge, setDetailBadge] = useState<EquippedBadgeDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // The canonical identity, so "your" name in head-to-head comparisons is
@@ -367,7 +369,13 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 {profile.badges.equipped.length > 0 && (
                   <View style={styles.badgeRow}>
                     {profile.badges.equipped.map((badge) => (
-                      <View key={badge.code} style={styles.badgeChip}>
+                      <TouchableOpacity
+                        key={badge.code}
+                        style={styles.badgeChip}
+                        activeOpacity={0.7}
+                        onPress={() => setDetailBadge(badge)}
+                        accessibilityLabel={`${badge.name}: details`}
+                      >
                         <Feather
                           name={(badge.icon ?? 'award') as 'award'}
                           size={16}
@@ -376,13 +384,13 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                         <Text style={styles.badgeName} numberOfLines={1}>
                           {badge.name}
                         </Text>
-                      </View>
+                      </TouchableOpacity>
                     ))}
                   </View>
                 )}
                 <Text style={styles.badgeStats}>
                   {profile.badges.hardWins > 0
-                    ? `${profile.badges.hardWins} hard-AI win${profile.badges.hardWins === 1 ? '' : 's'}`
+                    ? `${profile.badges.hardWins} different Hard AI win${profile.badges.hardWins === 1 ? '' : 's'}`
                     : 'No hard-AI wins yet'}
                   {profile.badges.fastestPlies !== null && profile.badges.fastestPlies !== undefined
                     ? ` · fastest ${profile.badges.fastestPlies} moves`
@@ -550,6 +558,39 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
           </View>
         </ScrollView>
       )}
+
+      {/* Badge details (read-only for visitors): what it is and how to earn it. */}
+      <Modal
+        visible={detailBadge !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDetailBadge(null)}
+      >
+        <View style={styles.detailOverlay}>
+          <View style={styles.detailCard}>
+            <View style={styles.detailIconCircle}>
+              <Feather
+                name={((detailBadge?.icon ?? 'award') as 'award')}
+                size={28}
+                color={THEME.colors.assessmentInaccuracy}
+              />
+            </View>
+            <Text style={styles.detailName}>{detailBadge?.name}</Text>
+            <Text style={styles.detailDesc}>{detailBadge?.description}</Text>
+            {!!detailBadge?.requirement && (
+              <Text style={styles.detailReq}>{detailBadge.requirement}</Text>
+            )}
+            <TouchableOpacity
+              style={styles.detailCloseBtn}
+              activeOpacity={0.7}
+              onPress={() => setDetailBadge(null)}
+              accessibilityLabel="Close badge details"
+            >
+              <Text style={styles.detailCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -902,6 +943,68 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: THEME.colors.textSecondaryStrong,
     fontVariant: ['tabular-nums'],
+  },
+  detailOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  detailCard: {
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderRadius: THEME.radius.xl,
+    padding: 24,
+    maxWidth: 340,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    ...THEME.shadows.modal,
+  },
+  detailIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    backgroundColor: THEME.colors.warningLight,
+    borderWidth: 1,
+    borderColor: THEME.colors.warningBorder,
+  },
+  detailName: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 20,
+    fontWeight: '800',
+    color: THEME.colors.onSurface,
+    textAlign: 'center',
+  },
+  detailDesc: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 14,
+    color: THEME.colors.onSurfaceVariant,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  detailReq: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.primary,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  detailCloseBtn: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+  },
+  detailCloseText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.textMuted,
   },
   h2hStage: {
     flexDirection: 'row',

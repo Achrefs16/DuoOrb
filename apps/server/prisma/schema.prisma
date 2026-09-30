@@ -239,12 +239,18 @@ model AiWin {
   playerSeat      Int
   /// Full move notation (game-core formatGame wire format) for later analysis.
   movesNotation   String
+  /// SHA-256 over the canonical action sequence (mode, seats, mover + action
+  /// per ply). The same exact game always hashes the same, so a repeated
+  /// winning sequence is detected per account and counted once. Nullable so
+  /// pre-feature rows (which were never hashed) never collide with anything.
+  sequenceHash    String?
   totalPlies      Int
   durationSeconds Int
   playedAt        DateTime
   createdAt       DateTime @default(now())
 
   @@unique([userId, clientWinId])
+  @@unique([userId, sequenceHash])
   @@index([userId, createdAt])
   @@map("ai_wins")
 }

@@ -65,28 +65,39 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           setSummary(serverRes.summary ?? null);
         } else {
           // Offline fallback: local device games only, honestly unrated.
-          const mapped: GameHistoryItemDto[] = savedLocal.map((lg) => ({
-          gameId: lg.id,
-          mode: lg.mode,
-          status: 'COMPLETED',
-          isRanked: false,
-          timeControlMinutes: 3,
-          incrementSeconds: 2,
-          outcome: (lg.winnerName === 'You' ? 'WIN' : 'LOSS') as 'WIN' | 'LOSS',
-          endedAt: new Date(lg.date).toISOString(),
-          durationMs: (lg.durationSeconds || 0) * 1000,
-          myRating: { before: null, after: null, delta: 0 },
-          opponent: {
-            // Empty on purpose: a device-local game has no account behind the
-            // opponent, and the result modal keys the View Profile action off
-            // this id. 'local' would open a profile for a user that is not one.
-            userId: '',
-            username: lg.winnerName === 'You' ? 'AI' : lg.winnerName,
-            displayName: lg.winnerName === 'You' ? 'AI' : lg.winnerName,
-            ratingBefore: null,
-            ratingAfter: null,
-          },
-        }));
+          // WIN/LOSS comes from seat ids, never display names: matching
+          // winnerName against 'You' marked every win as a loss the moment
+          // the player set a real display name. Local pass-and-play has no
+          // single "you", so those render neutral (DRAW) under the winner.
+          const mapped: GameHistoryItemDto[] = savedLocal.map((lg) => {
+            const isAi = !!lg.myPlayerId;
+            const iWon = isAi && lg.winnerId === lg.myPlayerId;
+            const aiSeat = isAi
+              ? lg.initialState.players.find((p) => p.id !== lg.myPlayerId)
+              : undefined;
+            return {
+              gameId: lg.id,
+              mode: lg.mode,
+              status: 'COMPLETED',
+              isRanked: false,
+              timeControlMinutes: 3,
+              incrementSeconds: 2,
+              outcome: (isAi ? (iWon ? 'WIN' : 'LOSS') : 'DRAW') as 'WIN' | 'LOSS' | 'DRAW',
+              endedAt: new Date(lg.date).toISOString(),
+              durationMs: (lg.durationSeconds || 0) * 1000,
+              myRating: { before: null, after: null, delta: 0 },
+              opponent: {
+                // Empty on purpose: a device-local game has no account behind the
+                // opponent, and the result modal keys the View Profile action off
+                // this id. 'local' would open a profile for a user that is not one.
+                userId: '',
+                username: isAi ? aiSeat?.displayName ?? 'AI' : lg.winnerName,
+                displayName: isAi ? aiSeat?.displayName ?? 'AI' : lg.winnerName,
+                ratingBefore: null,
+                ratingAfter: null,
+              },
+            };
+          });
         setGames(mapped);
         offsetRef.current = mapped.length;
         setTotal(mapped.length);
@@ -181,6 +192,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
 
   const renderMatchCard = ({ item }: { item: GameHistoryItemDto }) => {
     const isWin = item.outcome === 'WIN';
+    const isNeutral = item.outcome === 'DRAW';
     const delta = item.myRating?.delta ?? 0;
     const opponentName = item.opponent?.displayName || item.opponent?.username || 'Opponent';
     const opponentRating = item.opponent?.ratingBefore ?? item.opponent?.ratingAfter;
@@ -192,9 +204,19 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
         onPress={() => setSelected(item)}
       >
         <View style={styles.cardLeft}>
-          <View style={[styles.resultBadge, isWin ? styles.badgeWin : styles.badgeLoss]}>
-            <Text style={[styles.resultBadgeText, isWin ? styles.textWin : styles.textLoss]}>
-              {isWin ? 'W' : 'L'}
+          <View
+            style={[
+              styles.resultBadge,
+              isWin ? styles.badgeWin : isNeutral ? styles.badgeNeutral : styles.badgeLoss,
+            ]}
+          >
+            <Text
+              style={[
+                styles.resultBadgeText,
+                isWin ? styles.textWin : isNeutral ? styles.textNeutral : styles.textLoss,
+              ]}
+            >
+              {isWin ? 'W' : isNeutral ? '–' : 'L'}
             </Text>
           </View>
 
@@ -500,6 +522,9 @@ const styles = StyleSheet.create({
   badgeLoss: {
     backgroundColor: THEME.colors.secondaryContainer,
   },
+  badgeNeutral: {
+    backgroundColor: THEME.colors.surfaceMuted,
+  },
   resultBadgeText: {
     fontFamily: THEME.fonts.extraBold,
     fontSize: 16,
@@ -510,6 +535,9 @@ const styles = StyleSheet.create({
   },
   textLoss: {
     color: THEME.colors.secondary,
+  },
+  textNeutral: {
+    color: THEME.colors.textMuted,
   },
   cardInfo: {
     flex: 1,

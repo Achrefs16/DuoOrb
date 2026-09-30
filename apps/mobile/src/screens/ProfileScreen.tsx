@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -7,14 +8,12 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { applyAction, createInitialState, parseGame } from '@duoorb/game-core';
+import { createInitialState } from '@duoorb/game-core';
 import { THEME } from '../theme';
 import { useSession } from '../network/session';
 import {
   api,
   AchievementsResponseDto,
-  AiWinDetailDto,
-  AiWinListItemDto,
   UserMeDto,
   RatingHistoryPointDto,
   GameHistoryItemDto,
@@ -62,8 +61,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [selectedMatch, setSelectedMatch] = useState<GameHistoryItemDto | null>(null);
   const [localHistory, setLocalHistory] = useState<SavedGameRecord[]>([]);
   const [achievements, setAchievements] = useState<AchievementsResponseDto | null>(null);
-  const [aiWins, setAiWins] = useState<AiWinListItemDto[]>([]);
   const [equipping, setEquipping] = useState(false);
+  const [detailCode, setDetailCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,15 +80,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         // badges and wins appear below. Silent by design — offline, the
         // flush is a no-op and these sections simply stay hidden.
         await flushAiWinQueue().catch(() => []);
-        const [rHistory, gamesRes, achRes, winsRes] = await Promise.all([
+        const [rHistory, gamesRes, achRes] = await Promise.all([
           api.getRatingHistory(me.id, 'CLASSIC_1V1', 20).catch(() => []),
           api.getMyHistory(20, 0).catch(() => ({ games: [], total: 0 })),
           api.getMyAchievements().catch(() => null),
-          api.getMyAiWins(10, 0).catch(() => null),
         ]);
         setRatingHistory(rHistory);
         setAchievements(achRes);
-        setAiWins(winsRes?.wins ?? []);
         setRecentGames(
           [...gamesRes.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
         );
@@ -97,9 +94,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         // Offline or the server is unreachable. Show the CANONICAL identity —
         // never a fabricated profile: inventing a fallback here is what let
         // this screen disagree with Settings about who the player is.
-        const winsCount = localGames.filter((g) => g.winnerName === 'You').length;
-        const lossesCount = localGames.filter((g) => g.winnerName !== 'You').length;
-        const total = localGames.length;
+        // Wins/losses come from seat ids, never display names (see History).
+        const aiGames = localGames.filter((g) => g.myPlayerId);
+        const winsCount = aiGames.filter((g) => g.winnerId === g.myPlayerId).length;
+        const lossesCount = aiGames.filter((g) => g.winnerId !== g.myPlayerId).length;
+        const total = aiGames.length;
 
         setProfile({
           id: identity?.userId ?? '',
@@ -187,6 +186,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   const initial = (profile?.displayName || profile?.username || 'K').charAt(0).toUpperCase();
 
+  // Badge detail lookup for the tapped badge (earned, locked, or equipped).
+  const detailBadge =
+    detailCode && achievements
+      ? achievements.catalog.find((c) => c.code === detailCode) ?? null
+      : null;
+  const detailEarnedAt = detailBadge
+    ? achievements?.earned.find((e) => e.code === detailBadge.code)?.earnedAt
+    : undefined;
+  const detailEquipped = detailBadge
+    ? achievements?.equipped.some((b) => b.code === detailBadge.code) ?? false
+    : false;
+  const detailOwners = detailBadge ? achievements?.owners[detailBadge.code] ?? 0 : 0;
+
   /** Tap an earned badge to equip/unequip it in the 3-slot showcase. */
   const toggleBadge = async (code: string) => {
     if (!achievements || equipping) return;
@@ -203,58 +215,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       // Offline or refused: the showcase simply stays as it was.
     } finally {
       setEquipping(false);
-    }
-  };
-
-  /** Rebuild an uploaded hard-AI win into a replayable record. */
-  const openAiWin = async (win: AiWinListItemDto) => {
-    let detail: AiWinDetailDto | null = null;
-    try {
-      detail = await api.getAiWinDetail(win.id);
-    } catch {
-      return;
-    }
-    if (!detail) return;
-    try {
-      const seats = detail.mode.includes('4') ? 4 : detail.mode.includes('3') ? 3 : 2;
-      const playerNames = Array.from({ length: seats }, (_, i) =>
-        i === detail.playerSeat ? 'You' : `AI (hard)`
-      );
-      const opening = createInitialState({
-        gameId: `aiwin-${detail.id}`,
-        mode: detail.mode as SavedGameRecord['mode'],
-        playerNames,
-      });
-      let s = opening;
-      const history: SavedGameRecord['history'] = [];
-      for (const m of parseGame(detail.movesNotation)) {
-        const pid = s.players[s.currentPlayerIndex]?.id ?? '';
-        const applied = applyAction(s, m.action);
-        if (!applied.success) break;
-        history.push({
-          sequence: history.length,
-          playerId: pid,
-          action: m.action,
-          timestamp: new Date(detail.playedAt).getTime(),
-        });
-        s = applied.state;
-      }
-      const winner = s.players.find((p) => p.id === s.winnerId);
-      onSelectGame({
-        id: `aiwin-${detail.id}`,
-        date: new Date(detail.playedAt).getTime(),
-        mode: detail.mode as SavedGameRecord['mode'],
-        type: 'ai',
-        aiDifficulty: 'hard',
-        winnerId: s.winnerId,
-        winnerName: winner?.displayName ?? 'You',
-        totalMoves: history.length,
-        durationSeconds: detail.durationSeconds,
-        initialState: opening,
-        history,
-      });
-    } catch {
-      // A corrupt upload simply does not open.
     }
   };
 
@@ -336,7 +296,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <View style={styles.recentSection}>
               <View style={styles.recentHeaderRow}>
                 <Text style={styles.sectionHeading}>ACHIEVEMENTS</Text>
-                <Text style={styles.sectionSub}>Tap to equip · 3 slots</Text>
+                <Text style={styles.sectionSub}>
+                  {achievements.stats.hardWins} different Hard AI win{achievements.stats.hardWins === 1 ? '' : 's'}
+                </Text>
               </View>
 
               <View style={styles.badgeSlotRow}>
@@ -374,10 +336,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         !badge.earned && styles.badgeChipLocked,
                         isEquipped && styles.badgeChipEquipped,
                       ]}
-                      activeOpacity={badge.earned ? 0.7 : 1}
-                      disabled={!badge.earned || equipping}
-                      onPress={() => void toggleBadge(badge.code)}
-                      accessibilityLabel={badge.earned ? `Equip ${badge.name}` : `${badge.name} (locked)`}
+                      activeOpacity={0.7}
+                      disabled={equipping}
+                      onPress={() => setDetailCode(badge.code)}
+                      accessibilityLabel={`${badge.name}: details`}
                     >
                       <Feather
                         name={(badge.earned ? badge.icon : 'lock') as 'award'}
@@ -399,45 +361,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     </TouchableOpacity>
                   );
                 })}
-              </View>
-            </View>
-          )}
-
-          {/* Hard-AI wins — the recorded victories, replayable for analysis. */}
-          {aiWins.length > 0 && (
-            <View style={styles.recentSection}>
-              <View style={styles.recentHeaderRow}>
-                <Text style={styles.sectionHeading}>HARD AI WINS</Text>
-                <Text style={styles.sectionSub}>{aiWins.length} recorded</Text>
-              </View>
-              <View style={styles.recentList}>
-                {aiWins.map((win) => (
-                  <TouchableOpacity
-                    key={win.id}
-                    style={styles.matchItem}
-                    activeOpacity={0.75}
-                    onPress={() => void openAiWin(win)}
-                  >
-                    <View style={styles.matchItemLeft}>
-                      <View style={[styles.miniOutcomeBadge, styles.badgeWin]}>
-                        <Feather name="award" size={16} color={THEME.colors.tertiary} />
-                      </View>
-                      <View style={styles.matchItemMeta}>
-                        <Text style={styles.matchItemOpponent}>
-                          Beat Hard AI · {win.totalPlies} moves
-                        </Text>
-                        <Text style={styles.matchItemMode}>
-                          {new Date(win.playedAt).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-                    <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
-                  </TouchableOpacity>
-                ))}
               </View>
             </View>
           )}
@@ -534,6 +457,69 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </ScrollView>
       )}
+
+      {/* Badge details: what it is, how to earn it, rarity, equip toggle. */}
+      <Modal
+        visible={detailBadge !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDetailCode(null)}
+      >
+        <View style={styles.detailOverlay}>
+          <View style={styles.detailCard}>
+            <View style={styles.detailIconCircle}>
+              <Feather
+                name={((detailBadge?.earned ? detailBadge?.icon : 'lock') ?? 'lock') as 'award'}
+                size={28}
+                color={
+                  detailBadge?.earned
+                    ? THEME.colors.assessmentInaccuracy
+                    : THEME.colors.textMuted
+                }
+              />
+            </View>
+            <Text style={styles.detailName}>{detailBadge?.name}</Text>
+            <Text style={styles.detailDesc}>{detailBadge?.description}</Text>
+            {!!detailBadge?.requirement && (
+              <Text style={styles.detailReq}>{detailBadge.requirement}</Text>
+            )}
+            <Text style={styles.detailMeta}>
+              {detailEarnedAt
+                ? `Earned ${new Date(detailEarnedAt).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}`
+                : 'Locked — earn it first'}
+              {` · owned by ${detailOwners} player${detailOwners === 1 ? '' : 's'}`}
+            </Text>
+            {detailBadge?.earned && (
+              <TouchableOpacity
+                style={[styles.detailEquipBtn, detailEquipped && styles.detailEquipBtnActive]}
+                activeOpacity={0.8}
+                disabled={equipping}
+                onPress={() => {
+                  if (detailBadge) void toggleBadge(detailBadge.code);
+                }}
+              >
+                <Text
+                  style={[styles.detailEquipText, detailEquipped && styles.detailEquipTextActive]}
+                >
+                  {detailEquipped ? 'Equipped ✓' : 'Equip badge'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.detailCloseBtn}
+              activeOpacity={0.7}
+              onPress={() => setDetailCode(null)}
+              accessibilityLabel="Close badge details"
+            >
+              <Text style={styles.detailCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Match details + View Profile, the same modal History uses. */}
       <MatchResultModal
@@ -833,6 +819,100 @@ const styles = StyleSheet.create({
   },
   badgeChipTextEquipped: {
     color: THEME.colors.onSurface,
+  },
+  detailOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  detailCard: {
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderRadius: THEME.radius.xl,
+    padding: 24,
+    maxWidth: 340,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    ...THEME.shadows.modal,
+  },
+  detailIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    backgroundColor: THEME.colors.warningLight,
+    borderWidth: 1,
+    borderColor: THEME.colors.warningBorder,
+  },
+  detailName: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 20,
+    fontWeight: '800',
+    color: THEME.colors.onSurface,
+    textAlign: 'center',
+  },
+  detailDesc: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 14,
+    color: THEME.colors.onSurfaceVariant,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  detailReq: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.primary,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  detailMeta: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    textAlign: 'center',
+    marginTop: 8,
+    fontVariant: ['tabular-nums'],
+  },
+  detailEquipBtn: {
+    marginTop: 16,
+    width: '100%',
+    height: 44,
+    borderRadius: THEME.radius.lg,
+    backgroundColor: THEME.colors.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailEquipBtnActive: {
+    backgroundColor: THEME.colors.warningLight,
+    borderColor: THEME.colors.warningBorder,
+  },
+  detailEquipText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 14,
+    fontWeight: '700',
+    color: THEME.colors.onSurface,
+  },
+  detailEquipTextActive: {
+    color: THEME.colors.onSurface,
+  },
+  detailCloseBtn: {
+    marginTop: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+  },
+  detailCloseText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.textMuted,
   },
   sectionHeading: {
     fontFamily: THEME.fonts.bold,

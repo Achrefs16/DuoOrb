@@ -3,6 +3,7 @@ import { ActivityIndicator, Animated, BackHandler, Modal, Platform, StatusBar, S
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   AIDifficulty,
+  AI_BUILD,
   AI_PROFILES,
   CellCoord,
   GameAction,
@@ -11,6 +12,7 @@ import {
   Orientation,
   WallCoord,
   applyAction,
+  boardOf,
   createInitialState,
   forfeitMatch,
   getBestActionAsync,
@@ -19,6 +21,7 @@ import {
   isLegalWallPlacement,
   playerCountForMode,
   rebuildStateAtStep,
+  routeOf,
 } from '@duoorb/game-core';
 import { Feather } from '@expo/vector-icons';
 import type { GameSyncDto } from '@duoorb/protocol';
@@ -40,6 +43,7 @@ import { ReactionDock, ReactionTray } from '../components/QuickReactions';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
 import { useIdentity } from '../network/auth';
 import { socketManager } from '../network/socket';
+import * as Clipboard from 'expo-clipboard';
 // Serializes a finished hard-AI win for the server upload (achievements).
 import { formatGame } from '@duoorb/game-core';
 
@@ -280,6 +284,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // to the tap handler): the hardware-back effect above reads it.
   const [profilePlayer, setProfilePlayer] = useState<{ userId: string; username: string } | null>(null);
   const [rematchSent, setRematchSent] = useState<boolean>(false);
+  // Clipboard feedback for the copy-moves button.
+  const [movesCopied, setMovesCopied] = useState<boolean>(false);
   const [rematchIncomingDismissed, setRematchIncomingDismissed] = useState<boolean>(false);
   // In-match replay: null = live final board; a step number replays the
   // stored history through the existing replay reconstruction (no new page).
@@ -781,6 +787,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         aiDifficulty: type === 'ai' ? aiDifficulty : undefined,
         winnerId: state.winnerId,
         winnerName: winner?.displayName ?? 'Nobody',
+        // Who "you" are, by seat id. History decides WIN/LOSS from this, so a
+        // real display name can never flip a win into a loss again.
+        myPlayerId: type === 'ai' ? state.players[humanIdx]?.id ?? null : null,
         totalMoves: state.history.length,
         durationSeconds: Math.floor((Date.now() - state.startedAt) / 1000),
         initialState,
@@ -1099,19 +1108,54 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const myAiFinished = type === 'ai' && myOrb?.status === 'FINISHED';
   const isCompleted = state.status === 'COMPLETED';
   const isMultiplayer = state.players.length > 2;
-  // Quick reactions: live online matches only. AI, local, replay, analysis
-  // and finished matches never attach the listener or render the UI — the
-  // reaction state below stays empty and the board tree is untouched.
-  const reactionsLive =
-    type === 'online' &&
-    !!onlineGameId &&
-    !isCompleted &&
-    !replaying &&
-    viewingStep === null;
+  // Quick reactions: the dock is visible in live online matches AND in 2p
+  // AI games; the sending tray is online-only. In AI games the USER sends
+  // nothing — the engine taunts through the dock itself (see below), and its
+  // taps echo locally with no socket behind them. Local, replay, analysis
+  // and finished matches show nothing and attach nothing.
+  const socketLive = type === 'online' && !!onlineGameId;
+  const matchLive = !isCompleted && !replaying && viewingStep === null;
+  const aiSparring = type === 'ai' && state.players.length === 2;
+  const reactionsVisible = (socketLive || aiSparring) && matchLive;
   const reactions = useQuickReactions({
-    enabled: reactionsLive,
+    enabled: reactionsVisible,
+    socketLive,
     gameId: onlineGameId ?? '',
     myUserId: identity?.userId ?? null,
+  });
+
+  // AI banter (2p AI games only): laugh the first time the engine's race lead
+  // reaches a ~70% position, applaud the first time the human's reaches ~80%.
+  // Race-implied odds (logistic on the step lead): +1 step ≈ 73%, +2 ≈ 88%.
+  // Once per game each, never in the opening (leads flap early), and never
+  // laughing while the human is about to convert — taunting on the eve of
+  // defeat is a bug, not banter.
+  const tauntGameRef = useRef<string | null>(null);
+  const laughedRef = useRef(false);
+  const clappedRef = useRef(false);
+  useEffect(() => {
+    if (tauntGameRef.current !== state.gameId) {
+      tauntGameRef.current = state.gameId;
+      laughedRef.current = false;
+      clappedRef.current = false;
+    }
+    if (type !== 'ai' || state.players.length !== 2) return;
+    if (state.status !== 'IN_PROGRESS' || state.history.length < 10) return;
+    if (laughedRef.current && clappedRef.current) return;
+    const human = state.players[humanIdx];
+    const foe = state.players[1 - humanIdx];
+    if (!human || !foe) return;
+    const board = boardOf(state);
+    const myDist = routeOf(state, board, human).distance;
+    const aiDist = routeOf(state, board, foe).distance;
+    if (!Number.isFinite(myDist) || !Number.isFinite(aiDist)) return;
+    if (!laughedRef.current && aiDist + 1 <= myDist && myDist > 2) {
+      laughedRef.current = true;
+      reactions.preview('laugh');
+    } else if (!clappedRef.current && myDist + 2 <= aiDist && aiDist > 2) {
+      clappedRef.current = true;
+      reactions.preview('clap');
+    }
   });
   // No Resign anywhere near a finished match — and never in local games.
   const canResign =
@@ -1180,6 +1224,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setViewingStep(totalSteps);
   };
 
+  /** Copies the finished game as chess-style notation for analysis. */
+  const handleCopyMoves = async () => {
+    try {
+      await Clipboard.setStringAsync(formatGame(state));
+      setMovesCopied(true);
+      setTimeout(() => setMovesCopied(false), 1800);
+    } catch {
+      setMovesCopied(false);
+    }
+  };
   const exitReplay = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization
     () => {
@@ -1293,11 +1347,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         }
       : null;
 
-  const aiRating = aiDifficulty === 'hard' ? 1750 : aiDifficulty === 'easy' ? 1250 : 1500;
-  const playerRatings: Record<string, number> = {};
-  state.players.forEach((p, idx) => {
-    playerRatings[p.id] = type === 'ai' ? (isAiSide(idx) ? aiRating : 1500) : 1500;
-  });
+  // Board ratings are shown only when real. There is no client-side source
+  // of truth for any seat's rating (AI numbers used to be hardcoded per
+  // difficulty and everyone else got a flat 1500), so the board passes no
+  // ratings at all and PlayerStrip hides the pills instead of showing fiction.
 
   // A board seat id ('p2') is not a user id. The server sends the seat ->
   // account map with every sync, so this is the one lookup that turns a
@@ -1492,10 +1545,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </View>
       </View>
 
-      {/* Quick-reaction receiving area (live online only): reserved breathing
-          space for the opponent's bubble. Empty and quiet otherwise; the fixed
+      {/* Quick-reaction receiving area (live online + AI sparring): reserved
+          breathing space for the bubble. Empty and quiet otherwise; the fixed
           height means a bubble never shifts layout or the board. */}
-      {reactionsLive && (
+      {reactionsVisible && (
         <ReactionDock items={reactions.incoming} onDone={reactions.dismiss} />
       )}
 
@@ -1512,7 +1565,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         <PlayerStrip
           state={topStripState}
           timers={timers}
-          ratings={playerRatings}
           compact
           grid={splitActive}
           bonus={lastBonus}
@@ -1570,7 +1622,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               <PlayerStrip
                 state={bottomStripState}
                 timers={timers}
-                ratings={playerRatings}
                 bonus={lastBonus}
                 hideWallsBadge={!splitActive}
                 grid={splitActive}
@@ -1698,9 +1749,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               </TouchableOpacity>
             </View>
           )}
-          {/* Quick-reaction sending row (live online only): six compact
-              buttons under Resign. Ephemeral — sends one socket event. */}
-          {reactionsLive && <ReactionTray onSend={reactions.send} />}
+          {/* Quick-reaction sending row (live online only — AI games get no
+              tray; the engine is the only one who reacts there). */}
+          {socketLive && matchLive && <ReactionTray onSend={reactions.send} />}
         </View>
       </View>
 
@@ -1787,7 +1838,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           isMultiplayer
             ? undefined
             : type === 'ai'
-            ? `AI (${aiDifficulty})`
+            ? `AI (${aiDifficulty} · v${AI_BUILD})`
             : topList[0]?.displayName || 'Opponent'
         }
         isWinner={
@@ -1812,6 +1863,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         }}
         onReplay={enterReplay}
         reward={aiReward}
+        onCopyMoves={handleCopyMoves}
+        movesCopied={movesCopied}
         opponentUserId={opponentAccountForResult?.userId ?? null}
         onViewOpponentProfile={
           opponentAccountForResult
@@ -1914,7 +1967,10 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
   },
   headerInner: {
-    height: 44,
+    // 36 + status height ≈ 64: matches every other page's header. Was 44,
+    // which made this bar ~8px taller than the rest for no reason.
+    // (Touch target stays ≥44 via the button's hitSlop.)
+    height: 36,
     flexDirection: 'row',
     alignItems: 'center',
   },
