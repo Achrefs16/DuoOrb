@@ -33,12 +33,6 @@ interface GameOverModalProps {
   onHome: () => void;
   /** Dismiss the modal and stay on the finished match screen. */
   onClose: () => void;
-  /**
-   * Reserved for an external moves-copy action (not rendered here). Declared
-   * optional so callers passing it still typecheck; the UI lives elsewhere.
-   */
-  onCopyMoves?: () => void;
-  movesCopied?: boolean;
 }
 
 function ordinal(place: number): string {
@@ -151,64 +145,34 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             <Feather name="x" size={20} color={THEME.colors.textMuted} />
           </TouchableOpacity>
 
-          {/* Hero: outcome-tinted band so the result reads at a glance —
-              icon, title and subtitle live on the tint instead of floating
-              on white next to a wall of same-weight buttons. */}
+          {/* Header Icon Trophy or Flag */}
           <View
             style={[
-              styles.hero,
+              styles.iconCircle,
               outcomeWin
-                ? styles.heroWin
+                ? styles.iconCircleWin
                 : isDraw
-                ? styles.heroDraw
-                : styles.heroLoss,
+                ? styles.iconCircleDraw
+                : styles.iconCircleLoss,
             ]}
           >
-            <View
-              style={[
-                styles.iconCircle,
+            <Feather
+              name={outcomeWin ? 'award' : isDraw ? 'minus-circle' : 'shield'}
+              size={32}
+              color={
                 outcomeWin
-                  ? styles.iconCircleWin
+                  ? THEME.colors.assessmentInaccuracy
                   : isDraw
-                  ? styles.iconCircleDraw
-                  : styles.iconCircleLoss,
-              ]}
-            >
-              <Feather
-                name={outcomeWin ? 'award' : isDraw ? 'minus-circle' : 'shield'}
-                size={32}
-                color={
-                  outcomeWin
-                    ? THEME.colors.assessmentInaccuracy
-                    : isDraw
-                    ? THEME.colors.textSecondary
-                    : THEME.colors.danger
-                }
-              />
-            </View>
-
-            {/* Outcome Heading */}
-            <Text style={styles.outcomeTitle}>{outcomeTitle}</Text>
-
-            {subtitle && <Text style={styles.opponentSubtitle}>{subtitle}</Text>}
+                  ? THEME.colors.textSecondary
+                  : THEME.colors.danger
+              }
+            />
           </View>
 
-          {/* Quick stats for non-rated games (AI/local): online already shows
-              the rating section, so this only fills the otherwise empty gap
-              between subtitle and actions. */}
-          {ratingDelta === undefined && (
-            <View style={styles.statsStrip}>
-              <View style={styles.statCell}>
-                <Text style={styles.statValue}>{state.history.length}</Text>
-                <Text style={styles.statLabel}>MOVES</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statCell}>
-                <Text style={styles.statValue}>{modeLabel(state.mode)}</Text>
-                <Text style={styles.statLabel}>MODE</Text>
-              </View>
-            </View>
-          )}
+          {/* Outcome Heading */}
+          <Text style={styles.outcomeTitle}>{outcomeTitle}</Text>
+
+          {subtitle && <Text style={styles.opponentSubtitle}>{subtitle}</Text>}
 
           {/* Multiplayer finishing order — clean ranking list, no clocks. */}
           {isMultiplayer && order.length > 0 && (
@@ -385,7 +349,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
-    backgroundColor: THEME.colors.surfaceContainerLowest,
   },
   iconCircleWin: {
     backgroundColor: THEME.colors.warningLight,
@@ -410,59 +373,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: 'uppercase',
     textAlign: 'center',
-  },
-  hero: {
-    width: '100%',
-    borderRadius: THEME.radius.lg,
-    borderWidth: 1,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  heroWin: {
-    backgroundColor: THEME.colors.winBg,
-    borderColor: THEME.colors.winBorder,
-  },
-  heroLoss: {
-    backgroundColor: THEME.colors.lossBg,
-    borderColor: THEME.colors.lossBorder,
-  },
-  heroDraw: {
-    backgroundColor: THEME.colors.drawBg,
-    borderColor: THEME.colors.drawBorder,
-  },
-  statsStrip: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 18,
-    paddingVertical: 10,
-  },
-  statCell: {
-    alignItems: 'center',
-    minWidth: 72,
-  },
-  statValue: {
-    fontFamily: THEME.fonts.extraBold,
-    fontSize: 16,
-    fontWeight: '800',
-    color: THEME.colors.onSurface,
-    fontVariant: ['tabular-nums'],
-  },
-  statLabel: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 9,
-    fontWeight: '700',
-    color: THEME.colors.textMuted,
-    letterSpacing: 1.5,
-    marginTop: 1,
-  },
-  statDivider: {
-    width: 1,
-    height: 26,
-    backgroundColor: THEME.colors.surfaceContainer,
   },
   opponentSubtitle: {
     fontFamily: THEME.fonts.medium,
