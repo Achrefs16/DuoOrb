@@ -25,6 +25,7 @@ export interface UserMeDto {
   avatarUrl?: string;
   createdAt?: string | number;
   ratings?: Record<string, UserRatingDto>;
+  badges?: ProfileBadgesDto;
 }
 
 export interface PublicProfileDto {
@@ -35,6 +36,7 @@ export interface PublicProfileDto {
   avatarUrl?: string;
   createdAt?: string | number;
   ratings?: Record<string, UserRatingDto>;
+  badges?: ProfileBadgesDto;
 }
 
 /** The raw `Profile` row that PATCH /me/profile resolves to. */
@@ -136,6 +138,73 @@ export interface HistoryResponseDto {
   games: GameHistoryItemDto[];
   total: number;
   summary?: HistorySummaryDto;
+}
+
+/** One badge with catalog text, as the server returns it. */
+export interface BadgeDto {
+  code: string;
+  name: string;
+  description: string;
+  /** Feather icon name. */
+  icon: string;
+}
+
+export interface EquippedBadgeDto extends BadgeDto {
+  slot: number;
+}
+
+export interface ProfileBadgesDto {
+  equipped: EquippedBadgeDto[];
+  hardWins: number;
+  fastestPlies: number | null;
+}
+
+export interface AiWinReward {
+  win: { id: string; mode: string; totalPlies: number; playedAt: string };
+  alreadyRecorded: boolean;
+  newAchievements: BadgeDto[];
+  stats: {
+    hardWins: number;
+    fastestPlies: number | null;
+    owners: Record<string, number>;
+    speedRank: number | null;
+  };
+  /** Personalized celebration line. Empty when nothing new was earned. */
+  message: string;
+}
+
+export interface AiWinListItemDto {
+  id: string;
+  mode: string;
+  totalPlies: number;
+  durationSeconds: number;
+  playedAt: string;
+  createdAt: string;
+}
+
+export interface AiWinDetailDto extends AiWinListItemDto {
+  userId: string;
+  clientWinId: string;
+  aiDifficulty: string;
+  playerSeat: number;
+  movesNotation: string;
+}
+
+export interface AchievementsResponseDto {
+  earned: (BadgeDto & { earnedAt?: string })[];
+  equipped: EquippedBadgeDto[];
+  catalog: (BadgeDto & { earned: boolean })[];
+}
+
+export interface SubmitAiWinBody {
+  clientWinId: string;
+  mode: string;
+  aiDifficulty: 'hard';
+  playerSeat: number;
+  movesNotation: string;
+  totalPlies: number;
+  durationSeconds: number;
+  playedAt: number;
 }
 
 export interface HeadToHeadStats {
@@ -423,6 +492,43 @@ export const api = {
 
   async getGameReplay(gameId: string): Promise<any> {
     return request<any>(`/games/${gameId}`);
+  },
+
+  /**
+   * Records a verified hard-AI win. Throws ApiError on HTTP failure —
+   * callers decide between "server said no" (4xx: never retry, never show)
+   * and "unreachable" (network throw: queue for later, stay silent).
+   */
+  async submitAiWin(body: SubmitAiWinBody): Promise<AiWinReward> {
+    return request<AiWinReward>('/ai-wins', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** Own hard-AI wins newest-first, without notation. */
+  async getMyAiWins(limit = 20, offset = 0): Promise<{ wins: AiWinListItemDto[]; total: number }> {
+    return request<{ wins: AiWinListItemDto[]; total: number }>(
+      `/ai-wins/mine?limit=${limit}&offset=${offset}`
+    );
+  },
+
+  /** Full win record including notation, for replay and analysis. */
+  async getAiWinDetail(id: string): Promise<AiWinDetailDto> {
+    return request<AiWinDetailDto>(`/ai-wins/${id}`);
+  },
+
+  /** Earned badges, equipped slots, and the catalog with earned flags. */
+  async getMyAchievements(): Promise<AchievementsResponseDto> {
+    return request<AchievementsResponseDto>('/achievements/me');
+  },
+
+  /** Sets the three profile showcase slots. Returns the refreshed view. */
+  async setEquippedBadges(slots: (string | null)[]): Promise<AchievementsResponseDto> {
+    return request<AchievementsResponseDto>('/me/badges', {
+      method: 'PATCH',
+      body: JSON.stringify({ slots }),
+    });
   },
 
   async linkGuest(guestId: string, accessToken?: string): Promise<{ success: boolean }> {

@@ -7,15 +7,19 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { createInitialState } from '@duoorb/game-core';
+import { applyAction, createInitialState, parseGame } from '@duoorb/game-core';
 import { THEME } from '../theme';
 import { useSession } from '../network/session';
 import {
   api,
+  AchievementsResponseDto,
+  AiWinDetailDto,
+  AiWinListItemDto,
   UserMeDto,
   RatingHistoryPointDto,
   GameHistoryItemDto,
 } from '../network/apiClient';
+import { flushAiWinQueue } from '../aiwins/aiWins';
 import { RatingChart } from '../components/RatingChart';
 import { MatchResultModal } from '../components/MatchResultModal';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
@@ -57,6 +61,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [recentVisible, setRecentVisible] = useState(5);
   const [selectedMatch, setSelectedMatch] = useState<GameHistoryItemDto | null>(null);
   const [localHistory, setLocalHistory] = useState<SavedGameRecord[]>([]);
+  const [achievements, setAchievements] = useState<AchievementsResponseDto | null>(null);
+  const [aiWins, setAiWins] = useState<AiWinListItemDto[]>([]);
+  const [equipping, setEquipping] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,11 +77,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       const me = await api.getMe().catch(() => null);
       if (me) {
         setProfile(me);
-        const [rHistory, gamesRes] = await Promise.all([
+        // Drain the offline hard-AI-win outbox first, so freshly synced
+        // badges and wins appear below. Silent by design — offline, the
+        // flush is a no-op and these sections simply stay hidden.
+        await flushAiWinQueue().catch(() => []);
+        const [rHistory, gamesRes, achRes, winsRes] = await Promise.all([
           api.getRatingHistory(me.id, 'CLASSIC_1V1', 20).catch(() => []),
           api.getMyHistory(20, 0).catch(() => ({ games: [], total: 0 })),
+          api.getMyAchievements().catch(() => null),
+          api.getMyAiWins(10, 0).catch(() => null),
         ]);
         setRatingHistory(rHistory);
+        setAchievements(achRes);
+        setAiWins(winsRes?.wins ?? []);
         setRecentGames(
           [...gamesRes.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
         );
@@ -172,6 +187,77 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   const initial = (profile?.displayName || profile?.username || 'K').charAt(0).toUpperCase();
 
+  /** Tap an earned badge to equip/unequip it in the 3-slot showcase. */
+  const toggleBadge = async (code: string) => {
+    if (!achievements || equipping) return;
+    const equippedCodes = achievements.equipped.map((b) => b.code);
+    const next = equippedCodes.includes(code)
+      ? equippedCodes.filter((c) => c !== code)
+      : [...equippedCodes, code].slice(0, 3);
+    while (next.length < 3) next.push(null as unknown as string);
+    setEquipping(true);
+    try {
+      const updated = await api.setEquippedBadges(next);
+      setAchievements(updated);
+    } catch {
+      // Offline or refused: the showcase simply stays as it was.
+    } finally {
+      setEquipping(false);
+    }
+  };
+
+  /** Rebuild an uploaded hard-AI win into a replayable record. */
+  const openAiWin = async (win: AiWinListItemDto) => {
+    let detail: AiWinDetailDto | null = null;
+    try {
+      detail = await api.getAiWinDetail(win.id);
+    } catch {
+      return;
+    }
+    if (!detail) return;
+    try {
+      const seats = detail.mode.includes('4') ? 4 : detail.mode.includes('3') ? 3 : 2;
+      const playerNames = Array.from({ length: seats }, (_, i) =>
+        i === detail.playerSeat ? 'You' : `AI (hard)`
+      );
+      const opening = createInitialState({
+        gameId: `aiwin-${detail.id}`,
+        mode: detail.mode as SavedGameRecord['mode'],
+        playerNames,
+      });
+      let s = opening;
+      const history: SavedGameRecord['history'] = [];
+      for (const m of parseGame(detail.movesNotation)) {
+        const pid = s.players[s.currentPlayerIndex]?.id ?? '';
+        const applied = applyAction(s, m.action);
+        if (!applied.success) break;
+        history.push({
+          sequence: history.length,
+          playerId: pid,
+          action: m.action,
+          timestamp: new Date(detail.playedAt).getTime(),
+        });
+        s = applied.state;
+      }
+      const winner = s.players.find((p) => p.id === s.winnerId);
+      onSelectGame({
+        id: `aiwin-${detail.id}`,
+        date: new Date(detail.playedAt).getTime(),
+        mode: detail.mode as SavedGameRecord['mode'],
+        type: 'ai',
+        aiDifficulty: 'hard',
+        winnerId: s.winnerId,
+        winnerName: winner?.displayName ?? 'You',
+        totalMoves: history.length,
+        durationSeconds: detail.durationSeconds,
+        initialState: opening,
+        history,
+      });
+    } catch {
+      // A corrupt upload simply does not open.
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -243,6 +329,118 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </View>
             </View>
           </View>
+
+          {/* Achievements Section — online only. Offline, `achievements`
+              stays null and the section simply does not render: no error. */}
+          {achievements && achievements.catalog.some((c) => c.earned) && (
+            <View style={styles.recentSection}>
+              <View style={styles.recentHeaderRow}>
+                <Text style={styles.sectionHeading}>ACHIEVEMENTS</Text>
+                <Text style={styles.sectionSub}>Tap to equip · 3 slots</Text>
+              </View>
+
+              <View style={styles.badgeSlotRow}>
+                {[0, 1, 2].map((slot) => {
+                  const badge = achievements.equipped.find((b) => b.slot === slot);
+                  return (
+                    <View
+                      key={slot}
+                      style={[styles.badgeSlot, badge && styles.badgeSlotFilled]}
+                    >
+                      <Feather
+                        name={(badge?.icon ?? 'award') as 'award'}
+                        size={20}
+                        color={badge ? THEME.colors.assessmentInaccuracy : THEME.colors.textMuted}
+                      />
+                      <Text
+                        style={[styles.badgeSlotText, badge && styles.badgeSlotTextFilled]}
+                        numberOfLines={1}
+                      >
+                        {badge ? badge.name : `Slot ${slot + 1}`}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+
+              <View style={styles.badgeGrid}>
+                {achievements.catalog.map((badge) => {
+                  const isEquipped = achievements.equipped.some((b) => b.code === badge.code);
+                  return (
+                    <TouchableOpacity
+                      key={badge.code}
+                      style={[
+                        styles.badgeChip,
+                        !badge.earned && styles.badgeChipLocked,
+                        isEquipped && styles.badgeChipEquipped,
+                      ]}
+                      activeOpacity={badge.earned ? 0.7 : 1}
+                      disabled={!badge.earned || equipping}
+                      onPress={() => void toggleBadge(badge.code)}
+                      accessibilityLabel={badge.earned ? `Equip ${badge.name}` : `${badge.name} (locked)`}
+                    >
+                      <Feather
+                        name={(badge.earned ? badge.icon : 'lock') as 'award'}
+                        size={16}
+                        color={
+                          isEquipped
+                            ? THEME.colors.assessmentInaccuracy
+                            : badge.earned
+                            ? THEME.colors.textSecondaryStrong
+                            : THEME.colors.textMuted
+                        }
+                      />
+                      <Text
+                        style={[styles.badgeChipText, isEquipped && styles.badgeChipTextEquipped]}
+                        numberOfLines={1}
+                      >
+                        {badge.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* Hard-AI wins — the recorded victories, replayable for analysis. */}
+          {aiWins.length > 0 && (
+            <View style={styles.recentSection}>
+              <View style={styles.recentHeaderRow}>
+                <Text style={styles.sectionHeading}>HARD AI WINS</Text>
+                <Text style={styles.sectionSub}>{aiWins.length} recorded</Text>
+              </View>
+              <View style={styles.recentList}>
+                {aiWins.map((win) => (
+                  <TouchableOpacity
+                    key={win.id}
+                    style={styles.matchItem}
+                    activeOpacity={0.75}
+                    onPress={() => void openAiWin(win)}
+                  >
+                    <View style={styles.matchItemLeft}>
+                      <View style={[styles.miniOutcomeBadge, styles.badgeWin]}>
+                        <Feather name="award" size={16} color={THEME.colors.tertiary} />
+                      </View>
+                      <View style={styles.matchItemMeta}>
+                        <Text style={styles.matchItemOpponent}>
+                          Beat Hard AI · {win.totalPlies} moves
+                        </Text>
+                        <Text style={styles.matchItemMode}>
+                          {new Date(win.playedAt).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </Text>
+                      </View>
+                    </View>
+                    <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
 
           {/* Rating Progression Section */}
           <View style={styles.chartSection}>
@@ -574,6 +772,67 @@ const styles = StyleSheet.create({
   },
   recentSection: {
     gap: 8,
+  },
+  badgeSlotRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  badgeSlot: {
+    flex: 1,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    borderStyle: 'dashed',
+    paddingVertical: 10,
+    alignItems: 'center',
+    gap: 4,
+  },
+  badgeSlotFilled: {
+    backgroundColor: THEME.colors.warningLight,
+    borderColor: THEME.colors.warningBorder,
+    borderStyle: 'solid',
+  },
+  badgeSlotText: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 10,
+    color: THEME.colors.textMuted,
+  },
+  badgeSlotTextFilled: {
+    color: THEME.colors.onSurface,
+    fontWeight: '600',
+  },
+  badgeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  badgeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  badgeChipLocked: {
+    opacity: 0.45,
+  },
+  badgeChipEquipped: {
+    backgroundColor: THEME.colors.warningLight,
+    borderColor: THEME.colors.warningBorder,
+  },
+  badgeChipText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.colors.textSecondary,
+  },
+  badgeChipTextEquipped: {
+    color: THEME.colors.onSurface,
   },
   sectionHeading: {
     fontFamily: THEME.fonts.bold,

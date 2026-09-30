@@ -36,6 +36,11 @@ interface SocketUserInfo {
   verified: boolean;
 }
 
+/** The six quick-reaction kinds. Mirrors the mobile `ReactionKind` union. */
+const REACTION_KINDS = new Set(['laugh', 'wow', 'cry', 'angry', 'clap', 'fire']);
+/** Minimum ms between relays from one socket: absorbs tap floods. */
+const REACTION_THROTTLE_MS = 500;
+
 @WebSocketGateway({
   // Same allowlist as the HTTP API so the two cannot drift. Resolved at module
   // load, which is after dotenv has populated process.env.
@@ -58,6 +63,8 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * room be handed back to its lobby when that game finishes. */
   private gameRoomMap = new Map<string, string>();
   private sweepInterval?: NodeJS.Timeout;
+  /** Last reaction timestamp per socket, for the tap-flood throttle. */
+  private reactionLastAt = new Map<string, number>();
 
   constructor(
     private readonly authService: AuthService,
@@ -1129,6 +1136,36 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     } else {
       client.emit('game:error', { code: 'RESIGN_FAILED', message: result.error });
     }
+  }
+
+  /**
+   * Ephemeral quick reactions. Validated and relayed, never stored, never
+   * part of the authoritative action sequence: no game state, clock, rating
+   * or history is touched. `client.to()` relays to the other seats only.
+   *
+   * Drops (never errors) on anything invalid — a reaction is decoration, and
+   * a decoration must never produce an error toast. A 500ms per-socket
+   * throttle absorbs tap floods without a rate-limiting framework.
+   */
+  @SubscribeMessage('game:reaction')
+  handleReaction(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { gameId?: string; reaction?: string }
+  ) {
+    const user = this.getUser(client);
+    if (!user.verified) return;
+    const gameId = payload?.gameId;
+    const reaction = payload?.reaction;
+    if (typeof gameId !== 'string' || typeof reaction !== 'string') return;
+    if (!REACTION_KINDS.has(reaction)) return;
+    const existing = this.gameService.getGame(gameId);
+    if (!existing?.userPlayerIds[user.userId]) return;
+    const now = Date.now();
+    const last = this.reactionLastAt.get(client.id) ?? 0;
+    if (now - last < REACTION_THROTTLE_MS) return;
+    this.reactionLastAt.set(client.id, now);
+    if (this.reactionLastAt.size > 5000) this.reactionLastAt.clear();
+    client.to(gameId).emit('game:reaction', { gameId, reaction, fromUserId: user.userId });
   }
 
   @SubscribeMessage('game:rematch')

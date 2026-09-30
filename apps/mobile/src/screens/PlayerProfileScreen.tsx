@@ -358,6 +358,39 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
             </View>
           </View>
 
+          {/* Badge showcase — the 3 badges they equipped, plus hard-AI
+              totals. Server-driven; hidden when the profile has none. */}
+          {!!profile?.badges &&
+            (profile.badges.equipped.length > 0 || profile.badges.hardWins > 0) && (
+              <View style={styles.badgeCard}>
+                <Text style={styles.sectionHeading}>SHOWCASE</Text>
+                {profile.badges.equipped.length > 0 && (
+                  <View style={styles.badgeRow}>
+                    {profile.badges.equipped.map((badge) => (
+                      <View key={badge.code} style={styles.badgeChip}>
+                        <Feather
+                          name={(badge.icon ?? 'award') as 'award'}
+                          size={16}
+                          color={THEME.colors.assessmentInaccuracy}
+                        />
+                        <Text style={styles.badgeName} numberOfLines={1}>
+                          {badge.name}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                <Text style={styles.badgeStats}>
+                  {profile.badges.hardWins > 0
+                    ? `${profile.badges.hardWins} hard-AI win${profile.badges.hardWins === 1 ? '' : 's'}`
+                    : 'No hard-AI wins yet'}
+                  {profile.badges.fastestPlies !== null && profile.badges.fastestPlies !== undefined
+                    ? ` · fastest ${profile.badges.fastestPlies} moves`
+                    : ''}
+                </Text>
+              </View>
+            )}
+
           {/* HEAD TO HEAD CARD (Stitch) */}
           <View style={styles.h2hCard}>
             <View style={styles.h2hTitleRow}>
@@ -830,6 +863,45 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: THEME.colors.textMuted,
     letterSpacing: 0.8,
+  },
+  badgeCard: {
+    backgroundColor: THEME.colors.backgroundCard,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+    padding: 16,
+    gap: 10,
+    ...THEME.shadows.card,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  badgeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: THEME.colors.warningLight,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: THEME.colors.warningBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    maxWidth: '100%',
+  },
+  badgeName: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.colors.onSurface,
+    flexShrink: 1,
+  },
+  badgeStats: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    color: THEME.colors.textSecondaryStrong,
+    fontVariant: ['tabular-nums'],
   },
   h2hStage: {
     flexDirection: 'row',

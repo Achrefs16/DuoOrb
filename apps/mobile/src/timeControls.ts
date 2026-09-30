@@ -38,17 +38,11 @@ export function getTimeControl(id?: string): TimeControl {
 }
 
 /**
- * TESTING ONLY — set back to `true` to restore the chess clock.
+ * Master switch for the chess clock in local and AI matches.
  *
- * The clock counted down the ACTIVE player's time every second, so a match
- * could be lost on time rather than on play: think for long enough on one move
- * and the game flags you and ends. That made AI games unwinnable for testing
- * purposes, because the amount of thought a position deserved was inversely
- * related to whether you were allowed to finish thinking it.
- *
- * With this off there is no countdown and no timeout. The clock display and the
- * increment flash still render; they just do not move, and nothing can end a
- * match on time. Online matches are unaffected — their clocks are
+ * Was `false` while the AI was under test (the countdown made lost positions
+ * untestable). Restored for the friends-and-family build: matches can be lost
+ * on time again. Online matches are unaffected — their clocks are
  * server-synchronized and never read this flag.
  */
-export const CLOCK_ENABLED = false;
+export const CLOCK_ENABLED = true;

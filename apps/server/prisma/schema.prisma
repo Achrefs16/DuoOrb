@@ -29,6 +29,10 @@ model User {
 
   guestSession      GuestSession?
 
+  aiWins            AiWin[]
+  achievements      Achievement[]
+  equippedBadges    EquippedBadge[]
+
   @@map("users")
 }
 
@@ -216,4 +220,61 @@ model Block {
 
   @@unique([blockerId, blockedId])
   @@map("blocks")
+}
+
+/// A verified human win against the hard AI, with the full move record.
+///
+/// Uploaded by the app the moment the game ends (or queued offline and synced
+/// later). The server replays the notation through game-core before storing,
+/// so a badge can never be earned with a fabricated game — the win must
+/// actually have happened on the board.
+model AiWin {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Client-generated UUID: retries and offline replays never double-count.
+  clientWinId     String
+  mode            String
+  aiDifficulty    String
+  playerSeat      Int
+  /// Full move notation (game-core formatGame wire format) for later analysis.
+  movesNotation   String
+  totalPlies      Int
+  durationSeconds Int
+  playedAt        DateTime
+  createdAt       DateTime @default(now())
+
+  @@unique([userId, clientWinId])
+  @@index([userId, createdAt])
+  @@map("ai_wins")
+}
+
+/// One earned achievement badge. The catalog (codes, names, rules) lives in
+/// `src/aiwins/achievements.catalog.ts` — the single source of truth the API
+/// returns to clients, so badge text can change without an app update.
+model Achievement {
+  id       String   @id @default(uuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code     String
+  earnedAt DateTime @default(now())
+
+  @@unique([userId, code])
+  @@index([code])
+  @@map("achievements")
+}
+
+/// Showcase slots on a profile. Three badges max, visible to everyone who
+/// opens the profile. Only earned achievements can be equipped.
+model EquippedBadge {
+  id     String   @id @default(uuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code   String
+  /// Showcase slot 0..2.
+  slot   Int
+
+  @@unique([userId, slot])
+  @@unique([userId, code])
+  @@map("equipped_badges")
 }

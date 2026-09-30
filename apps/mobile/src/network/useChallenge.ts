@@ -55,6 +55,18 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
     noticeTimer.current = setTimeout(() => setNotice(null), 2000);
   }, []);
 
+  const lastPing = useRef<string | null>(null);
+  /**
+   * One audible ping per server event. State updaters may run twice in dev
+   * StrictMode, and expired/cancelled clear two seats for a single event —
+   * the key makes the ping idempotent so neither case double-plays.
+   */
+  const pingOnce = useCallback((key: string) => {
+    if (lastPing.current === key) return;
+    lastPing.current = key;
+    void playNotifySound();
+  }, []);
+
   const sendChallenge = useCallback(
     (
       toUserId: string,
@@ -129,16 +141,25 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
       setOutgoing((prev) => {
         if (prev && prev.challenge.id === p.challengeId) {
           flashNotice('Challenge declined.');
+          pingOnce(`declined:${p.challengeId}`);
           return null;
         }
         return prev;
       });
     };
     const onExpired = (p: { challengeId: string }) => {
-      setOutgoing((prev) => (prev && prev.challenge.id === p.challengeId ? null : prev));
+      setOutgoing((prev) => {
+        if (prev && prev.challenge.id === p.challengeId) {
+          flashNotice('Challenge expired.');
+          pingOnce(`expired:${p.challengeId}`);
+          return null;
+        }
+        return prev;
+      });
       setIncoming((prev) => {
         if (prev && prev.id === p.challengeId) {
           flashNotice('Challenge expired.');
+          pingOnce(`expired:${p.challengeId}`);
           return null;
         }
         return prev;
@@ -148,6 +169,7 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
       setIncoming((prev) => {
         if (prev && prev.id === p.challengeId) {
           flashNotice('Challenge withdrawn.');
+          pingOnce(`cancelled:${p.challengeId}`);
           return null;
         }
         return prev;
@@ -155,6 +177,7 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
       setOutgoing((prev) => {
         if (prev && prev.challenge.id === p.challengeId) {
           flashNotice('Challenge replaced.');
+          pingOnce(`cancelled:${p.challengeId}`);
           return null;
         }
         return prev;
@@ -174,7 +197,7 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
       socket.off('challenge:cancelled', onCancelled);
       if (noticeTimer.current) clearTimeout(noticeTimer.current);
     };
-  }, [flashNotice]);
+  }, [flashNotice, pingOnce]);
 
   /**
    * The gate confirmed the join: hand off with the board snapshot. Clears

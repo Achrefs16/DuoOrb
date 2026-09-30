@@ -1,11 +1,12 @@
 /**
- * Move notation, for talking about games in text.
+ * Move notation, for talking about games in text — and the wire format for
+ * hard-AI victory uploads.
  *
- * DEVELOPMENT ONLY. This exists so a finished game can be pasted into a chat
- * and read back move by move, which is the only practical way to find out what
- * the engine actually decided and why. It has no effect on rules, search or
- * rendering, and the whole feature is this one file plus one button in
- * GameScreen — delete both and nothing else changes.
+ * `formatGame` serializes a finished game for the server (`POST /ai-wins`),
+ * which replays it through `rebuildFromNotation` to verify the win before
+ * awarding badges. The copy-to-clipboard button that used this is gone; the
+ * format stays because analysis and verification read it back move by move.
+ * It has no effect on rules, search or rendering.
  *
  * Grammar
  *   pawn   <P><file><rank>        P is the seat letter, file a..i, rank 1..9

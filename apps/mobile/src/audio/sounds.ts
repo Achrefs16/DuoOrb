@@ -9,7 +9,6 @@ import goalSrc from '../../assets/sounds/goal.wav';
 import gameStartSrc from '../../assets/sounds/game-start.wav';
 import gameEndSrc from '../../assets/sounds/game-end.wav';
 import illegalSrc from '../../assets/sounds/illegalmove.wav';
-// No .wav provided for notify: the mp3 stays.
 import notifySrc from '../../assets/sounds/notify.mp3';
 import thirtySecondsSrc from '../../assets/sounds/30secondsleft.wav';
 import {
@@ -48,7 +47,6 @@ const SOURCES: Record<SoundName, number> = {
   gameStart: gameStartSrc,
   gameEnd: gameEndSrc,
   illegal: illegalSrc,
-  // No .wav provided for notify: the mp3 stays.
   notify: notifySrc,
   thirtySeconds: thirtySecondsSrc,
 };

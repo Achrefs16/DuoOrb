@@ -11,6 +11,7 @@ import {
   assertValidDisplayName,
   assertValidUsername,
 } from './username.js';
+import { achievementByCode } from '../aiwins/achievements.catalog.js';
 
 /** Prisma's unique-constraint violation code. */
 function isUniqueViolation(e: unknown): boolean {
@@ -76,6 +77,8 @@ export class UsersService {
     const totalLosses = rating?.losses ?? 0;
     const totalDraws = rating?.draws ?? 0;
 
+    const badges = await this.profileBadges(userId);
+
     return {
       id: user.id,
       email: user.email,
@@ -95,6 +98,7 @@ export class UsersService {
         CLASSIC_1V1: shape(rating),
         FOUR_PLAYER: shape(rating),
       },
+      badges,
     };
   }
 
@@ -219,6 +223,8 @@ export class UsersService {
 
     const rating = profile.user.ratings[0];
 
+    const badges = await this.profileBadges(profile.userId);
+
     const shape = (r?: { rating: number; rd: number; gamesPlayed: number; wins: number; losses: number }) => ({
       rating: r?.rating ?? 1500,
       rd: r?.rd ?? 350,
@@ -247,6 +253,31 @@ export class UsersService {
         CLASSIC_1V1: shape(rating),
         FOUR_PLAYER: shape(rating),
       },
+      badges,
+    };
+  }
+
+  /**
+   * Badge showcase for profile views — one shape for the owner and for
+   * visitors, so equipped badges look identical everywhere. Equipped badges
+   * carry catalog text; totals say what the showcase cost.
+   */
+  private async profileBadges(userId: string) {
+    if (!this.prisma.isConnected) {
+      return { equipped: [], hardWins: 0, fastestPlies: null as number | null };
+    }
+    const [equipped, hardWins, fastest] = await Promise.all([
+      this.prisma.equippedBadge.findMany({ where: { userId }, orderBy: { slot: 'asc' } }),
+      this.prisma.aiWin.count({ where: { userId } }),
+      this.prisma.aiWin.aggregate({ where: { userId }, _min: { totalPlies: true } }),
+    ]);
+    return {
+      equipped: equipped.map((b) => ({
+        ...(achievementByCode(b.code) ?? { code: b.code, name: b.code, description: '', icon: 'award' }),
+        slot: b.slot,
+      })),
+      hardWins,
+      fastestPlies: fastest._min.totalPlies ?? null,
     };
   }
 
@@ -399,6 +430,41 @@ export class UsersService {
         where: { userId: guestId },
         data: { userId: accountId },
       });
+
+      // Re-point hard-AI wins outright: clientWinId is unique per user, so a
+      // guest UUID can never collide with the account's rows.
+      await tx.aiWin.updateMany({
+        where: { userId: guestId },
+        data: { userId: accountId },
+      });
+      // Achievements can collide (same badge earned twice) — the surviving
+      // account row wins and the duplicate guest row is dropped.
+      const guestAchievements = await tx.achievement.findMany({
+        where: { userId: guestId },
+      });
+      for (const a of guestAchievements) {
+        try {
+          await tx.achievement.update({
+            where: { id: a.id },
+            data: { userId: accountId },
+          });
+        } catch {
+          await tx.achievement.delete({ where: { id: a.id } });
+        }
+      }
+      // Showcase slots belong to one profile: when the account already shows
+      // badges the guest's are dropped, otherwise they move over intact.
+      const accountBadges = await tx.equippedBadge.count({
+        where: { userId: accountId },
+      });
+      if (accountBadges === 0) {
+        await tx.equippedBadge.updateMany({
+          where: { userId: guestId },
+          data: { userId: accountId },
+        });
+      } else {
+        await tx.equippedBadge.deleteMany({ where: { userId: guestId } });
+      }
 
       await tx.user.delete({ where: { id: guestId } });
     });

@@ -3,6 +3,7 @@ import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { GameState } from '@duoorb/game-core';
+import { AiWinReward } from '../network/apiClient';
 import { THEME, playerColor } from '../theme';
 import { modeLabel } from '../matchModes';
 import { nameInitial } from '../displayName';
@@ -34,15 +35,11 @@ interface GameOverModalProps {
   /** Dismiss the modal and stay on the finished match screen. */
   onClose: () => void;
   /**
-   * DEVELOPMENT ONLY. Copies the whole game as chess-style move notation
-   * (`Rd5`, `Hd4`, ...) so a finished match can be pasted somewhere and read
-   * back move by move. Delete this prop, the block that renders it, and
-   * `notation.ts` in game-core to remove the feature entirely; nothing else
-   * reads it.
+   * Hard-AI victory reward, set only when the win was uploaded while online.
+   * Null while offline or when no badge was earned: the reward UI renders
+   * exclusively from this prop, so offline play can never show an error.
    */
-  onCopyMoves?: () => void;
-  /** Label flips to "Copied" briefly after a successful copy. */
-  movesCopied?: boolean;
+  reward?: AiWinReward | null;
 }
 
 function ordinal(place: number): string {
@@ -69,8 +66,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onAnalyze,
   onHome,
   onClose,
-  onCopyMoves,
-  movesCopied = false,
+  reward = null,
 }) => {
   const winner = state.players.find((p) => p.id === state.winnerId);
   const isDraw = !state.winnerId && state.status === 'COMPLETED';
@@ -248,6 +244,43 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </View>
           )}
 
+          {/* Hard-AI victory reward. Rendered only from a live server response
+              (new badges earned for this win) — offline play, AI losses, and
+              online matches never set the prop, so this can never appear as
+              an error or out of place. */}
+          {reward && reward.newAchievements.length > 0 && (
+            <View style={styles.rewardCard}>
+              <View style={styles.rewardHeaderRow}>
+                <Feather name="award" size={18} color={THEME.colors.assessmentInaccuracy} />
+                <Text style={styles.rewardTitle}>HARD AI CONQUERED</Text>
+              </View>
+              {reward.newAchievements.map((badge) => (
+                <View key={badge.code} style={styles.badgeRow}>
+                  <Feather
+                    name={badge.icon as 'award'}
+                    size={16}
+                    color={THEME.colors.assessmentInaccuracy}
+                  />
+                  <View style={styles.badgeTextWrap}>
+                    <Text style={styles.badgeName}>{badge.name}</Text>
+                    <Text style={styles.badgeDesc} numberOfLines={2}>
+                      {badge.description}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+              {!!reward.message && (
+                <Text style={styles.rewardMessage}>{reward.message}</Text>
+              )}
+              <Text style={styles.rewardStats}>
+                {`Win #${reward.stats.hardWins} vs Hard`}
+                {reward.stats.fastestPlies !== null
+                  ? ` · fastest ${reward.stats.fastestPlies} moves`
+                  : ''}
+              </Text>
+            </View>
+          )}
+
           {/* Winner's Loop Action Buttons */}
           <View style={styles.actionsList}>
             {/* Primary Action: Rematch */}
@@ -291,24 +324,6 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 <Feather name="activity" size={14} color={THEME.colors.primary} />
                 <Text style={styles.utilityText}>Analyze</Text>
               </TouchableOpacity>
-
-              {/* DEVELOPMENT ONLY: chess-style move notation to the clipboard. */}
-              {onCopyMoves && (
-                <TouchableOpacity
-                  style={styles.utilityBtn}
-                  activeOpacity={0.7}
-                  onPress={onCopyMoves}
-                  accessibilityRole="button"
-                  accessibilityLabel="Copy game moves as text"
-                >
-                  <Feather
-                    name={movesCopied ? 'check' : 'copy'}
-                    size={14}
-                    color={movesCopied ? THEME.colors.success : THEME.colors.textSecondary}
-                  />
-                  <Text style={styles.utilityText}>{movesCopied ? 'Copied' : 'Copy Moves'}</Text>
-                </TouchableOpacity>
-              )}
             </View>
 
             {/* Opponent identity: the one place a finished online match can
@@ -520,6 +535,70 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: THEME.colors.onSurface,
+    fontVariant: ['tabular-nums'],
+  },
+  rewardCard: {
+    width: '100%',
+    backgroundColor: THEME.colors.warningLight,
+    borderRadius: THEME.radius.lg,
+    borderWidth: 1,
+    borderColor: THEME.colors.warningBorder,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    alignItems: 'center',
+    gap: 8,
+  },
+  rewardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  rewardTitle: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.colors.onSurface,
+    letterSpacing: 1,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderRadius: THEME.radius.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  badgeTextWrap: {
+    flex: 1,
+    gap: 1,
+  },
+  badgeName: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 14,
+    fontWeight: '700',
+    color: THEME.colors.onSurface,
+  },
+  badgeDesc: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    color: THEME.colors.onSurfaceVariant,
+  },
+  rewardMessage: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.onSurface,
+    textAlign: 'center',
+  },
+  rewardStats: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 11,
+    color: THEME.colors.textMuted,
     fontVariant: ['tabular-nums'],
   },
   actionsList: {

@@ -30,14 +30,17 @@ import { SideChoice } from './MatchSetupScreen';
 import { WallTray } from '../components/WallTray';
 import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
 import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
+import { AiWinReward, SubmitAiWinBody } from '../network/apiClient';
+import { flushAiWinQueue, reportHardAiWin } from '../aiwins/aiWins';
 import { THEME, playerColor, wallPreviewColor } from '../theme';
 import { CLOCK_ENABLED, DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
+import { useQuickReactions } from '../network/useQuickReactions';
+import { ReactionDock, ReactionTray } from '../components/QuickReactions';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
 import { useIdentity } from '../network/auth';
 import { socketManager } from '../network/socket';
-// DEVELOPMENT ONLY: chess-style move notation for the copy-moves button.
-import * as Clipboard from 'expo-clipboard';
+// Serializes a finished hard-AI win for the server upload (achievements).
 import { formatGame } from '@duoorb/game-core';
 
 interface GameScreenProps {
@@ -261,6 +264,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
   const [showGameOver, setShowGameOver] = useState<boolean>(false);
+  // Hard-AI victory reward, set only from a live server response. Null while
+  // offline or when no badge was earned — the modal renders celebration UI
+  // exclusively from this, so offline play can never show an error.
+  const [aiReward, setAiReward] = useState<AiWinReward | null>(null);
   const [wallDrag, setWallDrag] = useState<WallDrag | null>(null);
   const wallDragRef = useRef<WallDrag | null>(null);
   // Coalesces touch-move floods (often 100+/sec) into one state commit per
@@ -273,8 +280,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // to the tap handler): the hardware-back effect above reads it.
   const [profilePlayer, setProfilePlayer] = useState<{ userId: string; username: string } | null>(null);
   const [rematchSent, setRematchSent] = useState<boolean>(false);
-  // DEVELOPMENT ONLY: clipboard feedback for the copy-moves button.
-  const [movesCopied, setMovesCopied] = useState<boolean>(false);
   const [rematchIncomingDismissed, setRematchIncomingDismissed] = useState<boolean>(false);
   // In-match replay: null = live final board; a step number replays the
   // stored history through the existing replay reconstruction (no new page).
@@ -782,6 +787,34 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         history: state.history,
       };
       saveGameToHistory(record);
+      setAiReward(null);
+      // Hard-AI victory reporting: upload the win for badges and analysis, or
+      // queue it silently when offline. Celebration appears only from a live
+      // server response — never an error, never while offline.
+      if (type === 'ai' && aiDifficulty === 'hard' && state.winnerId === state.players[humanIdx]?.id) {
+        const payload: SubmitAiWinBody = {
+          clientWinId: `aiwin:${state.gameId}`,
+          mode: state.mode,
+          aiDifficulty: 'hard',
+          playerSeat: humanIdx,
+          movesNotation: formatGame(state),
+          totalPlies: state.history.length,
+          durationSeconds: Math.floor((Date.now() - state.startedAt) / 1000),
+          playedAt: Date.now(),
+        };
+        void (async () => {
+          const live = await reportHardAiWin(payload);
+          const flushed = await flushAiWinQueue();
+          const show =
+            live && live.newAchievements.length > 0
+              ? live
+              : flushed.find((r) => r.newAchievements.length > 0) ?? null;
+          if (show) setAiReward(show);
+        })();
+      } else {
+        // Not a hard-AI win, but a good moment to drain the outbox quietly.
+        void flushAiWinQueue();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.status]);
@@ -1066,6 +1099,20 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const myAiFinished = type === 'ai' && myOrb?.status === 'FINISHED';
   const isCompleted = state.status === 'COMPLETED';
   const isMultiplayer = state.players.length > 2;
+  // Quick reactions: live online matches only. AI, local, replay, analysis
+  // and finished matches never attach the listener or render the UI — the
+  // reaction state below stays empty and the board tree is untouched.
+  const reactionsLive =
+    type === 'online' &&
+    !!onlineGameId &&
+    !isCompleted &&
+    !replaying &&
+    viewingStep === null;
+  const reactions = useQuickReactions({
+    enabled: reactionsLive,
+    gameId: onlineGameId ?? '',
+    myUserId: identity?.userId ?? null,
+  });
   // No Resign anywhere near a finished match — and never in local games.
   const canResign =
     !isCompleted && type !== 'local' && !mySeatFinished && !myAiFinished;
@@ -1133,22 +1180,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setViewingStep(totalSteps);
   };
 
-  /**
-   * DEVELOPMENT ONLY. Copies the finished game as chess-style notation
-   * (`Rd5`, `Hd4`, ...) so it can be pasted into a conversation and read back
-   * move by move, which is how engine mistakes get diagnosed. Delete this
-   * handler, its two props on GameOverModal, and `notation.ts` in game-core to
-   * remove the feature; nothing else depends on it.
-   */
-  const handleCopyMoves = async () => {
-    try {
-      await Clipboard.setStringAsync(formatGame(state));
-      setMovesCopied(true);
-      setTimeout(() => setMovesCopied(false), 1800);
-    } catch {
-      setMovesCopied(false);
-    }
-  };
   const exitReplay = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization
     () => {
@@ -1461,6 +1492,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </View>
       </View>
 
+      {/* Quick-reaction receiving area (live online only): reserved breathing
+          space for the opponent's bubble. Empty and quiet otherwise; the fixed
+          height means a bubble never shifts layout or the board. */}
+      {reactionsLive && (
+        <ReactionDock items={reactions.incoming} onDone={reactions.dismiss} />
+      )}
+
       {/* Opponent card(s). Turn ring + timer highlight show whose move it is. */}
       {/* Strips ignore touches while a wall is dragged over them. */}
       {/* Multiplayer splits 2 up / 2 down in a grid; 1v1 keeps full cards. */}
@@ -1660,6 +1698,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               </TouchableOpacity>
             </View>
           )}
+          {/* Quick-reaction sending row (live online only): six compact
+              buttons under Resign. Ephemeral — sends one socket event. */}
+          {reactionsLive && <ReactionTray onSend={reactions.send} />}
         </View>
       </View>
 
@@ -1770,10 +1811,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           onNewGame();
         }}
         onReplay={enterReplay}
-        // DEVELOPMENT ONLY: copy the finished game as chess-style notation.
-        // Remove these three props plus `notation.ts` in game-core to drop it.
-        onCopyMoves={handleCopyMoves}
-        movesCopied={movesCopied}
+        reward={aiReward}
         opponentUserId={opponentAccountForResult?.userId ?? null}
         onViewOpponentProfile={
           opponentAccountForResult

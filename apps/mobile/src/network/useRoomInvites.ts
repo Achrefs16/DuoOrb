@@ -19,6 +19,7 @@ export function useRoomInvites({ onAccepted }: UseRoomInvitesOptions) {
     };
     const onDeclined = (payload: { inviteId: string; byUserId: string }) => {
       setNotice('Room invite declined.');
+      void playNotifySound();
       setTimeout(() => setNotice(null), 2500);
     };
     socket.on('room:inviteReceived', onInvite);

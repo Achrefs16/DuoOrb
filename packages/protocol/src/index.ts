@@ -147,6 +147,11 @@ export interface ClientToServerEvents {
   'session:sync': () => void;
   'game:resign': (payload: { gameId: string }) => void;
   'game:rematch': (payload: { gameId: string }) => void;
+  /**
+   * Ephemeral quick reaction. Validated kinds are enforced server-side;
+   * anything outside them is dropped, never stored, never sequenced.
+   */
+  'game:reaction': (payload: { gameId: string; reaction: string }) => void;
   'room:create': (payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
   'room:join': (payload: { code: string }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
   'room:ready': (payload: { roomId: string; isReady: boolean }) => void;
@@ -185,6 +190,8 @@ export interface ServerToClientEvents {
   'game:opponentReconnected': (payload: { userId: string }) => void;
   'game:sync': (sync: GameSyncDto) => void;
   'game:rematchOffered': (payload: { gameId: string; fromUserId: string }) => void;
+  /** Relay of another seat's quick reaction. Ephemeral: render and forget. */
+  'game:reaction': (payload: { gameId: string; reaction: string; fromUserId: string }) => void;
   'room:state': (room: RoomDto) => void;
   'room:started': (payload: { roomId: string; gameId: string }) => void;
   'room:kicked': (payload: { roomId: string }) => void;
