@@ -4,6 +4,7 @@ import {
   evaluateState,
   getBestAction,
   getCandidateActions,
+  productionBudget,
   rankActions,
   searchStats,
 } from '../src/ai.js';
@@ -251,9 +252,14 @@ describe('budget', () => {
   }
 
   it('stays inside the budget and delivers the promised depth untruncated', () => {
-    getBestAction(midGame(), AI_PROFILES.hard);
+    const state = midGame();
+    getBestAction(state, AI_PROFILES.hard);
     const stats = searchStats();
-    expect(stats.elapsedMs).toBeLessThanOrEqual(AI_PROFILES.hard.timeBudgetMs + 60);
+    // The gameplay ceiling is the mode-aware production budget, not the
+    // profile's legacy `timeBudgetMs`, which is only a default for callers that
+    // drive rankActions() directly.
+    const budget = productionBudget(AI_PROFILES.hard, state.mode);
+    expect(stats.elapsedMs).toBeLessThanOrEqual(budget.timeMs + 60);
     expect(stats.depthReached).toBeGreaterThanOrEqual(AI_PROFILES.hard.depth);
     expect(stats.truncated).toBe(false);
   });

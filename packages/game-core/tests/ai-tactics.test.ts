@@ -3,6 +3,7 @@ import {
   AI_PROFILES,
   AiPressure,
   getBestAction,
+  productionBudget,
   rankActions,
   readTacticalState,
   shortestPathStep,
@@ -419,8 +420,12 @@ describe('AI: per-move budget', () => {
         }
       }
       // The budget is a promise to the UI thread, so it is a ceiling and not a
-      // target. The margin absorbs the one search node the clock cannot interrupt.
-      expect(worst, difficulty).toBeLessThanOrEqual(profile.timeBudgetMs * 1.25 + 20);
+      // target. The margin absorbs the one search node the clock cannot
+      // interrupt. The ceiling is the mode-aware PRODUCTION budget: the
+      // profile's legacy `timeBudgetMs` is only a default for callers driving
+      // rankActions() directly, and gameplay no longer runs on it.
+      const ceiling = productionBudget(profile, '4p').timeMs * 1.25 + 20;
+      expect(worst, difficulty).toBeLessThanOrEqual(ceiling);
     }
   }, 60_000);
 });

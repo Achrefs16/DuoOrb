@@ -6,5 +6,8 @@ export * from './movement.js';
 export * from './walls.js';
 export * from './ruleset.js';
 export * from './replay.js';
+export * from './notation.js';
 export * from './ai.js';
+export * from './ai-threat.js';
+export * from './mcts.js';
 export * from './analysis.js';

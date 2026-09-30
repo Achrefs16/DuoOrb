@@ -33,6 +33,16 @@ interface GameOverModalProps {
   onHome: () => void;
   /** Dismiss the modal and stay on the finished match screen. */
   onClose: () => void;
+  /**
+   * DEVELOPMENT ONLY. Copies the whole game as chess-style move notation
+   * (`Rd5`, `Hd4`, ...) so a finished match can be pasted somewhere and read
+   * back move by move. Delete this prop, the block that renders it, and
+   * `notation.ts` in game-core to remove the feature entirely; nothing else
+   * reads it.
+   */
+  onCopyMoves?: () => void;
+  /** Label flips to "Copied" briefly after a successful copy. */
+  movesCopied?: boolean;
 }
 
 function ordinal(place: number): string {
@@ -59,6 +69,8 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onAnalyze,
   onHome,
   onClose,
+  onCopyMoves,
+  movesCopied = false,
 }) => {
   const winner = state.players.find((p) => p.id === state.winnerId);
   const isDraw = !state.winnerId && state.status === 'COMPLETED';
@@ -279,6 +291,24 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 <Feather name="activity" size={14} color={THEME.colors.primary} />
                 <Text style={styles.utilityText}>Analyze</Text>
               </TouchableOpacity>
+
+              {/* DEVELOPMENT ONLY: chess-style move notation to the clipboard. */}
+              {onCopyMoves && (
+                <TouchableOpacity
+                  style={styles.utilityBtn}
+                  activeOpacity={0.7}
+                  onPress={onCopyMoves}
+                  accessibilityRole="button"
+                  accessibilityLabel="Copy game moves as text"
+                >
+                  <Feather
+                    name={movesCopied ? 'check' : 'copy'}
+                    size={14}
+                    color={movesCopied ? THEME.colors.success : THEME.colors.textSecondary}
+                  />
+                  <Text style={styles.utilityText}>{movesCopied ? 'Copied' : 'Copy Moves'}</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Opponent identity: the one place a finished online match can

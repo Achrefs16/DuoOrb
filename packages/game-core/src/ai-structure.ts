@@ -923,10 +923,13 @@ function computeRoute(board: BoardStructure, player: PlayerState): RouteProfile 
 let epoch = 0;
 const boardCache = new Map<string, BoardStructure>();
 const routeCache = new Map<string, RouteProfile>();
+/** Boards that differ from a real one by exactly one extra wall slot. */
+const hypoCache = new Map<string, BoardStructure>();
 
 /** Hard caps: exceeded caches are dropped wholesale, which is cheap and safe. */
 const BOARD_CACHE_LIMIT = 512;
 const ROUTE_CACHE_LIMIT = 8192;
+const HYPO_CACHE_LIMIT = 768;
 
 let lastState: GameState | null = null;
 let lastBoard: BoardStructure | null = null;
@@ -936,6 +939,7 @@ export function beginEpoch(): void {
   boardCache.clear();
   routeCache.clear();
   goalFieldCache.clear();
+  hypoCache.clear();
   lastState = null;
   lastBoard = null;
 }
@@ -972,6 +976,152 @@ export function routeOf(
   if (routeCache.size >= ROUTE_CACHE_LIMIT) routeCache.clear();
   routeCache.set(key, route);
   return route;
+}
+
+// ---------------------------------------------------------------------------
+// Hypothetical walls: "what if this slot were filled?"
+// ---------------------------------------------------------------------------
+
+/**
+ * The board that would exist if `extra` were placed on top of `state`'s walls.
+ *
+ * Kept for callers that need full structure (chains, regions) for a
+ * hypothetical board. The strategic layer does not: it only needs a distance,
+ * and `projectedGoalField` below answers that without any of this.
+ */
+export function boardWithExtraWall(state: GameState, extra: WallCoord): BoardStructure {
+  const base = boardOf(state);
+  const key = `${base.key}+${packSlot(extra)}`;
+  const hit = hypoCache.get(key);
+  if (hit) return hit;
+  const built = computeBoardStructure(state.mode, [...state.walls, extra], key);
+  if (hypoCache.size >= HYPO_CACHE_LIMIT) hypoCache.clear();
+  hypoCache.set(key, built);
+  return built;
+}
+
+// ---------------------------------------------------------------------------
+// Hypothetical distance: the strategic layer's workhorse
+// ---------------------------------------------------------------------------
+
+const hypoDist = new Int16Array(CELLS);
+const hypoQueue = new Int32Array(CELLS);
+
+/** `hasWall` OR "one of the hypothetical slots is this one". */
+function blockedWithExtras(
+  index: Uint8Array,
+  row: number,
+  col: number,
+  d: number,
+  extras: WallCoord[]
+): boolean {
+  // Each branch mirrors `blockedByWall` exactly, then ORs the hypotheticals.
+  let r = -1;
+  let c = -1;
+  let o = -1;
+  switch (d) {
+    case 0:
+      r = row - 1;
+      c = col;
+      o = 0;
+      break;
+    case 1:
+      r = row;
+      c = col;
+      o = 0;
+      break;
+    case 2:
+      r = row;
+      c = col - 1;
+      o = 1;
+      break;
+    default:
+      r = row;
+      c = col;
+      o = 1;
+      break;
+  }
+  if (o === 0) {
+    if (hasWall(index, r, c, 0) || hasWall(index, r, c - 1, 0)) return true;
+  } else if (hasWall(index, r, c, 1) || hasWall(index, r - 1, c, 1)) return true;
+  if (extras.length === 0) return false;
+  for (let i = 0; i < extras.length; i++) {
+    const e = extras[i];
+    if (e.orientation === 'H') {
+      if (o !== 0) continue;
+      if (e.row === r && (e.col === c || e.col === c - 1)) return true;
+    } else {
+      if (o !== 1) continue;
+      if (e.col === c && (e.row === r || e.row === r - 1)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Distance to the goal layer for every cell, as it would be with `extras`
+ * hypothetically on the board. Infinity cells report as `UNREACHED`.
+ *
+ * This replaces the obvious implementation — build a whole new BoardStructure
+ * per hypothetical — and the difference is not a constant factor. A structure
+ * rebuild allocates a Map, a Set, string keys, a region flood and a per-goal
+ * cache entry, which is far too expensive to do once per candidate wall. This
+ * is one 81-cell BFS over the caller's EXISTING wall index, allocation-free
+ * apart from the two module-scope scratch arrays.
+ *
+ * That affordability is the point: it is what lets the strategic layer look at
+ * every legal wall slot on the board instead of a hand-picked few, and at pairs
+ * of them, which is the only way to see that several individually harmless
+ * walls are converging on one structure.
+ *
+ * The returned array is shared scratch. Consume it before the next call.
+ */
+export function projectedGoalField(
+  index: Uint8Array,
+  mode: GameMode,
+  goal: GoalDirection,
+  extras: WallCoord[]
+): Int16Array {  hypoDist.fill(UNREACHED);
+  let head = 0;
+  let tail = 0;
+  for (let i = 0; i < CELLS; i++) {
+    if (!isGoalCell(indexToCell(i), goal, mode)) continue;
+    hypoDist[i] = 0;
+    hypoQueue[tail++] = i;
+  }
+  while (head < tail) {
+    const current = hypoQueue[head++];
+    const next = hypoDist[current] + 1;
+    const row = Math.floor(current / BOARD_SIZE);
+    const col = current % BOARD_SIZE;
+    for (let d = 0; d < 4; d++) {
+      const nr = row + DR[d];
+      const nc = col + DC[d];
+      if (nr < 0 || nr >= BOARD_SIZE || nc < 0 || nc >= BOARD_SIZE) continue;
+      const neighbour = nr * BOARD_SIZE + nc;
+      if (hypoDist[neighbour] !== UNREACHED) continue;
+      if (blockedWithExtras(index, row, col, d, extras)) continue;
+      hypoDist[neighbour] = next;
+      hypoQueue[tail++] = neighbour;
+    }
+  }
+  return hypoDist;
+}
+
+/** Cell index for a coordinate, re-exported so the AI need not import pathfinding. */
+export { cellToIndex } from './pathfinding.js';
+
+/** Packed-extra convenience wrapper for the common single-wall question. */
+export function projectedDistance(
+  state: GameState,
+  goal: GoalDirection,
+  start: CellCoord,
+  extra: WallCoord
+): number {
+  const board = boardOf(state);
+  const field = projectedGoalField(board.field.index, board.mode, goal, [extra]);
+  const d = field[cellToIndex(start)];
+  return d === UNREACHED ? Infinity : d;
 }
 
 // ---------------------------------------------------------------------------

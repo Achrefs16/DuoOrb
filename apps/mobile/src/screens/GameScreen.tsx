@@ -13,7 +13,7 @@ import {
   applyAction,
   createInitialState,
   forfeitMatch,
-  getBestAction,
+  getBestActionAsync,
   getLegalMoves,
   getLegalMovesFrom,
   isLegalWallPlacement,
@@ -31,11 +31,14 @@ import { WallTray } from '../components/WallTray';
 import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
 import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
 import { THEME, playerColor, wallPreviewColor } from '../theme';
-import { DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
+import { CLOCK_ENABLED, DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
 import { useIdentity } from '../network/auth';
 import { socketManager } from '../network/socket';
+// DEVELOPMENT ONLY: chess-style move notation for the copy-moves button.
+import * as Clipboard from 'expo-clipboard';
+import { formatGame } from '@duoorb/game-core';
 
 interface GameScreenProps {
   mode: GameMode;
@@ -270,6 +273,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // to the tap handler): the hardware-back effect above reads it.
   const [profilePlayer, setProfilePlayer] = useState<{ userId: string; username: string } | null>(null);
   const [rematchSent, setRematchSent] = useState<boolean>(false);
+  // DEVELOPMENT ONLY: clipboard feedback for the copy-moves button.
+  const [movesCopied, setMovesCopied] = useState<boolean>(false);
   const [rematchIncomingDismissed, setRematchIncomingDismissed] = useState<boolean>(false);
   // In-match replay: null = live final board; a step number replays the
   // stored history through the existing replay reconstruction (no new page).
@@ -330,6 +335,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const lastMySecsRef = useRef<number | null>(null);
   const warned30Ref = useRef(false);
   useEffect(() => {
+    if (!CLOCK_ENABLED) return;
     if (state.status !== 'IN_PROGRESS') return;
     const myId = online.myPlayerId ?? state.players[humanIdx]?.id ?? null;
     if (!myId) return;
@@ -624,9 +630,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, premoveQueue]);
 
-  // Clock countdown (offline only; online clocks are server-synchronized)
+  // Clock countdown (offline only; online clocks are server-synchronized).
+  // TESTING: CLOCK_ENABLED=false disables the countdown entirely, so no match
+  // can be lost on time. See timeControls.ts.
   useEffect(() => {
     if (type === 'online') return;
+    if (!CLOCK_ENABLED) return;
     if (state.status !== 'IN_PROGRESS') return;
     const interval = setInterval(() => {
       setTimers((prev) => {
@@ -658,25 +667,41 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
     setIsAiThinking(true);
     const thinkMs = thinkMsFor(aiDifficulty, testThink);
+    let cancelled = false;
     const timer = setTimeout(() => {
-      try {
-        const live = stateRef.current;
-        if (live.status !== 'IN_PROGRESS' || !isAiSide(live.currentPlayerIndex)) return;
-        const profile = AI_PROFILES[aiDifficulty];
-        const aiAction = getBestAction(live, profile);
-        if (aiAction) {
-          const moverId = live.players[live.currentPlayerIndex].id;
-          const result = applyAction(live, aiAction);
-          if (result.success) {
-            setState(result.state);
-            creditIncrement(moverId, aiAction);
+      void (async () => {
+        try {
+          const live = stateRef.current;
+          if (cancelled || live.status !== 'IN_PROGRESS' || !isAiSide(live.currentPlayerIndex)) return;
+          const profile = AI_PROFILES[aiDifficulty];
+          // Unbounded deep search off the critical path: time slices yield
+          // to the event loop (thinking indicator stays alive), depth is the
+          // only ceiling, cancellation keeps the best completed ply.
+          const aiAction = await getBestActionAsync(live, profile, undefined, {
+            shouldCancel: () => cancelled,
+          });
+          if (cancelled) return;
+          const fresh = stateRef.current;
+          // The board may have moved on while we thought (new game,
+          // undo... ): only act if it is still the AI's turn.
+          if (fresh.status !== 'IN_PROGRESS' || !isAiSide(fresh.currentPlayerIndex)) return;
+          if (aiAction) {
+            const moverId = fresh.players[fresh.currentPlayerIndex].id;
+            const result = applyAction(fresh, aiAction);
+            if (result.success) {
+              setState(result.state);
+              creditIncrement(moverId, aiAction);
+            }
           }
+        } finally {
+          if (!cancelled) setIsAiThinking(false);
         }
-      } finally {
-        setIsAiThinking(false);
-      }
+      })();
     }, thinkMs);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, state, aiDifficulty]);
 
@@ -1106,6 +1131,23 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setShowGameOver(false);
     setReplaying(false);
     setViewingStep(totalSteps);
+  };
+
+  /**
+   * DEVELOPMENT ONLY. Copies the finished game as chess-style notation
+   * (`Rd5`, `Hd4`, ...) so it can be pasted into a conversation and read back
+   * move by move, which is how engine mistakes get diagnosed. Delete this
+   * handler, its two props on GameOverModal, and `notation.ts` in game-core to
+   * remove the feature; nothing else depends on it.
+   */
+  const handleCopyMoves = async () => {
+    try {
+      await Clipboard.setStringAsync(formatGame(state));
+      setMovesCopied(true);
+      setTimeout(() => setMovesCopied(false), 1800);
+    } catch {
+      setMovesCopied(false);
+    }
   };
   const exitReplay = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization
@@ -1728,6 +1770,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           onNewGame();
         }}
         onReplay={enterReplay}
+        // DEVELOPMENT ONLY: copy the finished game as chess-style notation.
+        // Remove these three props plus `notation.ts` in game-core to drop it.
+        onCopyMoves={handleCopyMoves}
+        movesCopied={movesCopied}
         opponentUserId={opponentAccountForResult?.userId ?? null}
         onViewOpponentProfile={
           opponentAccountForResult
