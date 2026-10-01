@@ -40,9 +40,9 @@ export function getTimeControl(id?: string): TimeControl {
 /**
  * Master switch for the chess clock in local and AI matches.
  *
- * Was `false` while the AI was under test (the countdown made lost positions
- * untestable). Restored for the friends-and-family build: matches can be lost
- * on time again. Online matches are unaffected — their clocks are
- * server-synchronized and never read this flag.
+ * `true` for live play: countdown, timeout losses and the 30s warning are all
+ * active in local/AI games. Flip to `false` while testing positions, so no
+ * match can be lost on time. Online matches are unaffected — their clocks
+ * are server-synchronized and never read this flag.
  */
 export const CLOCK_ENABLED = true;

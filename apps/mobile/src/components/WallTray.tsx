@@ -119,7 +119,6 @@ const WallPiece: React.FC<PieceProps> = ({
               },
         ]}
       />
-      <Text style={styles.pieceLabel}>{label}</Text>
     </View>
   );
 };
@@ -144,7 +143,9 @@ export const WallTray: React.FC<WallTrayProps> = ({
   const inactive = disabled || count <= 0;
 
   const slotW = 100 * s;
-  const slotH = 68 * s;
+  // Player-card height: avatar 36 + card padding 2×10 ≈ 56. The tray matches
+  // it (40 + card padding 2×8) so the inventory costs no extra vertical room.
+  const slotH = 40 * s;
 
   return (
     <View style={styles.card}>
@@ -155,8 +156,8 @@ export const WallTray: React.FC<WallTrayProps> = ({
           color={color}
           held={held === 'H'}
           disabled={inactive}
-          barW={(swapVisuals ? 8 : 36) * s}
-          barH={(swapVisuals ? 20 : 8) * s}
+          barW={(swapVisuals ? 7 : 30) * s}
+          barH={(swapVisuals ? 16 : 7) * s}
           touchW={slotW}
           touchH={slotH}
           label={swapVisuals ? 'Vertical' : 'Horizontal'}
@@ -165,10 +166,9 @@ export const WallTray: React.FC<WallTrayProps> = ({
           onDragEnd={onDragEnd}
         />
 
-        {/* Center Available Count Column */}
+        {/* Center Count Column: the number only, no caption. */}
         <View style={[styles.countBox, { width: slotW * 0.85, height: slotH }]}>
           <Text style={styles.countNumber}>{count}</Text>
-          <Text style={styles.countSub}>Available</Text>
         </View>
 
         {/* Vertical Wall Column */}
@@ -177,8 +177,8 @@ export const WallTray: React.FC<WallTrayProps> = ({
           color={color}
           held={held === 'V'}
           disabled={inactive}
-          barW={(swapVisuals ? 36 : 8) * s}
-          barH={(swapVisuals ? 8 : 20) * s}
+          barW={(swapVisuals ? 30 : 7) * s}
+          barH={(swapVisuals ? 7 : 16) * s}
           touchW={slotW}
           touchH={slotH}
           label={swapVisuals ? 'Horizontal' : 'Vertical'}
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: THEME.colors.surfaceHairline,
-    padding: 12,
+    padding: 8,
     ...THEME.shadows.card,
     width: '100%',
   },
@@ -214,16 +214,10 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 6,
+    gap: 3,
+    paddingVertical: 3,
   },
   pieceBar: {},
-  pieceLabel: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 12,
-    fontWeight: '600',
-    color: THEME.colors.textSecondaryStrong,
-  },
   pieceDisabled: {
     opacity: 0.35,
   },
@@ -234,21 +228,14 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
+    paddingVertical: 3,
   },
   countNumber: {
     fontFamily: THEME.fonts.extraBold,
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '800',
     color: THEME.colors.inverseLabel,
-    lineHeight: 22,
+    lineHeight: 18,
     fontVariant: ['tabular-nums'],
-  },
-  countSub: {
-    fontFamily: THEME.fonts.medium,
-    fontSize: 11,
-    fontWeight: '500',
-    color: THEME.colors.textSecondaryStrong,
-    marginTop: 2,
   },
 });

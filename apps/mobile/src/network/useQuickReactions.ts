@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { socketManager } from './socket';
 
 /**
- * Ephemeral quick reactions for live online matches.
+ * Ephemeral quick reactions for live online matches — plus the 2p AI
+ * sparring tray used for local testing.
  *
  * One Socket.IO event (`game:reaction`) in each direction, on the existing
  * connection: emits carry `{ gameId, reaction }`, relays arrive as
@@ -10,9 +11,11 @@ import { socketManager } from './socket';
  * game state, clock, rating or history — the server relays to the other
  * seats and forgets.
  *
- * Online-only by construction: the listener subscribes only while `enabled`
- * (a live online match, not replaying), and `send` no-ops otherwise. AI,
- * local, replay and analysis never even attach the listener.
+ * Online-only sockets by construction: the listener subscribes only while
+ * `enabled` with a live socket, and `send` no-ops otherwise. AI matches have
+ * no socket at all: a tap still confirms locally through `echo` (your side),
+ * and the engine's own banter shows through `preview` (their side). Local,
+ * replay and analysis never attach anything.
  */
 
 export type ReactionKind = 'laugh' | 'wow' | 'cry' | 'angry' | 'clap' | 'fire';
@@ -59,7 +62,7 @@ export interface IncomingReaction {
 }
 
 /** Max bubbles stacked in the receiving area: newer ones evict older. */
-const MAX_STACK = 5;
+const MAX_STACK = 2;
 
 interface UseQuickReactionsOptions {
   /** UI visible (online live match, or AI match for local testing). */
@@ -72,16 +75,35 @@ interface UseQuickReactionsOptions {
 
 export function useQuickReactions({ enabled, socketLive, gameId, myUserId }: UseQuickReactionsOptions) {
   const [incoming, setIncoming] = useState<IncomingReaction[]>([]);
+  // Your own taps, shown on your side of the board (never sent, never
+  // relayed): the confirmation that the reaction actually went out.
+  const [outgoing, setOutgoing] = useState<IncomingReaction[]>([]);
   const idRef = useRef(0);
 
-  const push = useCallback(
-    (kind: ReactionKind) => {
+  const pushInto = useCallback(
+    (setList: (updater: (prev: IncomingReaction[]) => IncomingReaction[]) => void, kind: ReactionKind) => {
       if (!enabled || !isReactionKind(kind)) return;
       idRef.current += 1;
       const item: IncomingReaction = { id: idRef.current, kind };
-      setIncoming((prev) => [...prev.slice(-(MAX_STACK - 1)), item]);
+      setList((prev) => [...prev.slice(-(MAX_STACK - 1)), item]);
     },
     [enabled]
+  );
+
+  /** Opponent-side bubble (relayed online, or the engine's own banter). */
+  const preview = useCallback(
+    (kind: ReactionKind) => {
+      pushInto(setIncoming, kind);
+    },
+    [pushInto]
+  );
+
+  /** Your own bubble, on your side: the local send confirmation. */
+  const echo = useCallback(
+    (kind: ReactionKind) => {
+      pushInto(setOutgoing, kind);
+    },
+    [pushInto]
   );
 
   useEffect(() => {
@@ -91,16 +113,21 @@ export function useQuickReactions({ enabled, socketLive, gameId, myUserId }: Use
       if (!p || p.gameId !== gameId) return;
       if (p.fromUserId && myUserId && p.fromUserId === myUserId) return;
       if (!isReactionKind(p.reaction)) return;
-      push(p.reaction);
+      preview(p.reaction);
     };
     socket.on('game:reaction', onReaction);
     return () => {
       socket.off('game:reaction', onReaction);
     };
-  }, [enabled, socketLive, gameId, myUserId, push]);
+  }, [enabled, socketLive, gameId, myUserId, preview]);
 
+  // Ids are unique across both lists, so either list can dismiss its own bubble.
   const dismiss = useCallback((id: number) => {
     setIncoming((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
+  const dismissOutgoing = useCallback((id: number) => {
+    setOutgoing((prev) => prev.filter((r) => r.id !== id));
   }, []);
 
   const send = useCallback(
@@ -115,13 +142,7 @@ export function useQuickReactions({ enabled, socketLive, gameId, myUserId }: Use
     [enabled, socketLive, gameId]
   );
 
-  /** Local echo for AI-match testing: shows the bubble with no socket. */
-  const preview = useCallback(
-    (kind: ReactionKind) => {
-      push(kind);
-    },
-    [push]
-  );
-
-  return { incoming, dismiss, send, preview };
+  // `preview` fills the opponent dock (relayed online, or the engine's
+  // banter); `echo` fills your own as the local send confirmation.
+  return { incoming, outgoing, dismiss, dismissOutgoing, send, preview, echo };
 }

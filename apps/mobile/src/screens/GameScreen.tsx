@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, BackHandler, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Animated, BackHandler, Modal, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   AIDifficulty,
@@ -40,6 +40,7 @@ import { CLOCK_ENABLED, DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } 
 import { useOnlineGame } from '../network/useOnlineGame';
 import { useQuickReactions } from '../network/useQuickReactions';
 import { ReactionDock, ReactionTray } from '../components/QuickReactions';
+import type { ReactionKind } from '../network/useQuickReactions';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
 import { useIdentity } from '../network/auth';
 import { socketManager } from '../network/socket';
@@ -208,7 +209,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   // Every non-human seat in an AI game is AI-controlled
   const isAiSide = (idx: number) => type === 'ai' && idx !== humanIdx;
-  const [initialState] = useState<GameState>(() =>
+  const [initialState, setInitialState] = useState<GameState>(() =>
     createInitialState({ mode, playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You'), wallsEach })
   );
 
@@ -585,14 +586,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const handleMetricsChange = useCallback((bs: number) => {
     boardSizeRef.current = bs;
   }, []);
-  // Tray shows your pieces while queueing on the AI's turn, else the side to move.
-  const trayPlayer = humanTurn
-    ? currentPlayer
-    : canPremove
-    ? queueOn
-      ? myOrb
-      : currentPlayer
-    : currentPlayer;
+  // Your walls are always in your tray. On the opponent's turn it goes inert (or
+  // accepts queued premoves) — it must never flip to their colour and count,
+  // which is what used to happen whenever the turn passed away from you. Local
+  // pass-and-play has no fixed seat, so there the tray follows the mover.
+  const trayPlayer = type === 'local' ? currentPlayer : myOrb ?? currentPlayer;
   const trayColor = playerColor(trayPlayer?.index ?? 0, trayPlayer?.color);
 
   const handleQueuedWallPress = useCallback(
@@ -1086,6 +1084,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       wallsEach,
     });
     setState(fresh);
+    setInitialState(fresh);
+    historyLenRef.current = 0;
     // Fresh clocks — never carry leftover time into the new match.
     const full = timeControl.minutes * 60;
     const reset: Record<string, number> = {};
@@ -1115,7 +1115,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // and finished matches show nothing and attach nothing.
   const socketLive = type === 'online' && !!onlineGameId;
   const matchLive = !isCompleted && !replaying && viewingStep === null;
-  const aiSparring = type === 'ai' && state.players.length === 2;
+  // AI matches get the tray for testing in classic 2p, every race mode and
+  // every centre mode (the engine's banter stays 2p-only, see below).
+  const aiSparring =
+    type === 'ai' &&
+    (state.mode === '2p' || state.mode.startsWith('race') || state.mode.startsWith('center'));
   const reactionsVisible = (socketLive || aiSparring) && matchLive;
   const reactions = useQuickReactions({
     enabled: reactionsVisible,
@@ -1157,6 +1161,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       reactions.preview('clap');
     }
   });
+  // Quick reactions: a tap sends (online) and shows its own bubble in the
+  // dock floating over the inventory. Nothing is remembered — each bubble
+  // deletes itself.
+  const handleReactionSend = (kind: ReactionKind) => {
+    if (socketLive) reactions.send(kind);
+    reactions.echo(kind);
+  };
+
   // No Resign anywhere near a finished match — and never in local games.
   const canResign =
     !isCompleted && type !== 'local' && !mySeatFinished && !myAiFinished;
@@ -1224,7 +1236,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setViewingStep(totalSteps);
   };
 
-  /** Copies the finished game as chess-style notation for analysis. */
+  /** Copies the game so far as chess-style notation for analysis. Works
+   * mid-game too (local reverse-engineering flow) — formatGame serializes
+   * the history accumulated so far, not just finished games. */
   const handleCopyMoves = async () => {
     try {
       await Clipboard.setStringAsync(formatGame(state));
@@ -1241,7 +1255,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setViewingStep(null);
   }, []);
 
-  // Hardware back mirrors the header back button: dismiss the topmost
+  // Hardware back: dismiss the topmost overlay first (result modal, resign
   // overlay first (result modal, resign confirm, place modal, incoming
   // rematch toast, step-through replay), then follow the same
   // leave/resign routing. Always handled here while a match screen is
@@ -1469,6 +1483,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       ref={rootRef}
       collapsable={false}
       onLayout={measureRoot}
+      // No inset padding here: App.tsx already wraps every screen in one
+      // SafeAreaView (top + bottom), so adding it again would double the gap.
       style={styles.container}
     >
       {/* White status strip on Android so the header truly reaches the top. */}
@@ -1524,8 +1540,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </View>
       )}
 
-      {/* Measured top chrome (header + opponent cards) for board sizing. */}
+      {/* Measured top chrome (header + opponent cards) for board sizing.
+          Back in the bar: it resigns an active match, frees a finished seat,
+          or closes a finished/local one. Safe area is owned by the app-level
+          SafeAreaView, so this bar sits directly under it like every other
+          page's. */}
       <View
+        style={styles.topChrome}
         onLayout={(e) => {
           const { height } = e.nativeEvent.layout;
           setTopH((prev) => (Math.abs(prev - height) > 1 ? height : prev));
@@ -1544,17 +1565,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* Quick-reaction receiving area (live online + AI sparring): reserved
-          breathing space for the bubble. Empty and quiet otherwise; the fixed
-          height means a bubble never shifts layout or the board. */}
-      {reactionsVisible && (
-        <ReactionDock items={reactions.incoming} onDone={reactions.dismiss} />
-      )}
-
       {/* Opponent card(s). Turn ring + timer highlight show whose move it is. */}
       {/* Strips ignore touches while a wall is dragged over them. */}
       {/* Multiplayer splits 2 up / 2 down in a grid; 1v1 keeps full cards. */}
+      {/* Their reaction dock floats over the card, out of layout. */}
+      <View style={styles.sideWrap}>
+      {reactionsVisible && (
+        <ReactionDock items={reactions.incoming} side="top" onDone={reactions.dismiss} />
+      )}
       <View
         pointerEvents={wallDrag ? 'none' : 'auto'}
         style={[
@@ -1570,6 +1588,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           bonus={lastBonus}
           onPressPlayer={handleOpponentPress}
         />
+      </View>
       </View>
       </View>
 
@@ -1633,6 +1652,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           {/* Fixed slot: the inventory stays visible every turn (inert off-turn). */}
           {!isCompleted && (
             <View style={styles.traySlot}>
+              {/* Your reaction bubbles float over the inventory — never over the board. */}
+              {reactionsVisible && (
+                <ReactionDock
+                  items={reactions.outgoing}
+                  side="bottom"
+                  onDone={reactions.dismissOutgoing}
+                />
+              )}
               {trayPlayer && (
               <WallTray
                 color={trayColor}
@@ -1646,6 +1673,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               />
               )}
             </View>
+          )}
+          {/* Quick-reaction sending row sits directly under the inventory,
+              above Resign — live online + 2p AI sparring. A tap sends (online)
+              and flies its emoji out of the button into the bubble above your
+              card. AI games have no socket, so the fly-and-land is the whole
+              effect there. */}
+          {(socketLive || aiSparring) && matchLive && (
+            <ReactionTray onSend={handleReactionSend} />
           )}
           {/* Finished match: replay controls step through the stored moves
               on this same board — no separate replay page. */}
@@ -1749,9 +1784,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               </TouchableOpacity>
             </View>
           )}
-          {/* Quick-reaction sending row (live online only — AI games get no
-              tray; the engine is the only one who reacts there). */}
-          {socketLive && matchLive && <ReactionTray onSend={reactions.send} />}
         </View>
       </View>
 
@@ -1957,26 +1989,32 @@ const styles = StyleSheet.create({
     // No text selection anywhere while dragging walls around the board.
     userSelect: 'none',
   },
+  // Same bar every other page uses: 56 tall, 16 of horizontal padding, the
+  // lowest surface with a container hairline under it.
   header: {
-    backgroundColor: THEME.colors.backgroundCard,
+    height: 56,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
     borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceHairline,
+    borderBottomColor: THEME.colors.surfaceContainer,
     marginHorizontal: -12,
-    paddingHorizontal: 12,
-    // Exact status height on Android; SafeAreaView owns the inset on iOS.
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
+    paddingHorizontal: 16,
   },
   headerInner: {
-    // 36 + status height ≈ 64: matches every other page's header. Was 44,
-    // which made this bar ~8px taller than the rest for no reason.
-    // (Touch target stays ≥44 via the button's hitSlop.)
-    height: 36,
+    // Touch target stays ≥44 via the button's hitSlop.
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  topChrome: {
+    // No inset padding here: the app-level SafeAreaView owns the safe area.
   },
   topStripWrap: {
     marginTop: 8,
     marginBottom: 8,
+  },
+  // Anchors the opponent's floating reaction dock to their card.
+  sideWrap: {
+    position: 'relative',
   },
   boardWrap: {
     flex: 1,
@@ -1992,9 +2030,11 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   traySlot: {
-    minHeight: 92,
+    minHeight: 60,
     justifyContent: 'center',
     alignItems: 'center',
+    // Anchor for the floating reaction dock.
+    position: 'relative',
   },
   resignRow: {
     flexDirection: 'row',

@@ -10,30 +10,30 @@ import {
 } from '../network/useQuickReactions';
 
 /**
- * Quick-reaction UI: two separate areas.
+ * Quick-reaction UI: two pieces.
  *
- * `ReactionDock` is the reserved receiving space between the top bar and the
- * opponent card. Fixed, compact height, pointer-transparent — bubbles pop in
- * from the opponent-card direction with a speech tail, float up slightly,
- * fade, and remove themselves. Never a toast, never needs dismissal, never
- * shifts layout (absolute positioning inside a fixed-height dock).
+ * `ReactionDock` is a floating bubble area — absolutely positioned, so it
+ * costs zero layout and the board never moves. `side="bottom"` floats over the
+ * wall inventory (your own taps); `side="top"` floats over the opponent card
+ * (their taps and the engine's banter). Bubbles drop or rise into place, hold
+ * briefly, fade, and remove themselves. Never a toast, never needs dismissal.
  *
- * `ReactionTray` is the sending card under the Resign button: six round
- * emoji buttons on one rounded card. No labels, no gradients.
+ * `ReactionTray` is the sending card above Resign: six emoji buttons, no
+ * labels, no gradients.
  */
 
-// ---------------------------------------------------------------------------
-// Receiving
-// ---------------------------------------------------------------------------
+/** Which side a bubble belongs to: `bottom` = yours, `top` = theirs. */
+type DockSide = 'top' | 'bottom';
 
-const ENTER_MS = 220;
-const HOLD_MS = 1200;
-const EXIT_MS = 350;
+const ENTER_MS = 180;
+const HOLD_MS = 1000;
+const EXIT_MS = 260;
 
-const ReactionBubble: React.FC<{ kind: ReactionKind; onDone: () => void }> = memo(
-  function ReactionBubble({ kind, onDone }) {
+const ReactionBubble: React.FC<{ kind: ReactionKind; side: DockSide; onDone: () => void }> = memo(
+  function ReactionBubble({ kind, side, onDone }) {
     const scale = useRef(new Animated.Value(0.6)).current;
-    const dy = useRef(new Animated.Value(10)).current;
+    // Your bubbles rise out of the inventory; theirs drop in over their card.
+    const dy = useRef(new Animated.Value(side === 'top' ? -10 : 10)).current;
     const opacity = useRef(new Animated.Value(1)).current;
     const doneRef = useRef(onDone);
     doneRef.current = onDone;
@@ -63,12 +63,12 @@ const ReactionBubble: React.FC<{ kind: ReactionKind; onDone: () => void }> = mem
       <Animated.View
         pointerEvents="none"
         style={[styles.bubbleWrap, { transform: [{ scale }, { translateY: dy }], opacity }]}
-        accessibilityLabel={`Opponent reacted ${reactionLabel(kind)}`}
+        accessibilityLabel={`${side === 'top' ? 'Opponent' : 'You'} reacted ${reactionLabel(kind)}`}
       >
         <View style={styles.bubble}>
           <Text style={styles.bubbleEmoji}>{REACTION_EMOJI[kind]}</Text>
-          {/* Speech tail pointing down at the opponent card it came from. */}
-          <View style={styles.bubbleTail} />
+          {/* Tail pointing back at the card the bubble belongs to. */}
+          <View style={side === 'top' ? styles.bubbleTailUp : styles.bubbleTailDown} />
         </View>
       </Animated.View>
     );
@@ -78,22 +78,25 @@ ReactionBubble.displayName = 'ReactionBubble';
 
 export const ReactionDock: React.FC<{
   items: IncomingReaction[];
+  side: DockSide;
   onDone: (id: number) => void;
-}> = memo(function ReactionDock({ items, onDone }) {
+}> = memo(function ReactionDock({ items, side, onDone }) {
+  // Overlay, never layout: zero room, so the board never moves when one lands.
+  if (items.length === 0) return null;
   return (
-    <View style={styles.dock} pointerEvents="none" accessibilityLabel="Opponent reactions">
+    <View
+      style={[styles.dock, side === 'top' ? styles.dockTop : styles.dockBottom]}
+      pointerEvents="none"
+      accessibilityLabel={side === 'top' ? 'Opponent reactions' : 'Your reactions'}
+    >
       <View style={styles.dockRow} pointerEvents="none">
         {items.map((item) => (
-          <ReactionBubble key={item.id} kind={item.kind} onDone={() => onDone(item.id)} />
+          <ReactionBubble key={item.id} kind={item.kind} side={side} onDone={() => onDone(item.id)} />
         ))}
       </View>
     </View>
   );
 });
-
-// ---------------------------------------------------------------------------
-// Sending
-// ---------------------------------------------------------------------------
 
 export const ReactionTray: React.FC<{ onSend: (kind: ReactionKind) => void }> = memo(
   function ReactionTray({ onSend }) {
@@ -118,13 +121,23 @@ export const ReactionTray: React.FC<{ onSend: (kind: ReactionKind) => void }> = 
 );
 
 const styles = StyleSheet.create({
-  // Reserved receiving space: fixed and compact so a bubble never shifts
-  // layout or steals board room.
+  // Floating over a card: absolute, so a bubble never takes layout room and
+  // never covers the board.
   dock: {
-    height: 26,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 52,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
+    elevation: 10,
   },
+  // Over the wall inventory: your own reactions, rising from the tray.
+  dockBottom: {},
+  // Over the opponent card: their reactions, dropping in.
+  dockTop: {},
   dockRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -134,21 +147,23 @@ const styles = StyleSheet.create({
   bubbleWrap: {
     paddingBottom: 4,
   },
-  // White speech pill: emoji, hairline border, tail at the opponent side.
+  // White speech pill: emoji, hairline border, tail at the inventory side.
+  // Roomy enough that the enlarged emoji glyph is never clipped.
   bubble: {
     backgroundColor: THEME.colors.backgroundCard,
     borderWidth: 1,
     borderColor: THEME.colors.surfaceHairline,
     borderRadius: THEME.radius.full,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     ...THEME.shadows.card,
   },
   bubbleEmoji: {
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: 24,
+    lineHeight: 30,
   },
-  bubbleTail: {
+  // Tail pointing down at the inventory your bubble rose from.
+  bubbleTailDown: {
     position: 'absolute',
     bottom: -4,
     left: 12,
@@ -157,6 +172,19 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.backgroundCard,
     borderBottomWidth: 1,
     borderRightWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+    transform: [{ rotate: '45deg' }],
+  },
+  // Tail pointing up, away from the card their bubble sits on.
+  bubbleTailUp: {
+    position: 'absolute',
+    top: -4,
+    left: 12,
+    width: 8,
+    height: 8,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
     borderColor: THEME.colors.surfaceHairline,
     transform: [{ rotate: '45deg' }],
   },
