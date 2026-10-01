@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ConflictException,
   BadRequestException,
@@ -24,6 +25,7 @@ function isUniqueViolation(e: unknown): boolean {
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
   // Optional so the service can be constructed bare in unit tests.
   constructor(
     private readonly prisma: PrismaService,
@@ -475,5 +477,64 @@ export class UsersService {
     await this.guestService?.revokeForUser(guestId);
 
     return { merged: true, adoptedRatings: accountGames === 0 };
+  }
+
+  /**
+   * Permanently deletes an account and all data linked to it.
+   *
+   * Play Account Deletion + Data Safety requirement: in-app
+   * `DELETE /api/me` (Settings > Delete account) and the web deletion page
+   * both resolve here. Prisma `onDelete: Cascade` removes profile, ratings,
+   * rating history, game-player links, friend requests, friendships, blocks,
+   * AI wins, achievements, badge slots and guest sessions. Finished `Game`
+   * rows stay (without this player's seat) so opponents' records survive.
+   * Supabase Auth users are removed via the admin API when configured;
+   * guest ids (`u_*`) are local-only and skip that step.
+   */
+  async deleteAccount(userId: string) {
+    // Kill refresh tokens first so a concurrent refresh cannot resurrect
+    // the session between the admin delete and the row delete.
+    try {
+      await this.guestService?.revokeForUser(userId);
+    } catch (err: any) {
+      this.logger.warn(`Could not revoke guest sessions for ${userId}: ${err?.message}`);
+    }
+
+    if (!this.prisma.isConnected) {
+      throw new BadRequestException('Account deletion is unavailable right now.');
+    }
+
+    // Supabase Auth holds the Google credential outside Postgres. Best-effort:
+    // the PG delete below is authoritative for Play; a failed admin call is
+    // logged, never blocks deletion.
+    if (!userId.startsWith('u_')) {
+      const url = process.env.SUPABASE_URL;
+      const secret = process.env.SUPABASE_SECRET_KEY;
+      if (url && secret) {
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const admin = createClient(url, secret, {
+            auth: { persistSession: false, autoRefreshToken: false },
+          });
+          const { error } = await admin.auth.admin.deleteUser(userId);
+          if (error) {
+            this.logger.warn(`Supabase admin deleteUser(${userId}) failed: ${error.message}`);
+          }
+        } catch (err: any) {
+          this.logger.warn(`Supabase admin deleteUser(${userId}) threw: ${err?.message}`);
+        }
+      }
+    }
+
+    try {
+      await this.prisma.user.delete({ where: { id: userId } });
+    } catch (e: any) {
+      if (e?.code === 'P2025') {
+        throw new NotFoundException('Account not found.');
+      }
+      throw e;
+    }
+
+    return { deleted: true as const, userId };
   }
 }

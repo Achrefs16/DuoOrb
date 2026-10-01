@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   Patch,
   Post,
@@ -31,6 +32,17 @@ export class UsersController {
     @Body() body: { displayName?: string; username?: string; bio?: string; avatarUrl?: string }
   ) {
     return this.usersService.updateProfile(user.id, body);
+  }
+
+  /**
+   * Account + data deletion (Play Account Deletion requirement).
+   * In-app: Settings > Delete account. Web: /legal/delete-account explains
+   * the same endpoint plus the email fallback for users without the app.
+   */
+  @Delete('me')
+  @UseGuards(JwtAuthGuard)
+  async deleteMe(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.deleteAccount(user.id);
   }
 
   @Get('profiles/:userId')

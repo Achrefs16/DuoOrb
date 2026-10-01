@@ -7,6 +7,7 @@ import { FriendsModule } from './friends/friends.module.js';
 import { HistoryModule } from './history/history.module.js';
 import { RatingModule } from './rating/rating.module.js';
 import { AiwinsModule } from './aiwins/aiwins.module.js';
+import { LegalModule } from './legal/legal.module.js';
 import { GameGateway } from './gateway/game.gateway.js';
 
 @Module({
@@ -20,6 +21,7 @@ import { GameGateway } from './gateway/game.gateway.js';
     HistoryModule,
     RatingModule,
     AiwinsModule,
+    LegalModule,
   ],
   providers: [GameGateway],
 })

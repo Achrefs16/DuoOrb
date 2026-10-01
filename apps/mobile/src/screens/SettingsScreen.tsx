@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Switch,
@@ -14,6 +15,7 @@ import { THEME } from '../theme';
 import { UserSettings } from '../storage/gameStorage';
 import { useSession } from '../network/session';
 import { api, ApiError } from '../network/apiClient';
+import { LEGAL_CONTACT_EMAIL, LEGAL_URLS, openLegalUrl } from '../legal';
 import {
   isGeneratedUsername,
   sanitizeUsernameInput,
@@ -96,6 +98,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [displayNameDraft, setDisplayNameDraft] = useState('');
   const [displayNameError, setDisplayNameError] = useState<string | null>(null);
   const [savingDisplayName, setSavingDisplayName] = useState(false);
+
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const availabilityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
@@ -233,6 +239,48 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       if (mounted.current) setSavingDisplayName(false);
     }
   }, [displayNameDraft, currentDisplayName, cancelDisplayNameEdit, refreshProfile]);
+
+  const requestDeleteAccount = useCallback(() => {
+    setDeleteError(null);
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    // Second tap: show the OS confirm as well so accidental taps cannot
+    // wipe an account. The inline warning stays as the accessible record.
+    Alert.alert(
+      'Delete account?',
+      'This permanently deletes your profile, rating, history, friends and achievements. This cannot be undone.',
+      [
+        { text: 'Keep my account', style: 'cancel', onPress: () => setConfirmingDelete(false) },
+        {
+          text: 'Delete everything',
+          style: 'destructive',
+          onPress: () => void (async () => {
+            setDeletingAccount(true);
+            setDeleteError(null);
+            try {
+              await api.deleteAccount();
+              // Server deleted the rows + revoked tokens. Sign out wipes the
+              // device (identity, socket, onboarding) and returns to Welcome.
+              await signOut();
+            } catch (e) {
+              if (!mounted.current) return;
+              setDeleteError(e instanceof Error ? e.message : 'Could not delete the account.');
+              setConfirmingDelete(false);
+            } finally {
+              if (mounted.current) setDeletingAccount(false);
+            }
+          })(),
+        },
+      ],
+    );
+  }, [confirmingDelete, signOut]);
+
+  const cancelDeleteAccount = useCallback(() => {
+    setConfirmingDelete(false);
+    setDeleteError(null);
+  }, []);
 
   const availabilityHint = (() => {
     if (editingUsername) {
@@ -529,6 +577,105 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
           ))}
         </View>
+
+        {/* Legal - Play Data Safety + UGC requirement: always visible. */}
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>LEGAL</Text>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => void openLegalUrl(LEGAL_URLS.privacy)}
+            accessibilityLabel="Open Privacy Policy"
+          >
+            <View style={styles.settingIconBox}>
+              <Feather name="shield" size={15} color={THEME.colors.textSecondary} />
+            </View>
+            <View style={styles.settingText}>
+              <Text style={styles.settingTitle}>Privacy Policy</Text>
+              <Text style={styles.settingDesc}>What we collect, why, and your rights.</Text>
+            </View>
+            <Feather name="external-link" size={14} color={THEME.colors.textMuted} />
+          </TouchableOpacity>
+          <View style={styles.divider} />
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => void openLegalUrl(LEGAL_URLS.terms)}
+            accessibilityLabel="Open Terms of Service"
+          >
+            <View style={styles.settingIconBox}>
+              <Feather name="file-text" size={15} color={THEME.colors.textSecondary} />
+            </View>
+            <View style={styles.settingText}>
+              <Text style={styles.settingTitle}>Terms of Service</Text>
+              <Text style={styles.settingDesc}>Fair play, content rules, reporting.</Text>
+            </View>
+            <Feather name="external-link" size={14} color={THEME.colors.textMuted} />
+          </TouchableOpacity>
+          <View style={styles.divider} />
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => void openLegalUrl(LEGAL_URLS.deleteAccount)}
+            accessibilityLabel="Open Delete Account help"
+          >
+            <View style={styles.settingIconBox}>
+              <Feather name="trash-2" size={15} color={THEME.colors.textSecondary} />
+            </View>
+            <View style={styles.settingText}>
+              <Text style={styles.settingTitle}>Delete account &amp; data</Text>
+              <Text style={styles.settingDesc} numberOfLines={2}>
+                How deletion works, including the web request (no app needed).
+              </Text>
+            </View>
+            <Feather name="external-link" size={14} color={THEME.colors.textMuted} />
+          </TouchableOpacity>
+          <Text style={styles.supportText}>Support: {LEGAL_CONTACT_EMAIL}</Text>
+        </View>
+
+        {/* Danger zone - Play Account Deletion requirement. */}
+        <View style={[styles.card, styles.dangerCard]}>
+          <Text style={[styles.sectionLabel, styles.dangerLabel]}>DANGER ZONE</Text>
+          {!confirmingDelete ? (
+            <>
+              <Text style={styles.settingDesc}>
+                Permanently deletes your profile, rating, history, friends and achievements. Cannot
+                be undone. Guests and Google accounts both use this.
+              </Text>
+              <TouchableOpacity
+                style={[styles.dangerButton, deletingAccount && styles.disabled]}
+                disabled={deletingAccount}
+                onPress={requestDeleteAccount}
+                accessibilityLabel="Delete account and data"
+              >
+                <Feather name="trash-2" size={14} color="#fff" />
+                <Text style={styles.dangerButtonText}>
+                  {deletingAccount ? 'Deleting…' : 'Delete account & data'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={styles.dangerWarning}>
+                Are you sure? This wipes everything linked to{' '}
+                {currentUsername ? `@${currentUsername}` : 'this account'} and signs this device
+                out. Tap Delete to get a final system confirm.
+              </Text>
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={[styles.dangerButton, styles.dangerButtonFlex, deletingAccount && styles.disabled]}
+                  disabled={deletingAccount}
+                  onPress={requestDeleteAccount}
+                >
+                  <Text style={styles.dangerButtonText}>
+                    {deletingAccount ? 'Deleting…' : 'Yes, delete'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.secondaryButton, styles.dangerButtonFlex]} onPress={cancelDeleteAccount}>
+                  <Text style={styles.secondaryButtonText}>Keep my account</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+          {!!deleteError && <Text style={styles.errorText}>{deleteError}</Text>}
+        </View>
       </ScrollView>
     </View>
   );
@@ -789,5 +936,43 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.35,
+  },
+  supportText: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    paddingVertical: 10,
+  },
+  dangerCard: {
+    borderColor: THEME.colors.danger,
+  },
+  dangerLabel: {
+    color: THEME.colors.danger,
+  },
+  dangerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    backgroundColor: THEME.colors.danger,
+    paddingVertical: 12,
+    borderRadius: THEME.radius.md,
+  },
+  dangerButtonFlex: {
+    flex: 1,
+    marginTop: 0,
+  },
+  dangerButtonText: {
+    fontFamily: THEME.fonts.bold,
+    color: '#fff',
+    fontSize: 13,
+  },
+  dangerWarning: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 12,
+    lineHeight: 17,
+    color: THEME.colors.danger,
+    paddingVertical: 8,
   },
 });

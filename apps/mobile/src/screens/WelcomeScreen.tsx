@@ -9,6 +9,7 @@ import {
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../theme';
 import { DuoOrbLogo } from '../components/DuoOrbLogo';
+import { LEGAL_URLS, openLegalUrl } from '../legal';
 
 interface WelcomeScreenProps {
   onContinueAsGuest: () => void;
@@ -22,7 +23,9 @@ interface WelcomeScreenProps {
 /**
  * First-launch welcome. Shown once per device, never on later launches.
  *
- * Exactly two choices, no other sign-in methods, no fields, no legal text.
+ * Exactly two choices, no other sign-in methods, no fields. Legal links are
+ * always visible below the buttons (Play Data Safety + UGC requirement) but
+ * never block continuing as guest.
  */
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   onContinueAsGuest,
@@ -81,6 +84,18 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         </TouchableOpacity>
 
         {!!error && <Text style={styles.errorText}>{error}</Text>}
+
+        <Text style={styles.legalText}>
+          By continuing you agree to our{' '}
+          <Text style={styles.legalLink} onPress={() => void openLegalUrl(LEGAL_URLS.terms)}>
+            Terms
+          </Text>{' '}
+          and{' '}
+          <Text style={styles.legalLink} onPress={() => void openLegalUrl(LEGAL_URLS.privacy)}>
+            Privacy Policy
+          </Text>
+          . Manage or delete your data anytime in Settings.
+        </Text>
       </View>
     </View>
   );
@@ -163,5 +178,19 @@ const styles = StyleSheet.create({
     color: THEME.colors.danger,
     textAlign: 'center',
     marginTop: 4,
+  },
+  legalText: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    lineHeight: 17,
+    color: THEME.colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 12,
+    paddingHorizontal: 8,
+  },
+  legalLink: {
+    fontFamily: THEME.fonts.semiBold,
+    color: THEME.colors.primary,
+    textDecorationLine: 'underline',
   },
 });

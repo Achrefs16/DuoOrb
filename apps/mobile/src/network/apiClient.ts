@@ -547,6 +547,18 @@ export const api = {
   },
 
   /**
+   * Permanently deletes the signed-in account and all linked data.
+   * Play Account Deletion requirement - surfaces in Settings > Danger Zone
+   * and is documented at GET /legal/delete-account. Throws ApiError on
+   * failure; callers must sign out + wipe local state only on success.
+   */
+  async deleteAccount(): Promise<{ deleted: boolean; userId?: string }> {
+    return request<{ deleted: boolean; userId?: string }>('/me', {
+      method: 'DELETE',
+    });
+  },
+
+  /**
    * Derives real Head-to-Head competitive statistics between the logged in user
    * and a target player from the user's authentic match history.
    */
