@@ -1184,8 +1184,23 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       if (result.newGameParams) {
         // All seats accepted! Create new game and notify players
         const params = result.newGameParams;
+        // Re-read every seat's live rating for the new rating period.
+        // `offerRematch` can only fire once the previous game COMPLETED, but it
+        // carries that game's PRE-match snapshot — seeding the rematch with it
+        // recomputed every rematch from a stale base: the same delta printed
+        // again (+164, +164), and the stored rating was overwritten with a
+        // value derived from the old snapshot, so real points vanished.
+        // Matchmaking, challenges and rooms all re-read here; rematch now
+        // matches them.
+        const users = await Promise.all(
+          params.users.map(async (u: { userId: string; [key: string]: unknown }) => ({
+            ...u,
+            rating: await this.fullRating(u.userId),
+          }))
+        );
         await this.gameService.createGame({
           ...params,
+          users,
           onClockTick: (gId: string, clock: ClockStateDto) => this.server.to(gId).emit('game:clock', clock),
           onTimeout: (gId: string, ended: GameEndedDto, move: any) =>
             this.emitTimeoutEnded(gId, ended, move as RecordedAction),

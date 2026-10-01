@@ -1312,7 +1312,20 @@ export class AuthoritativeGameService {
         const isDraw = total === 2 ? !winnerUserId : false;
         const isLoss = total === 2 ? !isWin && !isDraw : place === total && total > 1;
 
-        // Upsert the single universal rating row.
+        // Upsert the single universal rating row. An existing row moves by the
+        // computed DELTA on top of what the ledger actually holds, never by an
+        // absolute value derived from the game's seed — a stale seed then costs
+        // accuracy instead of erasing rating. With a fresh seed (every creation
+        // path re-reads it) the two are identical by construction.
+        const stored = await tx.rating.findUnique({
+          where: { userId: uId },
+          select: { rating: true },
+        });
+        if (stored && Math.abs(stored.rating - change.before) > 1) {
+          this.logger.warn(
+            `Rating seed drift ${game.id}/${uId.slice(0, 6)}: seeded ${change.before}, ledger ${stored.rating}`
+          );
+        }
         await tx.rating.upsert({
           where: { userId: uId },
           create: {
@@ -1326,7 +1339,7 @@ export class AuthoritativeGameService {
             draws: isDraw ? 1 : 0,
           },
           update: {
-            rating: updated.rating,
+            rating: { increment: change.delta },
             rd: updated.rd,
             vol: updated.vol,
             gamesPlayed: { increment: 1 },
