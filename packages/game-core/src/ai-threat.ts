@@ -35,6 +35,7 @@ import {
   boardOf,
   cellToIndex,
   packSlot,
+  packedSlotsTouchingCell,
   projectedGoalField,
   routeOf,
   slotConflicts,
@@ -42,6 +43,8 @@ import {
 } from './ai-structure.js';
 import type { GameAction, GameState, PlayerState, WallCoord } from './types.js';
 import { applyAction } from './ruleset.js';
+import { isLegalWallPlacement } from './walls.js';
+import { doesWallConflict } from './geometry.js';
 
 /** Individual continuation slots kept per rival, best first. */
 const MAX_CONTINUATIONS = 4;
@@ -500,6 +503,354 @@ export function planSuppression(
 ): number {
   if (!before.primary || before.primary.bite <= 0) return 0;
   return (1 - planSurvives(before, me, after)) * before.primary.bite;
+}
+
+// ---------------------------------------------------------------------------
+// Attack blueprint: MY funnel, priced the same way the rival's is
+// ---------------------------------------------------------------------------
+
+/**
+ * My own funnel, priced the same way the rival's is — but composed deeper.
+ *
+ * The defensive layer above answers "what are they building against me". It
+ * has no mirror: a wall of mine that delays the rival one step today and
+ * anchors a three-step seal tomorrow is priced as a one-step wall, so it
+ * loses every keep cut and every ranking to goal-line blocks with a bigger
+ * immediate number. Every reverse-engineered exemplar is exactly such a
+ * brick: individually +1, structurally the first wall of a funnel.
+ *
+ * A two-slot lookahead cannot see these: the best PAIR at the exemplar
+ * positions is two goal-line delays (+2, additive, a dead end), while the
+ * funnel's three bricks compound to +3 and its full cage seals outright. So
+ * the blueprint composes pairs AND triples from a pool of delaying slots
+ * plus route-adjacent slots (funnel bricks like side walls delay nothing
+ * alone and never appear in a top-delay list), and prefers compounding
+ * combinations over additive ones — superadditivity is the funnel signature,
+ * exactly as on the defensive side.
+ *
+ * Only completable funnels count: a combination that leaves the rival with
+ * no route at all can never be finished (the closing wall would be illegal),
+ * so sealing combos are skipped, not priced.
+ */
+export interface AttackBlueprint {
+  /** Nearest rival this funnel is being built against. */
+  rivalId: string;
+  /** My best next bricks, packed (two or three slots). */
+  slots: number[];
+  /** Steps the bricks cost the rival TOGETHER, not summed. */
+  damage: number;
+  /**
+   * Per-brick best damage, parallel to `slots`: the strongest funnel EACH
+   * brick belongs to. Credit and affordability are sized per brick from this,
+   * never from the shared best — a brick riding along in a great funnel must
+   * not earn the great funnel's pay (that overpays passengers and ties the
+   * ranking to enumeration order instead of merit).
+   */
+  memberDamage: number[];
+}
+
+/** Sources for the composition pool: delaying slots plus structural ones. */
+const COMBO_POOL_CAP = 20;
+const COMBO_TOP_DELAY = 8;
+const COMBO_ROUTE_CELLS = 4;
+const COMBO_NEAR = 2;
+/** Walls within this Chebyshev distance of the foe seed thickening bricks. */
+const COMBO_WALL_NEAR = 4;
+/** Structural extras beyond the classic delay-plus-route pool. */
+const COMBO_STRUCTURAL_EXTRA = 4;
+/** Skip triples once a pair is already decisive: diminishing returns. */
+const COMBO_PAIR_DECIDES = 5;
+
+const touchScratch = new Int32Array(8);
+
+let memoAttackState: GameState | null = null;
+let memoAttackMe: string | null = null;
+let memoAttack: AttackBlueprint | null = null;
+
+export function resetAttackMemo(): void {
+  memoAttackState = null;
+  memoAttackMe = null;
+  memoAttack = null;
+}
+
+/**
+ * My best two-to-three-brick continuation against the nearest rival, or null
+ * when there is no funnel worth building: no walls left, no active rival, no
+ * legal combination worth two steps together (single-delay logic already
+ * prices those), or the race already won against a disarmed rival — ahead by
+ * two steps with nothing left to deny, just convert. An armed rival always
+ * keeps the blueprint alive: denying their counterplay is conversion.
+ */
+export function readAttackBlueprint(state: GameState, me: PlayerState): AttackBlueprint | null {
+  if (state === memoAttackState && me.id === memoAttackMe) return memoAttack;
+  const done = (value: AttackBlueprint | null): AttackBlueprint | null => {
+    memoAttackState = state;
+    memoAttackMe = me.id;
+    memoAttack = value;
+    return value;
+  };
+  if (state.status !== 'IN_PROGRESS' || me.status !== 'ACTIVE' || me.wallsRemaining <= 0) {
+    return done(null);
+  }
+  const board = boardOf(state);
+  const myRoute = routeOf(state, board, me);
+  if (!myRoute.hasGoalAccess) return done(null);
+
+  let foe: PlayerState | null = null;
+  let foeDist = Infinity;
+  for (const p of state.players) {
+    if (p.id === me.id || p.status !== 'ACTIVE') continue;
+    const r = routeOf(state, board, p);
+    if (r.hasGoalAccess && r.distance < foeDist) {
+      foeDist = r.distance;
+      foe = p;
+    }
+  }
+  if (!foe) return done(null);
+  // Ahead by two or more steps against a disarmed rival: nothing left to
+  // deny, just convert. An armed rival can still cage me, so denying their
+  // counterplay with my own funnel stays on the table however far ahead.
+  if (myRoute.distance - foeDist < -1 && foe.wallsRemaining <= 0) return done(null);
+
+  const n = scanSlots(board, foe, foeDist, me.wallsRemaining > 0);
+  if (n === 0) return done(null);
+
+  // Composition pool: the classic delay-plus-route body, byte-for-byte the
+  // old behavior (top delays in merit order, then route-band cells in route
+  // order), plus a small structural tail — thickenings of nearby walls,
+  // continuations, chains — relevance-ordered. The body preserves every
+  // funnel the old pool ever found; the tail only ADDS (it cannot evict body
+  // members, which is what an order-free relevance sort got wrong). Tail
+  // relevance is transparent: measured delay counts double, route contact and
+  // thickening contact two, other structural contact one; ties break toward
+  // the victim, then packed-ascending — identical on every run.
+  const pool: number[] = [];
+  const seen = new Set<number>();
+  const pushBody = (packed: number): void => {
+    if (pool.length < COMBO_POOL_CAP - COMBO_STRUCTURAL_EXTRA && !seen.has(packed)) {
+      seen.add(packed);
+      pool.push(packed);
+    }
+  };
+  for (let i = 0; i < Math.min(n, COMBO_TOP_DELAY); i++) pushBody(scanPacked[i]);
+  const foeRoute = routeOf(state, board, foe);
+  const band = foeRoute.nearCells.slice(0, COMBO_ROUTE_CELLS);
+  for (const cell of band) {
+    const count = packedSlotsTouchingCell(cell.row, cell.col, touchScratch);
+    for (let i = 0; i < count; i++) pushBody(touchScratch[i]);
+  }
+  const structural = new Set<number>();
+  for (const s of board.field.extensions) structural.add(packSlot(s));
+  for (const key of board.field.turnExtensions) {
+    const parts = key.split(',');
+    if (parts.length !== 3) continue;
+    structural.add(
+      Number(parts[0]) * 16 + Number(parts[1]) * 2 + (parts[2] === 'V' ? 1 : 0)
+    );
+  }
+  const thickenings = new Set<number>();
+  for (const w of state.walls) {
+    if (Math.abs(w.row - foe.position.row) > COMBO_WALL_NEAR || Math.abs(w.col - foe.position.col) > COMBO_WALL_NEAR) {
+      continue;
+    }
+    if (w.orientation === 'H') {
+      if (w.row > 0) thickenings.add((w.row - 1) * 16 + w.col * 2);
+      if (w.row < 7) thickenings.add((w.row + 1) * 16 + w.col * 2);
+    } else {
+      if (w.col > 0) thickenings.add(w.row * 16 + (w.col - 1) * 2 + 1);
+      if (w.col < 7) thickenings.add(w.row * 16 + (w.col + 1) * 2 + 1);
+    }
+  }
+  const tail: number[] = [];
+  const tailSeen = new Set<number>();
+  const pushTail = (packed: number): void => {
+    if (!seen.has(packed) && !tailSeen.has(packed)) {
+      tailSeen.add(packed);
+      tail.push(packed);
+    }
+  };
+  for (const packed of structural) pushTail(packed);
+  for (const packed of thickenings) pushTail(packed);
+  for (const chain of board.field.chains) {
+    for (const s of chain.slots) {
+      if (Math.abs(s.row - foe.position.row) <= COMBO_NEAR && Math.abs(s.col - foe.position.col) <= COMBO_NEAR) {
+        pushTail(packSlot(s));
+      }
+    }
+  }
+  const delayOf = (packed: number): number => {
+    for (let i = 0; i < n; i++) {
+      if (scanPacked[i] === packed) return scanDelay[i];
+    }
+    return 0;
+  };
+  const nearBand = (packed: number): boolean => {
+    const row = Math.floor(packed / 16);
+    const col = Math.floor(packed / 2) % 8;
+    for (const cell of band) {
+      if (Math.abs(cell.row - row) <= 1 && Math.abs(cell.col - col) <= 1) return true;
+    }
+    return false;
+  };
+  tail.sort((a, b) => {
+    const relevance = (p: number): number =>
+      2 * delayOf(p) +
+      (nearBand(p) ? 2 : 0) +
+      (thickenings.has(p) ? 2 : 0) +
+      (structural.has(p) ? 1 : 0);
+    const ra = relevance(a);
+    const rb = relevance(b);
+    if (rb !== ra) return rb - ra;
+    const da = Math.max(
+      Math.abs(Math.floor(a / 16) - foe.position.row),
+      Math.abs((Math.floor(a / 2) % 8) - foe.position.col)
+    );
+    const db = Math.max(
+      Math.abs(Math.floor(b / 16) - foe.position.row),
+      Math.abs((Math.floor(b / 2) % 8) - foe.position.col)
+    );
+    return da !== db ? da - db : a - b;
+  });
+  for (let i = 0; i < Math.min(COMBO_STRUCTURAL_EXTRA, tail.length); i++) {
+    pool.push(tail[i]);
+  }
+  const legal = pool.filter((packed) => isLegalWallPlacement(state, me.id, unpackSlot(packed)));
+  if (legal.length < 2) return done(null);
+
+  const halves = new Map<number, number>();
+  const singleDamage = (packed: number): number => {
+    const hit = halves.get(packed);
+    if (hit !== undefined) return hit;
+    const d = distanceWith(board, foe.goalDirection, foe.position, [unpackSlot(packed)]);
+    const value = Number.isFinite(d) ? Math.max(0, d - foeDist) : 0;
+    halves.set(packed, value);
+    return value;
+  };
+
+  // Bricks that lengthen my own route are never funnel material, however much
+  // they hurt the foe: the blueprint prices foe damage only, so without this
+  // a brick that maims us both anchors phantom funnels (and spends attack
+  // credit on self-harm). Genuine sacrifices still compete through the normal
+  // wall logic; they just don't get the funnel fast-track.
+  const myBase = myRoute.distance;
+  const selfHarms = new Map<number, boolean>();
+  const harmsMe = (packed: number): boolean => {
+    const hit = selfHarms.get(packed);
+    if (hit !== undefined) return hit;
+    const d = distanceWith(board, me.goalDirection, me.position, [unpackSlot(packed)]);
+    const harms = !Number.isFinite(d) || d > myBase;
+    selfHarms.set(packed, harms);
+    return harms;
+  };
+
+  let bestSlots: number[] = [];
+  let bestDamage = 0;
+  let bestScore = 0;
+  // Every evaluated combination, for the union below. A few hundred small
+  // entries per root: invisible next to the search, and no extra BFS (the
+  // numbers are already computed).
+  const evaluated: { slots: number[]; damage: number; score: number }[] = [];
+  const consider = (slots: number[]): void => {
+    for (const packed of slots) {
+      if (harmsMe(packed)) return;
+    }
+    const extras = slots.map(unpackSlot);
+    const combined = distanceWith(board, foe.goalDirection, foe.position, extras);
+    if (!Number.isFinite(combined)) return;
+    const damage = combined - foeDist;
+    if (damage < 2) return;
+    let sum = 0;
+    for (const packed of slots) sum += singleDamage(packed);
+    // Funnels only: the combination must compound beyond its halves. An
+    // additive pile of individually-best delays (two goal-line nicks in the
+    // opening) is priced correctly by single-delay logic already; crediting
+    // it as a funnel is what turns quiet openings into wall spam. Real cages
+    // are almost all side-bricks with tiny halves, so they pass easily.
+    if (!(damage > sum * PAIR_SUPERADDITIVE)) return;
+    const score = damage * 1.5;
+    evaluated.push({ slots: slots.slice(), damage, score });
+    if (score > bestScore + 1e-9) {
+      bestScore = score;
+      bestDamage = damage;
+      bestSlots = slots.slice();
+    }
+  };
+  // Local completion pre-pass: a delaying brick's best partner is almost
+  // always adjacent (cages are contiguous — corners meet, lines continue),
+  // but adjacency is exactly what pool sources miss (delay-0 side-bricks far
+  // from routes, chains and existing walls). So for each top-delay anchor,
+  // evaluate every free groove in Chebyshev-1 directly, bypassing the pool
+  // lottery: pairs the general enumeration cannot form because a partner was
+  // cut. Bounded (~8 anchors × ~12 grooves, one BFS each) with legality
+  // checked only for structural winners; pairs both sides already pool
+  // (the main loops cover those) are skipped, never re-scored.
+  const legalSet = new Set<number>(legal);
+  const anchors: WallCoord[] = [];
+  for (let i = 0; i < n && anchors.length < 8; i++) {
+    const slot = unpackSlot(scanPacked[i]);
+    if (scanDelay[i] >= 1) anchors.push(slot);
+  }
+  for (const anchor of anchors) {
+    const anchorPacked = packSlot(anchor);
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        for (const orientation of ['H', 'V'] as const) {
+          const partner: WallCoord = { row: anchor.row + dr, col: anchor.col + dc, orientation };
+          if (partner.row < 0 || partner.row >= 8 || partner.col < 0 || partner.col >= 8) continue;
+          const packed = packSlot(partner);
+          if (legalSet.has(packed)) continue;
+          if (slotConflicts(board.field.index, partner)) continue;
+          if (doesWallConflict(partner, [anchor])) continue;
+          const combined = distanceWith(board, foe.goalDirection, foe.position, [anchor, partner]);
+          if (!Number.isFinite(combined) || combined - foeDist < 2) continue;
+          // Structural gate before the expensive legality check, same bar as
+          // consider(): additive nick-piles are priced by delay logic already.
+          const halves = singleDamage(anchorPacked) + singleDamage(packed);
+          if (!(combined - foeDist > halves * PAIR_SUPERADDITIVE)) continue;
+          if (!isLegalWallPlacement(state, me.id, anchor) || !isLegalWallPlacement(state, me.id, partner)) {
+            continue;
+          }
+          consider([anchorPacked, packed]);
+        }
+      }
+    }
+  }
+  for (let i = 0; i < legal.length; i++) {
+    for (let j = i + 1; j < legal.length; j++) consider([legal[i], legal[j]]);
+  }
+  if (bestDamage < COMBO_PAIR_DECIDES) {
+    for (let i = 0; i < legal.length; i++) {
+      for (let j = i + 1; j < legal.length; j++) {
+        for (let k = j + 1; k < legal.length; k++) consider([legal[i], legal[j], legal[k]]);
+      }
+    }
+  }
+  if (bestSlots.length === 0) return done(null);
+  // Union of near-optimal funnels, not just the argmax: when two cages both
+  // build real damage, crediting only the winner lets enumeration order (not
+  // merit) pick the move — the ranking, with search behind it, is the right
+  // judge among credited bricks. Membership is funnel-grade damage at most a
+  // step and a half off the best; members are ordered by their own best
+  // damage so the keep-guarantee takes the strongest bricks first.
+  const bar = Math.max(3, bestDamage - 1.5);
+  const memberDamage = new Map<number, number>();
+  for (const combo of evaluated) {
+    if (combo.damage < bar) continue;
+    for (const packed of combo.slots) {
+      const prev = memberDamage.get(packed);
+      if (prev === undefined || combo.damage > prev) memberDamage.set(packed, combo.damage);
+    }
+  }
+  const union = [...memberDamage.entries()]
+    .sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : a[0] - b[0]))
+    .slice(0, 6)
+    .map(([packed]) => packed);
+  // No funnel-grade field (best below 3): fall back to the argmax pair so
+  // small early funnels keep their credit instead of losing it entirely.
+  const slots = union.length > 0 ? union : bestSlots;
+  const memberDamages = slots.map((packed) => memberDamage.get(packed) ?? bestDamage);
+  return done({ rivalId: foe.id, slots, damage: bestDamage, memberDamage: memberDamages });
 }
 
 // ---------------------------------------------------------------------------

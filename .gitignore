@@ -8,6 +8,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# Scratch probe scripts (throwaway oracle/eval harnesses, never source)
+*.tmp.ts
+
 # Expo / React Native
 .expo/
 .expo-shared/
