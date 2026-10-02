@@ -1,6 +1,7 @@
 import {
   GameAction,
   GameError,
+  GameErrorCode,
   GameMode,
   GameState,
   RecordedAction,
@@ -93,7 +94,15 @@ export interface ChallengeDto {
 export interface GameEndedDto {
   gameId: string;
   winnerId: string | null;
-  reason: 'GOAL_REACHED' | 'RESIGNATION' | 'TIMEOUT' | 'DISCONNECT';
+  /**
+   * Why the game ended.
+   *
+   * `AFK` is deliberately distinct from `TIMEOUT`: that is the chess clock
+   * running out, while this is a CONNECTED player sitting on their turn past
+   * the inactivity limit. The client shows a different message and card
+   * state for each, so they cannot be collapsed into one reason.
+   */
+  reason: 'GOAL_REACHED' | 'RESIGNATION' | 'TIMEOUT' | 'DISCONNECT' | 'AFK';
   endedAt: number;
   ratingChanges?: Record<string, { before: number; after: number; delta: number }>;
   /** Complete final ordering for multiplayer (1-based places). 1v1 omits it. */
@@ -115,7 +124,21 @@ export interface GameSyncDto {
   you?: string | null;
 }
 
+/**
+ * Direct answer to a `game:action` submit: the recorded move on success,
+ * the engine's rejection otherwise. Sent to the submitting socket only, and
+ * before the room broadcast, so the mover is never gated on fan-out.
+ */
+export type ActionAck =
+  | { ok: true; recorded: RecordedAction }
+  /** Same code union as the `game:error` broadcast, so the client handles both with one path. */
+  | { ok: false; code: GameErrorCode; message: string };
+
 export interface ClientToServerEvents {
+  'game:ping': (
+    payload: { gameId: string; clientSentAt: number },
+    ack: (res: { serverTimestamp: number; clientSentAt: number }) => void
+  ) => void;
   'game:join': (payload: {
     gameId: string;
     lastSequence?: number;
@@ -123,16 +146,23 @@ export interface ClientToServerEvents {
     pendingActions?: { clientActionId: string; action: GameAction }[];
   }) => void;
   'game:leave': (payload: { gameId: string }) => void;
-  'game:action': (
+'game:action': (
     payload: {
       gameId: string;
       action: GameAction;
       clientTimestamp: number;
-      /** Client-generated idempotency key — retries with the same key replay the original result. */
+      /** Client-generated idempotency key - retries with the same key replay the original result. */
       clientActionId?: string;
-      /** Client's view of the next sequence — enforced when present. */
+      /** Client's view of the next sequence - enforced when present. */
       expectedSequence?: number;
-    }
+    },
+    /**
+     * Direct ack to the sender, answered as soon as the move is validated —
+     * before the room broadcast. The mover's board unblocks on this, so a
+     * slow fan-out to the other seats never stalls the player who moved.
+     * Idempotent with the `game:actionAccepted` echo: applying both is safe.
+     */
+    ack?: (result: ActionAck) => void
   ) => void;
   'session:adopt': (
     payload: { newToken: string },
@@ -186,9 +216,33 @@ export interface ServerToClientEvents {
   /** Mid-game finish: a player earned a placement but the match continues. */
   'game:playerFinished': (payload: { gameId: string; playerId: string; userId: string; place: number }) => void;
   'game:error': (error: GameError) => void;
-  'game:opponentDisconnected': (payload: { userId: string; gracePeriodSeconds: number }) => void;
-  'game:opponentReconnected': (payload: { userId: string }) => void;
+  'game:opponentDisconnected': (payload: {
+    userId: string;
+    /** Seat of the player who dropped, so 3P/4P clients can say whose it is. */
+    playerId?: string;
+    gracePeriodSeconds: number;
+    /**
+     * SERVER's deadline for the reconnect window. The client counts down to
+     * this instead of decrementing its own copy, so a throttled or
+     * backgrounded phone cannot show a grace period the server will not honour.
+     */
+    graceEndsAt: number;
+  }) => void;
+  'game:opponentReconnected': (payload: {
+    userId: string;
+    /** Seat of the player who came back. */
+    playerId?: string;
+  }) => void;
   'game:sync': (sync: GameSyncDto) => void;
+  /**
+   * Inactivity notice for the seat on turn, sent shortly before the server
+   * would forfeit it. Distinct from `game:opponentDisconnected`: that seat is
+   * connected and simply not moving, and the client shows a different state
+   * for it. `secondsRemaining` is the server's own remaining allowance.
+   */
+  'game:afkWarning': (payload: { playerId?: string; secondsRemaining: number }) => void;
+  /** The inactivity notice no longer applies (that seat moved, or left). */
+  'game:afkCleared': (payload: { playerId?: string }) => void;
   'game:rematchOffered': (payload: { gameId: string; fromUserId: string }) => void;
   /** Relay of another seat's quick reaction. Ephemeral: render and forget. */
   'game:reaction': (payload: { gameId: string; reaction: string; fromUserId: string }) => void;

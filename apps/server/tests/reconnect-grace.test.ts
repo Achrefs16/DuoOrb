@@ -10,7 +10,7 @@ describe('Reconnect and Grace Period', () => {
     vi.useRealTimers();
   });
 
-  it('sets 60s grace period for ranked disconnect and forfeits if expired', () => {
+  it('sets a 45s grace period for a disconnect and forfeits if it expires', () => {
     let forfeitFired = false;
     let endedWinner: string | null = null;
     let endedReason: string | undefined;
@@ -34,11 +34,14 @@ describe('Reconnect and Grace Period', () => {
       endedReason = ended.reason;
     });
 
-    expect(res?.gracePeriodSeconds).toBe(60);
+    expect(res?.gracePeriodSeconds).toBe(45);
     expect(game.disconnectedUsers['u1']).toBeDefined();
+    // The client renders its countdown from the server's own deadline, so a
+    // slow phone cannot show a longer window than will actually be honoured.
+    expect(res?.graceEndsAt).toBeGreaterThan(Date.now());
 
-    // Advance 61 seconds
-    vi.advanceTimersByTime(61000);
+    // Advance past the window
+    vi.advanceTimersByTime(46000);
 
     expect(forfeitFired).toBe(true);
     expect(endedWinner).toBe('p2'); // Bob wins

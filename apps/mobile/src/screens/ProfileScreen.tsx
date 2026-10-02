@@ -8,7 +8,6 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { createInitialState } from '@duoorb/game-core';
 import { THEME } from '../theme';
 import { useSession } from '../network/session';
 import { useConnectivity } from '../network/useConnectivity';
@@ -17,7 +16,6 @@ import {
   AchievementsResponseDto,
   UserMeDto,
   RatingHistoryPointDto,
-  GameHistoryItemDto,
 } from '../network/apiClient';
 import { flushAiWinQueue } from '../aiwins/aiWins';
 import { RatingChart } from '../components/RatingChart';
@@ -34,32 +32,28 @@ import { GuestGate } from '../components/GuestGate';
 import { toast } from '../components/AppToast';
 import { NoConnectionSection } from '../components/NoConnection';
 import { actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
-import { MatchResultModal } from '../components/MatchResultModal';
 import { ProfileSkeleton } from '../components/Skeleton';
-import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
 
 interface ProfileScreenProps {
   onOpenSettings: () => void;
-  onSelectGame: (game: SavedGameRecord) => void;
   /** Opens the shared player profile for a recent match's opponent. */
   onOpenPlayerProfile?: (player: { userId: string; username: string }) => void;
 }
-
-type RecentFilter = 'ALL' | 'WINS' | 'LOSSES';
 
 /**
  * Last loaded bundle, keyed by account. Tab switches remount this screen,
  * so the previous profile renders on the first frame and refreshes
  * silently. Never mix accounts: guest and Google rows stay separate.
  * Skeleton only when there is nothing to show yet.
+ *
+ * Match history is NOT cached here: it lives on the History tab, which
+ * owns its own paging cache.
  */
 let profileCache: {
   userId: string;
   profile: UserMeDto;
   ratingHistory: RatingHistoryPointDto[];
-  recentGames: GameHistoryItemDto[];
   achievements: AchievementsResponseDto | null;
-  localHistory: SavedGameRecord[];
 } | null = null;
 
 function formatJoinedAt(value?: string | number): string | null {
@@ -69,27 +63,14 @@ function formatJoinedAt(value?: string | number): string | null {
   return `Joined ${d.toLocaleString('en-US', { month: 'long', year: 'numeric' })}`;
 }
 
-function clockDisplayName(game: GameHistoryItemDto): string {
-  if (game.mode === '2p') return 'Classic';
-  const m = game.timeControlMinutes;
-  const inc = game.incrementSeconds > 0 ? `+${game.incrementSeconds}` : '';
-  return `${m}m${inc}`;
-}
-
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onOpenSettings,
-  onSelectGame,
   onOpenPlayerProfile,
 }) => {
   const { identity } = useSession();
   const { isConnected } = useConnectivity();
   const [profile, setProfile] = useState<UserMeDto | null>(null);
   const [ratingHistory, setRatingHistory] = useState<RatingHistoryPointDto[]>([]);
-  const [recentGames, setRecentGames] = useState<GameHistoryItemDto[]>([]);
-  const [recentFilter, setRecentFilter] = useState<RecentFilter>('ALL');
-  const [recentVisible, setRecentVisible] = useState(5);
-  const [selectedMatch, setSelectedMatch] = useState<GameHistoryItemDto | null>(null);
-  const [localHistory, setLocalHistory] = useState<SavedGameRecord[]>([]);
   const [achievements, setAchievements] = useState<AchievementsResponseDto | null>(null);
   const [equipping, setEquipping] = useState(false);
   const [detailCode, setDetailCode] = useState<string | null>(null);
@@ -105,9 +86,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       setLoadError(null);
     }
     try {
-      const localGames = await loadGameHistory();
-      setLocalHistory(localGames);
-
       let me: UserMeDto | null = null;
       let meError: unknown = null;
       try {
@@ -121,20 +99,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         // badges and wins appear below. Silent by design — offline, the
         // flush is a no-op and these sections simply stay hidden.
         await flushAiWinQueue().catch(() => []);
-        const [rSettled, gSettled, aSettled] = await Promise.allSettled([
+        const [rSettled, aSettled] = await Promise.allSettled([
           api.getRatingHistory(me.id, 'CLASSIC_1V1', 20),
-          api.getMyHistory(20, 0),
           api.getMyAchievements(),
         ]);
         // Failed slices keep their previous rows: stale-but-true beats
         // fabricated. First-load failures stay empty, honestly so.
         if (rSettled.status === 'fulfilled') setRatingHistory(rSettled.value);
         if (aSettled.status === 'fulfilled') setAchievements(aSettled.value);
-        if (gSettled.status === 'fulfilled') {
-          setRecentGames(
-            [...gSettled.value.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
-          );
-        }
         // Cache the bundle for instant remounts. Failed slices reuse the
         // previous cache (same account only), never blank state.
         const prev = profileCache?.userId === me.id ? profileCache : null;
@@ -142,12 +114,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           userId: me.id,
           profile: me,
           ratingHistory: rSettled.status === 'fulfilled' ? rSettled.value : prev?.ratingHistory ?? [],
-          recentGames:
-            gSettled.status === 'fulfilled'
-              ? [...gSettled.value.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
-              : prev?.recentGames ?? [],
           achievements: aSettled.status === 'fulfilled' ? aSettled.value : prev?.achievements ?? null,
-          localHistory: localGames,
         };
       } else {
         // No profile: full section, never a fabricated stand-in (first
@@ -171,9 +138,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     if (mine) {
       setProfile(mine.profile);
       setRatingHistory(mine.ratingHistory);
-      setRecentGames(mine.recentGames);
       setAchievements(mine.achievements);
-      setLocalHistory(mine.localHistory);
       setLoading(false);
       fetchProfileData(true);
     } else {
@@ -188,53 +153,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const winRate =
     gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 100) : 0;
   const joinedLine = formatJoinedAt(profile?.createdAt);
-  const filteredRecent = recentGames.filter((g) => {
-    if (recentFilter === 'WINS') return g.outcome === 'WIN';
-    if (recentFilter === 'LOSSES') return g.outcome === 'LOSS';
-    return true;
-  });
-
-  const handleGameTap = (serverGame: GameHistoryItemDto) => {
-    const matchingLocal = localHistory.find((lg) => lg.id === serverGame.gameId);
-    if (matchingLocal) {
-      onSelectGame(matchingLocal);
-      return;
-    }
-
-    api.getGameReplay(serverGame.gameId)
-      .then((replay) => {
-        if (replay) {
-          const initial = createInitialState({
-            gameId: replay.gameId,
-            mode: replay.mode,
-            playerNames: replay.players.map((p: any) => p.displayName),
-          });
-          const record: SavedGameRecord = {
-            id: replay.gameId,
-            date: new Date(replay.endedAt).getTime(),
-            mode: replay.mode,
-            type: 'online',
-            winnerId: replay.winnerId,
-            winnerName: replay.players.find((p: any) => p.isWinner)?.displayName ?? 'Winner',
-            totalMoves: replay.moves.length,
-            durationSeconds: Math.floor(
-              (new Date(replay.endedAt).getTime() - new Date(replay.startedAt || replay.endedAt).getTime()) / 1000
-            ),
-            initialState: initial,
-            history: replay.moves.map((m: any) => ({
-              sequence: m.sequence,
-              playerId: `p${m.playerIndex + 1}`,
-              action: m.payload,
-              timestamp: m.serverTimestamp,
-            })),
-          };
-          onSelectGame(record);
-        }
-      })
-      .catch(() => {
-        toast.show("Couldn't open replay.");
-      });
-  };
 
   const initial = (profile?.displayName || profile?.username || 'K').charAt(0).toUpperCase();
 
@@ -429,91 +347,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <RatingChart data={ratingHistory} currentRating={rating1v1} />
           </View>
 
-          {/* Recent Matches Section */}
-          <View style={styles.recentSection}>
-            <View style={styles.recentHeaderRow}>
-              <Text style={styles.sectionHeading}>RECENT MATCHES</Text>
-              <Text style={styles.sectionSub}>{recentGames.length} matches played</Text>
-            </View>
-
-            <View style={styles.recentPillsRow}>
-              {(['ALL', 'WINS', 'LOSSES'] as RecentFilter[]).map((f) => {
-                const count =
-                  f === 'ALL'
-                    ? recentGames.length
-                    : recentGames.filter((g) => g.outcome === (f === 'WINS' ? 'WIN' : 'LOSS')).length;
-                return (
-                  <TouchableOpacity
-                    key={f}
-                    style={[styles.recentPill, recentFilter === f && styles.recentPillActive]}
-                    onPress={() => {
-                      setRecentFilter(f);
-                      setRecentVisible(5);
-                    }}
-                  >
-                    <Text style={[styles.recentPillText, recentFilter === f && styles.recentPillTextActive]}>
-                      {f === 'ALL' ? 'All' : f === 'WINS' ? 'Wins' : 'Losses'} ({count})
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {filteredRecent.length > 0 ? (
-              <View style={styles.recentList}>
-                {filteredRecent.slice(0, recentVisible).map((match) => {
-                  const isWin = match.outcome === 'WIN';
-                  const opp = match.opponent?.displayName || match.opponent?.username || 'Opponent';
-                  const oppRating = match.opponent?.ratingBefore ?? match.opponent?.ratingAfter;
-                  const delta = match.myRating?.delta ?? 0;
-                  const pts = match.isRanked
-                    ? ` · ${delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} pts`
-                    : '';
-
-                  return (
-                    <TouchableOpacity
-                      key={match.gameId}
-                      style={styles.matchItem}
-                      activeOpacity={0.75}
-                      onPress={() => setSelectedMatch(match)}
-                    >
-                      <View style={styles.matchItemLeft}>
-                        <View style={[styles.miniOutcomeBadge, isWin ? styles.badgeWin : styles.badgeLoss]}>
-                          <Text style={[styles.miniOutcomeText, isWin ? styles.textWin : styles.textLoss]}>
-                            {isWin ? 'W' : 'L'}
-                          </Text>
-                        </View>
-                        <View style={styles.matchItemMeta}>
-                          <Text style={styles.matchItemOpponent}>
-                            vs {opp}
-                            {oppRating !== undefined && oppRating !== null ? (
-                              <Text style={styles.matchItemOppRating}> ({Math.round(oppRating)})</Text>
-                            ) : null}
-                          </Text>
-                          <Text style={styles.matchItemMode}>{clockDisplayName(match)}{pts}</Text>
-                        </View>
-                      </View>
-
-                      <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ) : (
-              <View style={styles.emptyRecentBox}>
-                <Text style={styles.emptyRecentText}>No recent matches to display.</Text>
-              </View>
-            )}
-            {filteredRecent.length > recentVisible && (
-              <TouchableOpacity
-                style={styles.loadMoreBtn}
-                activeOpacity={0.8}
-                onPress={() => setRecentVisible((v) => v + 5)}
-              >
-                <Text style={styles.loadMoreText}>Load more</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          {/* Recent matches live on the History tab — one home for match history,
+            not two. The opponent/friend profile keeps its own RECENT
+            MATCHES section, which is a different thing: their record. */}
         </ScrollView>
       )}
 
@@ -612,17 +448,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </View>
       </Modal>
-
-      {/* Match details + View Profile, the same modal History uses. */}
-      <MatchResultModal
-        match={selectedMatch}
-        onClose={() => setSelectedMatch(null)}
-        onReplay={(match) => {
-          setSelectedMatch(null);
-          handleGameTap(match);
-        }}
-        onViewOpponentProfile={onOpenPlayerProfile}
-      />
     </View>
   );
 };
@@ -833,38 +658,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 2,
   },
-  recentPillsRow: {
-    flexDirection: 'row',
-    gap: 4,
-    backgroundColor: THEME.colors.surfaceMuted,
-    borderRadius: 12,
-    padding: 4,
-    alignSelf: 'flex-start',
-  },
-  recentPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  recentPillActive: {
-    backgroundColor: THEME.colors.slate[950],
-  },
-  recentPillText: {
-    fontFamily: THEME.fonts.medium,
-    fontSize: 12,
-    fontWeight: '500',
-    color: THEME.colors.textOnMuted,
-  },
-  recentPillTextActive: {
-    color: THEME.colors.onPrimary,
-    fontWeight: '600',
-  },
-  unratedText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 10,
-    fontWeight: '600',
-    color: THEME.colors.textMuted,
-  },
   recentSection: {
     gap: 8,
   },
@@ -1030,113 +823,5 @@ const styles = StyleSheet.create({
     color: THEME.colors.textMuted,
     letterSpacing: 0.8,
     paddingHorizontal: 2,
-  },
-  recentList: {
-    backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
-    overflow: 'hidden',
-    ...THEME.shadows.card,
-  },
-  matchItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceMuted,
-  },
-  matchItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  miniOutcomeBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeWin: {
-    backgroundColor: THEME.colors.tertiaryLight,
-  },
-  badgeLoss: {
-    backgroundColor: THEME.colors.secondaryContainer,
-  },
-  miniOutcomeText: {
-    fontFamily: THEME.fonts.extraBold,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  textWin: {
-    color: THEME.colors.tertiary,
-  },
-  textLoss: {
-    color: THEME.colors.secondary,
-  },
-  matchItemMeta: {
-    gap: 1,
-    flex: 1,
-  },
-  matchItemOpponent: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 14,
-    fontWeight: '600',
-    color: THEME.colors.inverseLabel,
-  },
-  matchItemOppRating: {
-    fontFamily: THEME.fonts.regular,
-    fontSize: 14,
-    fontWeight: '400',
-    color: THEME.colors.textSecondaryStrong,
-  },
-  matchItemMode: {
-    fontFamily: THEME.fonts.regular,
-    fontSize: 14,
-    color: THEME.colors.textSecondaryStrong,
-    marginTop: 2,
-  },
-  matchItemRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  matchDelta: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 12,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
-  emptyRecentBox: {
-    backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderRadius: THEME.radius.lg,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceContainer,
-  },
-  emptyRecentText: {
-    fontFamily: THEME.fonts.regular,
-    fontSize: 12,
-    color: THEME.colors.textMuted,
-  },
-  loadMoreBtn: {
-    marginTop: 8,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: THEME.colors.backgroundCard,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
-    alignItems: 'center',
-  },
-  loadMoreText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 13,
-    fontWeight: '600',
-    color: THEME.colors.inverseLabel,
   },
 });

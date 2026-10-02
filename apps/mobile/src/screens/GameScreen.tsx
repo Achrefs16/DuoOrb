@@ -3,7 +3,6 @@ import { ActivityIndicator, Animated, BackHandler, Modal, StatusBar, StyleSheet,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   AIDifficulty,
-  AI_BUILD,
   AI_PROFILES,
   CellCoord,
   GameAction,
@@ -26,7 +25,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import type { GameSyncDto } from '@duoorb/protocol';
 import { GameBoard, isInsideBoard, nearestWallSlot } from '../components/GameBoard';
-import { PlayerStrip } from '../components/GameHud';
+import { PlayerStrip, type SeatStatus } from '../components/GameHud';
 import { GameOverModal } from '../components/GameOverModal';
 import { GuestGate } from '../components/GuestGate';
 import { PlayerProfileScreen } from './PlayerProfileScreen';
@@ -45,7 +44,6 @@ import type { ReactionKind } from '../network/useQuickReactions';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
 import { useIdentity } from '../network/auth';
 import { socketManager } from '../network/socket';
-import * as Clipboard from 'expo-clipboard';
 // Serializes a finished hard-AI win for the server upload (achievements).
 import { formatGame } from '@duoorb/game-core';
 
@@ -250,6 +248,18 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
   }, [type, onlineGameId, online.gameState, online.clocks, online.myPlayerId, online.myPlayerIndex]);
 
+  /**
+   * Board rendered from the online state. For online play that is the
+   * OPTIMISTIC derivation — confirmed server state with our own unconfirmed
+   * move replayed on top — so a tap moves the orb on the same frame instead
+   * of after a round-trip. Local/AI play keeps applying moves directly.
+   *
+   * Everything that must stay authoritative (snapshots, result UI, history)
+   * reads `online.gameState` directly and is untouched by this.
+   */
+  const boardState: GameState =
+    type === 'online' ? online.optimisticState ?? online.gameState ?? state : state;
+
   // Sync authoritative game state from server
   useEffect(() => {
     if (type === 'online' && online.gameState) {
@@ -286,8 +296,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // to the tap handler): the hardware-back effect above reads it.
   const [profilePlayer, setProfilePlayer] = useState<{ userId: string; username: string } | null>(null);
   const [rematchSent, setRematchSent] = useState<boolean>(false);
-  // Clipboard feedback for the copy-moves button.
-  const [movesCopied, setMovesCopied] = useState<boolean>(false);
   const [rematchIncomingDismissed, setRematchIncomingDismissed] = useState<boolean>(false);
   // One-time Google-link nudge for guests, shown over the result modal on
   // the 3rd completed game. Later dismisses; play is never blocked.
@@ -938,9 +946,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         );
         return;
       }
-      // Server-authoritative online play: send only. The local state must
-      // not apply the move optimistically, or a goal move can look like the
-      // mover already occupies/finished the goal before the server echo.
+      // Optimistic, but only for the move that was actually accepted for
+      // sending: the hook applies it to the DERIVED board (never to
+      // confirmed state), refuses a second action while one is unconfirmed,
+      // and keeps a predicted goal from reading as a finished game. A refusal
+      // here means our move is still in flight — the tap is simply dropped
+      // rather than queued, because queueing it would replay a stale turn.
       onlineSendAction(action);
       return;
     }
@@ -1004,6 +1015,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     wallDragRef.current = null;
     setWallDrag(null);
     if (!drag || state.status !== 'IN_PROGRESS') return;
+    // One action in flight (online): a drag-and-drop is a second input the
+    // player did not mean as a queued move. Refuse before consuming the
+    // gesture so the wall snaps back instead of vanishing into nothing.
+    if (type === 'online' && online.inputLocked) {
+      void playIllegalMoveSound();
+      return;
+    }
 
     const pt = toBoardPoint(pageX, pageY);
     if (!pt) return;
@@ -1043,6 +1061,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         );
         return;
       }
+      // Same optimistic contract as the move path: the hook refuses a second
+      // action while one is unconfirmed, so a fast wall-then-move cannot slip
+      // two actions past the server's one-in-flight assumption.
       online.sendAction(action);
       return;
     }
@@ -1242,7 +1263,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       return null;
     }
   }, [viewingStep, replayBase, state.history]);
-  const displayState = replayState ?? state;
+  // Step-through replay always wins (it is an explicit scrub through history).
+  // Otherwise online play renders the optimistic board, so an unconfirmed
+  // move of ours appears immediately rather than a frame later.
+  const displayState = replayState ?? boardState;
 
   const enterReplay = () => {
     setShowGameOver(false);
@@ -1250,18 +1274,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setViewingStep(totalSteps);
   };
 
-  /** Copies the game so far as chess-style notation for analysis. Works
-   * mid-game too (local reverse-engineering flow) — formatGame serializes
-   * the history accumulated so far, not just finished games. */
-  const handleCopyMoves = async () => {
-    try {
-      await Clipboard.setStringAsync(formatGame(state));
-      setMovesCopied(true);
-      setTimeout(() => setMovesCopied(false), 1800);
-    } catch {
-      setMovesCopied(false);
-    }
-  };
   const exitReplay = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization
     () => {
@@ -1378,7 +1390,43 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // Board ratings are shown only when real. There is no client-side source
   // of truth for any seat's rating (AI numbers used to be hardcoded per
   // difficulty and everyone else got a flat 1500), so the board passes no
-  // ratings at all and PlayerStrip hides the pills instead of showing fiction.
+  /**
+ * Per-seat connection/attention state for the player cards.
+ *
+ * Absence and idling are separate values on purpose: the disconnect window is
+ * a real grace countdown the server is honouring, while the inactivity notice
+ * is a connected player who has not moved. Both events already carry the seat
+ * they belong to, and a seat can only ever be in one of the two — the
+ * disconnect handler clears the AFK state and vice versa.
+ *
+ * Empty for local/AI play: there is no socket state to report.
+ */
+const onlineSeatStatus = useMemo<Record<string, SeatStatus>>(() => {
+  if (type !== 'online') return {};
+  const map: Record<string, SeatStatus> = {};
+  if (online.opponentGrace) {
+    const seat = online.opponentGrace.playerId ?? online.myPlayerId;
+    // playerId is always sent for online matches; the fallback keeps the
+    // indicator visible rather than silently dropping it if it ever is not.
+    if (seat) {
+      map[seat] = { kind: 'disconnected', secondsLeft: online.opponentGrace.seconds };
+    }
+  }
+  if (online.afkWarning) {
+    const seat = online.afkWarning.playerId ?? online.myPlayerId;
+    if (seat) {
+      map[seat] = { kind: 'afk', secondsLeft: online.afkWarning.secondsRemaining };
+    }
+  }
+  return map;
+}, [
+  type,
+  online.opponentGrace,
+  online.afkWarning,
+  online.myPlayerId,
+]);
+
+// ratings at all and PlayerStrip hides the pills instead of showing fiction.
 
   // A board seat id ('p2') is not a user id. The server sends the seat ->
   // account map with every sync, so this is the one lookup that turns a
@@ -1513,6 +1561,17 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </View>
       )}
 
+      {/* Move in flight. Deliberately NOT tied to the connection banner: the
+          interesting case is healthy-but-slow, where the socket never drops
+          and the player would otherwise see a locked board with no reason. */}
+      {type === 'online' && online.pendingCount > 0 && online.connStatus === 'connected' && (
+        <View style={styles.bannerNeutral} pointerEvents="none">
+          <Text style={styles.bannerText}>
+            {online.pendingCount === 1 ? 'Sending your move…' : `Sending ${online.pendingCount} moves…`}
+          </Text>
+        </View>
+      )}
+
       {/* Definitively rejected join (unseated, expired, gone game). A banner,
           not a page: the board underneath is the last known truth, and Back
           releases the seat instead of just navigating away. */}
@@ -1549,7 +1608,25 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       {type === 'online' && online.opponentGrace && (
         <View style={styles.bannerDanger}>
           <Text style={styles.bannerText}>
-            Opponent disconnected. Forfeit grace: {online.opponentGrace.seconds}s
+            {online.opponentGrace.playerId && online.myPlayerId
+              ? 'Another player disconnected'
+              : 'Opponent disconnected'}
+            {`. Reconnect grace: ${online.opponentGrace.seconds}s`}
+          </Text>
+        </View>
+      )}
+
+      {/* Inactivity: a DIFFERENT state from the line above. That seat is
+          connected and simply has not moved, so it gets its own wording —
+          telling a player their opponent "disconnected" while they watch them
+          sit on their phone is worse than saying nothing. */}
+      {type === 'online' && online.afkWarning && (
+        <View style={styles.bannerWarning}>
+          <Text style={styles.bannerText}>
+            {online.afkWarning.playerId && online.myPlayerId
+              ? 'Another player is not moving'
+              : 'Opponent has not moved'}
+            {` · no move in ${online.afkWarning.secondsRemaining}s loses the game`}
           </Text>
         </View>
       )}
@@ -1595,13 +1672,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         ]}
       >
         <PlayerStrip
-          state={topStripState}
-          timers={timers}
-          compact
-          grid={splitActive}
-          bonus={lastBonus}
-          onPressPlayer={handleOpponentPress}
-        />
+state={topStripState}
+            timers={timers}
+            compact
+            grid={splitActive}
+            bonus={lastBonus}
+            seatStatus={onlineSeatStatus}
+            onPressPlayer={handleOpponentPress}
+          />
       </View>
       </View>
       </View>
@@ -1627,7 +1705,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             legalMoves={viewingStep !== null ? EMPTY_CELL_LIST : legalMoves}
             previewWall={null}
             selectedCell={viewingStep !== null ? null : selectedCellMemo}
-            interactive={(humanTurn || canPremove) && !wallDrag && viewingStep === null}
+            // `inputLocked` closes the board for the frame between sending a move and
+            // the server confirming it. Without it a second tap in that window
+            // submits a move for a turn the server has not handed over.
+            interactive={
+              (humanTurn || canPremove) &&
+              !wallDrag &&
+              viewingStep === null &&
+              !(type === 'online' && online.inputLocked)
+            }
             moveHintColor={wallDrag ? trayColor : hintColor}            premoveMarks={viewingStep !== null ? EMPTY_PREMOVE_MARKS : premoveMarks}
             hideDots={hideDots}
             queuedWalls={viewingStep !== null ? EMPTY_QUEUED_WALLS : queuedWallEntries}
@@ -1659,6 +1745,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 hideWallsBadge={!splitActive}
                 grid={splitActive}
                 hideWallsForPlayerId={splitActive ? seatPlayer?.id : undefined}
+                seatStatus={onlineSeatStatus}
                 onPressPlayer={splitActive ? handleBottomGridPress : undefined}
               />
             </View>
@@ -1884,7 +1971,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           isMultiplayer
             ? undefined
             : type === 'ai'
-            ? `AI (${aiDifficulty} · v${AI_BUILD})`
+            ? `AI - ${aiDifficulty.charAt(0).toUpperCase()}${aiDifficulty.slice(1)}`
             : topList[0]?.displayName || 'Opponent'
         }
         isWinner={
@@ -1909,8 +1996,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         }}
         onReplay={enterReplay}
         reward={aiReward}
-        onCopyMoves={handleCopyMoves}
-        movesCopied={movesCopied}
         opponentUserId={opponentAccountForResult?.userId ?? null}
         onViewOpponentProfile={
           opponentAccountForResult
@@ -2339,6 +2424,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(59, 130, 246, 0.95)',
     paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: THEME.radius.sm,
+    marginBottom: 6,
+  },
+  // In-flight move: calm, not alarming. Blue rather than amber/red, because a
+  // move in flight is normal play — the input lock is a formality, not a fault.
+  bannerNeutral: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(100, 116, 139, 0.92)',
+    paddingVertical: 5,
     paddingHorizontal: 12,
     borderRadius: THEME.radius.sm,
     marginBottom: 6,

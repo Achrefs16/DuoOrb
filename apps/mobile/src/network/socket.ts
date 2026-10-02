@@ -13,6 +13,23 @@ type RawSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 type AnyHandler = (...args: never[]) => void;
 
 /**
+ * Events that may be buffered while the socket is down and replayed after it
+ * comes back — an explicit allowlist, because a substring test once matched
+ * `game:leave` and turned a queued forfeit into a replayed one.
+ *
+ * Note what is NOT here: matchmaking and room requests. Both are answered by a
+ * fresh server-side snapshot (`matchmaking:matched` / `room:state`), so
+ * replaying them would duplicate queue entries and lobby state instead of
+ * recovering anything.
+ */
+const QUEUEABLE_EVENTS = new Set<string>([
+  'game:join',
+  'game:leave',
+  'game:action',
+  'game:resign',
+]);
+
+/**
  * The socket transport is a pure function of the canonical identity.
  *
  * Two problems are solved here, and they are the same problem:
@@ -146,12 +163,20 @@ class SocketManager {
     this.identityWatcher = subscribeIdentity(() => this.syncWithIdentity());
   }
 
-  /** Only joins, leaves and moves survive a disconnect. See emitQueue. */
+  /**
+   * The ONLY events that survive a disconnect.
+   *
+   * An explicit list, never a substring match: the old `/join|leave|move/i`
+   * test matched by accident, which is how `game:leave` — a FORFEIT — ended
+   * up replayable. A queued leave belongs to the game it was pressed in;
+   * flushing it into whatever game the socket has since joined hands the new
+   * opponent a free win. Everything outside this list is dropped while down.
+   */
   private isQueueable(event: string): boolean {
-    return /join|leave|move/i.test(event);
+    return QUEUEABLE_EVENTS.has(event);
   }
 
-  /** Replays queued emits older than nothing and younger than 30s, in order. */
+  /** Replays queued emits younger than 30s, in order. */
   private flushQueue(): void {
     if (this.emitQueue.length === 0) return;
     const now = Date.now();
@@ -159,6 +184,15 @@ class SocketManager {
     this.emitQueue = [];
     if (!this.raw?.connected) return;
     for (const q of due) {
+      // A leave that sat in the queue is stale by definition: the socket it
+      // was meant for is gone and the player has since moved on. Sending it
+      // now would forfeit a live game they never asked to leave. Dropping it
+      // is the honest outcome — the server's grace timer handles the seat
+      // they actually walked away from.
+      if (q.event === 'game:leave') {
+        console.warn('[socket] dropped stale queued game:leave');
+        continue;
+      }
       try {
         (this.raw as unknown as { emit: (e: string, ...a: unknown[]) => void }).emit(
           q.event,

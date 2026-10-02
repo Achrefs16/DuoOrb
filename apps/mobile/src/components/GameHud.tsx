@@ -6,7 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { GameState, PlayerState } from '@duoorb/game-core';
 import { THEME, hexToRgba, playerColor } from '../theme';
 import { nameInitial } from '../displayName';
@@ -18,6 +18,18 @@ function formatTimer(seconds?: number): string {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
+/**
+ * Connection/attention state of a seat, shown on its card.
+ *
+ * `disconnected` and `afk` are deliberately different values with different
+ * copy: one player has lost their socket and is inside a reconnect window,
+ * the other is connected and simply has not moved. Collapsing them would tell
+ * a player their opponent is disconnected while they are watching them play.
+ */
+export type SeatStatus =
+  | { kind: 'disconnected'; secondsLeft: number }
+  | { kind: 'afk'; secondsLeft: number };
+
 interface InGamePlayerChipProps {
   player: PlayerState;
   isActive: boolean;
@@ -26,6 +38,11 @@ interface InGamePlayerChipProps {
   bonus?: number | null;
   /** Bottom (own) card hides the wall pill — the count lives in the tray. */
   hideWallsBadge?: boolean;
+  /**
+   * Reconnect grace or inactivity, whichever applies to this seat. While set,
+   * the card says so instead of pretending everything is normal.
+   */
+  status?: SeatStatus | null;
   /**
    * Opens this seat's profile. Present for opponents with a real account and
    * absent for your own seat, AI and local play, so the avatar and the name
@@ -72,6 +89,7 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
   rating,
   bonus,
   hideWallsBadge = false,
+  status = null,
   onPressIdentity,
 }) => {
   const ball = playerColor(player.index, player.color);
@@ -80,6 +98,16 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
   const identityLabel = onPressIdentity
     ? `View ${player.displayName}'s profile`
     : undefined;
+  // While a seat is unreachable or idle, its numbers are stale: a rating and
+  // wall count frozen at the moment of the disconnect would read as current
+  // truth, so both are hidden until the seat is back.
+  const hideStats = status !== null;
+  const statusLabel =
+    status?.kind === 'disconnected'
+      ? `Disconnected · ${status.secondsLeft}s`
+      : status?.kind === 'afk'
+      ? `No move · ${status.secondsLeft}s`
+      : null;
 
   return (
     <View style={styles.playerCard}>
@@ -109,13 +137,13 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
             >
               {player.displayName}
             </Text>
-            {rating !== undefined && (
+            {rating !== undefined && !hideStats && (
               <View style={styles.ratingBadge}>
                 <Text style={styles.ratingText}>{Math.round(rating)}</Text>
               </View>
             )}
             {/* Wall inventory pill — same line as the name, like Stitch. */}
-            {!hideWallsBadge && (
+            {!hideWallsBadge && !hideStats && (
               <View style={[styles.wallsBadge, { borderColor: tint.border, backgroundColor: tint.bg }]}>
                 <MaterialIcons name="fence" size={14} color={ball} />
                 <Text style={[styles.wallsText, { color: ball }]}>
@@ -125,6 +153,28 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
             )}
             {isActive && <View style={[styles.turnDot, { backgroundColor: ball }]} />}
           </View>
+
+          {/* Connection / attention state, under the name line. Replaces the
+              stats above rather than stacking on them: a card that is already
+              saying "Disconnected · 31s" has nothing useful to add with a
+              stale rating. */}
+          {statusLabel && (
+            <View
+              style={[
+                styles.statusPill,
+                status?.kind === 'disconnected'
+                  ? styles.statusPillDanger
+                  : styles.statusPillWarn,
+              ]}
+            >
+              <Feather
+                name={status?.kind === 'disconnected' ? 'wifi-off' : 'clock'}
+                size={11}
+                color={THEME.colors.onPrimary}
+              />
+              <Text style={styles.statusText}>{statusLabel}</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -160,6 +210,8 @@ export const PlayerStrip: React.FC<{
   grid?: boolean;
   /** Hides the wall pill for a single seat (your own — the tray shows it). */
   hideWallsForPlayerId?: string;
+  /** Per-seat connection/attention state, keyed by seat id. */
+  seatStatus?: Record<string, SeatStatus>;
   /**
    * Called with the seat id of the tapped opponent. Omitted entirely when
    * the seats have no account behind them, which keeps every chip inert
@@ -174,6 +226,7 @@ export const PlayerStrip: React.FC<{
   hideWallsBadge = false,
   grid = false,
   hideWallsForPlayerId,
+  seatStatus,
   onPressPlayer,
 }) => {
   // Split multiplayer tables (2 up / 2 down): side-by-side compact cards
@@ -190,7 +243,9 @@ export const PlayerStrip: React.FC<{
           const initial = nameInitial(p.displayName);
           const onPressIdentity = onPressPlayer ? () => onPressPlayer(p.id) : undefined;
           const identityLabel = onPressIdentity ? `View ${p.displayName}'s profile` : undefined;
-          const showWalls = !hideWallsBadge && hideWallsForPlayerId !== p.id;
+          const seat = seatStatus?.[p.id] ?? null;
+          // Stale while the seat is unreachable: hide rather than freeze.
+          const showWalls = !hideWallsBadge && hideWallsForPlayerId !== p.id && seat === null;
           const playerBonus = bonus?.playerId === p.id ? bonus.amount : null;
           return (
             <View
@@ -226,8 +281,26 @@ export const PlayerStrip: React.FC<{
                   {p.displayName}
                 </Text>
                 <View style={styles.compactSub}>
-                  {ratings?.[p.id] !== undefined && (
-                    <Text style={styles.compactRating}>{Math.round(ratings[p.id])}</Text>
+                  {seat ? (
+                    <Text
+                      style={[
+                        styles.compactStatus,
+                        {
+                          color:
+                            seat.kind === 'disconnected' ? THEME.colors.danger : THEME.colors.warning,
+                        },
+                      ]}
+                    >
+                      {seat.kind === 'disconnected'
+                        ? `Disconnected · ${seat.secondsLeft}s`
+                        : `No move · ${seat.secondsLeft}s`}
+                    </Text>
+                  ) : (
+                    <>
+                      {ratings?.[p.id] !== undefined && (
+                        <Text style={styles.compactRating}>{Math.round(ratings[p.id])}</Text>
+                      )}
+                    </>
                   )}
                   {p.place !== null && p.place !== undefined && (
                     <Text style={[styles.compactPlace, { color: ball }]}>
@@ -273,6 +346,7 @@ export const PlayerStrip: React.FC<{
           const initial = nameInitial(p.displayName);
           const onPressIdentity = onPressPlayer ? () => onPressPlayer(p.id) : undefined;
           const identityLabel = onPressIdentity ? `View ${p.displayName}'s profile` : undefined;
+          const seat = seatStatus?.[p.id] ?? null;
           return (
             <View
               key={p.id}
@@ -304,13 +378,37 @@ export const PlayerStrip: React.FC<{
                   {p.displayName}
                 </Text>
                 <View style={styles.compactSub}>
-                  {ratings?.[p.id] !== undefined && (
-                    <Text style={styles.compactRating}>{Math.round(ratings[p.id])}</Text>
+                  {seat ? (
+                    <Text
+                      style={[
+                        styles.compactStatus,
+                        {
+                          color:
+                            seat.kind === 'disconnected' ? THEME.colors.danger : THEME.colors.warning,
+                        },
+                      ]}
+                    >
+                      {seat.kind === 'disconnected'
+                        ? `Disconnected · ${seat.secondsLeft}s`
+                        : `No move · ${seat.secondsLeft}s`}
+                    </Text>
+                  ) : (
+                    ratings?.[p.id] !== undefined && (
+                      <Text style={styles.compactRating}>{Math.round(ratings[p.id])}</Text>
+                    )
                   )}
                   {p.place !== null && p.place !== undefined && (
                     <Text style={[styles.compactPlace, { color: ball }]}>
                       {p.place === 1 ? '1ST' : p.place === 2 ? '2ND' : p.place === 3 ? '3RD' : `${p.place}TH`}
                     </Text>
+                  )}
+                  {!seat && p.wallsRemaining !== undefined && (
+                    <View style={[styles.gridWalls, { borderColor: tint.border, backgroundColor: tint.bg }]}>
+                      <MaterialIcons name="fence" size={12} color={ball} />
+                      <Text style={[styles.gridWallsText, { color: ball }]}>
+                        {p.wallsRemaining}
+                      </Text>
+                    </View>
                   )}
                   {timers?.[p.id] !== undefined && (
                     <Text style={styles.compactTime}>{formatTimer(timers[p.id])}</Text>
@@ -341,6 +439,7 @@ export const PlayerStrip: React.FC<{
             rating={playerRating}
             bonus={playerBonus}
             hideWallsBadge={hideWallsBadge}
+            status={seatStatus?.[p.id] ?? null}
             onPressIdentity={onPressPlayer ? () => onPressPlayer(p.id) : undefined}
           />
         );
@@ -408,6 +507,34 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '500',
     color: THEME.colors.textSecondaryStrong,
+  },
+  // Connection/attention state on the compact cards: no pill, the sub line IS
+  // the message, so it can never overflow the narrow grid cell.
+  compactStatus: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    borderRadius: THEME.radius.sm,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  statusPillDanger: {
+    backgroundColor: THEME.colors.danger,
+  },
+  statusPillWarn: {
+    backgroundColor: THEME.colors.warning,
+  },
+  statusText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.colors.onPrimary,
   },
   compactPlace: {
     fontFamily: THEME.fonts.extraBold,

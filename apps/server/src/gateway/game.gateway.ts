@@ -8,7 +8,12 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+// `Ack` exists in @nestjs/websockets 10.4 but is NOT re-exported from the
+// package root (decorators/index.d.ts omits it), so it is imported from its
+// own module. Deep import is safe: the package declares no `exports` map.
+import { Ack } from '@nestjs/websockets/decorators/ack.decorator';
 import { Server, Socket } from 'socket.io';
+import type { ActionAck } from '@duoorb/protocol';
 import { GameAction, GameMode, RecordedAction } from '@duoorb/game-core';
 import { AuthoritativeGameService } from '../game/authoritative-game.service.js';
 import { AiwinsService } from '../aiwins/aiwins.service.js';
@@ -87,8 +92,9 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     // marked ABANDONED with reasons — never invented.
     void this.gameService
       .recoverInProgressGames({
-        onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
+onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         onTimeout: (gId, ended, move) => this.emitTimeoutEnded(gId, ended, move),
+        onAfkWarning: (gId, payload) => this.server.to(gId).emit('game:afkWarning', payload),
       })
       .then(({ recovered, abandoned }) => {
         this.logger.log(`Startup recovery: ${recovered} recovered, ${abandoned.length} abandoned.`);
@@ -309,6 +315,22 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     if (!userInfo) return;
 
     const { userId } = userInfo;
+    // A newer socket already speaks for this user (reconnect / second
+    // device): THIS socket is the stale one and its teardown must not touch
+    // the live session. Without this a normal reconnect forfeited the
+    // player's own game a moment after they returned — the old socket's
+    // disconnect armed a grace timer against the seat they had just
+    // reclaimed. Same guard as the connect path, which refuses to overwrite
+    // identity for a socket that went away mid-handshake.
+    const live = this.userSocketMap.get(userId);
+    if (live && live !== client.id) {
+      this.logger.log(
+        `Socket disconnected (stale, superseded by ${live}): ${client.id} (User: ${userId})`
+      );
+      this.socketUserMap.delete(client.id);
+      return;
+    }
+
     this.matchmakingService.removeFromQueue(userId);
     this.setPresence(userId, { isOnline: false, isPlaying: false });
 
@@ -316,38 +338,57 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     const gameId = this.activeGameUserMap.get(userId);
     if (gameId) {
       const res = this.gameService.handleDisconnect(gameId, userId, (ended, finished, lastMove) => {
-        void (async () => {
-          if (lastMove) {
-            this.server.to(gameId).emit('game:actionAccepted', lastMove);
-          }
-          if (finished && !ended) {
-            // Active player forfeited mid-game: the match continues.
-            this.server.to(gameId).emit('game:playerFinished', { gameId, ...finished });
-            return;
-          }
-          if (!ended) return;
-          try {
-            await this.gameService.persistCompleted(gameId);
-          } catch (err: any) {
-            this.logger.warn(`Completion persist failed ${gameId}: ${err?.message}`);
-          }
-          this.server.to(gameId).emit('game:ended', ended);
-          this.setGamePlaying(gameId, false);
-          this.activeGameUserMap.delete(userId);
-        })();
+        this.emitMidGameForfeit(gameId, ended, finished, lastMove);
       });
 
       if (res) {
-        this.server.to(gameId).emit('game:opponentDisconnected', {
-          userId,
-          gracePeriodSeconds: res.gracePeriodSeconds,
-        });
+        // Opponents only. The leaver's own replacement socket is in this
+        // room after a reconnect and must never be told "your opponent
+        // left" about itself; every other seat needs `playerId` to tell
+        // WHICH opponent dropped in a 3P/4P table.
+        const others = this.otherSeatSockets(gameId, userId);
+        if (others.length > 0) {
+          this.server.to(others).emit('game:opponentDisconnected', {
+            userId,
+            playerId: res.playerId,
+            gracePeriodSeconds: res.gracePeriodSeconds,
+            // Server's own deadline: the client counts down to this instead
+            // of decrementing a local copy, so a backgrounded or throttled
+            // phone can never display a grace window the server would not
+            // honour.
+            graceEndsAt: res.graceEndsAt,
+          });
+        }
       }
     }
 
     this.socketUserMap.delete(client.id);
-    this.userSocketMap.delete(userId);
+    // Only retract the user→socket mapping if it still points at THIS
+    // socket. Deleting unconditionally would strand a newer connection.
+    if (this.userSocketMap.get(userId) === client.id) {
+      this.userSocketMap.delete(userId);
+    }
     this.logger.log(`Socket disconnected: ${client.id} (User: ${userId})`);
+  }
+
+  /**
+   * Sockets sitting in `gameId`'s room that are NOT this user.
+   *
+   * Room fan-out (`server.to(gameId)`) is wrong for opponent events: after a
+   * reconnect the leaver's new socket is in the same room, and in multiplayer
+   * every seat is somebody's opponent. Filtering by the verified
+   * userId — never by a client-supplied field — is what makes the event mean
+   * what it says.
+   */
+  private otherSeatSockets(gameId: string, userId: string): string[] {
+    const room = this.server.sockets.adapter.rooms.get(gameId);
+    if (!room) return [];
+    const out: string[] = [];
+    for (const socketId of room) {
+      if (this.socketUserMap.get(socketId)?.userId === userId) continue;
+      out.push(socketId);
+    }
+    return out;
   }
 
   // -------------------------------------------------------------
@@ -601,6 +642,9 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       wallsEach: result.room.wallsEach,
       isRanked: true,
       onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
+        onAfkWarning: (gId, payload) => this.server.to(gId).emit('game:afkWarning', payload),
+        onForfeit: (gId, ended, finished, move) =>
+          this.emitMidGameForfeit(gId, ended, finished, move),
       onTimeout: (gId, ended, move) => this.emitTimeoutEnded(gId, ended, move),
     });
 
@@ -829,6 +873,9 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       wallsEach: challenge.wallsEach,
       isRanked: true,
       onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
+        onAfkWarning: (gId, payload) => this.server.to(gId).emit('game:afkWarning', payload),
+        onForfeit: (gId, ended, finished, move) =>
+          this.emitMidGameForfeit(gId, ended, finished, move),
       onTimeout: (gId, ended, move) => this.emitTimeoutEnded(gId, ended, move),
     });
 
@@ -900,6 +947,9 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         timeControlMinutes: match.timeControlMinutes,
         incrementSeconds: match.incrementSeconds,
         wallsEach: match.wallsEach,
+        onAfkWarning: (gId, payload) => this.server.to(gId).emit('game:afkWarning', payload),
+        onForfeit: (gId, ended, finished, move) =>
+          this.emitMidGameForfeit(gId, ended, finished, move),
         isRanked: true,
         onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         onTimeout: (gId, ended, move) => this.emitTimeoutEnded(gId, ended, move),
@@ -1016,6 +1066,13 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     client.join(payload.gameId);
     this.activeGameUserMap.set(user.userId, payload.gameId);
 
+    // Kill the grace timer NOW, synchronously. The loop below awaits a DB
+    // round-trip per unconfirmed move; if the grace window expires inside it,
+    // the server forfeits a seat whose owner is standing right here. The
+    // sync is still taken after the replay, so the client still gets
+    // post-replay truth — the timer and the sync are deliberately separate.
+    this.gameService.cancelDisconnectGrace(payload.gameId, user.userId);
+
     // Reconnect reconciliation: replay the client's unconfirmed tail
     // through validation (never blind). Newly applied moves broadcast so
     // any connected opponent stays exact; illegal ones die here and the
@@ -1051,7 +1108,15 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
       const sync = this.gameService.handleReconnect(payload.gameId, user.userId);
       if (sync) {
-        this.server.to(payload.gameId).emit('game:opponentReconnected', { userId: user.userId });
+        // Opponents only — this socket just joined the room, so room
+        // fan-out would have the returnee announce their own return.
+        const others = this.otherSeatSockets(payload.gameId, user.userId);
+        if (others.length > 0) {
+          this.server.to(others).emit('game:opponentReconnected', {
+            userId: user.userId,
+            playerId: seat,
+          });
+        }
         client.emit('game:sync', sync);
       } else {
         const existingSync = this.gameService.getSyncState(
@@ -1074,11 +1139,13 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @SubscribeMessage('game:action')
   async handleGameAction(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId: string; action: GameAction; clientActionId?: string; expectedSequence?: number }
+    @MessageBody() payload: { gameId: string; action: GameAction; clientActionId?: string; expectedSequence?: number },
+    @Ack() ack?: (result: ActionAck) => void
   ) {
     const user = this.getUser(client);
     if (!user.verified) {
       client.emit('game:error', { code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
+      ack?.({ ok: false, code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
       return;
     }
     const result = await this.gameService.processAction(payload.gameId, user.userId, payload.action, {
@@ -1087,6 +1154,16 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     });
 
     if (result.success) {
+      // The turn passed, so any inactivity notice for the previous one is
+      // stale. Clearing it here (rather than when the next warning fires)
+      // means a player who moved never keeps seeing a countdown they have
+      // already escaped.
+      this.server.to(payload.gameId).emit('game:afkCleared', { playerId: result.recorded.playerId });
+      // Answer the mover FIRST. The room broadcast below can be slow (fan-out,
+      // serialization, a busy event loop); the player who just moved must not
+      // sit on a locked board waiting for it. The ack and the echo carry the
+      // same recorded action and the client applies them idempotently.
+      ack?.({ ok: true, recorded: result.recorded });
       this.server.to(payload.gameId).emit('game:actionAccepted', result.recorded);
       if (result.finished) {
         this.server.to(payload.gameId).emit('game:playerFinished', { gameId: payload.gameId, ...result.finished });
@@ -1101,6 +1178,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         this.setGamePlaying(payload.gameId, false);
       }
     } else {
+      ack?.({ ok: false, code: result.error.code, message: result.error.message });
       client.emit('game:error', result.error);
     }
   }
@@ -1317,6 +1395,38 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     })();
   }
 
+  /**
+   * Mid-table forfeit (AFK, or a disconnect in a 3P/4P table): the player who
+   * forfeited takes the worst remaining place and the match CONTINUES.
+   *
+   * Shared by both reasons on purpose. The disconnect path used to inline this
+   * and the AFK watchdog would otherwise need its own copy — two copies of
+   * "persist, then announce a finished player" is how a placement ends up
+   * broadcast without being written, or written twice.
+   */
+  private emitMidGameForfeit(
+    gameId: string,
+    ended: GameEndedDto | null,
+    finished?: { playerId: string; userId: string; place: number },
+    lastMove?: RecordedAction
+  ): void {
+    if (finished && !ended) {
+      this.server.to(gameId).emit('game:playerFinished', { gameId, ...finished });
+      return;
+    }
+    if (!ended) return;
+    void (async () => {
+      try {
+        await this.gameService.persistCompleted(gameId);
+      } catch (err: any) {
+        this.logger.warn(`Completion persist failed ${gameId}: ${err?.message}`);
+      }
+      if (lastMove) this.server.to(gameId).emit('game:actionAccepted', lastMove);
+      this.server.to(gameId).emit('game:ended', ended);
+      this.setGamePlaying(gameId, false);
+    })();
+  }
+
   private getUser(client: Socket): SocketUserInfo {
     const qId = client.handshake.query?.userId as string | undefined;
     const qName = client.handshake.query?.displayName as string | undefined;
@@ -1330,6 +1440,35 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       rating: 1500,
       verified: false,
     };
+  }
+
+  /**
+   * Round-trip probe used to keep the server's clock charging fair.
+   *
+   * The client times this request/ack pair and reports the measured RTT; the
+   * server smooths it per seat and refunds it from that player's clock when
+   * they move. Only the client knows when the reply actually landed, so the
+   * measurement has to come from there — the server can time its own side of
+   * the exchange but not the wire.
+   *
+   * The reply echoes `clientSentAt` and carries `serverTimestamp`, which is
+   * all the client needs to correct its own clock anchor (see the client hook).
+   * Kept cheap and idempotent: no state beyond the smoothed estimate.
+   */
+  @SubscribeMessage('game:ping')
+  handleGamePing(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { gameId?: string; clientSentAt?: number } | undefined,
+    @Ack() ack?: (res: { serverTimestamp: number; clientSentAt?: number }) => void
+  ) {
+    const now = Date.now();
+    if (payload?.gameId && typeof payload.clientSentAt === 'number') {
+      const user = this.getUser(client);
+      if (user.verified) {
+        this.gameService.recordLatency(payload.gameId, user.userId, now - payload.clientSentAt);
+      }
+    }
+    ack?.({ serverTimestamp: now, clientSentAt: payload?.clientSentAt });
   }
 
   /**

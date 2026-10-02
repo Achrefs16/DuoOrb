@@ -17,7 +17,6 @@ import { NoConnectionSection } from '../components/NoConnection';
 import { kindOf, sectionKind, type ErrorKind } from '../network/errors';
 import { PlayerAvatarOrb } from '../components/PlayerIdentity';
 import { EmptyState } from '../components/StateViews';
-import { LeaderboardSkeleton } from '../components/Skeleton';
 
 interface LeaderboardScreenProps {
   onSelectPlayer: (player: { userId: string; username: string }) => void;
@@ -273,7 +272,11 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
           </TouchableOpacity>
         </View>
       ) : loading && entries.length === 0 ? (
-        <LeaderboardSkeleton />
+        // No placeholder rows on this page: the leaderboard is a numbered
+        // table, so fake rank rows read as real (and wrong) standings.
+        // The header and pills render immediately and the cached window
+        // lands a beat later.
+        null
       ) : loadError ? (
         <NoConnectionSection
           kind={sectionKind(loadError.kind, isConnected)}

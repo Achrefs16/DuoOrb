@@ -35,10 +35,6 @@ interface GameOverModalProps {
   onHome: () => void;
   /** Dismiss the modal and stay on the finished match screen. */
   onClose: () => void;
-  /** Copies the finished game as chess-style move notation to the clipboard. */
-  onCopyMoves?: () => void;
-  /** Label flips to "Copied" briefly after a successful copy. */
-  movesCopied?: boolean;
   /**
    * Hard-AI victory reward, set only when the win was uploaded while online.
    * Null while offline or when no badge was earned: the reward UI renders
@@ -71,8 +67,6 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onAnalyze,
   onHome,
   onClose,
-  onCopyMoves,
-  movesCopied = false,
   reward = null,
 }) => {
   const winner = state.players.find((p) => p.id === state.winnerId);
@@ -160,34 +154,38 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             <Feather name="x" size={20} color={THEME.colors.textMuted} />
           </TouchableOpacity>
 
-          {/* Header Icon Trophy or Flag */}
-          <View
-            style={[
-              styles.iconCircle,
-              outcomeWin
-                ? styles.iconCircleWin
-                : isDraw
-                ? styles.iconCircleDraw
-                : styles.iconCircleLoss,
-            ]}
-          >
-            <Feather
-              name={outcomeWin ? 'award' : isDraw ? 'minus-circle' : 'shield'}
-              size={32}
-              color={
+          {/* Header block: icon, outcome and the "vs ..." subtitle. One wrapper so the
+              subtitle always clears whatever follows it — a vs-AI result has
+              no rating panel or finish-order card, which used to leave it
+              sitting directly on top of the Rematch button. */}
+          <View style={styles.headerBlock}>
+            <View
+              style={[
+                styles.iconCircle,
                 outcomeWin
-                  ? THEME.colors.assessmentInaccuracy
+                  ? styles.iconCircleWin
                   : isDraw
-                  ? THEME.colors.textSecondary
-                  : THEME.colors.danger
-              }
-            />
+                  ? styles.iconCircleDraw
+                  : styles.iconCircleLoss,
+              ]}
+            >
+              <Feather
+                name={outcomeWin ? 'award' : isDraw ? 'minus-circle' : 'shield'}
+                size={32}
+                color={
+                  outcomeWin
+                    ? THEME.colors.assessmentInaccuracy
+                    : isDraw
+                    ? THEME.colors.textSecondary
+                    : THEME.colors.danger
+                }
+              />
+            </View>
+
+            <Text style={styles.outcomeTitle}>{outcomeTitle}</Text>
+
+            {subtitle && <Text style={styles.opponentSubtitle}>{subtitle}</Text>}
           </View>
-
-          {/* Outcome Heading */}
-          <Text style={styles.outcomeTitle}>{outcomeTitle}</Text>
-
-          {subtitle && <Text style={styles.opponentSubtitle}>{subtitle}</Text>}
 
           {/* Multiplayer finishing order — clean ranking list, no clocks. */}
           {isMultiplayer && order.length > 0 && (
@@ -327,23 +325,6 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 <Feather name="activity" size={14} color={THEME.colors.primary} />
                 <Text style={styles.utilityText}>Analyze</Text>
               </TouchableOpacity>
-
-              {onCopyMoves && (
-                <TouchableOpacity
-                  style={styles.utilityBtn}
-                  activeOpacity={0.7}
-                  onPress={onCopyMoves}
-                  accessibilityRole="button"
-                  accessibilityLabel="Copy game moves as text"
-                >
-                  <Feather
-                    name={movesCopied ? 'check' : 'copy'}
-                    size={14}
-                    color={movesCopied ? THEME.colors.success : THEME.colors.textSecondary}
-                  />
-                  <Text style={styles.utilityText}>{movesCopied ? 'Copied' : 'Copy Moves'}</Text>
-                </TouchableOpacity>
-              )}
             </View>
 
             {/* Opponent identity: the one place a finished online match can
@@ -395,6 +376,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: THEME.colors.surfaceContainer,
     ...THEME.shadows.modal,
+  },
+  // Gap below the icon/outcome/subtitle group, so the content that follows
+  // never touches the subtitle (AI results have no rating panel at all).
+  headerBlock: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   closeBtn: {
     position: 'absolute',
@@ -454,7 +442,7 @@ const styles = StyleSheet.create({
     borderColor: THEME.colors.surfaceContainer,
     paddingVertical: 4,
     paddingHorizontal: 12,
-    marginTop: 12,
+    marginBottom: 12,
     gap: 2,
   },
   rowLine: {
@@ -510,7 +498,9 @@ const styles = StyleSheet.create({
     borderColor: THEME.colors.surfaceContainer,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    marginVertical: 16,
+    // Top spacing now comes from headerBlock; keep only the gap to the
+    // buttons below so the two never merge.
+    marginBottom: 16,
     alignItems: 'center',
   },
   ratingDeltaBlock: {

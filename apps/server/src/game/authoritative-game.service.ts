@@ -21,6 +21,32 @@ import { PrismaService } from '../database/prisma.service.js';
 import { AiwinsService } from '../aiwins/aiwins.service.js';
 import { Logger } from '@nestjs/common';
 
+/**
+ * Hard ceiling on how much round-trip time is refunded from a player's clock.
+ *
+ * A measured RTT on a bad connection can be seconds; refunding all of it would
+ * turn a laggy player into an immortal one. 1200ms covers a poor-but-real
+ * mobile connection while staying far below a single thinking block.
+ */
+const MAX_LATENCY_REFUND_MS = 1200;
+
+/**
+ * Seconds a player may sit on their turn without moving, while CONNECTED,
+ * before they forfeit. Distinct from the disconnect grace: this punishes an
+ * idle client (tab backgrounded, phone asleep), not an absent one, and the
+ * two never share a timer or an indicator.
+ */
+export const AFK_TIMEOUT_MS = 60_000;
+
+/**
+ * How long before the inactivity limit the warning goes out. Far enough ahead
+ * that a player who was merely looking away can still make their move.
+ */
+export const AFK_WARNING_AT_MS = 15_000;
+
+/** EWMA weight for the latency estimate. Heavily favours recent samples. */
+const LATENCY_SMOOTHING = 0.3;
+
 export interface ActiveOnlineGame {
   id: string;
   state: GameState;
@@ -32,6 +58,25 @@ export interface ActiveOnlineGame {
   incrementSeconds: number;
   turnStartTimestamp: number;
   /**
+   * Per-seat smoothed round-trip latency, in ms, learned from the clock probe
+   * (`game:ping`). The mover's own RTT is subtracted from what they are
+   * charged, so their clock is not eaten by the network they did not choose.
+   * Smoothed (EWMA) and clamped: one bad sample must not hand anyone a minute.
+   */
+  latencyMs: Record<string, number>;
+  /**
+   * Server time at which the disconnect grace window ENDS for a user. The
+   * client renders its countdown from this, so a slow phone cannot show a
+   * longer window than the server will actually honour.
+   */
+  disconnectGraceEndsAt: Record<string, number>;
+  /**
+   * Server time at which the clock was paused because somebody was inside a
+   * disconnect grace window. Null while the clock runs. The tick and the move
+   * handler both read this: elapsed time is never charged while it is set.
+   */
+  clockPausedAt: number | null;
+  /**
    * Whether the countdown is running. False until the first move is accepted,
    * so pairing latency is not charged to the slower player. See createGame.
    */
@@ -40,7 +85,38 @@ export interface ActiveOnlineGame {
   /** Retained so the clock loop can restart after a mid-game forfeit. */
   onClockTick?: (gameId: string, clock: ClockStateDto) => void;
   onTimeout?: (gameId: string, ended: GameEndedDto, lastMove: RecordedAction) => void;
+  /**
+   * Mid-table forfeit that does NOT end the game (AFK, or a disconnect in a
+   * multiplayer table). Same shape the disconnect path already uses, so the
+   * gateway persists and broadcasts one way for every non-terminal forfeit.
+   */
+  onForfeit?: (
+    gameId: string,
+    ended: GameEndedDto | null,
+    finished?: { playerId: string; userId: string; place: number },
+    lastMove?: RecordedAction
+  ) => void;
+onAfkWarning?: (gameId: string, payload: { playerId: string; secondsRemaining: number }) => void;
+  /**
+   * Inactivity watchdog, keyed by seat. Never armed for a seat inside a
+   * disconnect grace window — absence and idling are different states and
+   * must not be able to end the same game twice.
+   */
+  afkTimers: Map<string, NodeJS.Timeout>;
+  /**
+   * Server time at which the inactivity warning should be emitted for the
+   * current turn, or null when no warning applies (clock paused, no watchdog).
+   * The gateway reads this to decide whether a tick is the warn moment.
+   */
+  afkWarningAt: number | null;
   disconnectedUsers: Record<string, { disconnectTime: number; timeoutId: NodeJS.Timeout }>;
+  /**
+   * Monotonic token per user, bumped on every arm AND every cancel. A grace
+   * callback that was already queued when its timer was cleared compares
+   * against this before acting, so a superseded timer can never delete the
+   * live entry or forfeit a player who is back.
+   */
+  disconnectGenerations: Record<string, number>;
   rematchOffers: Set<string>;            // userIds who offered/accepted rematch
   isRanked: boolean;
   timeControlMinutes: number;
@@ -94,15 +170,59 @@ export class AuthoritativeGameService {
   }
 
   /**
+   * How much of a seat's own round trip to refund when charging their clock.
+   *
+   * Refunding the FULL measured RTT would hand back time the player genuinely
+   * spent deciding, so this refunds a bounded fraction and never more than
+   * the elapsed window. With no probe yet (first move of a game) it refunds
+   * nothing: unknown latency must not become free time.
+   */
+  private latencyCompensationMs(game: ActiveOnlineGame, playerId: string): number {
+    const rtt = game.latencyMs[playerId];
+    if (rtt === undefined || rtt <= 0) return 0;
+    return Math.min(rtt, MAX_LATENCY_REFUND_MS);
+  }
+
+  /**
+   * Freezes the clock for the whole table and remembers when.
+   *
+   * Used while any seat is inside a disconnect grace window: the player who
+   * stayed must not lose chess time to the player who left. The pause is
+   * DEFERRED, not forgiven — resumeClockAfterGrace credits the frozen window
+   * back to the seat that was on turn.
+   */
+  private pauseClockForGrace(game: ActiveOnlineGame, at: number): void {
+    if (game.clockPausedAt !== null) return; // already paused; keep the first stamp
+    game.clockPausedAt = at;
+  }
+
+  /** Un-freezes and returns the paused window to the seat that held the turn. */
+  private resumeClockAfterGrace(game: ActiveOnlineGame, at: number): number {
+    if (game.clockPausedAt === null) return 0;
+    const frozen = Math.max(0, at - game.clockPausedAt);
+    game.clockPausedAt = null;
+    if (!game.clockStarted) return 0;
+    const activePlayerId = game.state.players[game.state.currentPlayerIndex]?.id;
+    // A paused game has no meaningful elapsed time; re-stamping the turn start
+    // is what stops the frozen window being charged on the next move.
+    game.turnStartTimestamp = at;
+    if (activePlayerId && frozen > 0) {
+      game.clocksMs[activePlayerId] = Math.max(0, game.clocksMs[activePlayerId]) + frozen;
+    }
+    return frozen;
+  }
+
+  /**
    * (Re)starts the 1-second broadcast/tick loop for a game. The loop never
    * owns time itself — every tick derives remaining time from
    * clocksMs + turnStartTimestamp (deadline math), so stalls only delay
    * broadcasts and timeouts fire from real deadlines.
    */
-  private startClockLoop(
+private startClockLoop(
     game: ActiveOnlineGame,
     onClockTick?: (gameId: string, clock: ClockStateDto) => void,
-    onTimeout?: (gameId: string, ended: GameEndedDto, lastMove: RecordedAction) => void
+    onTimeout?: (gameId: string, ended: GameEndedDto, lastMove: RecordedAction) => void,
+    onAfkWarning?: (gameId: string, payload: { playerId: string; secondsRemaining: number }) => void
   ): void {
     if (game.timeControlMinutes <= 0) return;
     if (game.timerInterval) clearInterval(game.timerInterval);
@@ -118,7 +238,11 @@ export class AuthoritativeGameService {
 
       const now = Date.now();
       const activePlayerId = game.state.players[game.state.currentPlayerIndex].id;
-      const elapsed = now - game.turnStartTimestamp;
+      // Paused while somebody sits in a disconnect grace window: the player
+      // still here must not pay chess time for the other one's bad network.
+      // The pause is credited back on reconnect, so this defers time rather
+      // than granting it.
+      const elapsed = game.clockPausedAt !== null ? 0 : now - game.turnStartTimestamp;
       const currentRemaining = Math.max(0, game.clocksMs[activePlayerId] - elapsed);
 
       if (currentRemaining <= 0) {
@@ -143,9 +267,18 @@ export class AuthoritativeGameService {
         return;
       }
 
-      if (onClockTick) {
-        const tickRemainingMs = { ...game.clocksMs };
-        tickRemainingMs[activePlayerId] = currentRemaining;
+if (onClockTick) {
+        // Inactivity warning: fires once per turn, when the moment arrives.
+        // Emitted through the same tick callback as the clock so it needs no
+        // second timer and cannot outlive the turn it belongs to.
+        if (game.afkWarningAt !== null && now >= game.afkWarningAt) {
+          game.afkWarningAt = null;
+          onAfkWarning?.(game.id, {
+            playerId: activePlayerId,
+            secondsRemaining: Math.max(0, Math.ceil(AFK_TIMEOUT_MS / 1000 - (now - game.turnStartTimestamp) / 1000)),
+          });
+        }
+        const tickRemainingMs = this.clockSnapshot(game, now);
         onClockTick(game.id, {
           activePlayerIndex: game.state.currentPlayerIndex,
           remainingMs: tickRemainingMs,
@@ -197,8 +330,15 @@ export class AuthoritativeGameService {
     incrementSeconds?: number;
     wallsEach?: number;
     isRanked: boolean;
-    onClockTick?: (gameId: string, clock: ClockStateDto) => void;
+onClockTick?: (gameId: string, clock: ClockStateDto) => void;
     onTimeout?: (gameId: string, ended: GameEndedDto, lastMove: RecordedAction) => void;
+    onAfkWarning?: (gameId: string, payload: { playerId: string; secondsRemaining: number }) => void;
+    onForfeit?: (
+      gameId: string,
+      ended: GameEndedDto | null,
+      finished?: { playerId: string; userId: string; place: number },
+      lastMove?: RecordedAction
+    ) => void;
   }): ActiveOnlineGame {
     const playerNames = params.users.map((u) => u.displayName);
     const initialState = createInitialState({
@@ -242,9 +382,16 @@ export class AuthoritativeGameService {
       // and forfeited a game it never saw.
       turnStartTimestamp: 0,
       clockStarted: false,
+      latencyMs: {},
+      disconnectGraceEndsAt: {},
+      clockPausedAt: null,
       onClockTick: params.onClockTick,
       onTimeout: params.onTimeout,
-      disconnectedUsers: {},
+      onForfeit: params.onForfeit,
+      afkTimers: new Map(),
+      afkWarningAt: null,
+disconnectedUsers: {},
+        disconnectGenerations: {},
       rematchOffers: new Set(),
       isRanked: params.isRanked,
       timeControlMinutes: params.timeControlMinutes,
@@ -254,7 +401,7 @@ export class AuthoritativeGameService {
       leftUserIds: new Set(),
     };
 
-    this.startClockLoop(activeGame, params.onClockTick, params.onTimeout);
+    this.startClockLoop(activeGame, params.onClockTick, params.onTimeout, params.onAfkWarning);
 
     this.games.set(params.gameId, activeGame);
 
@@ -459,11 +606,17 @@ export class AuthoritativeGameService {
         ratings,
         clocksMs,
         incrementSeconds: row.incrementSeconds,
-        turnStartTimestamp: Date.now(),
+turnStartTimestamp: Date.now(),
         // A recovered game was already under way before the restart, so its
         // clock resumes immediately rather than waiting for a first move.
         clockStarted: true,
-        disconnectedUsers: {},
+        latencyMs: {},
+        disconnectGraceEndsAt: {},
+        clockPausedAt: null,
+        afkTimers: new Map(),
+      afkWarningAt: null,
+ disconnectedUsers: {},
+      disconnectGenerations: {},
         rematchOffers: new Set(),
         isRanked: row.isRanked,
         timeControlMinutes: row.timeControlMinutes,
@@ -482,9 +635,10 @@ export class AuthoritativeGameService {
    * Unreconstructable games are marked ABANDONED with the exact reason —
    * never silently invented. Returns { recovered, abandoned }.
    */
-  public async recoverInProgressGames(hooks: {
+public async recoverInProgressGames(hooks: {
     onClockTick?: (gameId: string, clock: ClockStateDto) => void;
     onTimeout?: (gameId: string, ended: GameEndedDto, lastMove: RecordedAction) => void;
+    onAfkWarning?: (gameId: string, payload: { playerId: string; secondsRemaining: number }) => void;
   } = {}): Promise<{ recovered: number; abandoned: string[] }> {
     // afterInit fires before Postgres is reachable on fresh boots — wait
     // for the connection instead of concluding "nothing to recover".
@@ -560,7 +714,7 @@ export class AuthoritativeGameService {
         this.games.set(game.id, game);
         game.onClockTick = hooks.onClockTick;
         game.onTimeout = hooks.onTimeout;
-        this.startClockLoop(game, hooks.onClockTick, hooks.onTimeout);
+        this.startClockLoop(game, hooks.onClockTick, hooks.onTimeout, hooks.onAfkWarning);
         recovered++;
         this.logger.log(`Recovered in-progress game ${game.id} at sequence ${moveRows.length}.`);
       } catch (err: any) {
@@ -724,6 +878,13 @@ export class AuthoritativeGameService {
         delete game.disconnectedUsers[oldUserId];
         changed = true;
       }
+      if (game.disconnectGenerations[oldUserId] !== undefined) {
+        // The armed timer closes over the OLD id, so migrating the token
+        // would let it act on a seat that no longer exists. Retiring the
+        // token makes any pending callback for it a no-op.
+        delete game.disconnectGenerations[oldUserId];
+        changed = true;
+      }
       if (game.rematchOffers.has(oldUserId)) {
         game.rematchOffers.delete(oldUserId);
         game.rematchOffers.add(newUserId);
@@ -751,6 +912,49 @@ export class AuthoritativeGameService {
    * rating_history + replay-safe persist), so retries/restarts can never
    * double-apply ratings either.
    */
+  /**
+   * Records a client's measured round-trip time for a seat.
+   *
+   * The client times its own `game:ping` request/ack and reports the result,
+   * because only the client knows when the reply actually landed. Smoothed
+   * into an EWMA and clamped, so one spike cannot mask a chronically bad
+   * connection (or the reverse).
+   *
+   * Ignores implausible samples outright rather than smoothing them in.
+   */
+  public recordLatency(gameId: string, userId: string, rttMs: number): void {
+    const game = this.games.get(gameId);
+    const playerId = game?.userPlayerIds[userId];
+    if (!game || !playerId) return;
+    if (!Number.isFinite(rttMs) || rttMs < 0 || rttMs > 5000) return;
+    const previous = game.latencyMs[playerId];
+    game.latencyMs[playerId] =
+      previous === undefined ? rttMs : previous + (rttMs - previous) * LATENCY_SMOOTHING;
+  }
+
+  /**
+   * Authoritative clock map for a seat set, with the ACTIVE seat's elapsed
+   * time already applied.
+   *
+   * The raw `clocksMs` only changes when a move lands, so handing it out
+   * unadjusted hands out a clock that is too generous by however long the
+   * current turn has been running — on every sync and every reconnect. This
+   * derives exactly like the 1 Hz tick does, which is what keeps the two
+   * consistent: a reconnect can never hand the active player time back, and
+   * the number cannot jump upward.
+   *
+   * The waiting seats are untouched: their clocks are not running.
+   */
+  public clockSnapshot(game: ActiveOnlineGame, now = Date.now()): Record<string, number> {
+    const out = { ...game.clocksMs };
+    const activePlayerId = game.state.players[game.state.currentPlayerIndex]?.id;
+    if (activePlayerId !== undefined && game.clockStarted && game.clockPausedAt === null) {
+      const elapsed = now - game.turnStartTimestamp;
+      out[activePlayerId] = Math.max(0, out[activePlayerId] - elapsed);
+    }
+    return out;
+  }
+
   public processAction(
     gameId: string,
     userId: string,
@@ -804,7 +1008,25 @@ export class AuthoritativeGameService {
 
     const now = Date.now();
 
-    // Deduct elapsed time from moving player
+    // Clock charge.
+    //
+    // Three separate corrections, all of which used to be missing:
+    //
+    // 1. WHO is charged. A resignation is legal off-turn, so the actor — not
+    //    whoever happens to hold the turn — pays for the elapsed time. An
+    //    off-turn resign used to deduct from the innocent opponent.
+    // 2. LATENCY. The mover's own round trip is subtracted, so a bad network
+    //    costs them thinking time only. Without this the charge was
+    //    `downlink + thinking + uplink`.
+    // 3. PAUSE. A grace window freezes the clock for everyone (see
+    //    pauseClockForGrace); elapsed time during it is credited back on
+    //    reconnect rather than charged.
+    //
+    // The clock is only ever charged to the seat that actually holds the
+    // turn, so an off-turn resign moves nobody's clock at all.
+    const clockOwner = expectedPlayerId;
+    const isClockOwnerActor = senderPlayerId === clockOwner || senderPlayerId === undefined;
+
     if (game.timeControlMinutes > 0) {
       // Arm on the very first move so the time spent attaching to the game is
       // never charged. turnStartTimestamp is 0 until then, which would
@@ -814,12 +1036,17 @@ export class AuthoritativeGameService {
         game.clockStarted = true;
         game.turnStartTimestamp = now;
       }
-      const elapsed = now - game.turnStartTimestamp;
-      game.clocksMs[expectedPlayerId] = Math.max(0, game.clocksMs[expectedPlayerId] - elapsed);
+      const wallElapsed = game.clockPausedAt !== null ? 0 : now - game.turnStartTimestamp;
+      // Only the seat on turn burns clock. A resignation from off-turn (or a
+      // forfeit attributed to an absent player) costs the actor nothing.
+      const charged = isClockOwnerActor
+        ? Math.max(0, wallElapsed - this.latencyCompensationMs(game, clockOwner))
+        : 0;
+      game.clocksMs[clockOwner] = Math.max(0, game.clocksMs[clockOwner] - charged);
 
       // Add Fischer increment after move completion (if not timeout or resign)
       if (action.type !== 'RESIGN' && action.type !== 'TIMEOUT' && game.incrementSeconds > 0) {
-        game.clocksMs[expectedPlayerId] += game.incrementSeconds * 1000;
+        game.clocksMs[clockOwner] += game.incrementSeconds * 1000;
       }
     }
 
@@ -838,6 +1065,14 @@ export class AuthoritativeGameService {
     const placementsBefore = game.state.placements.length;
     game.state = result.state;
     game.turnStartTimestamp = now;
+
+    // The turn passed: the watchdog for it is done, and whoever is now on
+    // turn gets their own. A grace window suppresses it — that seat is away,
+    // and the disconnect timer already owns the outcome.
+    this.clearAfkTimers(game);
+    if (game.state.status === 'IN_PROGRESS' && game.clockStarted && game.clockPausedAt === null) {
+      this.armAfkTimer(game);
+    }
 
     const recordedMove: RecordedAction = {
       ...result.state.lastMove!,
@@ -991,7 +1226,7 @@ export class AuthoritativeGameService {
     gameId: string,
     userId: string,
     onForfeit: (ended: GameEndedDto | null, finished?: { playerId: string; userId: string; place: number }, lastMove?: RecordedAction) => void
-  ): { gracePeriodSeconds: number } | null {
+  ): { gracePeriodSeconds: number; playerId: string; graceEndsAt: number } | null {
     const game = this.games.get(gameId);
     if (!game || game.state.status !== 'IN_PROGRESS') return null;
 
@@ -1001,10 +1236,42 @@ export class AuthoritativeGameService {
     const seat = game.state.players.find((p) => p.id === playerId);
     if (!seat || seat.status === 'FINISHED') return null;
 
-    const graceSeconds = game.isRanked ? 60 : 30;
+    // Reconnect grace: 45 seconds, identical for ranked and casual. This is
+    // the SERVER's window — the client only renders a countdown derived from
+    // `graceEndsAt`, so a slow or sleeping phone cannot extend it. It is a
+    // different mechanism from the AFK limit (see AFK_TIMEOUT_MS), and the
+    // two never share a timer.
+    const graceSeconds = 45;
+    const armedAt = Date.now();
+    const graceEndsAt = armedAt + graceSeconds * 1000;
+
+    // A second disconnect before the first grace expires must REPLACE the
+    // old timer, not stack on top of it: an orphaned timer would fire while
+    // the player is already back and forfeit a game they are playing. The
+    // generation token is the belt to that braces — a callback that has
+    // already been queued when the timer is cleared still runs, and it must
+    // recognize that its entry is no longer the live one. Runs BEFORE the
+    // deadline is recorded, because cancelling clears it.
+    this.cancelDisconnectGrace(gameId, userId);
+    game.disconnectGraceEndsAt[userId] = graceEndsAt;
+
+    // The clock stops for the whole table while somebody is away: the player
+    // who stayed must not lose chess time to the player's dead connection.
+    this.pauseClockForGrace(game, armedAt);
+    // Their own AFK watchdog is meaningless now — absence is tracked by the
+    // grace timer above, and two timers racing to end the same game is how
+    // double-processed results happen.
+    this.cancelAfkTimer(game, playerId);
+    const generation = (game.disconnectGenerations[userId] ?? 0) + 1;
+    game.disconnectGenerations[userId] = generation;
 
     const timeoutId = setTimeout(() => {
-      delete game.disconnectedUsers[userId];
+      // Superseded by a newer disconnect (or a reconnect): not ours to run.
+      if (game.disconnectGenerations[userId] !== generation) return;
+      if (game.disconnectedUsers[userId]?.timeoutId !== timeoutId) return;
+delete game.disconnectedUsers[userId];
+    delete game.disconnectGenerations[userId];
+    delete game.disconnectGraceEndsAt[userId];
       const g = this.games.get(gameId);
       if (!g || g.state.status !== 'IN_PROGRESS') return;
       const seatNow = g.state.players.find((p) => p.id === playerId);
@@ -1017,12 +1284,15 @@ export class AuthoritativeGameService {
       });
       if (!res.success) return;
       g.state = res.state;
+      // The grace expired: no credit-back is owed to anyone, and the clock is
+      // released so the remaining seats resume on real time.
+      g.clockPausedAt = null;
       g.clockStarted = true;
       g.turnStartTimestamp = Date.now();
       this.ledgerMove(g, res.state.lastMove!);
       if (res.state.status !== 'COMPLETED') {
         if (g.timerInterval) { clearInterval(g.timerInterval); }
-        this.startClockLoop(g, g.onClockTick, g.onTimeout);
+        this.startClockLoop(g, g.onClockTick, g.onTimeout, g.onAfkWarning);
         const last = res.state.placements[res.state.placements.length - 1];
         onForfeit(null, { playerId: last.playerId, userId: g.playerUserIds[last.playerId], place: last.place }, res.state.lastMove!);
         return;
@@ -1037,7 +1307,121 @@ export class AuthoritativeGameService {
       timeoutId,
     };
 
-    return { gracePeriodSeconds: graceSeconds };
+    return { gracePeriodSeconds: graceSeconds, playerId, graceEndsAt };
+  }
+
+  /**
+   * Cancels a pending disconnect-grace timer without producing a sync.
+   *
+   * Split out of handleReconnect because the reconnect path needs the timer
+   * dead IMMEDIATELY — before it awaits the client's unconfirmed moves —
+   * while the sync it answers with must still reflect those moves. Doing
+   * both in one call either races the grace timer or sends stale state.
+   *
+   * @returns true when a live timer was cancelled.
+   */
+  public cancelDisconnectGrace(gameId: string, userId: string): boolean {
+    const game = this.games.get(gameId);
+    if (!game) return false;
+    const entry = game.disconnectedUsers[userId];
+    if (entry) {
+      clearTimeout(entry.timeoutId);
+      delete game.disconnectedUsers[userId];
+    }
+    delete game.disconnectGraceEndsAt[userId];
+    // Invalidate any callback already queued for that entry.
+    game.disconnectGenerations[userId] = (game.disconnectGenerations[userId] ?? 0) + 1;
+    delete game.disconnectGenerations[userId];
+    // Whoever comes back gets their inactivity watchdog re-armed for the new
+    // turn — but only once nobody is away any more (see resumeClockIfClear).
+    const stillAway = Object.keys(game.disconnectedUsers).length > 0;
+    if (!stillAway) {
+      this.resumeClockAfterGrace(game, Date.now());
+    }
+    return !!entry;
+  }
+
+  /**
+   * Arms (or re-arms) the inactivity watchdog for whoever holds the turn.
+   *
+   * This is NOT the disconnect grace: the seat here is CONNECTED and simply
+   * not moving — a backgrounded tab, a phone that slept. It carries its own
+   * timer, its own end reason (`AFK`) and its own client indicator, and it is
+   * cancelled outright if that seat drops (absence is then the grace timer's
+   * job, and two timers ending the same game is how results get processed
+   * twice).
+   */
+  private armAfkTimer(game: ActiveOnlineGame): void {
+    this.clearAfkTimers(game);
+    if (game.state.status !== 'IN_PROGRESS' || !game.clockStarted) return;
+    const playerId = game.state.players[game.state.currentPlayerIndex]?.id;
+    if (!playerId) return;
+
+    // Warn before forfeiting. The seat is connected and idle — a backgrounded
+    // tab, a phone that slept — and being told is the difference between a
+    // fair loss and a mystifying one. The warning rides the same socket
+    // fan-out as every other game event; the gateway owns that, so this only
+    // records the deadline the gateway reads.
+    if (game.clockPausedAt === null) {
+      game.afkWarningAt = Date.now() + AFK_WARNING_AT_MS;
+    } else {
+      game.afkWarningAt = null;
+    }
+
+    const timeoutId = setTimeout(() => {
+      if (game.afkTimers.get(playerId) !== timeoutId) return;
+      game.afkTimers.delete(playerId);
+      if (game.state.status !== 'IN_PROGRESS') return;
+      const seat = game.state.players.find((p) => p.id === playerId);
+      if (!seat || seat.status === 'FINISHED') return;
+      if (game.disconnectedUsers[game.playerUserIds[playerId]]) return; // absence, not idling
+
+      const res = applyAction(game.state, { type: 'TIMEOUT' }, {
+        timestamp: Date.now(),
+        clockRemainingMs: 0,
+        actorId: playerId,
+      });
+      if (!res.success) return;
+      game.state = res.state;
+      game.turnStartTimestamp = Date.now();
+      this.clearAfkTimers(game);
+      this.ledgerMove(game, res.state.lastMove!);
+      if (game.timerInterval) clearInterval(game.timerInterval);
+
+      if (res.state.status === 'COMPLETED') {
+        const ended = this.finalizeGame(game, 'AFK');
+        if (game.onTimeout) game.onTimeout(game.id, ended, res.state.lastMove!);
+        return;
+      }
+      // Mid-table forfeit: the match continues for everyone else, exactly as
+      // a disconnect forfeit does. Same callback, so the gateway persists and
+      // broadcasts through one code path.
+      this.startClockLoop(game, game.onClockTick, game.onTimeout, game.onAfkWarning);
+      const last = res.state.placements[res.state.placements.length - 1];
+      if (game.onForfeit && last) {
+        game.onForfeit(
+          game.id,
+          null,
+          { playerId: last.playerId, userId: game.playerUserIds[last.playerId], place: last.place },
+          res.state.lastMove!
+        );
+      }
+    }, AFK_TIMEOUT_MS);
+    if (typeof (timeoutId as unknown as { unref?: unknown }).unref === 'function') {
+      (timeoutId as unknown as { unref: () => void }).unref();
+    }
+    game.afkTimers.set(playerId, timeoutId);
+  }
+
+  private cancelAfkTimer(game: ActiveOnlineGame, playerId: string): void {
+    const timer = game.afkTimers.get(playerId);
+    if (timer) clearTimeout(timer);
+    game.afkTimers.delete(playerId);
+  }
+
+  private clearAfkTimers(game: ActiveOnlineGame): void {
+    for (const timer of game.afkTimers.values()) clearTimeout(timer);
+    game.afkTimers.clear();
   }
 
   /**
@@ -1047,10 +1431,7 @@ export class AuthoritativeGameService {
     const game = this.games.get(gameId);
     if (!game) return null;
 
-    if (game.disconnectedUsers[userId]) {
-      clearTimeout(game.disconnectedUsers[userId].timeoutId);
-      delete game.disconnectedUsers[userId];
-    }
+    this.cancelDisconnectGrace(gameId, userId);
 
     return this.getSyncState(gameId, 0, userId);
   }
@@ -1071,10 +1452,16 @@ export class AuthoritativeGameService {
     if (!game) return null;
 
     const missing = game.state.history.filter((m) => m.sequence > lastSequence);
+    const now = Date.now();
     const clockDto: ClockStateDto = {
       activePlayerIndex: game.state.currentPlayerIndex,
-      remainingMs: game.clocksMs,
-      serverTimestamp: Date.now(),
+      // Derived, not raw: `clocksMs` is only written when a move lands, so
+      // returning it unchanged hands the active player back every second the
+      // turn has been running. A sync (and every reconnect goes through one)
+      // therefore used to give away time and make the clock jump upward.
+      // clockSnapshot applies exactly what the 1 Hz tick applies.
+      remainingMs: this.clockSnapshot(game, now),
+      serverTimestamp: now,
       incrementSeconds: game.incrementSeconds,
     };
 

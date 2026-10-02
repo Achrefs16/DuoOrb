@@ -489,11 +489,6 @@ export default function App() {
                   onOpenSetup={handleOpenSetup}
                   onOpenCustomOnline={() => handleOpenSetup('online')}
                   onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
-                  onOpenLeaderboard={() => {
-                    setExitAsk(false);
-                    setSubScreen(null);
-                    setCurrentTab('LEADERBOARD');
-                  }}
                   onlineCount={onlineCount}
                 />
               )}
@@ -525,7 +520,6 @@ export default function App() {
               {currentTab === 'PROFILE' && (
                 <ProfileScreen
                   onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
-                  onSelectGame={handleSelectGameFromHistory}
                   onOpenPlayerProfile={handleOpenPlayerProfile}
                 />
               )}

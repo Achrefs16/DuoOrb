@@ -8,6 +8,10 @@ import { THEME } from '../theme';
  * the content it stands in for (rows, cards, stat boxes) so tab switches
  * feel instant instead of flashing a loader.
  *
+ * Deliberately NOT used on the leaderboard: it is a numbered table, so
+ * placeholder rank rows would read as real standings. That page shows its
+ * header and pills immediately and fills in when the rows land.
+ *
  * One shared pulse drives every block (single animation loop, native
  * driver, unmounted with the skeleton).
  */
@@ -116,25 +120,6 @@ export const HistorySkeleton: React.FC = () => {
       <Row opacity={opacity} />
       <Row opacity={opacity} />
       <Row opacity={opacity} />
-    </View>
-  );
-};
-
-export const LeaderboardSkeleton: React.FC = () => {
-  const opacity = usePulse();
-  return (
-    <View style={pageStyles.list}>
-      {Array.from({ length: 8 }, (_, i) => (
-        <View key={i} style={pageStyles.row}>
-          <Block opacity={opacity} height={30} width={30} radius={15} />
-          <Block opacity={opacity} height={34} width={34} circle />
-          <View style={pageStyles.rowLines}>
-            <Block opacity={opacity} height={13} width="58%" radius={4} />
-            <Block opacity={opacity} height={11} width="40%" radius={4} />
-          </View>
-          <Block opacity={opacity} height={16} width={44} radius={4} />
-        </View>
-      ))}
     </View>
   );
 };

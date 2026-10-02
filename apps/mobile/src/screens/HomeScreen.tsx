@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
 import { runWhenOnline } from '../components/NoConnection';
 import { useConnectivity } from '../network/useConnectivity';
@@ -19,7 +19,6 @@ interface HomeScreenProps {
   onOpenSetup: (kind: 'ai' | 'local') => void;
   onOpenCustomOnline: () => void;
   onOpenSettings: () => void;
-  onOpenLeaderboard: () => void;
   /** Everyone online in the game right now (friends and strangers). Null =
    * unknown (never fetched or last fetch failed): the pill says Checking…
    * instead of claiming nobody is online. */
@@ -31,7 +30,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpenSetup,
   onOpenCustomOnline,
   onOpenSettings,
-  onOpenLeaderboard,
   onlineCount,
 }) => {
   const navLock = useRef(0);
@@ -63,14 +61,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </View>
 
         <View style={styles.headerRightActions}>
-          <TouchableOpacity
-            style={styles.headerIconButton}
-            activeOpacity={0.7}
-            onPress={guarded(onOpenLeaderboard)}
-            accessibilityLabel="Leaderboard"
-          >
-            <MaterialCommunityIcons name="trophy-outline" size={18} color={THEME.colors.textSecondary} />
-          </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerIconButton}
             activeOpacity={0.7}

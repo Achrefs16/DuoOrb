@@ -203,3 +203,97 @@ describe('socket transport follows the canonical identity', () => {
     expect(b).toHaveLength(1);
   });
 });
+
+/**
+ * Offline emit queue.
+ *
+ * The bug this locks down: `isQueueable` used to be a substring test
+ * (`/join|leave|move/i`), so `game:leave` — a FORFEIT — was buffered while
+ * offline and replayed on reconnect, handing the new opponent a free win.
+ */
+describe('offline emit queue', () => {
+  /**
+   * `getSocket()` re-asserts the connection, so the facade is captured ONCE
+   * here: calling it again inside the offline window would reconnect the
+   * transport and flush the queue before the test can observe it.
+   */
+  let socket: ReturnType<SocketModule['socketManager']['getSocket']>;
+
+  beforeEach(() => {
+    socketMod.socketManager.getSocket();
+    auth.setIdentity(identity('u_one', 'token-one'));
+    socket = socketMod.socketManager.getSocket();
+    created[0].connected = false; // network drops
+  });
+
+  /** Network returns: the socket reports connected and the queue flushes. */
+  function comeBackOnline(): void {
+    created[0].connected = true;
+    created[0].__fire('connect');
+  }
+
+  it('buffers only the four allowlisted gameplay events', () => {
+    socket.emit('game:join', { gameId: 'g1' });
+    socket.emit('game:action', {
+      gameId: 'g1',
+      action: { type: 'MOVE', to: { row: 0, col: 0 } },
+      clientTimestamp: Date.now(),
+    });
+    socket.emit('game:resign', { gameId: 'g1' });
+    socket.emit('matchmaking:find', { mode: '2p', timeControlMinutes: 3 });
+    socket.emit('room:create', { mode: '2p', timeControlMinutes: 3 }, () => {});
+    socket.emit(
+      'challenge:send',
+      { toUserId: 'uB', mode: '2p', timeControlMinutes: 3 },
+      () => {}
+    );
+
+    comeBackOnline();
+    const replayed = created[0].emitted.map((e: any) => e.event);
+    expect(replayed).toContain('game:join');
+    expect(replayed).toContain('game:action');
+    expect(replayed).toContain('game:resign');
+    // Everything else is answered by a fresh server snapshot, so replaying
+    // it would duplicate state instead of recovering it.
+    expect(replayed).not.toContain('matchmaking:find');
+    expect(replayed).not.toContain('room:create');
+    expect(replayed).not.toContain('challenge:send');
+  });
+
+  it('never replays a queued game:leave into the reconnected session', () => {
+    // Player pressed "leave match" on a flaky connection...
+    socket.emit('game:leave', { gameId: 'old-game' });
+    // ...and by the time the socket is back they are in a different match.
+    comeBackOnline();
+
+    expect(created[0].emitted.map((e: any) => e.event)).not.toContain('game:leave');
+  });
+
+  it('still replays the moves that were in flight around that leave', () => {
+    socket.emit('game:action', {
+      gameId: 'old-game',
+      action: { type: 'MOVE', to: { row: 0, col: 0 } },
+      clientTimestamp: Date.now(),
+      clientActionId: 'a1',
+    });
+    socket.emit('game:leave', { gameId: 'old-game' });
+    comeBackOnline();
+
+    const replayed = created[0].emitted.map((e: any) => e.event);
+    expect(replayed).toContain('game:action');
+    expect(replayed).not.toContain('game:leave');
+  });
+});
+
+describe('seat-level disconnect events', () => {
+  it('recognises an event about my own seat, and only that one', async () => {
+    const { isOwnSeatEvent } = await import('./useOnlineGame');
+
+    expect(isOwnSeatEvent({ userId: 'u_me', playerId: 'p1' }, 'p1')).toBe(true);
+    expect(isOwnSeatEvent({ userId: 'u_other', playerId: 'p2' }, 'p1')).toBe(false);
+    // Seat not resolved yet: show the banner rather than hide a real dropout.
+    expect(isOwnSeatEvent({ userId: 'u_other' }, 'p1')).toBe(false);
+    // We do not know our own seat yet: cannot claim ownership of anything.
+    expect(isOwnSeatEvent({ userId: 'u_me', playerId: 'p1' }, null)).toBe(false);
+  });
+});

@@ -263,59 +263,71 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
     return true;
   });
 
-  const renderMatchCard = ({ item }: { item: GameHistoryItemDto }) => {
+  /**
+   * One row of the match list, in the Profile page's list design: the rows
+   * are drawn as SEGMENTS of a single card (top segment rounds the top
+   * corners, last segment rounds the bottom, hairline dividers between) so
+   * the whole list reads as one grouped list instead of a stack of cards.
+   */
+  const renderMatchRow = ({
+    item,
+    index,
+  }: {
+    item: GameHistoryItemDto;
+    index: number;
+  }) => {
     const isWin = item.outcome === 'WIN';
     const isNeutral = item.outcome === 'DRAW';
     const delta = item.myRating?.delta ?? 0;
     const opponentName = item.opponent?.displayName || item.opponent?.username || 'Opponent';
     const opponentRating = item.opponent?.ratingBefore ?? item.opponent?.ratingAfter;
+    const pts = item.isRanked
+      ? ` · ${delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} pts`
+      : '';
+    const isFirst = index === 0;
+    const isLast = index === filteredGames.length - 1;
 
     return (
       <TouchableOpacity
-        style={styles.matchCard}
+        style={[
+          styles.matchRow,
+          isFirst && styles.matchRowFirst,
+          isLast && styles.matchRowLast,
+          !isLast && styles.matchRowDivider,
+        ]}
         activeOpacity={0.75}
         onPress={() => setSelected(item)}
       >
-        <View style={styles.cardLeft}>
-          <View
+        <View
+          style={[
+            styles.miniOutcomeBadge,
+            isWin ? styles.badgeWin : isNeutral ? styles.badgeNeutral : styles.badgeLoss,
+          ]}
+        >
+          <Text
             style={[
-              styles.resultBadge,
-              isWin ? styles.badgeWin : isNeutral ? styles.badgeNeutral : styles.badgeLoss,
+              styles.miniOutcomeText,
+              isWin ? styles.textWin : isNeutral ? styles.textNeutral : styles.textLoss,
             ]}
           >
-            <Text
-              style={[
-                styles.resultBadgeText,
-                isWin ? styles.textWin : isNeutral ? styles.textNeutral : styles.textLoss,
-              ]}
-            >
-              {isWin ? 'W' : isNeutral ? '–' : 'L'}
-            </Text>
-          </View>
-
-          <View style={styles.cardInfo}>
-            <View style={styles.opponentRow}>
-              <Text style={styles.vsText} numberOfLines={1}>vs {opponentName}</Text>
-              {opponentRating !== undefined && opponentRating !== null && (
-                <Text style={styles.ratingText}>· {Math.round(opponentRating)}</Text>
-              )}
-            </View>
-            <Text style={styles.modeText}>
-              {item.isRanked ? 'Ranked' : 'Practice'} · {modeDisplayName(item.mode)}
-            </Text>
-          </View>
+            {isWin ? 'W' : isNeutral ? '–' : 'L'}
+          </Text>
         </View>
 
-        <View style={styles.cardRight}>
-          {item.isRanked ? (
-            <Text style={[styles.deltaText, delta >= 0 ? styles.deltaWin : styles.deltaLoss]}>
-              {delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`}
-            </Text>
-          ) : (
-            <Text style={styles.unratedText}>Unrated</Text>
-          )}
-          <Feather name="chevron-right" size={18} color={THEME.colors.outlineVariant} />
+        <View style={styles.matchRowMeta}>
+          <Text style={styles.matchRowOpponent} numberOfLines={1}>
+            vs {opponentName}
+            {opponentRating !== undefined && opponentRating !== null ? (
+              <Text style={styles.matchRowOppRating}> ({Math.round(opponentRating)})</Text>
+            ) : null}
+          </Text>
+          <Text style={styles.matchRowMode}>
+            {item.isRanked ? 'Ranked' : 'Practice'} · {modeDisplayName(item.mode)}
+            {pts}
+          </Text>
         </View>
+
+        <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
       </TouchableOpacity>
     );
   };
@@ -338,14 +350,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
       ) : isConnected === false ? (
         <NoConnectionSection kind="offline" onRetry={() => void fetchHistory()} />
       ) : (
-        <FlatList
-          data={filteredGames}
-          keyExtractor={(item) => item.gameId}
-          renderItem={renderMatchCard}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            <View style={styles.headerComponent}>
+        <>
+          {/* Summary, guest lock and filters sit ABOVE the list so the rows
+              below can form one continuous card (see renderMatchRow). */}
+          <View style={styles.topBlock}>
               {/* Spacious Performance Summary Card */}
               <View style={styles.summaryCard}>
                 <View style={styles.summaryRowTop}>
@@ -408,8 +416,15 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                 })}
               </View>
             </View>
-          }
-          ListEmptyComponent={
+
+          <FlatList
+            data={filteredGames}
+            style={styles.list}
+            keyExtractor={(item) => item.gameId}
+            renderItem={renderMatchRow}
+            contentContainerStyle={styles.rowsContent}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Feather name="clock" size={36} color={THEME.colors.textMuted} />
               <Text style={styles.emptyTitle}>No matches recorded</Text>
@@ -437,7 +452,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
               </TouchableOpacity>
             ) : null
           }
-        />
+          />
+        </>
       )}
 
       {/* Match detail modal (Stitch) */}
@@ -472,17 +488,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: THEME.colors.onSurface,
   },
-  listContent: {
+  // Summary, guest lock and filters above the scrolling rows.
+  topBlock: {
     paddingHorizontal: 16,
     paddingTop: 12,
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  list: {
+    flex: 1,
+  },
+  rowsContent: {
+    paddingHorizontal: 16,
     paddingBottom: 28,
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',
-    gap: 8,
-  },
-  headerComponent: {
-    marginBottom: 8,
   },
   // Guest lock heading over the device-local list.
   deviceLabel: {
@@ -566,27 +588,39 @@ const styles = StyleSheet.create({
     color: THEME.colors.onPrimary,
     fontWeight: '600',
   },
-  matchCard: {
-    backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderRadius: THEME.radius.lg,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceContainer,
-    padding: 12,
+  // Grouped list rows: every row carries the card's left/right borders, the
+  // first adds the top edge + top corners, the last adds the bottom edge,
+  // and a hairline separates neighbours. Drawn per-row because FlatList
+  // cannot wrap cells in one container.
+  matchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    ...THEME.shadows.card,
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
   },
-  cardLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
+  matchRowFirst: {
+    borderTopWidth: 1,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
   },
-  resultBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: THEME.radius.lg,
+  matchRowLast: {
+    borderBottomWidth: 1,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+  },
+  matchRowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.colors.surfaceMuted,
+  },
+  miniOutcomeBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -599,9 +633,9 @@ const styles = StyleSheet.create({
   badgeNeutral: {
     backgroundColor: THEME.colors.surfaceMuted,
   },
-  resultBadgeText: {
+  miniOutcomeText: {
     fontFamily: THEME.fonts.extraBold,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
   },
   textWin: {
@@ -613,56 +647,27 @@ const styles = StyleSheet.create({
   textNeutral: {
     color: THEME.colors.textMuted,
   },
-  cardInfo: {
+  matchRowMeta: {
+    gap: 1,
     flex: 1,
-    gap: 2,
   },
-  opponentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  vsText: {
+  matchRowOpponent: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     fontWeight: '600',
-    color: THEME.colors.onSurface,
-    maxWidth: 130,
+    color: THEME.colors.inverseLabel,
   },
-  ratingText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 11,
-    fontWeight: '600',
-    color: THEME.colors.textMuted,
-    fontVariant: ['tabular-nums'],
-  },
-  modeText: {
+  matchRowOppRating: {
     fontFamily: THEME.fonts.regular,
-    fontSize: 11,
-    color: THEME.colors.onSurfaceVariant,
+    fontSize: 14,
+    fontWeight: '400',
+    color: THEME.colors.textSecondaryStrong,
   },
-  cardRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  deltaText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 13,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
-  deltaWin: {
-    color: THEME.colors.tertiary,
-  },
-  deltaLoss: {
-    color: THEME.colors.secondary,
-  },
-  unratedText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 11,
-    fontWeight: '600',
-    color: THEME.colors.textMuted,
+  matchRowMode: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 14,
+    color: THEME.colors.textSecondaryStrong,
+    marginTop: 2,
   },
   emptyContainer: {
     alignItems: 'center',
