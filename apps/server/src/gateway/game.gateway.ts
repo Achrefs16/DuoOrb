@@ -11,6 +11,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { GameAction, GameMode, RecordedAction } from '@duoorb/game-core';
 import { AuthoritativeGameService } from '../game/authoritative-game.service.js';
+import { AiwinsService } from '../aiwins/aiwins.service.js';
 import { MatchmakingService } from '../matchmaking/matchmaking.service.js';
 import { GuestService } from '../guest/guest.service.js';
 import { resolveCorsOrigins } from '../config/cors.js';
@@ -71,7 +72,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     private readonly prisma: PrismaService,
     private readonly guestService?: GuestService
   ) {
-    this.gameService = new AuthoritativeGameService(this.prisma);
+    this.gameService = new AuthoritativeGameService(this.prisma, new AiwinsService(this.prisma));
   }
 
   afterInit() {

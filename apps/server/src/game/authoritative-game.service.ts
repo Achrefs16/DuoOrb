@@ -18,6 +18,7 @@ import {
   infoWeightForPlayerCount,
 } from '../rating/glicko2.service.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { AiwinsService } from '../aiwins/aiwins.service.js';
 import { Logger } from '@nestjs/common';
 
 export interface ActiveOnlineGame {
@@ -155,7 +156,16 @@ export class AuthoritativeGameService {
     }, 1000);
   }
 
-  constructor(private readonly prisma?: PrismaService) {
+  constructor(
+    private readonly prisma?: PrismaService,
+    /**
+     * Online achievement engine. Optional so unit tests keep constructing
+     * bare; absent in tests, present in production (wired by the gateway).
+     * Evaluation never touches completion: it runs after the commit and
+     * failures are swallowed with a log line.
+     */
+    private readonly aiwins?: Pick<AiwinsService, 'evaluateOnlineGame'>,
+  ) {
     // Retry sweeper: transient DB blips must not strand moves. Every 15s,
     // re-drive any move still unconfirmed (upserts are idempotent).
     const sweep = setInterval(() => {
@@ -1371,5 +1381,20 @@ export class AuthoritativeGameService {
         });
       }
     });
+
+    // Online achievements, after the commit: the rating row and the game
+    // row above are fresh, so the engine reads settled ledger state.
+    // ratingChanges is empty for unranked games — nothing to evaluate.
+    // Never throws into completion; a badge must not break a game ending.
+    const rankedUserIds = Object.keys(ratingChanges);
+    if (this.aiwins && rankedUserIds.length > 0) {
+      for (const uId of rankedUserIds) {
+        try {
+          await this.aiwins.evaluateOnlineGame(uId);
+        } catch (e) {
+          this.logger.warn(`Achievement evaluation failed ${game.id}/${uId.slice(0, 6)}: ${(e as Error)?.message ?? e}`);
+        }
+      }
+    }
   }
 }

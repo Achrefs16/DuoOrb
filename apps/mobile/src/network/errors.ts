@@ -80,6 +80,20 @@ export function isRetryable(e: unknown): boolean {
 }
 
 /**
+ * Which design a failed screen/modal shows. A dead request blames the device
+ * only when the OS agrees it is offline — otherwise the request died between
+ * us and the server (dead server, DNS, CORS-blocked web dev), which is
+ * honestly a server problem, not the user's wifi.
+ */
+export function sectionKind(kind: ErrorKind, isConnected: boolean | null): 'offline' | 'server' {
+  if (kind === 'SERVER' || kind === 'PARSE') return 'server';
+  if (kind === 'OFFLINE' || kind === 'TIMEOUT' || kind === 'UNKNOWN') {
+    return isConnected === false ? 'offline' : 'server';
+  }
+  return 'offline';
+}
+
+/**
  * Prod logging seam (Sentry later). SERVER/PARSE only — OFFLINE, validation,
  * conflicts, rate limits and auth failures are user states, not bugs, and
  * are never reported.

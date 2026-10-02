@@ -29,8 +29,8 @@ Rules:
   truth, never hand-edit `android/`.
 - Permissions locked in `app.json`: `permissions: []` + `blockedPermissions`
   strips `SYSTEM_ALERT_WINDOW` (dev-menu leftover), legacy external-storage
-  (AsyncStorage needs none) and `VIBRATE` (no haptics code - `hapticsEnabled`
-  in `gameStorage.ts` is a dead flag). Only `INTERNET` ships (API + Socket.IO).
+  (AsyncStorage needs none) and `VIBRATE` (no vibration code exists).
+  Only `INTERNET` ships (API + Socket.IO).
 - After the build, check the EAS artifact page: package
   `com.asdigital.duoorb`, `targetSdk 36`, `versionCode` auto-incremented.
 

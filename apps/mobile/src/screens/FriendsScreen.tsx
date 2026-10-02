@@ -23,9 +23,10 @@ import {
 import { useSession } from '../network/session';
 import { GuestGate } from '../components/GuestGate';
 import { toast } from '../components/AppToast';
-import { actionMessage, kindOf, loadMessage, type ErrorKind } from '../network/errors';
+import { NoConnectionSection, runWhenOnline } from '../components/NoConnection';
+import { NetworkError, actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
 import { useConnectivity } from '../network/useConnectivity';
-import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
+import { FriendsSkeleton } from '../components/Skeleton';
 import { KeyboardShift } from '../components/KeyboardShift';
 import { nameInitial, resolveName } from '../displayName';
 
@@ -37,6 +38,14 @@ interface FriendsScreenProps {
 
 // Web only: kill the black focus outline on text inputs (not in RN types).
 const NO_OUTLINE: any = Platform.OS === 'web' ? { outlineStyle: 'none' } : {};
+
+/**
+ * Last loaded lists. Tab switches remount this screen, so the previous data
+ * is restored instantly and refreshed silently instead of flashing a
+ * skeleton for content the player just saw. Skeletons only appear when
+ * there is nothing to show yet.
+ */
+let friendsCache: { friends: FriendItemDto[]; requests: FriendRequestItemDto[] } | null = null;
 
 export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   onOpenChallengeSetup,
@@ -78,6 +87,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       ]);
       setFriends(friendsList);
       setRequests(requestsList);
+      friendsCache = { friends: friendsList, requests: requestsList };
       if (onRequestCountChange) {
         onRequestCountChange(requestsList.length);
       }
@@ -101,7 +111,16 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
 
   useEffect(() => {
     if (isGuest) return;
-    loadSocialData();
+    // Instant restore, silent refresh: the last lists render on the first
+    // frame and the network only updates them. Skeleton only when empty.
+    if (friendsCache) {
+      setFriends(friendsCache.friends);
+      setRequests(friendsCache.requests);
+      setLoading(false);
+      loadSocialData(true);
+    } else {
+      loadSocialData();
+    }
   }, [loadSocialData, isGuest]);
 
   // Live refresh: incoming requests and presence land within seconds,
@@ -154,6 +173,12 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
 
     setIsSearching(true);
     searchDebounceRef.current = setTimeout(async () => {
+      // Typing is not a tap: offline just skips the server probe silently and
+      // keeps the old results. The explicit search button below gets the modal.
+      if (isConnected === false) {
+        setIsSearching(false);
+        return;
+      }
       try {
         const results = await api.searchUsers(text.trim());
         setSearchResults(results);
@@ -166,7 +191,8 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
     }, 300);
   };
 
-  const handleRespondRequest = async (requestId: string, accept: boolean) => {
+  const handleRespondRequest = (requestId: string, accept: boolean) => {
+    runWhenOnline(async () => {
     try {
       await api.respondFriendRequest(requestId, accept);
       const updated = requests.filter((r) => r.id !== requestId);
@@ -180,12 +206,15 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
         }
       }
     } catch (e) {
+      if (e instanceof NetworkError) throw e; // runWhenOnline shows the dialog
       toast.show(actionMessage(e));
     }
+    });
   };
 
-  const handleRemoveFriend = async () => {
+  const handleRemoveFriend = () => {
     if (!removeTarget || removing) return;
+    runWhenOnline(async () => {
     setRemoving(true);
     try {
       await api.removeFriend(removeTarget.id);
@@ -197,9 +226,11 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
     } finally {
       setRemoving(false);
     }
+    });
   };
 
-  const handleBlockFriend = async (friend: FriendItemDto) => {
+  const handleBlockFriend = (friend: FriendItemDto) => {
+    runWhenOnline(async () => {
     try {
       await api.blockUser(friend.id);
       setFriends((prev) => prev.filter((f) => f.id !== friend.id));
@@ -209,17 +240,22 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
         toast.show(actionMessage(e));
       }
     } catch (e) {
+      if (e instanceof NetworkError) throw e; // runWhenOnline shows the dialog
       toast.show(actionMessage(e));
     }
+    });
   };
 
-  const handleUnblock = async (userId: string) => {
+  const handleUnblock = (userId: string) => {
+    runWhenOnline(async () => {
     try {
       await api.unblockUser(userId);
       setBlocked((prev) => prev.filter((b) => b.id !== userId));
     } catch (e) {
+      if (e instanceof NetworkError) throw e; // runWhenOnline shows the dialog
       toast.show(actionMessage(e));
     }
+    });
   };
 
   const openAddModal = () => {
@@ -250,18 +286,22 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
     setTimeout(() => setCopiedTick(false), 1500);
   };
 
-  const handleSendRequestToUser = async (target: PublicProfileDto) => {
+  const handleSendRequestToUser = (target: PublicProfileDto) => {
+    runWhenOnline(async () => {
     try {
       await api.sendFriendRequest({ toUserId: target.id, toUsername: target.username });
       setSentIds((prev) => (prev.includes(target.id) ? prev : [...prev, target.id]));
     } catch (e: any) {
+      if (e instanceof NetworkError) throw e; // runWhenOnline shows the dialog
       setAddFeedback(e?.message ?? 'Could not send request.');
     }
+    });
   };
 
-  const handleAddByName = async () => {
+  const handleAddByName = () => {
     const name = modalQuery.trim();
     if (name.length < 3) return;
+    runWhenOnline(async () => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     setIsSearching(true);
     setAddFeedback(null);
@@ -269,12 +309,14 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       const results = await api.searchUsers(name);
       setSearchResults(results);
       if (results.length === 0) setAddFeedback('No player found with that name.');
-    } catch {
+    } catch (e) {
+      if (e instanceof NetworkError) throw e; // runWhenOnline shows the dialog
       // Keep the old results: an empty list would claim nobody matches.
       setAddFeedback("Couldn't search — try again.");
     } finally {
       setIsSearching(false);
     }
+    });
   };
 
   // Filter friends based on search query in the main view
@@ -409,11 +451,11 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       </View>
 
       {/* Main Content List */}
-      {loading ? (
-        <LoadingState message="Loading friends…" />
+      {loading && friends.length === 0 && requests.length === 0 ? (
+        <FriendsSkeleton />
       ) : loadError ? (
-        <ErrorState
-          kind={loadError.kind}
+        <NoConnectionSection
+          kind={sectionKind(loadError.kind, isConnected)}
           message={loadError.message}
           onRetry={() => void loadSocialData()}
         />

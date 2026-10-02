@@ -13,9 +13,11 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
+import { runWhenOnline } from '../components/NoConnection';
 import { UserSettings } from '../storage/gameStorage';
 import { useSession } from '../network/session';
 import { api, ApiError } from '../network/apiClient';
+import { NetworkError } from '../network/errors';
 import { LEGAL_CONTACT_EMAIL } from '../legal';
 import type { LegalKind } from '../legal-content';
 import {
@@ -196,6 +198,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       cancelUsernameEdit();
     } catch (e) {
       if (!mounted.current) return;
+      // Transport died mid-save: runWhenOnline shows the dialog instead.
+      if (e instanceof NetworkError) throw e;
       if (e instanceof ApiError && e.status === 409) {
         setUsernameError('That username is already taken.');
         setAvailability('taken');
@@ -239,6 +243,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       cancelDisplayNameEdit();
     } catch (e) {
       if (!mounted.current) return;
+      // Transport died mid-save: runWhenOnline shows the dialog instead.
+      if (e instanceof NetworkError) throw e;
       setDisplayNameError(e instanceof Error ? e.message : 'Could not save the display name.');
     } finally {
       if (mounted.current) setSavingDisplayName(false);
@@ -452,7 +458,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   autoCorrect={false}
                   maxLength={DISPLAY_NAME_MAX}
                   returnKeyType="done"
-                  onSubmitEditing={() => void saveDisplayName()}
+                  onSubmitEditing={() => runWhenOnline(() => saveDisplayName())}
                 />
                 {!!displayNameError && (
                   <Text style={styles.errorText}>{displayNameError}</Text>
@@ -461,7 +467,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <TouchableOpacity
                     style={[styles.primaryButton, savingDisplayName && styles.disabled]}
                     disabled={savingDisplayName}
-                    onPress={() => void saveDisplayName()}
+                    onPress={() => runWhenOnline(() => saveDisplayName())}
                   >
                     <Text style={styles.primaryButtonText}>
                       {savingDisplayName ? 'Saving…' : 'Save'}
@@ -531,7 +537,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   autoComplete="off"
                   maxLength={USERNAME_MAX}
                   returnKeyType="done"
-                  onSubmitEditing={() => void saveUsername()}
+                  onSubmitEditing={() => runWhenOnline(() => saveUsername())}
                 />
               </View>
               <Text style={styles.settingDesc}>
@@ -553,7 +559,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <TouchableOpacity
                   style={[styles.primaryButton, savingUsername && styles.disabled]}
                   disabled={savingUsername}
-                  onPress={() => void saveUsername()}
+                  onPress={() => runWhenOnline(() => saveUsername())}
                 >
                   <Text style={styles.primaryButtonText}>
                     {savingUsername ? 'Saving…' : 'Save'}

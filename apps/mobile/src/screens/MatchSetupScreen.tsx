@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { AIDifficulty, GameMode } from '@duoorb/game-core';
 import { THEME } from '../theme';
+import { runWhenOnline } from '../components/NoConnection';
 import { TIME_CONTROLS, TimeControl } from '../timeControls';
 import { resolveMode } from '../matchModes';
 
@@ -283,17 +284,21 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
           <TouchableOpacity
             style={styles.cta}
             activeOpacity={0.88}
-            onPress={() =>
-              onConfirm({
-                mode: resolvedMode,
-                vsType,
-                clock,
-                difficulty,
-                side,
-                playerCount,
-                wallsEach: walls,
-              })
-            }
+            onPress={() => {
+              const confirm = () =>
+                onConfirm({
+                  mode: resolvedMode,
+                  vsType,
+                  clock,
+                  difficulty,
+                  side,
+                  playerCount,
+                  wallsEach: walls,
+                });
+              // Only the online entry needs internet; AI/local stay direct.
+              if (vsType === 'online') runWhenOnline(confirm);
+              else confirm();
+            }}
           >
             <MaterialCommunityIcons name="play" size={20} color={THEME.colors.onPrimary} />
             <Text style={styles.ctaText}>

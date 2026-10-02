@@ -1,10 +1,10 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME } from '../theme';
 
-export type MainTab = 'PLAY' | 'FRIENDS' | 'HISTORY' | 'PROFILE';
+export type MainTab = 'PLAY' | 'FRIENDS' | 'LEADERBOARD' | 'HISTORY' | 'PROFILE';
 
 interface BottomNavProps {
   currentTab: MainTab;
@@ -26,6 +26,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   const tabs: TabItem[] = [
     { id: 'PLAY', label: 'Play', icon: 'grid' },
     { id: 'FRIENDS', label: 'Friends', icon: 'users' },
+    { id: 'LEADERBOARD', label: 'Leaderboard', icon: 'award' },
     { id: 'HISTORY', label: 'History', icon: 'clock' },
     { id: 'PROFILE', label: 'Profile', icon: 'user' },
   ];
@@ -51,11 +52,19 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               onPress={() => onSelectTab(tab.id)}
             >
               <View style={styles.iconContainer}>
-                <Feather
-                  name={tab.icon}
-                  size={20}
-                  color={isActive ? THEME.colors.primary : THEME.colors.textMuted}
-                />
+                {tab.id === 'LEADERBOARD' ? (
+                  <MaterialCommunityIcons
+                    name="trophy-outline"
+                    size={20}
+                    color={isActive ? THEME.colors.primary : THEME.colors.textMuted}
+                  />
+                ) : (
+                  <Feather
+                    name={tab.icon}
+                    size={20}
+                    color={isActive ? THEME.colors.primary : THEME.colors.textMuted}
+                  />
+                )}
                 {showBadge && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>

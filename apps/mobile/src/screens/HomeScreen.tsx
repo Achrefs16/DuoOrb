@@ -7,8 +7,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../theme';
+import { runWhenOnline } from '../components/NoConnection';
+import { useConnectivity } from '../network/useConnectivity';
 import { DEFAULT_TIME_CONTROL, TimeControl } from '../timeControls';
 import { OnlineMode } from './OnlineScreen';
 
@@ -33,6 +35,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onlineCount,
 }) => {
   const navLock = useRef(0);
+  const { isConnected } = useConnectivity();
 
   const guarded = (fn: () => void) => () => {
     const now = Date.now();
@@ -66,7 +69,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             onPress={guarded(onOpenLeaderboard)}
             accessibilityLabel="Leaderboard"
           >
-            <Feather name="award" size={18} color={THEME.colors.textSecondary} />
+            <MaterialCommunityIcons name="trophy-outline" size={18} color={THEME.colors.textSecondary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerIconButton}
@@ -93,15 +96,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {/* Lobby presence: who is online right now, above the play
             button. A small indicator, nothing more — no tap target, since
             strangers have no destination screen. */}
-        <View style={styles.presencePill} accessibilityLabel={`${onlineCount ?? 0} players online`}>
+        <View style={styles.presencePill} accessibilityLabel={isConnected === false ? 'Offline' : `${onlineCount ?? 0} players online`}>
           <View
             style={[
               styles.presenceDot,
-              (onlineCount ?? 0) === 0 && styles.presenceDotIdle,
+              (isConnected === false || (onlineCount ?? 0) === 0) && styles.presenceDotIdle,
             ]}
           />
           <Text style={styles.presenceText}>
-            {onlineCount === null
+            {isConnected === false
+              ? "You're offline"
+              : onlineCount === null
               ? 'Checking…'
               : onlineCount > 0
               ? `${onlineCount} player${onlineCount === 1 ? '' : 's'} online`
@@ -109,12 +114,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </Text>
         </View>
 
-        {/* Hero Quick Match Action — starts directly with defaults. */}
+        {/* Hero Quick Match Action — starts directly with defaults. Online
+            only: offline taps get the dialog instead of a dead screen. */}
         <View style={styles.heroSection}>
           <TouchableOpacity
             style={styles.quickMatchButton}
             activeOpacity={0.88}
-            onPress={guarded(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'quick'))}
+            onPress={guarded(() => runWhenOnline(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'quick')))}
           >
             <Feather name="play" size={20} color="#0F172A" />
             <Text style={styles.quickMatchText}>Quick Match</Text>
@@ -127,7 +133,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <TouchableOpacity
             style={styles.modeCard}
             activeOpacity={0.75}
-            onPress={guarded(() => onOpenCustomOnline())}
+            onPress={guarded(() => runWhenOnline(() => onOpenCustomOnline()))}
           >
             <View style={styles.modeCardLeft}>
               <View style={styles.modeIconCircle}>
@@ -196,7 +202,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <TouchableOpacity
             style={styles.modeCard}
             activeOpacity={0.75}
-            onPress={guarded(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'rooms'))}
+            onPress={guarded(() => runWhenOnline(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'rooms')))}
           >
             <View style={styles.modeCardLeft}>
               <View style={styles.modeIconCircle}>

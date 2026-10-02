@@ -12,6 +12,7 @@ import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-ico
 import { createInitialState } from '@duoorb/game-core';
 import { THEME, playerColor } from '../theme';
 import { useIdentity } from '../network/auth';
+import { useConnectivity } from '../network/useConnectivity';
 import {
   api,
   EquippedBadgeDto,
@@ -23,9 +24,11 @@ import {
 import { RatingChart } from '../components/RatingChart';
 import { GuestGate } from '../components/GuestGate';
 import { toast } from '../components/AppToast';
-import { actionMessage, kindOf, loadMessage, type ErrorKind } from '../network/errors';
+import { NoConnectionSection } from '../components/NoConnection';
+import { actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
 import { ReportDialog } from '../components/ReportDialog';
-import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
+import { PlayerProfileSkeleton } from '../components/Skeleton';
+import { AchievementMedal } from '../components/AchievementMedal';
 import { SavedGameRecord } from '../storage/gameStorage';
 
 interface PlayerProfileScreenProps {
@@ -44,6 +47,21 @@ interface PlayerProfileScreenProps {
 }
 
 type MatchFilter = 'ALL' | 'WINS' | 'LOSSES';
+
+/**
+ * Viewed profiles by userId. Opening the same opponent twice restores
+ * instantly and refreshes silently. Skeleton only when never loaded.
+ */
+const playerCache = new Map<
+  string,
+  {
+    profile: PublicProfileDto;
+    ratingHistory: RatingHistoryPointDto[];
+    theirGames: GameHistoryItemDto[];
+    isFriend: boolean;
+    headToHead: HeadToHeadStats | null;
+  }
+>();
 
 function formatJoinedAt(value?: string | number): string | null {
   if (!value) return null;
@@ -86,13 +104,18 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   // The canonical identity, so "your" name in head-to-head comparisons is
   // never a value frozen at mount.
   const identity = useIdentity();
+  const { isConnected } = useConnectivity();
   // A guest viewer owns no friends and no head-to-head: friend actions and
   // the H2H/recent sections become the link lock. Challenge stays open.
   const viewerIsGuest = identity?.isGuest === true;
 
-  const loadPlayerData = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
+  const loadPlayerData = useCallback(async (silent = false) => {
+    // Silent = background refresh with data on screen: never flash a
+    // skeleton, never replace the profile with an error.
+    if (!silent) {
+      setLoading(true);
+      setLoadError(null);
+    }
     try {
       const [pubSettled, rSettled, friendsSettled, myGamesSettled, theirGamesSettled] =
         await Promise.allSettled([
@@ -117,11 +140,13 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
         setProfile(pubProfile);
       } else if (pubSettled.status === 'rejected') {
         // No profile AND the fetch failed: full error, never a fabricated
-        // 1500 stand-in.
-        setLoadError({
-          message: loadMessage(pubSettled.reason),
-          kind: kindOf(pubSettled.reason),
-        });
+        // 1500 stand-in (first load only - a silent refresh keeps the screen).
+        if (!silent) {
+          setLoadError({
+            message: loadMessage(pubSettled.reason),
+            kind: kindOf(pubSettled.reason),
+          });
+        }
         return;
       } else {
         setProfile({
@@ -158,17 +183,48 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
           pubProfile?.username || initialUsername
         );
         setHeadToHead(h2h);
+        // Cache for instant reopen. Failed slices reuse the previous entry.
+        const prev = playerCache.get(userId);
+        playerCache.set(userId, {
+          profile: pubProfile ?? prev?.profile ?? {
+            id: userId,
+            username: initialUsername || 'Player',
+            displayName: initialUsername || 'Player',
+          },
+          ratingHistory: rSettled.status === 'fulfilled' ? rSettled.value : prev?.ratingHistory ?? [],
+          theirGames:
+            theirGamesSettled.status === 'fulfilled'
+              ? [...theirGamesSettled.value.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
+              : prev?.theirGames ?? [],
+          isFriend:
+            friendsSettled.status === 'fulfilled'
+              ? friendsSettled.value.some((f) => f.id === userId || f.username === initialUsername)
+              : prev?.isFriend ?? false,
+          headToHead: h2h,
+        });
       }
     } catch {
-      setLoadError({ message: undefined, kind: 'UNKNOWN' });
+      if (!silent) setLoadError({ message: undefined, kind: 'UNKNOWN' });
     } finally {
       setLoading(false);
     }
   }, [userId, initialUsername]);
 
   useEffect(() => {
-    loadPlayerData();
-  }, [loadPlayerData]);
+    // Instant restore, silent refresh: header renders on the first frame.
+    const cached = playerCache.get(userId);
+    if (cached) {
+      setProfile(cached.profile);
+      setRatingHistory(cached.ratingHistory);
+      setTheirGames(cached.theirGames);
+      setIsFriend(cached.isFriend);
+      setHeadToHead(cached.headToHead);
+      setLoading(false);
+      loadPlayerData(true);
+    } else {
+      loadPlayerData();
+    }
+  }, [loadPlayerData, userId]);
 
   const handleRemoveFriend = async () => {
     if (removing) return;
@@ -321,11 +377,11 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
         </SafeAreaView>
       </Modal>
 
-      {loading ? (
-        <LoadingState message="Loading player profile…" />
+      {loading && !profile ? (
+        <PlayerProfileSkeleton />
       ) : loadError ? (
-        <ErrorState
-          kind={loadError.kind}
+        <NoConnectionSection
+          kind={sectionKind(loadError.kind, isConnected)}
           message={loadError.message}
           onRetry={() => void loadPlayerData()}
         />
@@ -478,11 +534,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                         onPress={() => setDetailBadge(badge)}
                         accessibilityLabel={`${badge.name}: details`}
                       >
-                        <Feather
-                          name={(badge.icon ?? 'award') as 'award'}
-                          size={16}
-                          color={THEME.colors.assessmentInaccuracy}
-                        />
+                        <AchievementMedal icon={badge.icon} tier={badge.tier} size={32} />
                         <Text style={styles.badgeName} numberOfLines={1}>
                           {badge.name}
                         </Text>
@@ -686,13 +738,11 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
       >
         <View style={styles.detailOverlay}>
           <View style={styles.detailCard}>
-            <View style={styles.detailIconCircle}>
-              <Feather
-                name={((detailBadge?.icon ?? 'award') as 'award')}
-                size={28}
-                color={THEME.colors.assessmentInaccuracy}
-              />
-            </View>
+            <AchievementMedal
+              icon={detailBadge?.icon ?? 'award'}
+              tier={detailBadge?.tier}
+              size={80}
+            />
             <Text style={styles.detailName}>{detailBadge?.name}</Text>
             <Text style={styles.detailDesc}>{detailBadge?.description}</Text>
             {!!detailBadge?.requirement && (

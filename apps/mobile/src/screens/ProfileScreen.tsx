@@ -11,6 +11,7 @@ import { Feather } from '@expo/vector-icons';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME } from '../theme';
 import { useSession } from '../network/session';
+import { useConnectivity } from '../network/useConnectivity';
 import {
   api,
   AchievementsResponseDto,
@@ -20,11 +21,21 @@ import {
 } from '../network/apiClient';
 import { flushAiWinQueue } from '../aiwins/aiWins';
 import { RatingChart } from '../components/RatingChart';
+import {
+  AchievementMedal,
+  BadgeProgressBar,
+  CATEGORY_META,
+  METALS,
+  categoryOf,
+  tierOf,
+} from '../components/AchievementMedal';
+import { AchievementsModal } from '../components/AchievementsModal';
 import { GuestGate } from '../components/GuestGate';
 import { toast } from '../components/AppToast';
-import { actionMessage, kindOf, loadMessage, type ErrorKind } from '../network/errors';
+import { NoConnectionSection } from '../components/NoConnection';
+import { actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
 import { MatchResultModal } from '../components/MatchResultModal';
-import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
+import { ProfileSkeleton } from '../components/Skeleton';
 import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
 
 interface ProfileScreenProps {
@@ -35,6 +46,21 @@ interface ProfileScreenProps {
 }
 
 type RecentFilter = 'ALL' | 'WINS' | 'LOSSES';
+
+/**
+ * Last loaded bundle, keyed by account. Tab switches remount this screen,
+ * so the previous profile renders on the first frame and refreshes
+ * silently. Never mix accounts: guest and Google rows stay separate.
+ * Skeleton only when there is nothing to show yet.
+ */
+let profileCache: {
+  userId: string;
+  profile: UserMeDto;
+  ratingHistory: RatingHistoryPointDto[];
+  recentGames: GameHistoryItemDto[];
+  achievements: AchievementsResponseDto | null;
+  localHistory: SavedGameRecord[];
+} | null = null;
 
 function formatJoinedAt(value?: string | number): string | null {
   if (!value) return null;
@@ -56,6 +82,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onOpenPlayerProfile,
 }) => {
   const { identity } = useSession();
+  const { isConnected } = useConnectivity();
   const [profile, setProfile] = useState<UserMeDto | null>(null);
   const [ratingHistory, setRatingHistory] = useState<RatingHistoryPointDto[]>([]);
   const [recentGames, setRecentGames] = useState<GameHistoryItemDto[]>([]);
@@ -66,17 +93,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [achievements, setAchievements] = useState<AchievementsResponseDto | null>(null);
   const [equipping, setEquipping] = useState(false);
   const [detailCode, setDetailCode] = useState<string | null>(null);
+  const [showAchievements, setShowAchievements] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
-  // Offline preview: /me unreachable but device games exist. Canonical
-  // identity + real device counts, honestly labeled — never a 1500 rating,
-  // never presented as server truth.
-  const [offlinePreview, setOfflinePreview] = useState(false);
 
-  const fetchProfileData = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    setOfflinePreview(false);
+  const fetchProfileData = useCallback(async (silent = false) => {
+    // Silent = background refresh with data on screen: never flash a
+    // skeleton, never replace the profile with an error.
+    if (!silent) {
+      setLoading(true);
+      setLoadError(null);
+    }
     try {
       const localGames = await loadGameHistory();
       setLocalHistory(localGames);
@@ -108,49 +135,51 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             [...gSettled.value.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
           );
         }
+        // Cache the bundle for instant remounts. Failed slices reuse the
+        // previous cache (same account only), never blank state.
+        const prev = profileCache?.userId === me.id ? profileCache : null;
+        profileCache = {
+          userId: me.id,
+          profile: me,
+          ratingHistory: rSettled.status === 'fulfilled' ? rSettled.value : prev?.ratingHistory ?? [],
+          recentGames:
+            gSettled.status === 'fulfilled'
+              ? [...gSettled.value.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
+              : prev?.recentGames ?? [],
+          achievements: aSettled.status === 'fulfilled' ? aSettled.value : prev?.achievements ?? null,
+          localHistory: localGames,
+        };
       } else {
-        const kind = kindOf(meError);
-        const aiGames = localGames.filter((g) => g.myPlayerId);
-        if ((kind === 'OFFLINE' || kind === 'TIMEOUT') && aiGames.length > 0) {
-          const winsCount = aiGames.filter((g) => g.winnerId === g.myPlayerId).length;
-          const lossesCount = aiGames.filter((g) => g.winnerId !== g.myPlayerId).length;
-          const total = aiGames.length;
-          setProfile({
-            id: identity?.userId ?? '',
-            username: identity?.username ?? '',
-            displayName: identity?.displayName ?? '',
-            ratings: {
-              CLASSIC_1V1: {
-                // Device counts are real; the rating is unknown offline and
-                // renders as '—' (see the stat box below), never 1500.
-                rating: 0,
-                rd: 0,
-                gamesPlayed: total,
-                wins: winsCount,
-                losses: lossesCount,
-                winRate: total > 0 ? Math.round((winsCount / total) * 100) : 0,
-              },
-            },
-          });
-          setOfflinePreview(true);
-        } else {
-          setLoadError({ message: loadMessage(meError), kind });
-        }
+        // No profile: full section, never a fabricated stand-in (first
+        // load only - a silent refresh keeps what is on screen).
+        if (!silent) setLoadError({ message: loadMessage(meError), kind: kindOf(meError) });
       }
     } catch {
-      setLoadError({ message: undefined, kind: 'UNKNOWN' });
+      if (!silent) setLoadError({ message: undefined, kind: 'UNKNOWN' });
     } finally {
       setLoading(false);
     }
-  // Depend on the identity object itself, not its properties. The store
-  // returns the SAME object when nothing changed (patchIdentity is a no-op for
-  // an equal patch), so this reference is referentially stable and the
-  // refetch only happens when the account or its server names actually change.
-  }, [identity]);
+  // Runs on mount (tab switches remount this screen). Auth comes from the
+  // canonical store inside api.getMe, so no identity dep is needed.
+  }, []);
 
   useEffect(() => {
-    fetchProfileData();
-  }, [fetchProfileData]);
+    // Instant restore, silent refresh: header, identity card chrome and the
+    // last bundle render on the first frame. Account mismatch (guest <->
+    // Google) always takes the full path, never another account's rows.
+    const mine = profileCache && identity?.userId && profileCache.userId === identity.userId ? profileCache : null;
+    if (mine) {
+      setProfile(mine.profile);
+      setRatingHistory(mine.ratingHistory);
+      setRecentGames(mine.recentGames);
+      setAchievements(mine.achievements);
+      setLocalHistory(mine.localHistory);
+      setLoading(false);
+      fetchProfileData(true);
+    } else {
+      fetchProfileData();
+    }
+  }, [fetchProfileData, identity?.userId]);
 
   const rating1v1 = profile?.ratings?.CLASSIC_1V1?.rating ?? 1500;
   const wins = profile?.ratings?.CLASSIC_1V1?.wins ?? 0;
@@ -221,6 +250,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     ? achievements?.equipped.some((b) => b.code === detailBadge.code) ?? false
     : false;
   const detailOwners = detailBadge ? achievements?.owners[detailBadge.code] ?? 0 : 0;
+  const detailProgress =
+    detailBadge && !detailBadge.earned ? detailBadge.progress : undefined;
 
   /** Tap an earned badge to equip/unequip it in the 3-slot showcase. */
   const toggleBadge = async (code: string) => {
@@ -257,11 +288,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      {loading ? (
-        <LoadingState message="Loading profile…" />
+      {loading && !profile ? (
+        <ProfileSkeleton />
       ) : loadError ? (
-        <ErrorState
-          kind={loadError.kind}
+        <NoConnectionSection
+          kind={sectionKind(loadError.kind, isConnected)}
           message={loadError.message}
           onRetry={() => void fetchProfileData()}
         />
@@ -295,11 +326,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     <Text style={styles.guestPillText}>UNSAVED GUEST</Text>
                   </View>
                 )}
-                {offlinePreview && (
-                  <View style={styles.guestPill}>
-                    <Text style={styles.guestPillText}>OFFLINE PREVIEW</Text>
-                  </View>
-                )}
                 {joinedLine && (
                   <View style={styles.joinDateRow}>
                     <Feather name="calendar" size={12} color={THEME.colors.textMuted} />
@@ -312,9 +338,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             {/* 3-Stat boxes */}
             <View style={styles.statRibbon}>
               <View style={styles.statCard}>
-                <Text style={styles.statNumber}>
-                  {offlinePreview ? '—' : Math.round(rating1v1)}
-                </Text>
+                <Text style={styles.statNumber}>{Math.round(rating1v1)}</Text>
                 <Text style={styles.statLabel}>RATING</Text>
               </View>
 
@@ -342,87 +366,68 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             </View>
           )}
 
-          {/* Achievements Section — online only. Offline, `achievements`
-              stays null and the section simply does not render: no error. */}
-          {achievements && achievements.catalog.some((c) => c.earned) && (
+          {/* Achievements — online only. Offline, `achievements`
+              stays null and the section simply does not render: no error.
+              Always shown once loaded, even at 0 earned: a fresh account
+              must still see the streaks and milestones it can start. */}
+          {achievements && (
             <View style={styles.recentSection}>
               <View style={styles.recentHeaderRow}>
                 <Text style={styles.sectionHeading}>ACHIEVEMENTS</Text>
                 <Text style={styles.sectionSub}>
-                  {achievements.stats.hardWins} different Hard AI win{achievements.stats.hardWins === 1 ? '' : 's'}
+                  {achievements.catalog.filter((c) => c.earned).length}/{achievements.catalog.length} earned
                 </Text>
               </View>
 
-              <View style={styles.badgeSlotRow}>
+              {/* Showcase: the 3 equipped medallions. */}
+              <View style={styles.showcaseRow}>
                 {[0, 1, 2].map((slot) => {
                   const badge = achievements.equipped.find((b) => b.slot === slot);
                   return (
-                    <View
-                      key={slot}
-                      style={[styles.badgeSlot, badge && styles.badgeSlotFilled]}
-                    >
-                      <Feather
-                        name={(badge?.icon ?? 'award') as 'award'}
-                        size={20}
-                        color={badge ? THEME.colors.assessmentInaccuracy : THEME.colors.textMuted}
-                      />
-                      <Text
-                        style={[styles.badgeSlotText, badge && styles.badgeSlotTextFilled]}
-                        numberOfLines={1}
-                      >
-                        {badge ? badge.name : `Slot ${slot + 1}`}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-
-              <View style={styles.badgeGrid}>
-                {achievements.catalog.map((badge) => {
-                  const isEquipped = achievements.equipped.some((b) => b.code === badge.code);
-                  return (
                     <TouchableOpacity
-                      key={badge.code}
-                      style={[
-                        styles.badgeChip,
-                        !badge.earned && styles.badgeChipLocked,
-                        isEquipped && styles.badgeChipEquipped,
-                      ]}
+                      key={slot}
+                      style={styles.showcaseCell}
                       activeOpacity={0.7}
-                      disabled={equipping}
-                      onPress={() => setDetailCode(badge.code)}
-                      accessibilityLabel={`${badge.name}: details`}
+                      disabled={!badge || equipping}
+                      onPress={() => badge && setDetailCode(badge.code)}
+                      accessibilityLabel={badge ? `${badge.name}: details` : `Showcase slot ${slot + 1} empty`}
                     >
-                      <Feather
-                        name={(badge.earned ? badge.icon : 'lock') as 'award'}
-                        size={16}
-                        color={
-                          isEquipped
-                            ? THEME.colors.assessmentInaccuracy
-                            : badge.earned
-                            ? THEME.colors.textSecondaryStrong
-                            : THEME.colors.textMuted
-                        }
-                      />
-                      <Text
-                        style={[styles.badgeChipText, isEquipped && styles.badgeChipTextEquipped]}
-                        numberOfLines={1}
-                      >
-                        {badge.name}
-                      </Text>
+                      {badge ? (
+                        <>
+                          <AchievementMedal icon={badge.icon} tier={badge.tier} size={52} />
+                          <Text style={styles.showcaseName} numberOfLines={1}>
+                            {badge.name}
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <View style={styles.showcaseEmpty} />
+                          <Text style={styles.showcaseEmptyText}>Slot {slot + 1}</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                   );
                 })}
               </View>
+
+              <TouchableOpacity
+                style={styles.viewAllBtn}
+                activeOpacity={0.8}
+                onPress={() => setShowAchievements(true)}
+                accessibilityLabel="View all achievements"
+                accessibilityRole="button"
+              >
+                <Feather name="grid" size={15} color={THEME.colors.onPrimary} />
+                <Text style={styles.viewAllText}>View All Achievements</Text>
+                <Feather name="chevron-right" size={16} color={THEME.colors.onPrimary} />
+              </TouchableOpacity>
             </View>
           )}
 
-          {/* Rating Progression Section — server data only, hidden offline. */}
-          {!offlinePreview && (
-            <View style={styles.chartSection}>
-              <RatingChart data={ratingHistory} currentRating={rating1v1} />
-            </View>
-          )}
+          {/* Rating Progression Section */}
+          <View style={styles.chartSection}>
+            <RatingChart data={ratingHistory} currentRating={rating1v1} />
+          </View>
 
           {/* Recent Matches Section */}
           <View style={styles.recentSection}>
@@ -512,6 +517,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         </ScrollView>
       )}
 
+      {/* Full achievement inventory: every badge, grouped and scrollable. */}
+      {achievements && (
+        <AchievementsModal
+          visible={showAchievements}
+          achievements={achievements}
+          equipping={equipping}
+          onToggleEquip={(code) => void toggleBadge(code)}
+          onClose={() => setShowAchievements(false)}
+        />
+      )}
+
       {/* Badge details: what it is, how to earn it, rarity, equip toggle. */}
       <Modal
         visible={detailBadge !== null}
@@ -521,21 +537,43 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       >
         <View style={styles.detailOverlay}>
           <View style={styles.detailCard}>
-            <View style={styles.detailIconCircle}>
-              <Feather
-                name={((detailBadge?.earned ? detailBadge?.icon : 'lock') ?? 'lock') as 'award'}
-                size={28}
-                color={
-                  detailBadge?.earned
-                    ? THEME.colors.assessmentInaccuracy
-                    : THEME.colors.textMuted
-                }
-              />
-            </View>
+            <AchievementMedal
+              icon={detailBadge?.icon ?? 'award'}
+              tier={detailBadge?.tier}
+              size={88}
+              locked={!detailBadge?.earned}
+            />
+            {!!detailBadge && (
+              <View
+                style={[
+                  styles.detailTierPill,
+                  { backgroundColor: detailBadge.earned ? METALS[tierOf(detailBadge.tier)].disc : THEME.colors.surfaceMuted },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.detailTierText,
+                    {
+                      color: detailBadge.earned
+                        ? METALS[tierOf(detailBadge.tier)].face
+                        : THEME.colors.textMuted,
+                    },
+                  ]}
+                >
+                  {detailBadge.earned ? METALS[tierOf(detailBadge.tier)].label : 'LOCKED'} ·{' '}
+                  {CATEGORY_META[categoryOf(detailBadge.category)].title}
+                </Text>
+              </View>
+            )}
             <Text style={styles.detailName}>{detailBadge?.name}</Text>
             <Text style={styles.detailDesc}>{detailBadge?.description}</Text>
             {!!detailBadge?.requirement && (
               <Text style={styles.detailReq}>{detailBadge.requirement}</Text>
+            )}
+            {detailBadge && !detailBadge.earned && detailProgress && (
+              <View style={styles.detailProgressWrap}>
+                <BadgeProgressBar progress={detailProgress} tier={detailBadge.tier} />
+              </View>
             )}
             <Text style={styles.detailMeta}>
               {detailEarnedAt
@@ -834,66 +872,55 @@ const styles = StyleSheet.create({
   gateWrap: {
     marginTop: 12,
   },
-  badgeSlotRow: {
+  showcaseRow: {
     flexDirection: 'row',
     gap: 8,
-  },
-  badgeSlot: {
-    flex: 1,
-    backgroundColor: THEME.colors.surfaceContainerLowest,
+    backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceContainer,
-    borderStyle: 'dashed',
-    paddingVertical: 10,
+    borderColor: THEME.colors.surfaceMuted,
+    paddingVertical: 12,
+    ...THEME.shadows.card,
+  },
+  showcaseCell: {
+    flex: 1,
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
   },
-  badgeSlotFilled: {
-    backgroundColor: THEME.colors.warningLight,
-    borderColor: THEME.colors.warningBorder,
-    borderStyle: 'solid',
+  showcaseName: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 10,
+    fontWeight: '600',
+    color: THEME.colors.textSecondary,
+    textAlign: 'center',
   },
-  badgeSlotText: {
+  showcaseEmpty: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: THEME.colors.boardBorder,
+  },
+  showcaseEmptyText: {
     fontFamily: THEME.fonts.medium,
     fontSize: 10,
     color: THEME.colors.textMuted,
   },
-  badgeSlotTextFilled: {
-    color: THEME.colors.onSurface,
-    fontWeight: '600',
-  },
-  badgeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  badgeChip: {
+  viewAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    justifyContent: 'center',
+    gap: 8,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: THEME.colors.primary,
   },
-  badgeChipLocked: {
-    opacity: 0.45,
-  },
-  badgeChipEquipped: {
-    backgroundColor: THEME.colors.warningLight,
-    borderColor: THEME.colors.warningBorder,
-  },
-  badgeChipText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 12,
-    fontWeight: '600',
-    color: THEME.colors.textSecondary,
-  },
-  badgeChipTextEquipped: {
-    color: THEME.colors.onSurface,
+  viewAllText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 14,
+    fontWeight: '700',
+    color: THEME.colors.onPrimary,
   },
   detailOverlay: {
     flex: 1,
@@ -913,16 +940,21 @@ const styles = StyleSheet.create({
     borderColor: THEME.colors.surfaceContainer,
     ...THEME.shadows.modal,
   },
-  detailIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-    backgroundColor: THEME.colors.warningLight,
-    borderWidth: 1,
-    borderColor: THEME.colors.warningBorder,
+  detailTierPill: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 12,
+  },
+  detailTierText: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  detailProgressWrap: {
+    width: '100%',
+    marginTop: 12,
   },
   detailName: {
     fontFamily: THEME.fonts.extraBold,
@@ -966,8 +998,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   detailEquipBtnActive: {
-    backgroundColor: THEME.colors.warningLight,
-    borderColor: THEME.colors.warningBorder,
+    backgroundColor: THEME.colors.primary,
+    borderColor: THEME.colors.primary,
   },
   detailEquipText: {
     fontFamily: THEME.fonts.bold,
@@ -976,7 +1008,7 @@ const styles = StyleSheet.create({
     color: THEME.colors.onSurface,
   },
   detailEquipTextActive: {
-    color: THEME.colors.onSurface,
+    color: THEME.colors.onPrimary,
   },
   detailCloseBtn: {
     marginTop: 8,

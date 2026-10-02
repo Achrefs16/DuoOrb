@@ -44,7 +44,6 @@ export interface Friend {
 
 export interface UserSettings {
   soundEnabled: boolean;
-  hapticsEnabled: boolean;
   timeControlMinutes: number; // 0 = no clock, 3, 5, 10
   aiDifficulty: 'easy' | 'normal' | 'hard';
   /** Per-move Fischer increment: +N sec after every move when the clock has one. */
@@ -59,7 +58,6 @@ export interface UserSettings {
 
 export const DEFAULT_SETTINGS: UserSettings = {
   soundEnabled: true,
-  hapticsEnabled: true,
   timeControlMinutes: 3,
   aiDifficulty: 'normal',
   incrementEnabled: true,
@@ -210,6 +208,9 @@ export async function loadSettings(): Promise<UserSettings> {
     const raw = storage.getItem(STORAGE_KEY_SETTINGS);
     if (raw) {
       inMemorySettings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      // Drop the retired haptics flag from older installs: no vibration code
+      // ever read it, so keeping it would only preserve a dead key.
+      delete (inMemorySettings as Partial<UserSettings> & { hapticsEnabled?: boolean }).hapticsEnabled;
     }
   } catch (e) {
     console.error('Failed to load settings', e);

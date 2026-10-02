@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { GameState } from '@duoorb/game-core';
 import { AiWinReward } from '../network/apiClient';
+import { AchievementMedal } from './AchievementMedal';
 import { THEME, playerColor } from '../theme';
 import { modeLabel } from '../matchModes';
 import { nameInitial } from '../displayName';
@@ -262,11 +263,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               </View>
               {reward.newAchievements.map((badge) => (
                 <View key={badge.code} style={styles.badgeRow}>
-                  <Feather
-                    name={badge.icon as 'award'}
-                    size={16}
-                    color={THEME.colors.assessmentInaccuracy}
-                  />
+                  <AchievementMedal icon={badge.icon} tier={badge.tier} size={40} />
                   <View style={styles.badgeTextWrap}>
                     <Text style={styles.badgeName}>{badge.name}</Text>
                     <Text style={styles.badgeDesc} numberOfLines={2}>

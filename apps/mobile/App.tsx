@@ -21,9 +21,8 @@ import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
 import { LegalScreen } from './src/screens/LegalScreen';
 import type { LegalKind } from './src/legal-content';
 import { BottomNav, MainTab } from './src/components/BottomNav';
-import { ConnectivityBanner } from './src/components/ConnectivityBanner';
 import { AppToast } from './src/components/AppToast';
-import { ErrorState } from './src/components/StateViews';
+import { NoConnectionSection, OfflineModal } from './src/components/NoConnection';
 import { ChallengeToast } from './src/components/ChallengeToast';
 import { OnlineJoinGate } from './src/components/OnlineJoinGate';
 import { RoomInviteToast } from './src/components/RoomInviteToast';
@@ -47,6 +46,7 @@ import { THEME } from './src/theme';
 import { DEFAULT_TIME_CONTROL, TimeControl } from './src/timeControls';
 import { api, type FriendRequestItemDto } from './src/network/apiClient';
 import { useConnectivity } from './src/network/useConnectivity';
+import { sectionKind } from './src/network/errors';
 
 import {
   useFonts,
@@ -69,7 +69,6 @@ type SubScreen =
   | 'GAME'
   | 'SETUP'
   | 'PLAYER_PROFILE'
-  | 'LEADERBOARD'
   | 'SETTINGS'
   | 'ONLINE'
   | 'REVIEW'
@@ -475,8 +474,6 @@ export default function App() {
     <SafeAreaProvider>
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <SystemChrome />
-      {/* Global connectivity bar + toast: mounted once, above everything. */}
-      <ConnectivityBanner />
       <SessionProvider>
         <SessionGate>
           {/* Authenticated-only side effects: nothing here runs before a
@@ -492,7 +489,11 @@ export default function App() {
                   onOpenSetup={handleOpenSetup}
                   onOpenCustomOnline={() => handleOpenSetup('online')}
                   onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
-                  onOpenLeaderboard={() => navigate(currentTab, 'LEADERBOARD')}
+                  onOpenLeaderboard={() => {
+                    setExitAsk(false);
+                    setSubScreen(null);
+                    setCurrentTab('LEADERBOARD');
+                  }}
                   onlineCount={onlineCount}
                 />
               )}
@@ -502,6 +503,13 @@ export default function App() {
                   onOpenChallengeSetup={handleOpenChallengeSetup}
                   onOpenPlayerProfile={handleOpenPlayerProfile}
                   onRequestCountChange={setFriendRequestsCount}
+                />
+              )}
+
+              {currentTab === 'LEADERBOARD' && (
+                <LeaderboardScreen
+                  onSelectPlayer={handleOpenPlayerProfile}
+                  onQuickMatch={() => handleOpenOnline(DEFAULT_TIME_CONTROL, 'quick')}
                 />
               )}
 
@@ -607,13 +615,6 @@ export default function App() {
               onBack={goBack}
               onChallenge={(p) => handleOpenChallengeSetup({ id: p.id, username: p.username })}
               onSelectGame={handleSelectGameFromHistory}
-            />
-          )}
-
-          {subScreen === 'LEADERBOARD' && (
-            <LeaderboardScreen
-              onBack={goBack}
-              onSelectPlayer={handleOpenPlayerProfile}
             />
           )}
 
@@ -742,6 +743,7 @@ export default function App() {
         </SessionGate>
       </SessionProvider>
       <AppToast />
+      <OfflineModal />
     </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -784,6 +786,7 @@ const SystemChrome: React.FC = () => (
 const SessionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { status, bootError, retryBoot } = useSession();
   const identity = useIdentity();
+  const { isConnected } = useConnectivity();
   // Device flag, keyed by account: a different sign-in must never inherit
   // the previous account's answer. Null while unread for the current user.
   const [record, setRecord] = useState<{ userId: string; done: boolean } | null>(null);
@@ -812,13 +815,12 @@ const SessionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   if (status === 'restoring') {
     // Boot failed reaching the server (a stored session exists but is
-    // unreachable): retry screen, never the Welcome page.
+    // unreachable): retry section, never the Welcome page.
     if (!bootError) return <View style={styles.bootBlank} />;
     return (
       <View style={[styles.bootBlank, styles.bootErrorWrap]}>
-        <ErrorState
-          title="Can't reach servers"
-          kind={bootError.kind}
+        <NoConnectionSection
+          kind={sectionKind(bootError.kind, isConnected)}
           message={bootError.message}
           onRetry={retryBoot}
         />

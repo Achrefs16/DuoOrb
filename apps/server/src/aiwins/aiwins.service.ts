@@ -9,9 +9,18 @@ import {
   ACHIEVEMENTS,
   BADGE_SLOTS,
   WIN_MILESTONES,
+  GAMES_MILESTONES,
+  ONLINE_WIN_MILESTONES,
+  RANK_MILESTONES,
+  RATING_MILESTONES,
+  STREAK_MILESTONES,
   achievementByCode,
+  isAwardable,
   swiftPliesFor,
+  type AchievementDef,
+  type AchievementStat,
 } from './achievements.catalog.js';
+import { GUEST_ID_PREFIX } from '../guest/guest.service.js';
 import {
   applyAction,
   createInitialState,
@@ -38,6 +47,13 @@ export interface EarnedBadgeDto {
   description: string;
   requirement: string;
   icon: string;
+  category: AchievementDef['category'];
+  tier: AchievementDef['tier'];
+}
+
+export interface BadgeProgress {
+  current: number;
+  target: number;
 }
 
 export interface SubmitAiWinResult {
@@ -263,6 +279,8 @@ export class AiwinsService {
         description: d.description,
         requirement: d.requirement,
         icon: d.icon,
+        category: d.category,
+        tier: d.tier,
       }));
     const message = this.celebration(newAchievements, stats, totalPlies as number);
 
@@ -324,8 +342,9 @@ export class AiwinsService {
   }
 
   /**
-   * Earned badges, equipped slots, the full catalog with earned flags, the
-   * unique-win counter, and owner counts per code (rarity for detail views).
+   * Earned badges, equipped slots, the full catalog with earned flags and
+   * locked-badge progress, the unique-win counter, and owner counts per
+   * code (rarity for detail views).
    */
   async getMyAchievements(userId: string) {
     if (!this.prisma.isConnected) {
@@ -353,16 +372,33 @@ export class AiwinsService {
       description: d.description,
       requirement: d.requirement,
       icon: d.icon,
+      category: d.category,
+      tier: d.tier,
+      target: d.target,
     });
+    // Locked-badge progress, from the same ledger the award engine reads.
+    // Only computed when something is still unearned; earned rows skip it.
+    const needsProgress = ACHIEVEMENTS.some(
+      (a) =>
+        !a.comingSoon &&
+        !earnedSet.has(a.code) &&
+        a.stat !== undefined &&
+        a.target !== undefined
+    );
+    const progressByCode = needsProgress ? await this.statSnapshot(userId) : null;
+    const progressFor = (d: NonNullable<ReturnType<typeof achievementByCode>>): BadgeProgress | undefined => {
+      if (d.comingSoon || earnedSet.has(d.code) || !progressByCode) return undefined;
+      return progressOf(d, progressByCode);
+    };
     return {
       earned: earned
         .map((e) => achievementByCode(e.code))
         .filter((d): d is NonNullable<typeof d> => !!d)
         .map((d) => ({ ...withMeta(d), earnedAt: byCode.get(d.code) })),
       equipped: equipped
-        .map((b) => ({ ...(achievementByCode(b.code) ?? { code: b.code, name: b.code, description: '', requirement: '', icon: 'award' }), slot: b.slot }))
+        .map((b) => ({ ...(achievementByCode(b.code) ?? { code: b.code, name: b.code, description: '', requirement: '', icon: 'award', category: 'mastery' as const, tier: 'bronze' as const }), slot: b.slot }))
         .sort((a, b) => a.slot - b.slot),
-      catalog: ACHIEVEMENTS.map((a) => ({ ...a, earned: earnedSet.has(a.code) })),
+      catalog: ACHIEVEMENTS.map((a) => ({ ...a, earned: earnedSet.has(a.code), progress: progressFor(a) })),
       stats: { hardWins: stats.hardWins, fastestPlies: stats.fastestPlies },
       owners,
     };
@@ -417,7 +453,7 @@ export class AiwinsService {
     const stats = await this.winStats(userId, {});
     return {
       equipped: equipped.map((b) => ({
-        ...(achievementByCode(b.code) ?? { code: b.code, name: b.code, description: '', icon: 'award' }),
+        ...(achievementByCode(b.code) ?? { code: b.code, name: b.code, description: '', requirement: '', icon: 'award', category: 'mastery' as const, tier: 'bronze' as const }),
         slot: b.slot,
       })),
       hardWins: stats.hardWins,
@@ -446,15 +482,156 @@ export class AiwinsService {
     if (totalPlies <= swiftPliesFor(mode) && !owned.has('blitzmind')) earn.push('blitzmind');
     if (mode !== '2p' && !owned.has('arena-master')) earn.push('arena-master');
     for (const code of earn) {
+      if (!isAwardable(code)) continue; // shipped in the catalog, not yet live
       try {
         await this.prisma.achievement.create({ data: { userId, code } });
       } catch {
         // Already earned between check and write — the unique index wins.
       }
     }
-    return earn.filter((code) =>
-      achievementByCode(code) !== undefined
+    return earn.filter(
+      (code) => isAwardable(code) && achievementByCode(code) !== undefined
     );
+  }
+
+  // -------------------------------------------------------------------------
+
+  /**
+   * Award whatever a freshly completed RANKED online game earns for one
+   * participant. Called after the completion transaction commits, so the
+   * rating row and the game row below are already fresh.
+   *
+   * Reads the same ledger the client sees (rating totals, finished games,
+   * board position) — never the in-memory game object, which may carry a
+   * stale rating seed. Idempotent by construction: the UNIQUE(userId,
+   * code) index makes re-evaluation a no-op, so back-to-back completions
+   * and retries can never double-award.
+   *
+   * @returns codes newly earned by this game (for future celebration use).
+   */
+  async evaluateOnlineGame(userId: string): Promise<string[]> {
+    if (!this.prisma.isConnected) return [];
+    const [rating, existing] = await Promise.all([
+      this.prisma.rating.findUnique({ where: { userId } }),
+      this.prisma.achievement.findMany({ where: { userId } }),
+    ]);
+    if (!rating || rating.gamesPlayed === 0) return [];
+    const owned = new Set(existing.map((e) => e.code));
+    const earn: string[] = [];
+    const ratingValue = Math.round(rating.rating);
+
+    for (const m of GAMES_MILESTONES) {
+      if (rating.gamesPlayed >= m.at && !owned.has(m.code)) earn.push(m.code);
+    }
+    for (const m of ONLINE_WIN_MILESTONES) {
+      if (rating.wins >= m.at && !owned.has(m.code)) earn.push(m.code);
+    }
+    for (const m of RATING_MILESTONES) {
+      if (ratingValue >= m.at && !owned.has(m.code)) earn.push(m.code);
+    }
+
+    // Streaks need the finished-games ledger; ranks need the board. Both
+    // are one cheap query each — games complete far less often than moves.
+    // The board query is skipped outright while every rank badge is
+    // comingSoon, so the ladder costs nothing until it goes live.
+    const rankLive = RANK_MILESTONES.some((m) => isAwardable(m.code));
+    const [streak, rank] = await Promise.all([
+      this.currentStreak(userId),
+      rankLive ? this.currentRank(userId, rating.rating, rating.gamesPlayed) : Promise.resolve(null),
+    ]);
+    for (const m of STREAK_MILESTONES) {
+      if (streak >= m.at && !owned.has(m.code)) earn.push(m.code);
+    }
+    if (rank !== null) {
+      for (const m of RANK_MILESTONES) {
+        if (rank <= m.at && !owned.has(m.code)) earn.push(m.code);
+      }
+    }
+
+    for (const code of earn) {
+      try {
+        await this.prisma.achievement.create({ data: { userId, code } });
+      } catch {
+        // Already earned between check and write — the unique index wins.
+      }
+    }
+    return earn.filter((code) => achievementByCode(code) !== undefined);
+  }
+
+  /**
+   * One snapshot of every progress-tracked stat, for locked-badge bars.
+   * Guests never appear on the board, so their rank stays null (rank
+   * badges simply show no progress for guests).
+   */
+  private async statSnapshot(userId: string): Promise<Record<AchievementStat, number | null>> {
+    const [rating, streak, hardWins] = await Promise.all([
+      this.prisma.rating.findUnique({ where: { userId } }),
+      this.currentStreak(userId),
+      this.prisma.aiWin.count({ where: { userId } }),
+    ]);
+    const rankLive = RANK_MILESTONES.some((m) => isAwardable(m.code));
+    const rank =
+      rankLive && rating && rating.gamesPlayed > 0
+        ? await this.currentRank(userId, rating.rating, rating.gamesPlayed)
+        : null;
+    return {
+      streak,
+      bestRank: rank,
+      rankedGames: rating?.gamesPlayed ?? 0,
+      rankedWins: rating?.wins ?? 0,
+      rating: rating ? Math.round(rating.rating) : 0,
+      hardWins,
+    };
+  }
+
+  /**
+   * Consecutive ranked-online wins, newest first. Draws (no winner) are
+   * skipped, never breaking; any loss ends the count. Scans at most the
+   * last 60 finished games — enough for the highest streak badge.
+   */
+  private async currentStreak(userId: string): Promise<number> {
+    if (!this.prisma.isConnected) return 0;
+    const rows = await this.prisma.gamePlayer.findMany({
+      where: { userId, game: { status: 'COMPLETED', isRanked: true } },
+      orderBy: { game: { endedAt: 'desc' } },
+      take: 60,
+      select: { isWinner: true, placement: true, game: { select: { winnerUserId: true } } },
+    });
+    let streak = 0;
+    for (const row of rows) {
+      if (row.game.winnerUserId === null) continue; // draw: skip, never breaks
+      if (row.isWinner || row.placement === 1) {
+        streak += 1;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
+  /**
+   * Board position with the exact leaderboard order (rating, then
+   * activity, then id) — the same math as RatingsService.getMyRank, minus
+   * the window. Null for guests and the unplayed: they own no rank.
+   */
+  private async currentRank(userId: string, rating: number, gamesPlayed: number): Promise<number | null> {
+    if (!this.prisma.isConnected) return null;
+    if (userId.startsWith(GUEST_ID_PREFIX) || gamesPlayed === 0) return null;
+    const where = {
+      gamesPlayed: { gt: 0 },
+      userId: { not: { startsWith: GUEST_ID_PREFIX } },
+    };
+    const [ahead, tiedAhead] = await Promise.all([
+      this.prisma.rating.count({ where: { ...where, rating: { gt: rating } } }),
+      this.prisma.rating.count({
+        where: {
+          ...where,
+          rating,
+          OR: [{ gamesPlayed: { gt: gamesPlayed } }, { userId: { lt: userId } }],
+        },
+      }),
+    ]);
+    return ahead + tiedAhead + 1;
   }
 
   private async winStats(
@@ -509,4 +686,26 @@ export class AiwinsService {
     }
     return `${first.name} earned — ${owners} players own this badge, and now you're one of them.`;
   }
+}
+
+/**
+ * Locked-badge progress from a ledger snapshot. Higher-is-better stats
+ * clamp at the target; `bestRank` is lower-is-better, so progress is how
+ * far down the ladder the player has climbed (0 until inside 2x target,
+ * then linear to the goal). Stats the snapshot could not compute stay
+ * bar-less (undefined).
+ */
+function progressOf(
+  d: AchievementDef,
+  snap: Record<AchievementStat, number | null>
+): BadgeProgress | undefined {
+  if (d.stat === undefined || d.target === undefined || d.comingSoon) return undefined;
+  const value = snap[d.stat];
+  if (value === null || value === undefined) return undefined;
+  if (d.stat === 'bestRank') {
+    if (value > d.target * 2) return { current: 0, target: d.target };
+    const climbed = Math.max(0, d.target * 2 - value);
+    return { current: climbed, target: d.target * 2 - d.target };
+  }
+  return { current: Math.min(value, d.target), target: d.target };
 }

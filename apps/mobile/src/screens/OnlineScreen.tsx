@@ -24,6 +24,7 @@ import { useMatchmaking } from '../network/useMatchmaking';
 import type { MatchedOpponent } from '../network/useMatchmaking';
 import type { GameSyncDto } from '@duoorb/protocol';
 import { OnlineJoinGate } from '../components/OnlineJoinGate';
+import { runWhenOnline } from '../components/NoConnection';
 import { useRooms } from '../network/useRooms';
 import { api } from '../network/apiClient';
 import { useIdentity } from '../network/auth';
@@ -709,7 +710,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                     wallsEach: matchConfig.wallsEach,
                     custom: false,
                   });
-                  findMatch(matchConfig.mode, matchConfig.clock, matchConfig.wallsEach);
+                  runWhenOnline(() => findMatch(matchConfig.mode, matchConfig.clock, matchConfig.wallsEach));
                 }}
               >
                 <Feather name="search" size={16} color={THEME.colors.onPrimary} />
@@ -980,7 +981,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   onFocus={() => roomsScrollRef.current?.scrollToEnd({ animated: true })}
                   onSubmitEditing={() => {
                     if (roomCodeInput.trim() && !roomLoading) {
-                      void joinRoom(roomCodeInput.trim());
+                      runWhenOnline(() => joinRoom(roomCodeInput.trim()));
                     }
                   }}
                 />
@@ -990,7 +991,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                     (!roomCodeInput.trim() || roomLoading) && styles.joinBtnDisabled,
                   ]}
                   disabled={!roomCodeInput.trim() || roomLoading}
-                  onPress={() => void joinRoom(roomCodeInput.trim())}
+                  onPress={() => runWhenOnline(() => joinRoom(roomCodeInput.trim()))}
                 >
                   <Text style={styles.rmJoinBtnText}>Join</Text>
                 </TouchableOpacity>
@@ -1086,7 +1087,9 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 activeOpacity={0.88}
                 disabled={roomLoading}
                 onPress={() =>
-                  void createRoom(roomType, clock, wallsCount === 'unlimited' ? 99 : wallsCount)
+                  runWhenOnline(() =>
+                    createRoom(roomType, clock, wallsCount === 'unlimited' ? 99 : wallsCount)
+                  )
                 }
               >
                 {roomLoading ? (

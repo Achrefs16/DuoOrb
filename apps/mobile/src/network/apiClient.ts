@@ -12,37 +12,6 @@ import { ApiError, NetworkError } from './errors';
 // `import { ApiError } from '../network/apiClient'` call sites keep working.
 export { ApiError, NetworkError } from './errors';
 
-/**
- * Timestamp of the most recent server-side (5xx/unparseable) failure. The
- * red connectivity banner reads this to show "server problem" for 60s after
- * the fact — transport failures never touch it (they are not the server).
- */
-let lastServerErrorAt = 0;
-type ServerErrorListener = () => void;
-const serverErrorListeners = new Set<ServerErrorListener>();
-
-export function getLastServerErrorAt(): number {
-  return lastServerErrorAt;
-}
-
-export function subscribeServerErrors(listener: ServerErrorListener): () => void {
-  serverErrorListeners.add(listener);
-  return () => {
-    serverErrorListeners.delete(listener);
-  };
-}
-
-function noteServerError(): void {
-  lastServerErrorAt = Date.now();
-  for (const fn of serverErrorListeners) {
-    try {
-      fn();
-    } catch {
-      // A banner listener must never break the request path.
-    }
-  }
-}
-
 export interface UserRatingDto {
   rating: number;
   rd: number;
@@ -199,6 +168,17 @@ export interface HistoryResponseDto {
   summary?: HistorySummaryDto;
 }
 
+/** Metal ladder, bronze → diamond. Drives medallion colors. */
+export type BadgeTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+/** Badge grouping for the achievements section. */
+export type BadgeCategory = 'streak' | 'rank' | 'milestone' | 'mastery';
+
+/** Locked-badge progress toward its target (absent when not tracked). */
+export interface BadgeProgress {
+  current: number;
+  target: number;
+}
+
 /** One badge with catalog text, as the server returns it. */
 export interface BadgeDto {
   code: string;
@@ -208,6 +188,16 @@ export interface BadgeDto {
   requirement: string;
   /** Feather icon name. */
   icon: string;
+  tier?: BadgeTier;
+  category?: BadgeCategory;
+  /** Value that earns it (for progress-capable badges). */
+  target?: number;
+  /**
+   * Shipped in the catalog but not awarded yet (rank ladder while the
+   * player base is small). The client shows these as "Coming soon" —
+   * visible, never silently missing.
+   */
+  comingSoon?: boolean;
 }
 
 export interface EquippedBadgeDto extends BadgeDto {
@@ -256,7 +246,7 @@ export interface AiWinDetailDto extends AiWinListItemDto {
 export interface AchievementsResponseDto {
   earned: (BadgeDto & { earnedAt?: string })[];
   equipped: EquippedBadgeDto[];
-  catalog: (BadgeDto & { earned: boolean })[];
+  catalog: (BadgeDto & { earned: boolean; progress?: BadgeProgress })[];
   stats: { hardWins: number; fastestPlies: number | null };
   /** Badge owners per code — rarity for detail views. */
   owners: Record<string, number>;
@@ -398,7 +388,6 @@ async function throwHttpError(res: Response, fallback: string): Promise<ApiError
   try {
     body = await res.json();
   } catch {
-    if (res.status >= 500) noteServerError();
     return new ApiError(fallback, res.status, { retryable: res.status >= 500 });
   }
   // Nest sends `message` as a string or an array of validation errors.
@@ -411,7 +400,6 @@ async function throwHttpError(res: Response, fallback: string): Promise<ApiError
     typeof body?.retryable === 'boolean'
       ? body.retryable
       : res.status >= 500 || res.status === 429 || code === 'RATE_LIMIT';
-  if (res.status >= 500) noteServerError();
   return new ApiError(String(msg), res.status, { code, retryable, retryAfterMs });
 }
 
@@ -420,7 +408,6 @@ async function parseJson<T>(res: Response): Promise<T> {
   try {
     return (await res.json()) as T;
   } catch {
-    noteServerError();
     throw new ApiError('Unparseable server response.', res.status, {
       code: 'PARSE',
       retryable: true,
