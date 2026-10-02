@@ -21,6 +21,7 @@ import {
   PublicProfileDto,
 } from '../network/apiClient';
 import { useSession } from '../network/session';
+import { GuestGate } from '../components/GuestGate';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
 import { KeyboardShift } from '../components/KeyboardShift';
 import { nameInitial, resolveName } from '../displayName';
@@ -57,6 +58,9 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   const { identity } = useSession();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Guests own no social: the lock below replaces the whole screen, so no
+  // friend/request/blocked fetch ever fires for them.
+  const isGuest = identity?.isGuest === true;
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -82,17 +86,19 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   }, [onRequestCountChange]);
 
   useEffect(() => {
+    if (isGuest) return;
     loadSocialData();
-  }, [loadSocialData]);
+  }, [loadSocialData, isGuest]);
 
   // Live refresh: incoming requests and presence land within seconds,
   // no browser refresh needed. Silent — no spinner flashes.
   useEffect(() => {
+    if (isGuest) return;
     const interval = setInterval(() => {
       loadSocialData(true);
     }, 8000);
     return () => clearInterval(interval);
-  }, [loadSocialData]);
+  }, [loadSocialData, isGuest]);
 
   const handleSearchChange = (text: string) => {
     setModalQuery(text);
@@ -297,6 +303,23 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       </TouchableOpacity>
     );
   };
+
+  // Guest lock replaces the whole screen (placed after every hook above).
+  if (isGuest) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Friends</Text>
+        </View>
+        <View style={styles.lockWrap}>
+          <GuestGate
+            title="Friends need saving"
+            message="Guest progress lives only on this device. Link Google to add friends, challenge, get requests."
+          />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -650,6 +673,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
+  },
+  // Centers the guest lock in the leftover space under the header.
+  lockWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 48,
   },
   header: {
     height: 56,

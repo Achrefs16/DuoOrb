@@ -11,9 +11,9 @@ const hexToRgba = (hex: string, alpha: number): string => {
   const full =
     clean.length === 3
       ? clean
-          .split('')
-          .map((c) => c + c)
-          .join('')
+        .split('')
+        .map((c) => c + c)
+        .join('')
       : clean;
   const num = parseInt(full, 16);
   const r = (num >> 16) & 255;
@@ -131,11 +131,11 @@ export function buildTheme(primary: string = PRIMARY_COLOR) {
       blue: BLUE,
 
       // 2. Stitch Surface & Container Hierarchy
-      background: '#FAF8FF',
+      background: '#F8F9FA',
       backgroundCard: '#FFFFFF',
       backgroundElevated: '#FFFFFF',
-      surface: '#FAF8FF',
-      surfaceBright: '#FAF8FF',
+      surface: '#F8F9FA',
+      surfaceBright: '#F8F9FA',
       surfaceDim: '#D2D9F4',
       surfaceContainerLowest: '#FFFFFF',
       surfaceContainerLow: '#F2F3FF',

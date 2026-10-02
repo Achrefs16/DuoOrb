@@ -94,6 +94,29 @@ export interface LeaderboardEntryDto {
   winRate: number;
 }
 
+/** One page of the universal board. */
+export interface LeaderboardPageDto {
+  entries: LeaderboardEntryDto[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * Where the caller sits on the board. Guests and unplayed accounts are not
+ * ranked (`ranked: false`) — the client shows the link card or the
+ * play-to-rank hint, never an error.
+ */
+export interface MyRankDto {
+  ranked: boolean;
+  reason?: string;
+  rank?: number;
+  rating?: number;
+  total?: number;
+  windowOffset?: number;
+  entries?: LeaderboardEntryDto[];
+}
+
 export interface RatingHistoryPointDto {
   gameId: string;
   ratingBefore: number;
@@ -519,8 +542,20 @@ export const api = {
     });
   },
 
-  async getLeaderboard(mode = 'CLASSIC_1V1', limit = 50): Promise<LeaderboardEntryDto[]> {
-    return request<LeaderboardEntryDto[]>(`/leaderboard?mode=${mode}&limit=${limit}`);
+  async getLeaderboard(mode = 'CLASSIC_1V1', limit = 50, offset = 0): Promise<LeaderboardPageDto> {
+    const res = await request<LeaderboardPageDto | LeaderboardEntryDto[]>(
+      `/leaderboard?mode=${mode}&limit=${limit}&offset=${offset}`
+    );
+    // An old server still returns a bare array: wrap it so paging math works.
+    if (Array.isArray(res)) {
+      return { entries: res, total: res.length, limit: res.length, offset: 0 };
+    }
+    return res;
+  },
+
+  /** The caller's own board position with a window around it. */
+  async getMyRank(): Promise<MyRankDto> {
+    return request<MyRankDto>('/leaderboard/me');
   },
 
   async getRatingHistory(userId: string, mode = 'CLASSIC_1V1', limit = 20): Promise<RatingHistoryPointDto[]> {

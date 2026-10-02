@@ -28,11 +28,12 @@ import type { GameSyncDto } from '@duoorb/protocol';
 import { GameBoard, isInsideBoard, nearestWallSlot } from '../components/GameBoard';
 import { PlayerStrip } from '../components/GameHud';
 import { GameOverModal } from '../components/GameOverModal';
+import { GuestGate } from '../components/GuestGate';
 import { PlayerProfileScreen } from './PlayerProfileScreen';
 import { SideChoice } from './MatchSetupScreen';
 import { WallTray } from '../components/WallTray';
 import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
-import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
+import { SavedGameRecord, hasShownLinkNudge, loadOnlineGameSnapshot, markLinkNudgeShown, recordCompletedGame, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
 import { AiWinReward, SubmitAiWinBody } from '../network/apiClient';
 import { flushAiWinQueue, reportHardAiWin } from '../aiwins/aiWins';
 import { THEME, playerColor, wallPreviewColor } from '../theme';
@@ -288,6 +289,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // Clipboard feedback for the copy-moves button.
   const [movesCopied, setMovesCopied] = useState<boolean>(false);
   const [rematchIncomingDismissed, setRematchIncomingDismissed] = useState<boolean>(false);
+  // One-time Google-link nudge for guests, shown over the result modal on
+  // the 3rd completed game. Later dismisses; play is never blocked.
+  const [linkNudge, setLinkNudge] = useState(false);
   // In-match replay: null = live final board; a step number replays the
   // stored history through the existing replay reconstruction (no new page).
   const [viewingStep, setViewingStep] = useState<number | null>(null);
@@ -795,6 +799,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       };
       saveGameToHistory(record);
       setAiReward(null);
+      // One-time soft nudge: on the 3rd completed game a guest gets the link
+      // lock once, over the result modal, with Later. Never blocks play.
+      if (identity?.isGuest) {
+        void recordCompletedGame().then(async (count) => {
+          if (count !== 3) return;
+          if (await hasShownLinkNudge()) return;
+          await markLinkNudgeShown();
+          setLinkNudge(true);
+        });
+      }
       // Hard-AI victory reporting: upload the win for badges and analysis, or
       // queue it silently when offline. Celebration appears only from a live
       // server response — never an error, never while offline.
@@ -1917,6 +1931,26 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         onClose={() => setShowGameOver(false)}
       />
 
+      {/* One-time link nudge: floats above the result modal on a guest's 3rd
+          completed game. Later dismisses; the result stays underneath. */}
+      <Modal
+        visible={linkNudge}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLinkNudge(false)}
+      >
+        <SafeAreaView style={styles.nudgeOverlay} edges={['top', 'bottom']}>
+          <View style={styles.nudgeCard}>
+            <GuestGate
+              title="Keep your wins"
+              message="Link Google to save rating, friends, history & head-to-head."
+              secondaryLabel="Later"
+              onSecondary={() => setLinkNudge(false)}
+            />
+          </View>
+        </SafeAreaView>
+      </Modal>
+
       {/* Rematch toast rendered as its own Modal so it floats above the
           win/lose result modal, anchored to the bottom like the room invite. */}
       <Modal
@@ -2068,6 +2102,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
+  },
+  // One-time link-nudge overlay: same dim + centered card as resign.
+  nudgeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  nudgeCard: {
+    maxWidth: 340,
+    width: '100%',
   },
   resignCard: {
     backgroundColor: THEME.colors.backgroundCard,

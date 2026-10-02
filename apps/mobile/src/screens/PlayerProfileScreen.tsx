@@ -21,6 +21,7 @@ import {
   GameHistoryItemDto,
 } from '../network/apiClient';
 import { RatingChart } from '../components/RatingChart';
+import { GuestGate } from '../components/GuestGate';
 import { ReportDialog } from '../components/ReportDialog';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
 import { SavedGameRecord } from '../storage/gameStorage';
@@ -83,6 +84,9 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   // The canonical identity, so "your" name in head-to-head comparisons is
   // never a value frozen at mount.
   const identity = useIdentity();
+  // A guest viewer owns no friends and no head-to-head: friend actions and
+  // the H2H/recent sections become the link lock. Challenge stays open.
+  const viewerIsGuest = identity?.isGuest === true;
 
   const loadPlayerData = useCallback(async () => {
     setLoading(true);
@@ -352,6 +356,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </TouchableOpacity>
               )}
 
+              {!viewerIsGuest && (
               <TouchableOpacity
                 style={[
                   styles.friendBtn,
@@ -381,6 +386,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                   {isFriend ? 'Friends' : friendRequestSent ? 'Sent' : 'Add Friend'}
                 </Text>
               </TouchableOpacity>
+              )}
             </View>
 
             {/* Safety row: Play UGC policy - block + report, always visible. */}
@@ -460,7 +466,14 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </View>
             )}
 
-          {/* HEAD TO HEAD CARD (Stitch) */}
+          {/* HEAD TO HEAD CARD (Stitch) — guests get the link lock instead. */}
+          {viewerIsGuest ? (
+            <GuestGate
+              title="Head-to-head needs saving"
+              message="Link Google to save rating, friends, history & head-to-head."
+              mini
+            />
+          ) : (
           <View style={styles.h2hCard}>
             <View style={styles.h2hTitleRow}>
               <View>
@@ -511,6 +524,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </View>
             )}
           </View>
+          )}
 
           {/* Rating Progression */}
           <View style={styles.chartCard}>
@@ -528,7 +542,14 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
             <RatingChart data={ratingHistory} currentRating={Math.round(rating1v1)} showHeader={false} />
           </View>
 
-          {/* Their recent matches */}
+          {/* Their recent matches — guests get the link lock instead. */}
+          {viewerIsGuest ? (
+            <GuestGate
+              title="Recent matches need saving"
+              message="Link Google to save rating, friends, history & head-to-head."
+              mini
+            />
+          ) : (
           <View style={styles.matchesSection}>            <View style={styles.matchesHeaderRow}>
               <Text style={styles.sectionHeading}>RECENT MATCHES</Text>
               <Text style={styles.matchesSub}>Latest {theirGames.length} games</Text>
@@ -617,6 +638,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </TouchableOpacity>
             )}
           </View>
+          )}
         </ScrollView>
       )}
 

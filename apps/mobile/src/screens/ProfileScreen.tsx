@@ -20,6 +20,7 @@ import {
 } from '../network/apiClient';
 import { flushAiWinQueue } from '../aiwins/aiWins';
 import { RatingChart } from '../components/RatingChart';
+import { GuestGate } from '../components/GuestGate';
 import { MatchResultModal } from '../components/MatchResultModal';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
 import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
@@ -262,6 +263,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     @{profile.username}
                   </Text>
                 )}
+                {identity?.isGuest === true && (
+                  <View style={styles.guestPill}>
+                    <Text style={styles.guestPillText}>UNSAVED GUEST</Text>
+                  </View>
+                )}
                 {joinedLine && (
                   <View style={styles.joinDateRow}>
                     <Feather name="calendar" size={12} color={THEME.colors.textMuted} />
@@ -289,6 +295,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </View>
             </View>
           </View>
+
+          {/* Guest lock: rating stays visible above, everything saved lives
+              behind the link. */}
+          {identity?.isGuest === true && (
+            <View style={styles.gateWrap}>
+              <GuestGate
+                title="Keep every match"
+                message="Link Google to save rating, friends, history & head-to-head."
+                mini
+              />
+            </View>
+          )}
 
           {/* Achievements Section — online only. Offline, `achievements`
               stays null and the section simply does not render: no error. */}
@@ -641,6 +659,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: THEME.colors.textSecondaryStrong,
   },
+  // Warns that this account lives on this device only until linked.
+  guestPill: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    borderRadius: THEME.radius.full,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  guestPillText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    color: THEME.colors.textSecondary,
+  },
   joinDateRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -758,6 +793,10 @@ const styles = StyleSheet.create({
   },
   recentSection: {
     gap: 8,
+  },
+  // Spacing for the guest link lock between the stats and the sections below.
+  gateWrap: {
+    marginTop: 12,
   },
   badgeSlotRow: {
     flexDirection: 'row',

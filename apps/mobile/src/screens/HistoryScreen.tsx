@@ -11,6 +11,8 @@ import { createInitialState } from '@duoorb/game-core';
 import { THEME } from '../theme';
 import { modeDisplayName } from '../matchModes';
 import { api, GameHistoryItemDto } from '../network/apiClient';
+import { useSession } from '../network/session';
+import { GuestGate } from '../components/GuestGate';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
 import { MatchResultModal } from '../components/MatchResultModal';
 import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
@@ -44,6 +46,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   const offsetRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Guests keep their device games but never the server list: no online
+  // history fetch fires for them, and the lock below replaces that section.
+  const { identity } = useSession();
+  const isGuest = identity?.isGuest === true;
 
   const fetchHistory = useCallback(async () => {
     setLoading(true);
@@ -54,7 +60,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
 
       const [meRes, serverRes] = await Promise.all([
         api.getMe().catch(() => null),
-        api.getMyHistory(PAGE_SIZE, 0).catch(() => null),
+        isGuest ? Promise.resolve(null) : api.getMyHistory(PAGE_SIZE, 0).catch(() => null),
       ]);
       const r = meRes?.ratings?.CLASSIC_1V1?.rating;
       if (typeof r === 'number') setLiveRating(Math.round(r));
@@ -107,11 +113,12 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isGuest]);
 
-  // Next page — appended to the list, never reloaded.
+  // Next page — appended to the list, never reloaded. Guests have no server
+  // list, so there is nothing more to load.
   const loadMore = useCallback(async () => {
-    if (loadingMore) return;
+    if (loadingMore || isGuest) return;
     setLoadingMore(true);
     try {
       const serverRes = await api.getMyHistory(PAGE_SIZE, offsetRef.current).catch(() => null);
@@ -125,7 +132,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore]);
+  }, [loadingMore, isGuest]);
 
   useEffect(() => {
     fetchHistory();
@@ -296,43 +303,37 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                 </View>
               </View>
 
-              {/* Filter Pills */}
+              {/* Guest lock: online history is server-side, so guests get the
+                  lock here while their device games list below under their
+                  own heading. */}
+              {isGuest && (
+                <GuestGate
+                  title="Keep every match"
+                  message="Link Google to save rating, friends, history & head-to-head."
+                  mini
+                />
+              )}
+              {isGuest && (
+                <Text style={styles.deviceLabel}>ON THIS DEVICE</Text>
+              )}
+
+              {/* Filter Pills — same segmented control as the Profile page. */}
               <View style={styles.filterPillsRow}>
-                <TouchableOpacity
-                  style={[styles.filterPill, filter === 'ALL' && styles.filterPillActive]}
-                  onPress={() => setFilter('ALL')}
-                >
-                  <Text style={[styles.filterPillText, filter === 'ALL' && styles.filterPillTextActive]}>
-                    All
-                  </Text>
-                  <Text style={[styles.filterPillCount, filter === 'ALL' && styles.filterPillCountActive]}>
-                    {totalMatches}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.filterPill, filter === 'WINS' && styles.filterPillActive]}
-                  onPress={() => setFilter('WINS')}
-                >
-                  <Text style={[styles.filterPillText, filter === 'WINS' && styles.filterPillTextActive]}>
-                    Wins
-                  </Text>
-                  <Text style={[styles.filterPillCount, { color: THEME.colors.tertiary }]}>
-                    {totalWins}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.filterPill, filter === 'LOSSES' && styles.filterPillActive]}
-                  onPress={() => setFilter('LOSSES')}
-                >
-                  <Text style={[styles.filterPillText, filter === 'LOSSES' && styles.filterPillTextActive]}>
-                    Losses
-                  </Text>
-                  <Text style={[styles.filterPillCount, { color: THEME.colors.secondary }]}>
-                    {totalLosses}
-                  </Text>
-                </TouchableOpacity>
+                {(['ALL', 'WINS', 'LOSSES'] as OutcomeFilter[]).map((f) => {
+                  const count =
+                    f === 'ALL' ? totalMatches : f === 'WINS' ? totalWins : totalLosses;
+                  return (
+                    <TouchableOpacity
+                      key={f}
+                      style={[styles.filterPill, filter === f && styles.filterPillActive]}
+                      onPress={() => setFilter(f)}
+                    >
+                      <Text style={[styles.filterPillText, filter === f && styles.filterPillTextActive]}>
+                        {f === 'ALL' ? 'All' : f === 'WINS' ? 'Wins' : 'Losses'} ({count})
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           }
@@ -411,6 +412,15 @@ const styles = StyleSheet.create({
   headerComponent: {
     marginBottom: 8,
   },
+  // Guest lock heading over the device-local list.
+  deviceLabel: {
+    marginTop: 16,
+    marginBottom: 4,
+    fontFamily: THEME.fonts.bold,
+    fontSize: 11,
+    letterSpacing: 1,
+    color: THEME.colors.textMuted,
+  },
   summaryCard: {
     backgroundColor: THEME.colors.surfaceContainerLowest,
     borderRadius: THEME.radius.lg,
@@ -455,42 +465,34 @@ const styles = StyleSheet.create({
     color: THEME.colors.onSurface,
     marginTop: 4,
   },
+  // Segmented filter control — identical to the Profile page's recent pills:
+  // muted track, dark active pill, label + count in one text.
   filterPillsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    gap: 4,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderRadius: 12,
+    padding: 4,
+    alignSelf: 'flex-start',
     marginBottom: 6,
   },
   filterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
     paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: THEME.radius.full,
-    backgroundColor: THEME.colors.surfaceContainerLow,
+    paddingVertical: 6,
+    borderRadius: 12,
   },
   filterPillActive: {
-    backgroundColor: THEME.colors.inverseSurface,
+    backgroundColor: THEME.colors.slate[950],
   },
   filterPillText: {
-    fontFamily: THEME.fonts.semiBold,
+    fontFamily: THEME.fonts.medium,
     fontSize: 12,
-    fontWeight: '600',
-    color: THEME.colors.onSurfaceVariant,
+    fontWeight: '500',
+    color: THEME.colors.textOnMuted,
   },
   filterPillTextActive: {
-    color: THEME.colors.inverseOnSurface,
-  },
-  filterPillCount: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 11,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-    color: THEME.colors.textMuted,
-  },
-  filterPillCountActive: {
-    color: 'rgba(238, 240, 255, 0.8)',
+    color: THEME.colors.onPrimary,
+    fontWeight: '600',
   },
   matchCard: {
     backgroundColor: THEME.colors.surfaceContainerLowest,

@@ -35,9 +35,8 @@ interface ChooseUsernameScreenProps {
 /**
  * Username step. Rendered full-screen by the App-level gate while the handle
  * is still server-generated and onboarding never completed — no tabs behind
- * it. Every new identity passes through here, so nobody reaches the app with
- * an auto-generated handle unless they explicitly skip (which also completes
- * onboarding and is never asked again).
+ * it. Every new identity passes through here and leaves with a real handle:
+ * there is no skip, so nobody reaches the app with an auto-generated name.
  */
 export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDone }) => {
   const { identity, refreshProfile } = useSession();
@@ -267,11 +266,6 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
               {checked.ok ? `Continue @${checked.value}` : 'Continue'}
             </Text>
           )}
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.secondary} onPress={onDone} disabled={saving}>
-          <Feather name="arrow-right" size={15} color={THEME.colors.textMuted} />
-          <Text style={styles.secondaryText}>Skip for now</Text>
         </TouchableOpacity>
       </View>
     </View>

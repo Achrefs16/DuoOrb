@@ -16,7 +16,7 @@ export const GUEST_REFRESH_TTL_DAYS = 180;
 const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 /** Guest user ids keep the `u_` prefix that /api/users/link validates. */
-const GUEST_ID_PREFIX = 'u_';
+export const GUEST_ID_PREFIX = 'u_';
 const GUEST_ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const GUEST_ID_RETRIES = 8;
 

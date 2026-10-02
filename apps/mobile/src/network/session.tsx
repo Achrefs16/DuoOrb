@@ -12,6 +12,7 @@ import { makeRedirectUri } from 'expo-auth-session';
 import type { User } from '../lib/supabase';
 import { getSupabaseAuth, isSupabaseConfigured } from '../lib/supabase';
 import {
+  applyServerProfile,
   clearIdentity,
   getIdentity,
   patchIdentity,
@@ -112,6 +113,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const applyProfileToState = useCallback((next: ServerProfile | null) => {
     if (!next) return;
     setProfile(next);
+    // The canonical identity must carry the same server-confirmed names, or
+    // every reader of identity.username (gates, Settings, seats) keeps the
+    // empty handle the sign-in installed — e.g. Google accounts showed a
+    // blank username everywhere despite the backend owning player_xxxxxx.
+    applyServerProfile(next);
   }, []);
 
   /* ---------------------------------------------------------------------- */

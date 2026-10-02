@@ -21,7 +21,7 @@
         "android.permission.VIBRATE"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#F5F5FB",
+        "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false
@@ -43,6 +43,15 @@
         {
           "style": "light",
           "enforceContrast": false
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/Glossy Orbital Duo Logo.png",
+          "imageWidth": 200,
+          "resizeMode": "contain"
         }
       ]
     ]

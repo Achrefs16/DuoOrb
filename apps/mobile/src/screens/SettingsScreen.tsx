@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -244,6 +245,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     }
   }, [displayNameDraft, currentDisplayName, cancelDisplayNameEdit, refreshProfile]);
 
+  const runDeleteAccount = useCallback(async () => {
+    setDeletingAccount(true);
+    setDeleteError(null);
+    try {
+      await api.deleteAccount();
+      // Server deleted the rows + revoked tokens. Sign out wipes the
+      // device (identity, socket, onboarding) and returns to Welcome.
+      await signOut();
+    } catch (e) {
+      if (!mounted.current) return;
+      setDeleteError(e instanceof Error ? e.message : 'Could not delete the account.');
+      setConfirmingDelete(false);
+    } finally {
+      if (mounted.current) setDeletingAccount(false);
+    }
+  }, [signOut]);
+
   const requestDeleteAccount = useCallback(() => {
     setDeleteError(null);
     if (!confirmingDelete) {
@@ -252,34 +270,27 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     }
     // Second tap: show the OS confirm as well so accidental taps cannot
     // wipe an account. The inline warning stays as the accessible record.
+    const message =
+      'This permanently deletes your profile, rating, history, friends and achievements. This cannot be undone.';
+    // Web browsers get the native confirm dialog: Alert.alert's custom dialog
+    // never surfaces there, so the request below would never fire.
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (window.confirm(`Delete account?\n\n${message}`)) void runDeleteAccount();
+      return;
+    }
     Alert.alert(
       'Delete account?',
-      'This permanently deletes your profile, rating, history, friends and achievements. This cannot be undone.',
+      message,
       [
         { text: 'Keep my account', style: 'cancel', onPress: () => setConfirmingDelete(false) },
         {
           text: 'Delete everything',
           style: 'destructive',
-          onPress: () => void (async () => {
-            setDeletingAccount(true);
-            setDeleteError(null);
-            try {
-              await api.deleteAccount();
-              // Server deleted the rows + revoked tokens. Sign out wipes the
-              // device (identity, socket, onboarding) and returns to Welcome.
-              await signOut();
-            } catch (e) {
-              if (!mounted.current) return;
-              setDeleteError(e instanceof Error ? e.message : 'Could not delete the account.');
-              setConfirmingDelete(false);
-            } finally {
-              if (mounted.current) setDeletingAccount(false);
-            }
-          })(),
+          onPress: () => void runDeleteAccount(),
         },
       ],
     );
-  }, [confirmingDelete, signOut]);
+  }, [confirmingDelete, runDeleteAccount]);
 
   const cancelDeleteAccount = useCallback(() => {
     setConfirmingDelete(false);
@@ -354,11 +365,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Text style={styles.settingTitle} numberOfLines={1}>
                 {currentDisplayName}
               </Text>
-              <Text style={styles.settingDesc} numberOfLines={1}>
+              <Text style={[styles.settingDesc, isGuest && styles.guestWarning]} numberOfLines={1}>
                 {sessionLoading
                   ? 'Checking session…'
                   : isGuest
-                  ? 'Guest — progress stays on this device'
+                  ? 'Unsaved progress — reinstall = lost'
                   : email ?? 'Signed in'}
               </Text>
               {!!sessionError && <Text style={styles.errorText}>{sessionError}</Text>}
@@ -374,7 +385,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 onPress={() => void signInWithGoogle()}
               >
                 <Text style={styles.authButtonPrimaryText}>
-                  {signingIn ? '…' : 'Sign in'}
+                  {signingIn ? '…' : 'Save with Google'}
                 </Text>
               </TouchableOpacity>
             ) : (
@@ -908,6 +919,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     color: THEME.colors.textSecondary,
+  },
+  // Guest identity line: reads as a warning, not information.
+  guestWarning: {
+    fontFamily: THEME.fonts.semiBold,
+    color: THEME.colors.warning,
   },
   errorText: {
     fontFamily: THEME.fonts.medium,

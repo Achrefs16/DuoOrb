@@ -12,7 +12,7 @@ import { SideChoice } from './src/screens/MatchSetupScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
-import { SplashScreen, SPLASH_MIN_MS } from './src/screens/SplashScreen';
+import * as SplashScreen from 'expo-splash-screen';
 import { OnboardingFlow } from './src/screens/OnboardingFlow';
 import { FriendsScreen } from './src/screens/FriendsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
@@ -52,6 +52,14 @@ import {
   Manrope_700Bold,
   Manrope_800ExtraBold,
 } from '@expo-google-fonts/manrope';
+
+// Hold the single native splash (glossy logo on white, see app.json) until
+// boot is complete. Without this the OS hides it the moment the runtime is
+// up and any JS splash would flash in after it — the old double-splash.
+void SplashScreen.preventAutoHideAsync().catch(() => {});
+
+/** Minimum time the native splash stays up. Kept short and fixed. */
+const SPLASH_MIN_MS = 1500;
 
 type SubScreen =
   | 'GAME'
@@ -138,8 +146,8 @@ export default function App() {
   });
   const [settings, setSettings] = useState<UserSettings>({ ...DEFAULT_SETTINGS });
   const [identityReady, setIdentityReady] = useState(false);
-  // Boot state: the splash covers font loading and identity hydration, so
-  // there is never a blank frame.
+  // Boot state: the native splash covers font loading and identity
+  // hydration, so there is never a blank frame.
   const [splashElapsed, setSplashElapsed] = useState(false);
   // In-app navigation history for the Android hardware back button. Tab
   // switches are not recorded — backing out of any main tab asks to exit.
@@ -201,6 +209,17 @@ export default function App() {
   useEffect(() => {
     hydrateIdentity().finally(() => setIdentityReady(true));
   }, []);
+
+  // Release the single native splash exactly once, when fonts, identity and
+  // the minimum display time are all satisfied. The main tree (gates, tabs)
+  // renders underneath from the first frame, so there is never a blank flash
+  // and the logo appears exactly once.
+  const booted = fontsLoaded && identityReady && splashElapsed;
+  useEffect(() => {
+    if (booted) {
+      void SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [booted]);
 
   useEffect(() => {
     // A kill before the async storage queue drains strands half an
@@ -444,21 +463,10 @@ export default function App() {
     navigate(currentTab, 'REVIEW');
   };
 
-  // Splash holds until fonts and the persisted identity are hydrated, plus the
-  // minimum splash time. The session layer then decides between onboarding
-  // and the app; see the two render branches below.
-  if (!fontsLoaded || !identityReady || !splashElapsed) {
-    return (
-      <SafeAreaProvider>
-        <SystemChrome />
-        <SplashScreen />
-      </SafeAreaProvider>
-    );
-  }
-
   // One SessionProvider for the whole app. It owns the identity lifecycle:
   // `status === 'ready'` means a canonical identity is installed and `/me` has
-  // been read, and only then may the authenticated UI mount.
+  // been read, and only then may the authenticated UI mount. The native
+  // splash covers this whole phase (see above), so no JS splash is needed.
   return (
     <SafeAreaProvider>
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -755,7 +763,7 @@ const SystemChrome: React.FC = () => (
 /**
  * The single mount gate.
  *
- * `restoring` -> splash (no blank frame, no premature UI).
+ * `restoring` -> static background frame (the native splash covers boot).
  * `anonymous` -> onboarding, which is also where a guest account is created.
  * `ready`     -> the username step while the handle is still server-generated
  *                and onboarding never completed (full-screen overlay, no tabs
@@ -787,21 +795,22 @@ const SessionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     };
   }, [status, userId]);
 
-  // Leaving the username step (Continue or Skip) completes onboarding: a
-  // skipped handle is never asked for again.
+  // Leaving the username step completes onboarding. There is no skip: every
+  // new identity leaves this screen with a real handle.
   const handleUsernameDone = useCallback(() => {
     void markOnboardingComplete();
     if (userId) setRecord({ userId, done: true });
   }, [userId]);
 
-  if (status === 'restoring') return <SplashScreen />;
+  if (status === 'restoring') return <View style={styles.bootBlank} />;
   // Onboarding owns account creation only; the username step lives here.
   if (status === 'anonymous') return <OnboardingFlow />;
   const onboardingDone =
     status === 'ready' && userId && record?.userId === userId ? record.done : null;
-  // Hold a splash frame while the device flag loads: no Home flash before the
-  // username overlay for first-run accounts.
-  if (onboardingDone === null) return <SplashScreen />;
+  // Static same-background frame while the device flag loads. The logo lives
+  // only on the native splash (already gone or going) — a second splash
+  // instance here is what made it blink out and fade back in.
+  if (onboardingDone === null) return <View style={styles.bootBlank} />;
   if (
     identity &&
     isGeneratedUsername(identity.username, identity.userId) &&
@@ -822,6 +831,9 @@ const SessionEffects: React.FC<{
 }> = ({ onFriendRequests, onOnlineCount }) => {
   const { identity } = useSession();
   const userId = identity?.userId;
+  // Guests own no friends: skip their request badge poll (the lobby
+  // headcount still runs — presence is not social).
+  const isGuest = identity?.isGuest === true;
   useEffect(() => {
     if (!userId) return;
     // The badge must light up wherever you are, not only while the Friends
@@ -830,11 +842,13 @@ const SessionEffects: React.FC<{
     // headcount rides the same tick for the Home presence pill.
     let cancelled = false;
     const fetchCount = () => {
-      api.getFriendRequests()
-        .then((reqs) => {
-          if (!cancelled) onFriendRequests(reqs.length);
-        })
-        .catch(() => {});
+      if (!isGuest) {
+        api.getFriendRequests()
+          .then((reqs) => {
+            if (!cancelled) onFriendRequests(reqs.length);
+          })
+          .catch(() => {});
+      }
       api.getOnlineCount()
         .then((n) => {
           if (!cancelled) onOnlineCount(n);
@@ -847,12 +861,18 @@ const SessionEffects: React.FC<{
       cancelled = true;
       clearInterval(interval);
     };
-  }, [userId, onFriendRequests, onOnlineCount]);
+  }, [userId, isGuest, onFriendRequests, onOnlineCount]);
   return null;
 };
 
 const styles = StyleSheet.create({
   root: {
+    flex: 1,
+    backgroundColor: THEME.colors.background,
+  },
+  // Static boot frame: same background, no logo, no animation. Covers the
+  // restoring/flag-loading windows without ever replaying the splash.
+  bootBlank: {
     flex: 1,
     backgroundColor: THEME.colors.background,
   },
