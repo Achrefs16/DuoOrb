@@ -17,6 +17,7 @@ interface HomeScreenProps {
   onOpenSetup: (kind: 'ai' | 'local') => void;
   onOpenCustomOnline: () => void;
   onOpenSettings: () => void;
+  onOpenLeaderboard: () => void;
   /** Everyone online in the game right now (friends and strangers). */
   onlineCount: number;
 }
@@ -26,6 +27,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpenSetup,
   onOpenCustomOnline,
   onOpenSettings,
+  onOpenLeaderboard,
   onlineCount,
 }) => {
   const navLock = useRef(0);
@@ -56,6 +58,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </View>
 
         <View style={styles.headerRightActions}>
+          <TouchableOpacity
+            style={styles.headerIconButton}
+            activeOpacity={0.7}
+            onPress={guarded(onOpenLeaderboard)}
+            accessibilityLabel="Leaderboard"
+          >
+            <Feather name="award" size={18} color={THEME.colors.textSecondary} />
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerIconButton}
             activeOpacity={0.7}

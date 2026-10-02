@@ -486,6 +486,7 @@ export default function App() {
                   onOpenSetup={handleOpenSetup}
                   onOpenCustomOnline={() => handleOpenSetup('online')}
                   onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
+                  onOpenLeaderboard={() => navigate(currentTab, 'LEADERBOARD')}
                   onlineCount={onlineCount}
                 />
               )}
