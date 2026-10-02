@@ -3,6 +3,7 @@ import { RatingsService } from './ratings.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { AuthenticatedUser } from '../auth/auth.service.js';
+import { clampLimit, clampOffset } from '../common/pagination.js';
 
 @Controller('api')
 export class RatingsController {
@@ -15,9 +16,12 @@ export class RatingsController {
     @Query('offset') offset?: string
   ) {
     // mode is accepted for backward compatibility but ignored: one universal board.
-    const l = limit ? parseInt(limit, 10) : 50;
-    const o = offset ? parseInt(offset, 10) : 0;
-    return this.ratingsService.getLeaderboard(mode || 'UNIVERSAL', l, o);
+    // The service clamps again; the edge clamp keeps garbage out of logs.
+    return this.ratingsService.getLeaderboard(
+      mode || 'UNIVERSAL',
+      clampLimit(limit, 50, 50),
+      clampOffset(offset)
+    );
   }
 
   /**

@@ -6,6 +6,42 @@ import {
   patchIdentity,
 } from './auth';
 import { socketManager } from './socket';
+import { ApiError, NetworkError } from './errors';
+
+// ApiError lives in ./errors (single taxonomy); re-exported here so existing
+// `import { ApiError } from '../network/apiClient'` call sites keep working.
+export { ApiError, NetworkError } from './errors';
+
+/**
+ * Timestamp of the most recent server-side (5xx/unparseable) failure. The
+ * red connectivity banner reads this to show "server problem" for 60s after
+ * the fact — transport failures never touch it (they are not the server).
+ */
+let lastServerErrorAt = 0;
+type ServerErrorListener = () => void;
+const serverErrorListeners = new Set<ServerErrorListener>();
+
+export function getLastServerErrorAt(): number {
+  return lastServerErrorAt;
+}
+
+export function subscribeServerErrors(listener: ServerErrorListener): () => void {
+  serverErrorListeners.add(listener);
+  return () => {
+    serverErrorListeners.delete(listener);
+  };
+}
+
+function noteServerError(): void {
+  lastServerErrorAt = Date.now();
+  for (const fn of serverErrorListeners) {
+    try {
+      fn();
+    } catch {
+      // A banner listener must never break the request path.
+    }
+  }
+}
 
 export interface UserRatingDto {
   rating: number;
@@ -285,17 +321,20 @@ async function getAuthHeader(): Promise<Record<string, string>> {
  * This is what replaced the old self-minted "dev-" credential.
  */
 export async function createGuestSession(): Promise<GuestCredentialsDto> {
-  const res = await fetch(`${API_URL}/guest`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    const raw = body?.message;
-    const msg = Array.isArray(raw) ? raw[0] : raw || `Could not start a guest session (${res.status})`;
-    throw new ApiError(String(msg), res.status);
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      `${API_URL}/guest`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      15000
+    );
+  } catch (e) {
+    throw toNetworkError(e);
   }
-  return res.json() as Promise<GuestCredentialsDto>;
+  if (!res.ok) {
+    throw await throwHttpError(res, `Could not start a guest session (${res.status})`);
+  }
+  return parseJson<GuestCredentialsDto>(res);
 }
 
 /**
@@ -305,31 +344,87 @@ export async function createGuestSession(): Promise<GuestCredentialsDto> {
 export async function refreshGuestSession(
   refreshToken: string
 ): Promise<GuestCredentialsDto> {
-  const res = await fetch(`${API_URL}/guest/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    const raw = body?.message;
-    const msg = Array.isArray(raw) ? raw[0] : raw || `Could not refresh the session (${res.status})`;
-    throw new ApiError(String(msg), res.status);
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      `${API_URL}/guest/refresh`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      },
+      15000
+    );
+  } catch (e) {
+    throw toNetworkError(e);
   }
-  return res.json() as Promise<GuestCredentialsDto>;
+  if (!res.ok) {
+    throw await throwHttpError(res, `Could not refresh the session (${res.status})`);
+  }
+  return parseJson<GuestCredentialsDto>(res);
 }
 
 /**
- * Error carrying the HTTP status, so callers can branch on 409 (username
- * taken) vs 400 (policy violation) instead of string-matching the message.
+ * fetch with a hard timeout. Abort maps to TIMEOUT; any other transport
+ * failure maps to OFFLINE. Never returns null, never swallows.
  */
-export class ApiError extends Error {
-  readonly status: number;
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } catch (e) {
+    throw toNetworkError(e);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
+function toNetworkError(e: unknown): NetworkError {
+  const name = (e as { name?: string } | null)?.name;
+  if (name === 'AbortError') return new NetworkError('TIMEOUT');
+  if (e instanceof TypeError) return new NetworkError('OFFLINE', e.message);
+  if (e instanceof NetworkError) return e;
+  return new NetworkError('OFFLINE', e instanceof Error ? e.message : undefined);
+}
+
+/** Builds the contract error from a non-2xx response (code/retryable parsed). */
+async function throwHttpError(res: Response, fallback: string): Promise<ApiError> {
+  let body: any = null;
+  try {
+    body = await res.json();
+  } catch {
+    if (res.status >= 500) noteServerError();
+    return new ApiError(fallback, res.status, { retryable: res.status >= 500 });
+  }
+  // Nest sends `message` as a string or an array of validation errors.
+  const raw = body?.message;
+  const msg = Array.isArray(raw) ? raw[0] : raw || fallback;
+  const code = typeof body?.code === 'string' ? body.code : undefined;
+  const retryAfterMs =
+    typeof body?.retryAfterMs === 'number' ? body.retryAfterMs : undefined;
+  const retryable =
+    typeof body?.retryable === 'boolean'
+      ? body.retryable
+      : res.status >= 500 || res.status === 429 || code === 'RATE_LIMIT';
+  if (res.status >= 500) noteServerError();
+  return new ApiError(String(msg), res.status, { code, retryable, retryAfterMs });
+}
+
+/** Success-body parse. A 200 with garbage is a server bug, not data. */
+async function parseJson<T>(res: Response): Promise<T> {
+  try {
+    return (await res.json()) as T;
+  } catch {
+    noteServerError();
+    throw new ApiError('Unparseable server response.', res.status, {
+      code: 'PARSE',
+      retryable: true,
+    });
   }
 }
 
@@ -375,12 +470,14 @@ function refreshOnce(): Promise<boolean> {
 async function request<T>(
   path: string,
   options: RequestInit = {},
-  allowRefresh = true
+  allowRefresh = true,
+  timeoutMs = 12000
 ): Promise<T> {
-  const attempt = async (): Promise<Response> => {
+  const attempt = async (signal: AbortSignal): Promise<Response> => {
     const authHeaders = await getAuthHeader();
     return fetch(`${API_URL}${path}`, {
       ...options,
+      signal,
       headers: {
         'Content-Type': 'application/json',
         ...authHeaders,
@@ -389,26 +486,36 @@ async function request<T>(
     });
   };
 
-  let res = await attempt();
+  const run = async (): Promise<Response> => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      return await attempt(ctrl.signal);
+    } catch (e) {
+      throw toNetworkError(e);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  // Transport never completed: refresh cannot help (nothing was answered).
+  // A NetworkError keeps the identity; only a rejected session clears it.
+  let res = await run();
 
   // An expired guest access token is recoverable: rotate once and replay.
   // Accounts never reach here — their 401 means the Supabase session is gone,
   // which only a re-login can fix.
   if (res.status === 401 && allowRefresh && getRefreshToken()) {
     if (await refreshOnce()) {
-      res = await attempt();
+      res = await run();
     }
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    // Nest sends `message` as a string or an array of validation errors.
-    const raw = body?.message;
-    const msg = Array.isArray(raw) ? raw[0] : raw || `Request failed with status ${res.status}`;
-    throw new ApiError(String(msg), res.status);
+    throw await throwHttpError(res, `Request failed with status ${res.status}`);
   }
 
-  return res.json() as Promise<T>;
+  return parseJson<T>(res);
 }
 
 export const api = {
@@ -456,17 +563,24 @@ export const api = {
 
   async searchUsers(query: string): Promise<PublicProfileDto[]> {
     if (!query.trim()) return [];
-    return request<PublicProfileDto[]>(`/users/search?q=${encodeURIComponent(query.trim())}`);
+    return request<PublicProfileDto[]>(
+      `/users/search?q=${encodeURIComponent(query.trim())}`,
+      {},
+      true,
+      8000
+    );
   },
 
   async getFriends(): Promise<FriendItemDto[]> {
     return request<FriendItemDto[]>('/friends');
   },
 
-  /** Live lobby headcount (everyone online, not just friends). */
-  async getOnlineCount(): Promise<number> {
-    const res = await request<{ count: number }>('/presence/online').catch(() => null);
-    return typeof res?.count === 'number' ? res.count : 0;
+  /** Live lobby headcount (everyone online, not just friends). Null only when
+   * the server answered without a count — transport failures throw, so the
+   * UI can tell "checking" apart from "nobody online". */
+  async getOnlineCount(): Promise<number | null> {
+    const res = await request<{ count: number }>('/presence/online');
+    return typeof res?.count === 'number' ? res.count : null;
   },
 
   async getFriendRequests(): Promise<FriendRequestItemDto[]> {
@@ -526,7 +640,7 @@ export const api = {
   },
 
   async isBlocked(userId: string): Promise<boolean> {
-    const res = await request<{ blocked: boolean }>(`/friends/block/${userId}`).catch(() => null);
+    const res = await request<{ blocked: boolean }>(`/friends/block/${userId}`);
     return res?.blocked === true;
   },
 

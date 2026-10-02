@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client';
 import type { ClientToServerEvents, ServerToClientEvents } from '@duoorb/protocol';
 import { SERVER_URL } from './config';
 import { getIdentity, subscribeIdentity } from './auth';
+import { COPY } from './errors';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
 
@@ -40,6 +41,19 @@ class SocketManager {
   private identityWatcher: (() => void) | null = null;
   /** Event handlers registered by consumers, replayed on every rebuild. */
   private handlers = new Map<string, Set<AnyHandler>>();
+  /**
+   * Credential the server rejected: never retried on its own — only a new
+   * identity (which rebuilds through syncWithIdentity and clears this) may
+   * reconnect. Without it one dead token would toast every few seconds.
+   */
+  private authDead = false;
+  /**
+   * Emits waiting for a transport: joins, leaves and moves only, max 20,
+   * 30s TTL. Everything else (presence, reactions, probes) is stale by the
+   * time the transport returns and is dropped, never queued.
+   */
+  private emitQueue: { event: string; args: unknown[]; at: number }[] = [];
+  private netWatched = false;
 
   private facade: RawSocket;
 
@@ -57,10 +71,16 @@ class SocketManager {
         return self.facade;
       },
       emit(event: string, ...args: unknown[]) {
-        (self.raw as unknown as { emit: (e: string, ...a: unknown[]) => void } | null)?.emit(
-          event,
-          ...args
-        );
+        if (self.raw?.connected) {
+          (self.raw as unknown as { emit: (e: string, ...a: unknown[]) => void }).emit(
+            event,
+            ...args
+          );
+        } else if (self.isQueueable(event)) {
+          self.emitQueue.push({ event, args, at: Date.now() });
+          while (self.emitQueue.length > 20) self.emitQueue.shift();
+        }
+        // Anything else emitted while down is dropped, not queued.
         return self.facade;
       },
       connect() {
@@ -126,6 +146,30 @@ class SocketManager {
     this.identityWatcher = subscribeIdentity(() => this.syncWithIdentity());
   }
 
+  /** Only joins, leaves and moves survive a disconnect. See emitQueue. */
+  private isQueueable(event: string): boolean {
+    return /join|leave|move/i.test(event);
+  }
+
+  /** Replays queued emits older than nothing and younger than 30s, in order. */
+  private flushQueue(): void {
+    if (this.emitQueue.length === 0) return;
+    const now = Date.now();
+    const due = this.emitQueue.filter((q) => now - q.at <= 30000);
+    this.emitQueue = [];
+    if (!this.raw?.connected) return;
+    for (const q of due) {
+      try {
+        (this.raw as unknown as { emit: (e: string, ...a: unknown[]) => void }).emit(
+          q.event,
+          ...q.args
+        );
+      } catch {
+        break;
+      }
+    }
+  }
+
   /**
    * Reconciles the transport with the canonical identity.
    *
@@ -153,6 +197,9 @@ class SocketManager {
 
     this.disposeRaw();
     this.boundTo = next;
+    // A new credential retries freely: any previous auth rejection belonged
+    // to the old one.
+    this.authDead = false;
     this.raw = this.buildRaw(identity.userId, identity.displayName, next.token);
     this.raw.connect();
   }
@@ -188,7 +235,10 @@ class SocketManager {
       for (const handler of set) s.on(event as never, handler as never);
     }
 
-    s.on('connect', () => this.setStatus('connected'));
+    s.on('connect', () => {
+      this.setStatus('connected');
+      this.flushQueue();
+    });
 
     s.on('disconnect', (reason) => {
       if (reason === 'io client disconnect') this.setStatus('disconnected');
@@ -196,10 +246,24 @@ class SocketManager {
     });
 
     s.on('connect_error', (err: Error) => {
-      // Auth rejections used to look identical to network drops because the
-      // reason was discarded. Log it so "not authenticated" is diagnosable.
-      console.warn(`[socket] connect_error: ${err?.message ?? 'unknown'}`);
-      this.setStatus('disconnected');
+      const msg = err?.message ?? 'unknown';
+      console.warn(`[socket] connect_error: ${msg}`);
+      if (/401|unauthorized|unauthenticated|authentication failed|invalid (token|session|credential)/i.test(msg)) {
+        // Dead credential: stop the retry storm, surface re-auth exactly once.
+        // Only a new identity (which rebuilds and clears this flag) retries.
+        this.authDead = true;
+        try {
+          s.disconnect();
+        } catch {
+          // Already down.
+        }
+        this.setStatus('disconnected');
+        void import('../components/AppToast')
+          .then((m) => m.toast.show(COPY.sessionExpired))
+          .catch(() => {});
+      } else {
+        this.setStatus('reconnecting');
+      }
     });
 
     s.io.on('reconnect_attempt', () => this.setStatus('reconnecting'));
@@ -209,6 +273,7 @@ class SocketManager {
     });
     s.io.on('reconnect', () => {
       this.setStatus('connected');
+      this.flushQueue();
       // A transport-level reconnect re-presents the current `auth`. Cover the
       // case where the identity itself changed while we were down.
       this.syncWithIdentity();
@@ -217,7 +282,34 @@ class SocketManager {
     return s;
   }
 
+  /**
+   * Offline gate, armed on first connect. While the device is offline the
+   * transport is torn down without burning retry attempts; coming back online
+   * rebuilds and reconnects. Lazy import keeps the native module out of
+   * module scope so unit tests never pay for it.
+   */
+  private watchConnectivity(): void {
+    if (this.netWatched) return;
+    this.netWatched = true;
+    void import('@react-native-community/netinfo')
+      .then((m) => {
+        m.default.addEventListener((s) => {
+          if (s.isConnected === false) {
+            this.disposeRaw();
+            this.setStatus('disconnected');
+          } else if (s.isConnected === true) {
+            this.syncWithIdentity();
+            this.ensureConnected();
+          }
+        });
+      })
+      .catch(() => {
+        // No NetInfo here: socket still works, just without offline gating.
+      });
+  }
+
   private ensureConnected(): void {
+    this.watchConnectivity();
     this.bindIdentityWatcher();
     const identity = getIdentity();
     if (!identity || !identity.accessToken) {
@@ -227,6 +319,8 @@ class SocketManager {
       this.setStatus('disconnected');
       return;
     }
+    // A rejected credential never reconnects on its own.
+    if (this.authDead) return;
     if (!this.raw) {
       this.syncWithIdentity();
       return;
@@ -287,6 +381,8 @@ class SocketManager {
   public disconnect(): void {
     this.disposeRaw();
     this.boundTo = null;
+    // Explicit teardown drops queued intents with the session they belong to.
+    this.emitQueue = [];
     this.setStatus('disconnected');
   }
 }

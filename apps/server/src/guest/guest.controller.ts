@@ -85,7 +85,8 @@ export class GuestController {
   }
 
   private assertAllowed(ip: string, bucket: string, limit: number, windowMs: number): void {
-    if (!this.rateLimiter.allow(`${bucket}:${RateLimiter.ipKey(ip)}`, limit, windowMs)) {
+    const key = `${bucket}:${RateLimiter.ipKey(ip)}`;
+    if (!this.rateLimiter.allow(key, limit, windowMs)) {
       // Logged because a silent 403 here is indistinguishable from a network
       // failure on the client, which turns a rate limit into a multi-hour
       // debugging session. The bucket name and limit identify the throttle;
@@ -93,7 +94,15 @@ export class GuestController {
       this.logger.warn(
         `Rate limited guest ${bucket} for ${ip} (limit ${limit} per ${Math.round(windowMs / 1000)}s)`
       );
-      throw new ForbiddenException('Too many attempts. Try again later.');
+      // Contract fields so the client prints "wait Xs" instead of guessing.
+      // Distinct from auth 403s by code, so the app never signs the player
+      // out over a throttle.
+      throw new ForbiddenException({
+        message: 'Too many attempts. Try again later.',
+        code: 'RATE_LIMIT',
+        retryable: true,
+        retryAfterMs: this.rateLimiter.retryAfterMs(key, windowMs),
+      });
     }
   }
 }

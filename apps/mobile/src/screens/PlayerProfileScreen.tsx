@@ -22,6 +22,8 @@ import {
 } from '../network/apiClient';
 import { RatingChart } from '../components/RatingChart';
 import { GuestGate } from '../components/GuestGate';
+import { toast } from '../components/AppToast';
+import { actionMessage, kindOf, loadMessage, type ErrorKind } from '../network/errors';
 import { ReportDialog } from '../components/ReportDialog';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
 import { SavedGameRecord } from '../storage/gameStorage';
@@ -80,7 +82,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   const [showReport, setShowReport] = useState(false);
   const [detailBadge, setDetailBadge] = useState<EquippedBadgeDto | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
   // The canonical identity, so "your" name in head-to-head comparisons is
   // never a value frozen at mount.
   const identity = useIdentity();
@@ -90,19 +92,37 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
 
   const loadPlayerData = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     try {
-      const [pubProfile, rHistory, friendsList, myGamesRes, theirGamesRes] = await Promise.all([
-        api.getPublicProfile(userId).catch(() => null),
-        api.getRatingHistory(userId, 'CLASSIC_1V1', 20).catch(() => []),
-        api.getFriends().catch(() => []),
-        api.getMyHistory(50, 0).catch(() => ({ games: [], total: 0 })),
-        api.getUserHistory(userId, 10, 0).catch(() => ({ games: [], total: 0 })),
-      ]);
-      void api.isBlocked(userId).then(setBlocked).catch(() => {});
+      const [pubSettled, rSettled, friendsSettled, myGamesSettled, theirGamesSettled] =
+        await Promise.allSettled([
+          api.getPublicProfile(userId),
+          api.getRatingHistory(userId, 'CLASSIC_1V1', 20),
+          api.getFriends(),
+          api.getMyHistory(50, 0),
+          api.getUserHistory(userId, 10, 0),
+        ]);
+      const pubProfile = pubSettled.status === 'fulfilled' ? pubSettled.value : null;
+
+      try {
+        const blockedRes = await api.isBlocked(userId);
+        setBlocked(blockedRes);
+      } catch (e) {
+        // Keep the prior value (default Block): a failed probe must not flip
+        // the button to Unblock.
+        toast.show(actionMessage(e));
+      }
 
       if (pubProfile) {
         setProfile(pubProfile);
+      } else if (pubSettled.status === 'rejected') {
+        // No profile AND the fetch failed: full error, never a fabricated
+        // 1500 stand-in.
+        setLoadError({
+          message: loadMessage(pubSettled.reason),
+          kind: kindOf(pubSettled.reason),
+        });
+        return;
       } else {
         setProfile({
           id: userId,
@@ -121,19 +141,26 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
         });
       }
 
-      setRatingHistory(rHistory);
-      setTheirGames([...theirGamesRes.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime()));
-      const isAlreadyFriend = friendsList.some((f) => f.id === userId || f.username === initialUsername);
-      setIsFriend(isAlreadyFriend);
+      if (rSettled.status === 'fulfilled') setRatingHistory(rSettled.value);
+      if (theirGamesSettled.status === 'fulfilled') {
+        setTheirGames([...theirGamesSettled.value.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime()));
+      }
+      if (friendsSettled.status === 'fulfilled') {
+        const friendsList = friendsSettled.value;
+        const isAlreadyFriend = friendsList.some((f) => f.id === userId || f.username === initialUsername);
+        setIsFriend(isAlreadyFriend);
+      }
 
-      const h2h = api.computeHeadToHead(
-        myGamesRes.games,
-        userId,
-        pubProfile?.username || initialUsername
-      );
-      setHeadToHead(h2h);
+      if (myGamesSettled.status === 'fulfilled') {
+        const h2h = api.computeHeadToHead(
+          myGamesSettled.value.games,
+          userId,
+          pubProfile?.username || initialUsername
+        );
+        setHeadToHead(h2h);
+      }
     } catch {
-      setError('Unable to load player profile.');
+      setLoadError({ message: undefined, kind: 'UNKNOWN' });
     } finally {
       setLoading(false);
     }
@@ -151,8 +178,9 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
       setIsFriend(false);
       setShowRemove(false);
       onBack();
-    } catch {
-      // keep the menu open on failure
+    } catch (e) {
+      // Keep the menu open on failure so retry is one tap away.
+      toast.show(actionMessage(e));
     } finally {
       setRemoving(false);
     }
@@ -163,8 +191,8 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
     try {
       await api.sendFriendRequest({ toUserId: profile.id, toUsername: profile.username });
       setFriendRequestSent(true);
-    } catch {
-      // ignore
+    } catch (e) {
+      toast.show(actionMessage(e));
     }
   };
 
@@ -180,8 +208,9 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
         setBlocked(true);
         setIsFriend(false);
       }
-    } catch {
-      // keep current state on failure
+    } catch (e) {
+      // Keep current state on failure.
+      toast.show(actionMessage(e));
     } finally {
       setBlockBusy(false);
     }
@@ -218,7 +247,9 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
           onSelectGame(record);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        toast.show("Couldn't open replay.");
+      });
   };
 
   const rating1v1 = profile?.ratings?.CLASSIC_1V1?.rating ?? 1500;
@@ -292,8 +323,12 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
 
       {loading ? (
         <LoadingState message="Loading player profile…" />
-      ) : error ? (
-        <ErrorState message={error} onRetry={loadPlayerData} />
+      ) : loadError ? (
+        <ErrorState
+          kind={loadError.kind}
+          message={loadError.message}
+          onRetry={() => void loadPlayerData()}
+        />
       ) : (
         <ScrollView
           style={styles.scrollArea}

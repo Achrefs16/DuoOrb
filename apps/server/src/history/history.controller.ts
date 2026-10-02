@@ -9,6 +9,7 @@ import { HistoryService } from './history.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { AuthenticatedUser } from '../auth/auth.service.js';
+import { clampLimit, clampOffset } from '../common/pagination.js';
 
 @Controller('api/games')
 export class HistoryController {
@@ -21,9 +22,11 @@ export class HistoryController {
     @Query('limit') limit?: string,
     @Query('offset') offset?: string
   ) {
-    const l = limit ? parseInt(limit, 10) : 20;
-    const o = offset ? parseInt(offset, 10) : 0;
-    return this.historyService.getUserHistory(user.id, l, o);
+    return this.historyService.getUserHistory(
+      user.id,
+      clampLimit(limit, 20, 50),
+      clampOffset(offset)
+    );
   }
 
   @Get('user/:userId/history')
@@ -32,9 +35,11 @@ export class HistoryController {
     @Query('limit') limit?: string,
     @Query('offset') offset?: string
   ) {
-    const l = limit ? parseInt(limit, 10) : 20;
-    const o = offset ? parseInt(offset, 10) : 0;
-    return this.historyService.getUserHistory(userId, l, o);
+    return this.historyService.getUserHistory(
+      userId,
+      clampLimit(limit, 20, 50),
+      clampOffset(offset)
+    );
   }
 
   @Get(':gameId')

@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from './database/database.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { GuestModule } from './guest/guest.module.js';
@@ -14,6 +16,10 @@ import { GameGateway } from './gateway/game.gateway.js';
 @Module({
   imports: [
     DatabaseModule,
+    // Abuse guardrail: 100 req/min per client across all HTTP routes. Game
+    // traffic rides the socket (untouched by this guard); sparse REST calls
+    // never approach the limit on happy paths.
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     AuthModule,
     // Global: the socket gateway resolves guest tokens on its handshake path.
     GuestModule,
@@ -25,6 +31,6 @@ import { GameGateway } from './gateway/game.gateway.js';
     LegalModule,
     ReportsModule,
   ],
-  providers: [GameGateway],
+  providers: [GameGateway, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

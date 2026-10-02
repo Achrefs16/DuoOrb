@@ -22,6 +22,9 @@ import {
 } from '../network/apiClient';
 import { useSession } from '../network/session';
 import { GuestGate } from '../components/GuestGate';
+import { toast } from '../components/AppToast';
+import { actionMessage, kindOf, loadMessage, type ErrorKind } from '../network/errors';
+import { useConnectivity } from '../network/useConnectivity';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
 import { KeyboardShift } from '../components/KeyboardShift';
 import { nameInitial, resolveName } from '../displayName';
@@ -57,7 +60,8 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   const [addFeedback, setAddFeedback] = useState<string | null>(null);
   const { identity } = useSession();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
+  const { isConnected } = useConnectivity();
   // Guests own no social: the lock below replaces the whole screen, so no
   // friend/request/blocked fetch ever fires for them.
   const isGuest = identity?.isGuest === true;
@@ -66,20 +70,30 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
 
   const loadSocialData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
-    setError(null);
+    setLoadError(null);
     try {
       const [friendsList, requestsList] = await Promise.all([
-        api.getFriends().catch(() => []),
-        api.getFriendRequests().catch(() => []),
+        api.getFriends(),
+        api.getFriendRequests(),
       ]);
       setFriends(friendsList);
       setRequests(requestsList);
       if (onRequestCountChange) {
         onRequestCountChange(requestsList.length);
       }
-      void api.getBlocked().then(setBlocked).catch(() => {});
-    } catch {
-      if (!silent) setError('Unable to load friends.');
+      try {
+        setBlocked(await api.getBlocked());
+      } catch (e) {
+        // A failed refresh must not wipe the list it failed to replace.
+        if (!silent) throw e;
+        toast.show(actionMessage(e));
+      }
+    } catch (e) {
+      if (!silent) {
+        setLoadError({ message: loadMessage(e), kind: kindOf(e) });
+      } else {
+        toast.show(actionMessage(e));
+      }
     } finally {
       if (!silent) setLoading(false);
     }
@@ -91,14 +105,42 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   }, [loadSocialData, isGuest]);
 
   // Live refresh: incoming requests and presence land within seconds,
-  // no browser refresh needed. Silent — no spinner flashes.
+  // no browser refresh needed. Silent — no spinner flashes. Skipped while
+  // offline (nothing would answer) and backed off 8s → 16s → 30s on
+  // repeated failure. Never toasts: the banner already owns offline.
   useEffect(() => {
     if (isGuest) return;
-    const interval = setInterval(() => {
-      loadSocialData(true);
-    }, 8000);
-    return () => clearInterval(interval);
-  }, [loadSocialData, isGuest]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let delay = 8000;
+    const tick = async () => {
+      if (cancelled) return;
+      if (isConnected === false) {
+        timer = setTimeout(tick, 8000);
+        return;
+      }
+      try {
+        const [friendsList, requestsList] = await Promise.all([
+          api.getFriends(),
+          api.getFriendRequests(),
+        ]);
+        if (cancelled) return;
+        setFriends(friendsList);
+        setRequests(requestsList);
+        if (onRequestCountChange) onRequestCountChange(requestsList.length);
+        delay = 8000;
+      } catch {
+        if (cancelled) return;
+        delay = Math.min(delay * 2, 30000);
+      }
+      timer = setTimeout(tick, delay);
+    };
+    timer = setTimeout(tick, 8000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [isGuest, isConnected, onRequestCountChange]);
 
   const handleSearchChange = (text: string) => {
     setModalQuery(text);
@@ -116,7 +158,8 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
         const results = await api.searchUsers(text.trim());
         setSearchResults(results);
       } catch {
-        setSearchResults([]);
+        // Keep the old results: an empty list would claim nobody matches.
+        setAddFeedback("Couldn't search — try again.");
       } finally {
         setIsSearching(false);
       }
@@ -130,11 +173,14 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       setRequests(updated);
       if (onRequestCountChange) onRequestCountChange(updated.length);
       if (accept) {
-        const newFriends = await api.getFriends().catch(() => []);
-        setFriends(newFriends);
+        try {
+          setFriends(await api.getFriends());
+        } catch (e) {
+          toast.show(actionMessage(e));
+        }
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      toast.show(actionMessage(e));
     }
   };
 
@@ -145,8 +191,9 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       await api.removeFriend(removeTarget.id);
       setFriends((prev) => prev.filter((f) => f.id !== removeTarget.id));
       setRemoveTarget(null);
-    } catch {
-      // keep the menu open on failure
+    } catch (e) {
+      // Keep the menu open on failure so retry is one tap away.
+      toast.show(actionMessage(e));
     } finally {
       setRemoving(false);
     }
@@ -156,10 +203,13 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
     try {
       await api.blockUser(friend.id);
       setFriends((prev) => prev.filter((f) => f.id !== friend.id));
-      const list = await api.getBlocked().catch(() => []);
-      setBlocked(list);
-    } catch {
-      // ignore - profile screen offers the same action with feedback
+      try {
+        setBlocked(await api.getBlocked());
+      } catch (e) {
+        toast.show(actionMessage(e));
+      }
+    } catch (e) {
+      toast.show(actionMessage(e));
     }
   };
 
@@ -167,8 +217,8 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
     try {
       await api.unblockUser(userId);
       setBlocked((prev) => prev.filter((b) => b.id !== userId));
-    } catch {
-      // ignore
+    } catch (e) {
+      toast.show(actionMessage(e));
     }
   };
 
@@ -220,7 +270,8 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       setSearchResults(results);
       if (results.length === 0) setAddFeedback('No player found with that name.');
     } catch {
-      setSearchResults([]);
+      // Keep the old results: an empty list would claim nobody matches.
+      setAddFeedback("Couldn't search — try again.");
     } finally {
       setIsSearching(false);
     }
@@ -360,8 +411,12 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       {/* Main Content List */}
       {loading ? (
         <LoadingState message="Loading friends…" />
-      ) : error ? (
-        <ErrorState message={error} onRetry={loadSocialData} />
+      ) : loadError ? (
+        <ErrorState
+          kind={loadError.kind}
+          message={loadError.message}
+          onRetry={() => void loadSocialData()}
+        />
       ) : (
         <FlatList
           data={[1]}

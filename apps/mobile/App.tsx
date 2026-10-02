@@ -21,6 +21,9 @@ import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
 import { LegalScreen } from './src/screens/LegalScreen';
 import type { LegalKind } from './src/legal-content';
 import { BottomNav, MainTab } from './src/components/BottomNav';
+import { ConnectivityBanner } from './src/components/ConnectivityBanner';
+import { AppToast } from './src/components/AppToast';
+import { ErrorState } from './src/components/StateViews';
 import { ChallengeToast } from './src/components/ChallengeToast';
 import { OnlineJoinGate } from './src/components/OnlineJoinGate';
 import { RoomInviteToast } from './src/components/RoomInviteToast';
@@ -42,7 +45,8 @@ import { isGeneratedUsername } from './src/usernamePolicy';
 import { ChooseUsernameScreen } from './src/screens/ChooseUsernameScreen';
 import { THEME } from './src/theme';
 import { DEFAULT_TIME_CONTROL, TimeControl } from './src/timeControls';
-import { api } from './src/network/apiClient';
+import { api, type FriendRequestItemDto } from './src/network/apiClient';
+import { useConnectivity } from './src/network/useConnectivity';
 
 import {
   useFonts,
@@ -118,7 +122,7 @@ export default function App() {
   const [selectedPlayer, setSelectedPlayer] = useState<{ userId: string; username: string } | null>(null);
   const [legalKind, setLegalKind] = useState<LegalKind>('privacy');
   const [friendRequestsCount, setFriendRequestsCount] = useState<number>(0);
-  const [onlineCount, setOnlineCount] = useState<number>(0);
+  const [onlineCount, setOnlineCount] = useState<number | null>(null);
 
   const [gameConfig, setGameConfig] = useState<ActiveGameConfig>({
     mode: '2p',
@@ -471,6 +475,8 @@ export default function App() {
     <SafeAreaProvider>
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <SystemChrome />
+      {/* Global connectivity bar + toast: mounted once, above everything. */}
+      <ConnectivityBanner />
       <SessionProvider>
         <SessionGate>
           {/* Authenticated-only side effects: nothing here runs before a
@@ -735,6 +741,7 @@ export default function App() {
         </View>
         </SessionGate>
       </SessionProvider>
+      <AppToast />
     </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -775,7 +782,7 @@ const SystemChrome: React.FC = () => (
  * exactly one place where "is there a session?" is answered.
  */
 const SessionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { status } = useSession();
+  const { status, bootError, retryBoot } = useSession();
   const identity = useIdentity();
   // Device flag, keyed by account: a different sign-in must never inherit
   // the previous account's answer. Null while unread for the current user.
@@ -803,7 +810,21 @@ const SessionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (userId) setRecord({ userId, done: true });
   }, [userId]);
 
-  if (status === 'restoring') return <View style={styles.bootBlank} />;
+  if (status === 'restoring') {
+    // Boot failed reaching the server (a stored session exists but is
+    // unreachable): retry screen, never the Welcome page.
+    if (!bootError) return <View style={styles.bootBlank} />;
+    return (
+      <View style={[styles.bootBlank, styles.bootErrorWrap]}>
+        <ErrorState
+          title="Can't reach servers"
+          kind={bootError.kind}
+          message={bootError.message}
+          onRetry={retryBoot}
+        />
+      </View>
+    );
+  }
   // Onboarding owns account creation only; the username step lives here.
   if (status === 'anonymous') return <OnboardingFlow />;
   const onboardingDone =
@@ -828,41 +849,57 @@ const SessionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
  */
 const SessionEffects: React.FC<{
   onFriendRequests: (n: number) => void;
-  onOnlineCount: (n: number) => void;
+  onOnlineCount: (n: number | null) => void;
 }> = ({ onFriendRequests, onOnlineCount }) => {
   const { identity } = useSession();
   const userId = identity?.userId;
   // Guests own no friends: skip their request badge poll (the lobby
   // headcount still runs — presence is not social).
   const isGuest = identity?.isGuest === true;
+  const { isConnected } = useConnectivity();
   useEffect(() => {
     if (!userId) return;
     // The badge must light up wherever you are, not only while the Friends
     // tab is open. FriendsScreen polls on the same cadence when mounted;
     // both writers publish the same number so they never fight. The lobby
     // headcount rides the same tick for the Home presence pill.
+    //
+    // allSettled: one failing call never masks the other. Offline ticks are
+    // skipped outright; repeated failures back off 8s → 16s → 30s instead of
+    // spamming a dead server every 8 seconds.
     let cancelled = false;
-    const fetchCount = () => {
-      if (!isGuest) {
-        api.getFriendRequests()
-          .then((reqs) => {
-            if (!cancelled) onFriendRequests(reqs.length);
-          })
-          .catch(() => {});
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let delay = 8000;
+    const tick = async () => {
+      if (cancelled) return;
+      if (isConnected === false) {
+        timer = setTimeout(tick, 8000);
+        return;
       }
-      api.getOnlineCount()
-        .then((n) => {
-          if (!cancelled) onOnlineCount(n);
-        })
-        .catch(() => {});
+      const [reqSettled, countSettled] = await Promise.allSettled([
+        isGuest ? Promise.resolve([] as FriendRequestItemDto[]) : api.getFriendRequests(),
+        api.getOnlineCount(),
+      ]);
+      if (cancelled) return;
+      if (!isGuest && reqSettled.status === 'fulfilled') {
+        onFriendRequests(reqSettled.value.length);
+      }
+      if (countSettled.status === 'fulfilled') {
+        onOnlineCount(countSettled.value);
+        delay = 8000;
+      } else {
+        // Unknown, not zero: the pill shows Checking… instead of lying.
+        onOnlineCount(null);
+        delay = Math.min(delay * 2, 30000);
+      }
+      timer = setTimeout(tick, delay);
     };
-    fetchCount();
-    const interval = setInterval(fetchCount, 8000);
+    void tick();
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (timer) clearTimeout(timer);
     };
-  }, [userId, isGuest, onFriendRequests, onOnlineCount]);
+  }, [userId, isGuest, isConnected, onFriendRequests, onOnlineCount]);
   return null;
 };
 
@@ -876,6 +913,9 @@ const styles = StyleSheet.create({
   bootBlank: {
     flex: 1,
     backgroundColor: THEME.colors.background,
+  },
+  bootErrorWrap: {
+    justifyContent: 'center',
   },
   content: {
     flex: 1,

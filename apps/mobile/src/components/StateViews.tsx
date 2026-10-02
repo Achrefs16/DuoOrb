@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { THEME } from '../theme';
+import { COPY, type ErrorKind } from '../network/errors';
 
 interface LoadingStateProps {
   message?: string;
@@ -46,16 +47,33 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
 
 interface ErrorStateProps {
   message?: string;
+  /** Overrides the title line. Defaults per kind (see COPY). */
+  title?: string;
+  /** Drives the title when `title` is absent: offline vs server wording. */
+  kind?: ErrorKind;
   onRetry: () => void;
 }
 
 export const ErrorState: React.FC<ErrorStateProps> = ({
-  message = 'Unable to load.',
+  message,
+  title,
+  kind,
   onRetry,
 }) => {
+  const resolvedTitle =
+    title ??
+    (kind === 'OFFLINE' || kind === 'TIMEOUT'
+      ? COPY.screenOfflineTitle
+      : kind === 'SERVER' || kind === 'PARSE'
+        ? COPY.screenServerTitle
+        : 'Unable to load.');
+  const resolvedMessage =
+    message ??
+    (kind === 'OFFLINE' || kind === 'TIMEOUT' ? COPY.screenOfflineSub : undefined);
   return (
     <View style={styles.centerContainer}>
-      <Text style={styles.errorTitle}>{message}</Text>
+      <Text style={styles.errorTitle}>{resolvedTitle}</Text>
+      {!!resolvedMessage && <Text style={styles.errorSub}>{resolvedMessage}</Text>}
       <TouchableOpacity style={styles.retryButton} activeOpacity={0.8} onPress={onRetry}>
         <Text style={styles.retryButtonText}>Try Again</Text>
       </TouchableOpacity>
@@ -137,6 +155,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: THEME.colors.danger,
     fontWeight: '600',
+    textAlign: 'center',
+  },
+  errorSub: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
     textAlign: 'center',
   },
   retryButton: {

@@ -71,8 +71,24 @@ export class RateLimiter {
     return sha256(ip || 'unknown');
   }
 
+  /**
+   * Milliseconds until the oldest live hit expires (0 when nothing counts).
+   * Lets a rejected caller print "wait Xs" instead of guessing.
+   */
+  retryAfterMs(key: string, windowMs: number): number {
+    const bucket = this.buckets.get(key);
+    if (!bucket || bucket.hits.length === 0) return 0;
+    const now = Date.now();
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const t of bucket.hits) {
+      if (now - t < windowMs && t < oldest) oldest = t;
+    }
+    if (oldest === Number.POSITIVE_INFINITY) return 0;
+    return Math.max(0, windowMs - (now - oldest));
+  }
   /** Hits currently counted against a key. Exposed for tests and diagnostics. */
   countFor(key: string, windowMs: number): number {
+
     const bucket = this.buckets.get(key);
     if (!bucket) return 0;
     const now = Date.now();

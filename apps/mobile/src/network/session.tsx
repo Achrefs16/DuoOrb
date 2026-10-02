@@ -22,6 +22,7 @@ import {
 import { classifyAuthEvent } from './sessionEvents';
 import { socketManager } from './socket';
 import { api, ApiError, setTokenProvider, createGuestSession, refreshGuestSession } from './apiClient';
+import { isRetryable, kindOf, loadMessage, type ErrorKind } from './errors';
 import {
   createGuestIdentity,
   loadCanonicalProfile,
@@ -62,6 +63,13 @@ interface SessionContextValue {
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
+  /**
+   * Boot failed reaching the server (stored session, unreachable). The gate
+   * shows a retry screen instead of bouncing to onboarding.
+   */
+  bootError: { message?: string; kind: ErrorKind } | null;
+  /** Clears the boot error and re-runs boot. */
+  retryBoot: () => void;
   /** Re-reads `/me` and folds it into the canonical identity. */
   refreshProfile: () => Promise<boolean>;
   /**
@@ -101,6 +109,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // that can drift.
   const identity = useIdentity();
   const [profile, setProfile] = useState<SessionProfile | null>(null);
+  const [bootError, setBootError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
+  const [bootSeq, setBootSeq] = useState(0);
+
+  const retryBoot = useCallback(() => {
+    setBootError(null);
+    setBootSeq((n) => n + 1);
+  }, []);
 
   const fetchProfile = useCallback(async (accessToken: string): Promise<ServerProfile> => {
     // `getMe` sends its own Authorization header from the canonical store, so
@@ -147,9 +162,23 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             refreshToken: null,
             isGuest: false,
           });
-          const next = await loadCanonicalProfile(supabaseSession.access_token, fetchProfile);
+          let serverNames: ServerProfile | null = null;
+          let profileError: unknown = null;
+          try {
+            serverNames = await fetchProfile(supabaseSession.access_token);
+          } catch (e) {
+            profileError = e;
+          }
           if (cancelled) return;
-          applyProfileToState(next ? { username: next.username, displayName: next.displayName } : null);
+          if (!serverNames && isRetryable(profileError)) {
+            // Transport failed reaching /me: stay restoring with a retry
+            // screen. Going ready with empty names would strand every gate.
+            setBootError({ message: loadMessage(profileError), kind: kindOf(profileError) });
+            return;
+          }
+          applyProfileToState(
+            serverNames ? { username: serverNames.username, displayName: serverNames.displayName } : null
+          );
           if (!cancelled) setStatus('ready');
           return;
         }
@@ -169,6 +198,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
               : null
           );
           setStatus('ready');
+        } else if (outcome.reason === 'offline') {
+          // A stored session exists but the server is unreachable: stay
+          // restoring with a retry screen, never bounce to onboarding.
+          setBootError({ message: undefined, kind: 'OFFLINE' });
         } else {
           setStatus('anonymous');
         }
@@ -182,7 +215,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [fetchProfile, applyProfileToState]);
+  }, [fetchProfile, applyProfileToState, bootSeq]);
 
   /* ---------------------------------------------------------------------- */
   /* Token provider: always the CURRENT canonical identity.                  */
@@ -389,6 +422,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     profile,
     profileLoading,
     status,
+    bootError,
+    retryBoot,
     supabaseUser,
     loading: status === 'restoring',
     signingIn,

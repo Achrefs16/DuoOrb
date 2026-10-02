@@ -21,6 +21,8 @@ import {
 import { flushAiWinQueue } from '../aiwins/aiWins';
 import { RatingChart } from '../components/RatingChart';
 import { GuestGate } from '../components/GuestGate';
+import { toast } from '../components/AppToast';
+import { actionMessage, kindOf, loadMessage, type ErrorKind } from '../network/errors';
 import { MatchResultModal } from '../components/MatchResultModal';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
 import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
@@ -65,60 +67,78 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [equipping, setEquipping] = useState(false);
   const [detailCode, setDetailCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
+  // Offline preview: /me unreachable but device games exist. Canonical
+  // identity + real device counts, honestly labeled — never a 1500 rating,
+  // never presented as server truth.
+  const [offlinePreview, setOfflinePreview] = useState(false);
 
   const fetchProfileData = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setLoadError(null);
+    setOfflinePreview(false);
     try {
       const localGames = await loadGameHistory();
       setLocalHistory(localGames);
 
-      const me = await api.getMe().catch(() => null);
+      let me: UserMeDto | null = null;
+      let meError: unknown = null;
+      try {
+        me = await api.getMe();
+      } catch (e) {
+        meError = e;
+      }
       if (me) {
         setProfile(me);
         // Drain the offline hard-AI-win outbox first, so freshly synced
         // badges and wins appear below. Silent by design — offline, the
         // flush is a no-op and these sections simply stay hidden.
         await flushAiWinQueue().catch(() => []);
-        const [rHistory, gamesRes, achRes] = await Promise.all([
-          api.getRatingHistory(me.id, 'CLASSIC_1V1', 20).catch(() => []),
-          api.getMyHistory(20, 0).catch(() => ({ games: [], total: 0 })),
-          api.getMyAchievements().catch(() => null),
+        const [rSettled, gSettled, aSettled] = await Promise.allSettled([
+          api.getRatingHistory(me.id, 'CLASSIC_1V1', 20),
+          api.getMyHistory(20, 0),
+          api.getMyAchievements(),
         ]);
-        setRatingHistory(rHistory);
-        setAchievements(achRes);
-        setRecentGames(
-          [...gamesRes.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
-        );
+        // Failed slices keep their previous rows: stale-but-true beats
+        // fabricated. First-load failures stay empty, honestly so.
+        if (rSettled.status === 'fulfilled') setRatingHistory(rSettled.value);
+        if (aSettled.status === 'fulfilled') setAchievements(aSettled.value);
+        if (gSettled.status === 'fulfilled') {
+          setRecentGames(
+            [...gSettled.value.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
+          );
+        }
       } else {
-        // Offline or the server is unreachable. Show the CANONICAL identity —
-        // never a fabricated profile: inventing a fallback here is what let
-        // this screen disagree with Settings about who the player is.
-        // Wins/losses come from seat ids, never display names (see History).
+        const kind = kindOf(meError);
         const aiGames = localGames.filter((g) => g.myPlayerId);
-        const winsCount = aiGames.filter((g) => g.winnerId === g.myPlayerId).length;
-        const lossesCount = aiGames.filter((g) => g.winnerId !== g.myPlayerId).length;
-        const total = aiGames.length;
-
-        setProfile({
-          id: identity?.userId ?? '',
-          username: identity?.username ?? '',
-          displayName: identity?.displayName ?? '',
-          ratings: {
-            CLASSIC_1V1: {
-              rating: 1500,
-              rd: 350,
-              gamesPlayed: total,
-              wins: winsCount,
-              losses: lossesCount,
-              winRate: total > 0 ? Math.round((winsCount / total) * 100) : 0,
+        if ((kind === 'OFFLINE' || kind === 'TIMEOUT') && aiGames.length > 0) {
+          const winsCount = aiGames.filter((g) => g.winnerId === g.myPlayerId).length;
+          const lossesCount = aiGames.filter((g) => g.winnerId !== g.myPlayerId).length;
+          const total = aiGames.length;
+          setProfile({
+            id: identity?.userId ?? '',
+            username: identity?.username ?? '',
+            displayName: identity?.displayName ?? '',
+            ratings: {
+              CLASSIC_1V1: {
+                // Device counts are real; the rating is unknown offline and
+                // renders as '—' (see the stat box below), never 1500.
+                rating: 0,
+                rd: 0,
+                gamesPlayed: total,
+                wins: winsCount,
+                losses: lossesCount,
+                winRate: total > 0 ? Math.round((winsCount / total) * 100) : 0,
+              },
             },
-          },
-        });
+          });
+          setOfflinePreview(true);
+        } else {
+          setLoadError({ message: loadMessage(meError), kind });
+        }
       }
     } catch {
-      setError('Unable to load profile data.');
+      setLoadError({ message: undefined, kind: 'UNKNOWN' });
     } finally {
       setLoading(false);
     }
@@ -182,7 +202,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           onSelectGame(record);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        toast.show("Couldn't open replay.");
+      });
   };
 
   const initial = (profile?.displayName || profile?.username || 'K').charAt(0).toUpperCase();
@@ -212,8 +234,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     try {
       const updated = await api.setEquippedBadges(next);
       setAchievements(updated);
-    } catch {
-      // Offline or refused: the showcase simply stays as it was.
+    } catch (e) {
+      // Offline or refused: the showcase stays as it was, said out loud.
+      toast.show(actionMessage(e));
     } finally {
       setEquipping(false);
     }
@@ -236,8 +259,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
       {loading ? (
         <LoadingState message="Loading profile…" />
-      ) : error ? (
-        <ErrorState message={error} onRetry={fetchProfileData} />
+      ) : loadError ? (
+        <ErrorState
+          kind={loadError.kind}
+          message={loadError.message}
+          onRetry={() => void fetchProfileData()}
+        />
       ) : (
         <ScrollView
           style={styles.scrollArea}
@@ -268,6 +295,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     <Text style={styles.guestPillText}>UNSAVED GUEST</Text>
                   </View>
                 )}
+                {offlinePreview && (
+                  <View style={styles.guestPill}>
+                    <Text style={styles.guestPillText}>OFFLINE PREVIEW</Text>
+                  </View>
+                )}
                 {joinedLine && (
                   <View style={styles.joinDateRow}>
                     <Feather name="calendar" size={12} color={THEME.colors.textMuted} />
@@ -280,7 +312,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             {/* 3-Stat boxes */}
             <View style={styles.statRibbon}>
               <View style={styles.statCard}>
-                <Text style={styles.statNumber}>{Math.round(rating1v1)}</Text>
+                <Text style={styles.statNumber}>
+                  {offlinePreview ? '—' : Math.round(rating1v1)}
+                </Text>
                 <Text style={styles.statLabel}>RATING</Text>
               </View>
 
@@ -383,10 +417,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             </View>
           )}
 
-          {/* Rating Progression Section */}
-          <View style={styles.chartSection}>
-            <RatingChart data={ratingHistory} currentRating={rating1v1} />
-          </View>
+          {/* Rating Progression Section — server data only, hidden offline. */}
+          {!offlinePreview && (
+            <View style={styles.chartSection}>
+              <RatingChart data={ratingHistory} currentRating={rating1v1} />
+            </View>
+          )}
 
           {/* Recent Matches Section */}
           <View style={styles.recentSection}>

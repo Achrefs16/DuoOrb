@@ -13,6 +13,8 @@ import { modeDisplayName } from '../matchModes';
 import { api, GameHistoryItemDto } from '../network/apiClient';
 import { useSession } from '../network/session';
 import { GuestGate } from '../components/GuestGate';
+import { toast } from '../components/AppToast';
+import { kindOf, loadMessage, type ErrorKind } from '../network/errors';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
 import { MatchResultModal } from '../components/MatchResultModal';
 import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
@@ -45,7 +47,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   const [loadingMore, setLoadingMore] = useState(false);
   const offsetRef = useRef(0);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
+  // Server list failed but device games exist: the list below is local-only,
+  // said out loud with a retry — never passed off as server truth.
+  const [degraded, setDegraded] = useState(false);
   // Guests keep their device games but never the server list: no online
   // history fetch fires for them, and the lock below replaces that section.
   const { identity } = useSession();
@@ -53,15 +58,24 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
 
   const fetchHistory = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setLoadError(null);
+    setDegraded(false);
     try {
       const savedLocal = await loadGameHistory();
       setLocalGames(savedLocal);
 
-      const [meRes, serverRes] = await Promise.all([
-        api.getMe().catch(() => null),
-        isGuest ? Promise.resolve(null) : api.getMyHistory(PAGE_SIZE, 0).catch(() => null),
+      const [meSettled, serverSettled] = await Promise.allSettled([
+        api.getMe(),
+        isGuest
+          ? Promise.resolve({ games: [], total: 0, summary: null })
+          : api.getMyHistory(PAGE_SIZE, 0),
       ]);
+      const meRes = meSettled.status === 'fulfilled' ? meSettled.value : null;
+      const serverRes =
+        serverSettled.status === 'fulfilled' ? serverSettled.value : null;
+      const serverError =
+        serverSettled.status === 'rejected' ? serverSettled.reason : null;
+
       const r = meRes?.ratings?.CLASSIC_1V1?.rating;
       if (typeof r === 'number') setLiveRating(Math.round(r));
         if (serverRes && serverRes.games.length > 0) {
@@ -69,7 +83,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           offsetRef.current = serverRes.games.length;
           setTotal(serverRes.total);
           setSummary(serverRes.summary ?? null);
-        } else {
+        } else if (savedLocal.length > 0 || isGuest) {
           // Offline fallback: local device games only, honestly unrated.
           // WIN/LOSS comes from seat ids, never display names: matching
           // winnerName against 'You' marked every win as a loss the moment
@@ -107,21 +121,33 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
         setGames(mapped);
         offsetRef.current = mapped.length;
         setTotal(mapped.length);
-      }
+        // Stats below must come from this list, never a stale server summary.
+        setSummary(null);
+        // The server list failed but device games carry the screen: say so.
+        // Guests always land here by design — no banner for them.
+        if (serverError && !isGuest) setDegraded(true);
+        } else {
+          // Nothing anywhere: full error screen with retry.
+          setLoadError({
+            message: loadMessage(serverError ?? undefined),
+            kind: kindOf(serverError ?? undefined),
+          });
+        }
     } catch {
-      setError('Unable to load history.');
+      setLoadError({ message: undefined, kind: 'UNKNOWN' });
     } finally {
       setLoading(false);
     }
   }, [isGuest]);
 
   // Next page — appended to the list, never reloaded. Guests have no server
-  // list, so there is nothing more to load.
+  // list, so there is nothing more to load. A failed page keeps every loaded
+  // row; the footer button stays enabled for retry.
   const loadMore = useCallback(async () => {
     if (loadingMore || isGuest) return;
     setLoadingMore(true);
     try {
-      const serverRes = await api.getMyHistory(PAGE_SIZE, offsetRef.current).catch(() => null);
+      const serverRes = await api.getMyHistory(PAGE_SIZE, offsetRef.current);
       if (serverRes) {
         setGames((prev) =>
           [...prev, ...serverRes.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
@@ -129,6 +155,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
         offsetRef.current += serverRes.games.length;
         setTotal(serverRes.total);
       }
+    } catch (e) {
+      toast.show(loadMessage(e) ?? "Couldn't load more matches.");
     } finally {
       setLoadingMore(false);
     }
@@ -175,7 +203,9 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           onSelectGame(record);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        toast.show("Couldn't open replay.");
+      });
   };
 
   // Stats computation — lifetime summary from the server when present
@@ -263,8 +293,12 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
 
       {loading ? (
         <LoadingState message="Loading match history…" />
-      ) : error ? (
-        <ErrorState message={error} onRetry={fetchHistory} />
+      ) : loadError ? (
+        <ErrorState
+          kind={loadError.kind}
+          message={loadError.message}
+          onRetry={() => void fetchHistory()}
+        />
       ) : (
         <FlatList
           data={filteredGames}
@@ -315,6 +349,23 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
               )}
               {isGuest && (
                 <Text style={styles.deviceLabel}>ON THIS DEVICE</Text>
+              )}
+
+              {/* Degraded: the list below is device-local only. */}
+              {degraded && (
+                <View style={styles.degradedBanner}>
+                  <Text style={styles.degradedText}>
+                    You&apos;re offline — showing {games.length} saved on device.
+                  </Text>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => void fetchHistory()}
+                    accessibilityLabel="Retry loading history"
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.degradedRetry}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
               )}
 
               {/* Filter Pills — same segmented control as the Profile page. */}
@@ -420,6 +471,31 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1,
     color: THEME.colors.textMuted,
+  },
+  // Degraded header: device-local list with an inline retry.
+  degradedBanner: {
+    marginTop: 12,
+    borderRadius: THEME.radius.md,
+    backgroundColor: THEME.colors.warningLight,
+    borderWidth: 1,
+    borderColor: THEME.colors.warning,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  degradedText: {
+    flex: 1,
+    fontFamily: THEME.fonts.medium,
+    fontSize: 12,
+    color: THEME.colors.textPrimary,
+  },
+  degradedRetry: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 12,
+    color: THEME.colors.primary,
   },
   summaryCard: {
     backgroundColor: THEME.colors.surfaceContainerLowest,

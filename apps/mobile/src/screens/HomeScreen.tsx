@@ -18,8 +18,10 @@ interface HomeScreenProps {
   onOpenCustomOnline: () => void;
   onOpenSettings: () => void;
   onOpenLeaderboard: () => void;
-  /** Everyone online in the game right now (friends and strangers). */
-  onlineCount: number;
+  /** Everyone online in the game right now (friends and strangers). Null =
+   * unknown (never fetched or last fetch failed): the pill says Checking…
+   * instead of claiming nobody is online. */
+  onlineCount: number | null;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -91,15 +93,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {/* Lobby presence: who is online right now, above the play
             button. A small indicator, nothing more — no tap target, since
             strangers have no destination screen. */}
-        <View style={styles.presencePill} accessibilityLabel={`${onlineCount} players online`}>
+        <View style={styles.presencePill} accessibilityLabel={`${onlineCount ?? 0} players online`}>
           <View
             style={[
               styles.presenceDot,
-              onlineCount === 0 && styles.presenceDotIdle,
+              (onlineCount ?? 0) === 0 && styles.presenceDotIdle,
             ]}
           />
           <Text style={styles.presenceText}>
-            {onlineCount > 0
+            {onlineCount === null
+              ? 'Checking…'
+              : onlineCount > 0
               ? `${onlineCount} player${onlineCount === 1 ? '' : 's'} online`
               : 'No players online yet'}
           </Text>
