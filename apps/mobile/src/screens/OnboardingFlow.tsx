@@ -1,80 +1,69 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
+import { Modal, View, StyleSheet } from 'react-native';
 import { useSession } from '../network/session';
-import { isGeneratedUsername } from '../usernamePolicy';
-import { markOnboardingComplete } from '../storage/onboarding';
+import type { LegalKind } from '../legal-content';
 import { WelcomeScreen } from './WelcomeScreen';
-import { ChooseUsernameScreen } from './ChooseUsernameScreen';
-
-interface OnboardingFlowProps {
-  /** Called once the player is through the flow. */
-  onFinish: () => void;
-}
+import { LegalScreen } from './LegalScreen';
 
 /**
- * First-run flow: Welcome -> Choose Username.
+ * First-run flow: Welcome only (account creation).
  *
- * Rendered only while the session is NOT ready. Both entry points (guest and
- * Google) continue to the username step, so nobody lands on Home still
- * carrying an auto-generated handle.
+ * Rendered only while the session is anonymous. Both entry points (guest and
+ * Google) flip the session to ready, at which point the App-level gate takes
+ * over and shows the username step — so this flow never needs to know about
+ * it. Nobody lands on Home still carrying an auto-generated handle.
  *
  * This is also the ONLY place a guest account is ever created: pressing
  * Continue as Guest is the single call to the guest endpoint. Startup never
  * reaches this screen with credentials already minted.
+ *
+ * No acceptance checkbox: the Welcome notice states that continuing (guest
+ * or Google) agrees to the Terms + Privacy Policy. The legal reader opens
+ * modally here so policies are readable INSIDE the app (the same text is
+ * also hosted at /legal/* for the Play Console URLs).
  */
-export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
-  const { identity, status, signingIn, error, signInWithGoogle, continueAsGuest } = useSession();
-  // `null` means "not chosen yet": Google sign-in resolves out of band (system
-  // browser), so a successful sign-in derives the username step by itself.
-  // Only the guest button needs to force it.
-  const [guestChoseToContinue, setGuestChoseToContinue] = useState(false);
+export const OnboardingFlow: React.FC = () => {
+  const { signingIn, error, signInWithGoogle, continueAsGuest } = useSession();
   const [startingGuest, setStartingGuest] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
-  const signedIn = identity ? !identity.isGuest : false;
-  const step: 'welcome' | 'username' = signedIn || guestChoseToContinue ? 'username' : 'welcome';
+  const [legalKind, setLegalKind] = useState<LegalKind | null>(null);
 
   const startAsGuest = useCallback(async () => {
     setStartingGuest(true);
     setGuestError(null);
     try {
-      // The one and only account-creation call in the app.
+      // The one and only account-creation call in the app. On success the
+      // session flips to ready and the App gate shows the username step.
       const ok = await continueAsGuest();
       if (!ok) {
         setGuestError('Could not reach the server. Check your connection and try again.');
-        return;
       }
-      setGuestChoseToContinue(true);
     } finally {
       setStartingGuest(false);
     }
   }, [continueAsGuest]);
 
-  const finish = useCallback(() => {
-    void markOnboardingComplete();
-    onFinish();
-  }, [onFinish]);
+  const startWithGoogle = useCallback(() => {
+    void signInWithGoogle();
+  }, [signInWithGoogle]);
 
-  const needsUsername = isGeneratedUsername(
-    identity?.username ?? null,
-    identity?.userId ?? ''
-  );
-  useEffect(() => {
-    // A session that became ready without passing through the buttons (a
-    // restored guest whose handle is already chosen) has nothing to ask.
-    if (status !== 'ready') return;
-    if (!needsUsername) finish();
-  }, [status, needsUsername, finish]);
-
-  if (step === 'welcome') {
-    return (
+  return (
+    <View style={styles.fill}>
       <WelcomeScreen
         onContinueAsGuest={() => void startAsGuest()}
-        onContinueWithGoogle={() => void signInWithGoogle()}
+        onContinueWithGoogle={startWithGoogle}
         googleBusy={signingIn}
         guestBusy={startingGuest}
         error={guestError ?? error}
+        onOpenLegal={(kind) => setLegalKind(kind)}
       />
-    );
-  }
-
-  return <ChooseUsernameScreen onDone={finish} />;
+      <Modal visible={legalKind !== null} animationType="slide" onRequestClose={() => setLegalKind(null)}>
+        {legalKind && <LegalScreen kind={legalKind} onBack={() => setLegalKind(null)} />}
+      </Modal>
+    </View>
+  );
 };
+
+const styles = StyleSheet.create({
+  fill: { flex: 1 },
+});

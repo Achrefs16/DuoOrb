@@ -224,4 +224,36 @@ export class FriendsService {
 
     return { success: true };
   }
+
+  async getBlocked(userId: string) {
+    if (!this.prisma.isConnected) return [];
+    const rows = await this.prisma.block.findMany({
+      where: { blockerId: userId },
+      include: { blocked: { include: { profile: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((b) => ({
+      id: b.blockedId,
+      username: b.blocked.profile?.username ?? b.blockedId,
+      displayName: b.blocked.profile?.displayName ?? 'Player',
+      createdAt: b.createdAt,
+    }));
+  }
+
+  async unblockUser(userId: string, targetUserId: string) {
+    if (!this.prisma.isConnected) return { success: true };
+    if (userId === targetUserId) throw new BadRequestException('Cannot unblock yourself.');
+    await this.prisma.block.deleteMany({
+      where: { blockerId: userId, blockedId: targetUserId },
+    });
+    return { success: true };
+  }
+
+  async isBlocked(userId: string, targetUserId: string) {
+    if (!this.prisma.isConnected) return { blocked: false };
+    const row = await this.prisma.block.findUnique({
+      where: { blockerId_blockedId: { blockerId: userId, blockedId: targetUserId } },
+    });
+    return { blocked: !!row };
+  }
 }

@@ -33,6 +33,10 @@ yarn-error.*
 # local env files
 .env*.local
 
+# local build outputs - always build via EAS (AAB), never upload these
+*.apk
+*.aab
+
 # typescript
 *.tsbuildinfo
 

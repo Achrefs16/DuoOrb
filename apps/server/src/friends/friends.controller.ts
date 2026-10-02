@@ -59,4 +59,25 @@ export class FriendsController {
   ) {
     return this.friendsService.blockUser(user.id, targetUserId);
   }
+
+  @Get('blocks')
+  async getBlocked(@CurrentUser() user: AuthenticatedUser) {
+    return this.friendsService.getBlocked(user.id);
+  }
+
+  @Get('block/:userId')
+  async isBlocked(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') targetUserId: string
+  ) {
+    return this.friendsService.isBlocked(user.id, targetUserId);
+  }
+
+  @Delete('block/:userId')
+  async unblockUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') targetUserId: string
+  ) {
+    return this.friendsService.unblockUser(user.id, targetUserId);
+  }
 }

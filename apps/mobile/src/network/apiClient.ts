@@ -481,6 +481,44 @@ export const api = {
     });
   },
 
+  /**
+   * UGC moderation (Play UGC policy): block / unblock / list / report.
+   * Blocked players cannot friend, challenge or matchmake with you;
+   * reports land in the server moderation queue (10/day anti-spam cap).
+   */
+  async blockUser(userId: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/friends/block/${userId}`, {
+      method: 'POST',
+    });
+  },
+
+  async unblockUser(userId: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/friends/block/${userId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getBlocked(): Promise<{ id: string; username: string; displayName: string }[]> {
+    return request<{ id: string; username: string; displayName: string }[]>('/friends/blocks');
+  },
+
+  async isBlocked(userId: string): Promise<boolean> {
+    const res = await request<{ blocked: boolean }>(`/friends/block/${userId}`).catch(() => null);
+    return res?.blocked === true;
+  },
+
+  async submitReport(body: {
+    targetUserId: string;
+    reason: string;
+    details?: string;
+    gameId?: string;
+  }): Promise<{ submitted: boolean; id?: string }> {
+    return request<{ submitted: boolean; id?: string }>('/reports', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
   async getLeaderboard(mode = 'CLASSIC_1V1', limit = 50): Promise<LeaderboardEntryDto[]> {
     return request<LeaderboardEntryDto[]>(`/leaderboard?mode=${mode}&limit=${limit}`);
   },

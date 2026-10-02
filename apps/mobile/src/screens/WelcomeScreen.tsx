@@ -1,15 +1,16 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
-import { DuoOrbLogo } from '../components/DuoOrbLogo';
-import { LEGAL_URLS, openLegalUrl } from '../legal';
+import { GoogleGLogo } from '../components/GoogleGLogo';
+import type { LegalKind } from '../legal-content';
 
 interface WelcomeScreenProps {
   onContinueAsGuest: () => void;
@@ -18,14 +19,24 @@ interface WelcomeScreenProps {
   /** True while the server mints guest credentials. */
   guestBusy?: boolean;
   error?: string | null;
+  /** Opens the native in-app reader (OnboardingFlow shows it modally). */
+  onOpenLegal: (kind: LegalKind) => void;
 }
+
+/** Google's button blue (busy spinner). */
+const GOOGLE_BLUE = '#0B57D0';
+/** Guest button blue (Tailwind blue-600). */
+const GUEST_BLUE = '#2563eb';
 
 /**
  * First-launch welcome. Shown once per device, never on later launches.
  *
- * Exactly two choices, no other sign-in methods, no fields. Legal links are
- * always visible below the buttons (Play Data Safety + UGC requirement) but
- * never block continuing as guest.
+ * Plain white page. "Continue with Google" is the white button with the
+ * full-colour G; "Continue as Guest" is the solid blue button underneath.
+ *
+ * No checkbox: tapping either button IS the acceptance. The notice below
+ * states that continuing agrees to the Terms + Privacy Policy, and both
+ * open in the in-app reader before any account exists.
  */
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   onContinueAsGuest,
@@ -33,24 +44,28 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   googleBusy,
   guestBusy,
   error,
+  onOpenLegal,
 }) => {
   const busy = googleBusy || !!guestBusy;
 
   return (
     <View style={styles.container}>
-      <View style={styles.top}>
-        <DuoOrbLogo size={88} />
-      </View>
-
       <View style={styles.body}>
+        <Image
+          source={require('../../assets/Glossy Orbital Duo Logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel="DuoOrb logo"
+        />
         <Text style={styles.title}>Welcome to DuoOrb</Text>
         <Text style={styles.subtitle}>Play. Compete. Improve.</Text>
+        <Text style={styles.maker}>by AS Digital</Text>
       </View>
 
       <View style={styles.actions}>
         {googleBusy ? (
-          <View style={[styles.googleButton, styles.googleButtonBusy]}>
-            <ActivityIndicator size="small" color={THEME.colors.textPrimary} />
+          <View style={[styles.googleButton, styles.buttonBusy]}>
+            <ActivityIndicator size="small" color={GOOGLE_BLUE} />
             <Text style={styles.googleButtonText}>Signing in…</Text>
           </View>
         ) : (
@@ -61,7 +76,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             disabled={busy}
             accessibilityLabel="Continue with Google"
           >
-            <MaterialCommunityIcons name="google" size={19} color={THEME.colors.googleBlue} />
+            <GoogleGLogo size={20} />
             <Text style={styles.googleButtonText}>Continue with Google</Text>
           </TouchableOpacity>
         )}
@@ -74,28 +89,28 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           accessibilityLabel="Continue as guest"
         >
           {guestBusy ? (
-            <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
+            <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <Feather name="user" size={17} color={THEME.colors.textSecondary} />
+            <Feather name="user" size={17} color="#FFFFFF" />
           )}
           <Text style={styles.guestButtonText}>
             {guestBusy ? 'Starting…' : 'Continue as Guest'}
           </Text>
         </TouchableOpacity>
 
-        {!!error && <Text style={styles.errorText}>{error}</Text>}
-
-        <Text style={styles.legalText}>
-          By continuing you agree to our{' '}
-          <Text style={styles.legalLink} onPress={() => void openLegalUrl(LEGAL_URLS.terms)}>
-            Terms
+        <Text style={styles.noticeText}>
+          By continuing as a guest or signing in, you agree to our{' '}
+          <Text style={styles.legalLink} onPress={() => onOpenLegal('terms')}>
+            Terms of Service
           </Text>{' '}
           and{' '}
-          <Text style={styles.legalLink} onPress={() => void openLegalUrl(LEGAL_URLS.privacy)}>
+          <Text style={styles.legalLink} onPress={() => onOpenLegal('privacy')}>
             Privacy Policy
           </Text>
-          . Manage or delete your data anytime in Settings.
+          .
         </Text>
+
+        {!!error && <Text style={styles.errorText}>{error}</Text>}
       </View>
     </View>
   );
@@ -104,20 +119,22 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.background,
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 24,
     paddingTop: 72,
     paddingBottom: 40,
-  },
-  top: {
-    alignItems: 'center',
   },
   body: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  logo: {
+    width: 120,
+    height: 120,
+  },
   title: {
+    marginTop: 16,
     fontFamily: THEME.fonts.bold,
     fontSize: 24,
     letterSpacing: -0.3,
@@ -132,15 +149,22 @@ const styles = StyleSheet.create({
     color: THEME.colors.textSecondary,
     textAlign: 'center',
   },
+  maker: {
+    marginTop: 4,
+    fontFamily: THEME.fonts.medium,
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    textAlign: 'center',
+  },
   actions: {
     gap: 10,
   },
-  // White with a hairline border: the official Google treatment, kept inside
-  // DuoOrb's radius, spacing and type scale.
+  // Google's own light-button treatment: white, hairline border, dark label,
+// full-colour G. Radius matches the rest of DuoOrb.
   googleButton: {
     height: 50,
     borderRadius: THEME.radius.md,
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: THEME.colors.outlineVariant,
     flexDirection: 'row',
@@ -148,20 +172,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
   },
-  googleButtonBusy: {
-    opacity: 0.7,
+  buttonBusy: {
+    opacity: 0.75,
   },
   googleButtonText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 15,
     color: THEME.colors.textPrimary,
   },
+  // Solid blue primary action for guests.
   guestButton: {
     height: 50,
     borderRadius: THEME.radius.md,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: THEME.colors.outlineVariant,
+    backgroundColor: GUEST_BLUE,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -170,7 +193,18 @@ const styles = StyleSheet.create({
   guestButtonText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 15,
+    color: '#FFFFFF',
+  },
+  // The acceptance notice: continuing IS agreeing, so no checkbox. Both
+  // documents open in the in-app reader.
+  noticeText: {
+    marginTop: 6,
+    paddingHorizontal: 8,
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    lineHeight: 17,
     color: THEME.colors.textSecondary,
+    textAlign: 'center',
   },
   errorText: {
     fontFamily: THEME.fonts.medium,
@@ -178,15 +212,6 @@ const styles = StyleSheet.create({
     color: THEME.colors.danger,
     textAlign: 'center',
     marginTop: 4,
-  },
-  legalText: {
-    fontFamily: THEME.fonts.regular,
-    fontSize: 12,
-    lineHeight: 17,
-    color: THEME.colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 12,
-    paddingHorizontal: 8,
   },
   legalLink: {
     fontFamily: THEME.fonts.semiBold,

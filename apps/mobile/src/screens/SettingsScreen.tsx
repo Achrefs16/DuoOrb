@@ -15,7 +15,8 @@ import { THEME } from '../theme';
 import { UserSettings } from '../storage/gameStorage';
 import { useSession } from '../network/session';
 import { api, ApiError } from '../network/apiClient';
-import { LEGAL_CONTACT_EMAIL, LEGAL_URLS, openLegalUrl } from '../legal';
+import { LEGAL_CONTACT_EMAIL } from '../legal';
+import type { LegalKind } from '../legal-content';
 import {
   isGeneratedUsername,
   sanitizeUsernameInput,
@@ -29,6 +30,8 @@ interface SettingsScreenProps {
   settings: UserSettings;
   onChange: (patch: Partial<UserSettings>) => void;
   onBack: () => void;
+  /** Opens the native in-app legal reader (offline-capable). */
+  onOpenLegal?: (kind: LegalKind) => void;
 }
 
 interface ToggleRow {
@@ -75,6 +78,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   settings,
   onChange,
   onBack,
+  onOpenLegal,
 }) => {
   const {
     identity,
@@ -578,12 +582,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           ))}
         </View>
 
-        {/* Legal - Play Data Safety + UGC requirement: always visible. */}
+        {/* Legal - native in-app reader (offline). Web version linked inside. */}
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>LEGAL</Text>
           <TouchableOpacity
             style={styles.settingRow}
-            onPress={() => void openLegalUrl(LEGAL_URLS.privacy)}
+            onPress={() => onOpenLegal?.('privacy')}
             accessibilityLabel="Open Privacy Policy"
           >
             <View style={styles.settingIconBox}>
@@ -593,12 +597,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Text style={styles.settingTitle}>Privacy Policy</Text>
               <Text style={styles.settingDesc}>What we collect, why, and your rights.</Text>
             </View>
-            <Feather name="external-link" size={14} color={THEME.colors.textMuted} />
+            <Feather name="chevron-right" size={14} color={THEME.colors.textMuted} />
           </TouchableOpacity>
           <View style={styles.divider} />
           <TouchableOpacity
             style={styles.settingRow}
-            onPress={() => void openLegalUrl(LEGAL_URLS.terms)}
+            onPress={() => onOpenLegal?.('terms')}
             accessibilityLabel="Open Terms of Service"
           >
             <View style={styles.settingIconBox}>
@@ -608,12 +612,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Text style={styles.settingTitle}>Terms of Service</Text>
               <Text style={styles.settingDesc}>Fair play, content rules, reporting.</Text>
             </View>
-            <Feather name="external-link" size={14} color={THEME.colors.textMuted} />
+            <Feather name="chevron-right" size={14} color={THEME.colors.textMuted} />
           </TouchableOpacity>
           <View style={styles.divider} />
           <TouchableOpacity
             style={styles.settingRow}
-            onPress={() => void openLegalUrl(LEGAL_URLS.deleteAccount)}
+            onPress={() => onOpenLegal?.('delete')}
             accessibilityLabel="Open Delete Account help"
           >
             <View style={styles.settingIconBox}>
@@ -625,9 +629,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 How deletion works, including the web request (no app needed).
               </Text>
             </View>
-            <Feather name="external-link" size={14} color={THEME.colors.textMuted} />
+            <Feather name="chevron-right" size={14} color={THEME.colors.textMuted} />
           </TouchableOpacity>
-          <Text style={styles.supportText}>Support: {LEGAL_CONTACT_EMAIL}</Text>
+          <Text style={styles.supportText}>DuoOrb by AS Digital · Support: {LEGAL_CONTACT_EMAIL}</Text>
         </View>
 
         {/* Danger zone - Play Account Deletion requirement. */}

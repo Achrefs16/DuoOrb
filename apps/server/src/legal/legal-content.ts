@@ -12,7 +12,7 @@
  */
 
 function contactEmail(): string {
-  return process.env.LEGAL_CONTACT_EMAIL?.trim() || 'support@duoorb.com';
+  return process.env.LEGAL_CONTACT_EMAIL?.trim() || 'digitalas.support@gmail.com';
 }
 
 function baseUrl(): string {
@@ -53,7 +53,7 @@ code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
 <nav><a href="${base}/legal/privacy">Privacy Policy</a><a href="${base}/legal/terms">Terms of Service</a><a href="${base}/legal/delete-account">Delete Account &amp; Data</a></nav>
 ${body}
 <footer>
-<p>DuoOrb &mdash; ${title}. Contact: <a href="mailto:${email}">${email}</a>.</p>
+<p>DuoOrb by AS Digital &mdash; ${title}. Contact: <a href="mailto:${email}">${email}</a>.</p>
 <p>Canonical URLs:<br/>
 <code>${base}/legal/privacy</code><br/>
 <code>${base}/legal/terms</code><br/>

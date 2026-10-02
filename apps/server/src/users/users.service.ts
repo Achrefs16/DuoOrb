@@ -8,7 +8,8 @@ import {
 import { PrismaService } from '../database/prisma.service.js';
 import { GuestService } from '../guest/guest.service.js';
 import {
-  BIO_MAX,
+  assertValidAvatarUrl,
+  assertValidBio,
   assertValidDisplayName,
   assertValidUsername,
 } from './username.js';
@@ -140,10 +141,10 @@ export class UsersService {
       patch.displayName = assertValidDisplayName(data.displayName);
     }
     if (data.bio !== undefined) {
-      patch.bio = typeof data.bio === 'string' ? data.bio.slice(0, BIO_MAX) : null;
+      patch.bio = assertValidBio(data.bio);
     }
     if (data.avatarUrl !== undefined) {
-      patch.avatarUrl = typeof data.avatarUrl === 'string' ? data.avatarUrl : null;
+      patch.avatarUrl = assertValidAvatarUrl(data.avatarUrl);
     }
 
     if (Object.keys(patch).length === 0) {

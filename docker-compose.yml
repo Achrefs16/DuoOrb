@@ -47,7 +47,7 @@ services:
       # Canonical base URL rendered inside /legal/* pages + support inbox.
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-https://duoorbapi.duckdns.org}"
       PUBLIC_WEB_URL: "${PUBLIC_WEB_URL:-${PUBLIC_BASE_URL:-https://duoorbapi.duckdns.org}}"
-      LEGAL_CONTACT_EMAIL: "${LEGAL_CONTACT_EMAIL:-support@duoorb.com}"
+      LEGAL_CONTACT_EMAIL: "${LEGAL_CONTACT_EMAIL:-digitalas.support@gmail.com}"
     depends_on:
       postgres:
         condition: service_healthy

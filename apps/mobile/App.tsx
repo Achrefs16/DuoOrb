@@ -18,6 +18,8 @@ import { FriendsScreen } from './src/screens/FriendsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { PlayerProfileScreen } from './src/screens/PlayerProfileScreen';
 import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
+import { LegalScreen } from './src/screens/LegalScreen';
+import type { LegalKind } from './src/legal-content';
 import { BottomNav, MainTab } from './src/components/BottomNav';
 import { ChallengeToast } from './src/components/ChallengeToast';
 import { OnlineJoinGate } from './src/components/OnlineJoinGate';
@@ -34,7 +36,10 @@ import {
 } from './src/storage/gameStorage';
 import { setSoundsMuted } from './src/audio/sounds';
 import { SessionProvider, useSession } from './src/network/session';
-import { flushIdentityStorage, hydrateIdentity } from './src/network/auth';
+import { flushIdentityStorage, hydrateIdentity, useIdentity } from './src/network/auth';
+import { hasCompletedOnboarding, markOnboardingComplete } from './src/storage/onboarding';
+import { isGeneratedUsername } from './src/usernamePolicy';
+import { ChooseUsernameScreen } from './src/screens/ChooseUsernameScreen';
 import { THEME } from './src/theme';
 import { DEFAULT_TIME_CONTROL, TimeControl } from './src/timeControls';
 import { api } from './src/network/apiClient';
@@ -56,6 +61,7 @@ type SubScreen =
   | 'SETTINGS'
   | 'ONLINE'
   | 'REVIEW'
+  | 'LEGAL'
   | null;
 
 /** One entry in the in-app navigation history (hardware back stack). */
@@ -102,6 +108,7 @@ export default function App() {
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
 
   const [selectedPlayer, setSelectedPlayer] = useState<{ userId: string; username: string } | null>(null);
+  const [legalKind, setLegalKind] = useState<LegalKind>('privacy');
   const [friendRequestsCount, setFriendRequestsCount] = useState<number>(0);
   const [onlineCount, setOnlineCount] = useState<number>(0);
 
@@ -392,6 +399,11 @@ export default function App() {
     navigate(currentTab, 'PLAYER_PROFILE');
   };
 
+  const handleOpenLegal = (kind: LegalKind) => {
+    setLegalKind(kind);
+    navigate(currentTab, 'LEGAL');
+  };
+
   /**
    * One-shot lobby triggers (autoMatch/autoRoom) are consumed on arrival:
    * without this, popping back to the lobby remounts it with the stale
@@ -595,7 +607,12 @@ export default function App() {
               settings={settings}
               onChange={updateSettings}
               onBack={goBack}
+              onOpenLegal={handleOpenLegal}
             />
+          )}
+
+          {subScreen === 'LEGAL' && (
+            <LegalScreen kind={legalKind} onBack={goBack} />
           )}
 
           {subScreen === 'ONLINE' && (
@@ -740,17 +757,58 @@ const SystemChrome: React.FC = () => (
  *
  * `restoring` -> splash (no blank frame, no premature UI).
  * `anonymous` -> onboarding, which is also where a guest account is created.
- * `ready`     -> the app, rendered only once the canonical identity exists.
+ * `ready`     -> the username step while the handle is still server-generated
+ *                and onboarding never completed (full-screen overlay, no tabs
+ *                behind it), else the app, rendered only once the canonical
+ *                identity exists.
  *
  * Nothing else in the tree decides whether the user is signed in, so there is
  * exactly one place where "is there a session?" is answered.
  */
 const SessionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { status } = useSession();
+  const identity = useIdentity();
+  // Device flag, keyed by account: a different sign-in must never inherit
+  // the previous account's answer. Null while unread for the current user.
+  const [record, setRecord] = useState<{ userId: string; done: boolean } | null>(null);
+  const userId = identity?.userId ?? null;
+
+  // The completion flag lives on device and reads async; re-read whenever the
+  // session or account flips, so a fresh sign-in re-enters the gate.
+  useEffect(() => {
+    let cancelled = false;
+    if (status === 'ready' && userId) {
+      void hasCompletedOnboarding().then((v) => {
+        if (!cancelled) setRecord({ userId, done: v });
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [status, userId]);
+
+  // Leaving the username step (Continue or Skip) completes onboarding: a
+  // skipped handle is never asked for again.
+  const handleUsernameDone = useCallback(() => {
+    void markOnboardingComplete();
+    if (userId) setRecord({ userId, done: true });
+  }, [userId]);
+
   if (status === 'restoring') return <SplashScreen />;
-  // Onboarding owns account creation and the username step. It calls
-  // `markOnboardingComplete` itself; nothing here needs to know.
-  if (status === 'anonymous') return <OnboardingFlow onFinish={() => {}} />;
+  // Onboarding owns account creation only; the username step lives here.
+  if (status === 'anonymous') return <OnboardingFlow />;
+  const onboardingDone =
+    status === 'ready' && userId && record?.userId === userId ? record.done : null;
+  // Hold a splash frame while the device flag loads: no Home flash before the
+  // username overlay for first-run accounts.
+  if (onboardingDone === null) return <SplashScreen />;
+  if (
+    identity &&
+    isGeneratedUsername(identity.username, identity.userId) &&
+    !onboardingDone
+  ) {
+    return <ChooseUsernameScreen onDone={handleUsernameDone} />;
+  }
   return <>{children}</>;
 };
 

@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { avatarUrlError, cleanTextError } from '../moderation/profanity.js';
 
 /**
  * Public identity policy.
@@ -69,6 +70,10 @@ export function validateUsername(input: unknown): UsernameCheck {
   if (RESERVED_USERNAMES.has(value)) {
     return { ok: false, value, error: 'That username is reserved.' };
   }
+  const blocked = cleanTextError(value);
+  if (blocked) {
+    return { ok: false, value, error: blocked };
+  }
   return { ok: true, value };
 }
 
@@ -96,6 +101,10 @@ export function validateDisplayName(input: unknown): UsernameCheck {
   if (value.length > DISPLAY_NAME_MAX) {
     return { ok: false, value, error: `Use at most ${DISPLAY_NAME_MAX} characters.` };
   }
+  const blocked = cleanTextError(value);
+  if (blocked) {
+    return { ok: false, value, error: blocked };
+  }
   return { ok: true, value };
 }
 
@@ -106,4 +115,22 @@ export function assertValidDisplayName(input: unknown): string {
     throw new BadRequestException(result.error ?? 'Invalid display name.');
   }
   return result.value;
+}
+
+/** Bios are sliced to BIO_MAX upstream; this enforces the text policy. */
+export function assertValidBio(input: unknown): string | null {
+  if (input === undefined || input === null) return null;
+  if (typeof input !== 'string') throw new BadRequestException('Invalid bio.');
+  const value = input.slice(0, BIO_MAX);
+  const blocked = cleanTextError(value);
+  if (blocked) throw new BadRequestException(blocked);
+  return value;
+}
+
+/** Avatars must be https URLs (or empty to clear). */
+export function assertValidAvatarUrl(input: unknown): string | null {
+  if (input === undefined || input === null || input === '') return null;
+  const err = avatarUrlError(input);
+  if (err) throw new BadRequestException(err);
+  return (input as string).trim();
 }

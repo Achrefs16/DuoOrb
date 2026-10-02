@@ -21,6 +21,7 @@ import {
   GameHistoryItemDto,
 } from '../network/apiClient';
 import { RatingChart } from '../components/RatingChart';
+import { ReportDialog } from '../components/ReportDialog';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateViews';
 import { SavedGameRecord } from '../storage/gameStorage';
 
@@ -73,6 +74,9 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   const [recentVisible, setRecentVisible] = useState(5);
   const [showRemove, setShowRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [detailBadge, setDetailBadge] = useState<EquippedBadgeDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +95,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
         api.getMyHistory(50, 0).catch(() => ({ games: [], total: 0 })),
         api.getUserHistory(userId, 10, 0).catch(() => ({ games: [], total: 0 })),
       ]);
+      void api.isBlocked(userId).then(setBlocked).catch(() => {});
 
       if (pubProfile) {
         setProfile(pubProfile);
@@ -156,6 +161,25 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
       setFriendRequestSent(true);
     } catch {
       // ignore
+    }
+  };
+
+  const handleToggleBlock = async () => {
+    if (blockBusy) return;
+    setBlockBusy(true);
+    try {
+      if (blocked) {
+        await api.unblockUser(userId);
+        setBlocked(false);
+      } else {
+        await api.blockUser(userId);
+        setBlocked(true);
+        setIsFriend(false);
+      }
+    } catch {
+      // keep current state on failure
+    } finally {
+      setBlockBusy(false);
     }
   };
 
@@ -358,7 +382,44 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {/* Safety row: Play UGC policy - block + report, always visible. */}
+            <View style={styles.safetyRow}>
+              <TouchableOpacity
+                style={[styles.safetyBtn, blocked && styles.safetyBtnActive]}
+                onPress={() => void handleToggleBlock()}
+                disabled={blockBusy}
+                accessibilityLabel={blocked ? 'Unblock player' : 'Block player'}
+              >
+                <Feather
+                  name={blocked ? 'check-circle' : 'slash'}
+                  size={15}
+                  color={blocked ? THEME.colors.success : THEME.colors.danger}
+                />
+                <Text style={[styles.safetyText, blocked && styles.safetyTextActive]}>
+                  {blockBusy ? '…' : blocked ? 'Unblock' : 'Block'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.safetyBtn}
+                onPress={() => setShowReport(true)}
+                accessibilityLabel="Report player"
+              >
+                <Feather name="flag" size={15} color={THEME.colors.textSecondary} />
+                <Text style={styles.safetyText}>Report</Text>
+              </TouchableOpacity>
+            </View>
+            {blocked && (
+              <Text style={styles.blockedNote}>Blocked — you will not match or see requests from this player.</Text>
+            )}
           </View>
+
+          <ReportDialog
+            visible={showReport}
+            targetUserId={userId}
+            targetUsername={profile?.username ?? initialUsername ?? 'player'}
+            onClose={() => setShowReport(false)}
+          />
 
           {/* Badge showcase — the 3 badges they equipped, plus hard-AI
               totals. Server-driven; hidden when the profile has none. */}
@@ -819,6 +880,41 @@ const styles = StyleSheet.create({
   },
   friendBtnTextActive: {
     color: THEME.colors.textMuted,
+  },
+  safetyRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  safetyBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: THEME.colors.outlineVariant,
+    backgroundColor: THEME.colors.surfaceMuted,
+  },
+  safetyBtnActive: {
+    borderColor: THEME.colors.success,
+  },
+  safetyText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    color: THEME.colors.textSecondary,
+  },
+  safetyTextActive: {
+    color: THEME.colors.success,
+  },
+  blockedNote: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    marginTop: 8,
+    textAlign: 'center',
   },
   h2hCard: {
     backgroundColor: THEME.colors.backgroundCard,

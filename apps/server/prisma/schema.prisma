@@ -222,6 +222,26 @@ model Block {
   @@map("blocks")
 }
 
+/// UGC moderation queue (Play UGC policy).
+///
+/// Filed from PlayerProfile / History opponent / Friend rows via
+/// POST /api/reports. Kept after account deletion (plain ids, no FK) so
+/// evidence survives; reviewers act on reason + details + gameId.
+model Report {
+  id           String   @id @default(uuid())
+  reporterId   String
+  targetUserId String
+  reason       String
+  details      String?
+  gameId       String?
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now())
+
+  @@index([targetUserId, status])
+  @@index([reporterId, createdAt])
+  @@map("reports")
+}
+
 /// A verified human win against the hard AI, with the full move record.
 ///
 /// Uploaded by the app the moment the game ends (or queued offline and synced

@@ -8,11 +8,18 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "bundleIdentifier": "com.duoorb.mobile",
+      "bundleIdentifier": "com.asdigital.duoorb",
       "supportsTablet": true
     },
     "android": {
-      "package": "com.duoorb.mobile",
+      "package": "com.asdigital.duoorb",
+      "permissions": [],
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.VIBRATE"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#F5F5FB",
         "foregroundImage": "./assets/android-icon-foreground.png"

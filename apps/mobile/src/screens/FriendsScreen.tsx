@@ -48,6 +48,8 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   const [showAddModal, setShowAddModal] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<FriendItemDto | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [blocked, setBlocked] = useState<{ id: string; username: string; displayName: string }[]>([]);
+  const [showBlocked, setShowBlocked] = useState(false);
   const [ownUsername, setOwnUsername] = useState<string | null>(null);
   const [sentIds, setSentIds] = useState<string[]>([]);
   const [copiedTick, setCopiedTick] = useState(false);
@@ -71,6 +73,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       if (onRequestCountChange) {
         onRequestCountChange(requestsList.length);
       }
+      void api.getBlocked().then(setBlocked).catch(() => {});
     } catch {
       if (!silent) setError('Unable to load friends.');
     } finally {
@@ -140,6 +143,26 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       // keep the menu open on failure
     } finally {
       setRemoving(false);
+    }
+  };
+
+  const handleBlockFriend = async (friend: FriendItemDto) => {
+    try {
+      await api.blockUser(friend.id);
+      setFriends((prev) => prev.filter((f) => f.id !== friend.id));
+      const list = await api.getBlocked().catch(() => []);
+      setBlocked(list);
+    } catch {
+      // ignore - profile screen offers the same action with feedback
+    }
+  };
+
+  const handleUnblock = async (userId: string) => {
+    try {
+      await api.unblockUser(userId);
+      setBlocked((prev) => prev.filter((b) => b.id !== userId));
+    } catch {
+      // ignore
     }
   };
 
@@ -259,6 +282,17 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               <Text style={styles.playButtonText}>Challenge</Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            style={styles.blockIconBtn}
+            activeOpacity={0.7}
+            accessibilityLabel={`Block ${friend.username}`}
+            onPress={(e: any) => {
+              e?.stopPropagation?.();
+              void handleBlockFriend(friend);
+            }}
+          >
+            <Feather name="slash" size={15} color={THEME.colors.danger} />
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
@@ -407,6 +441,42 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                   </TouchableOpacity>
                 </View>
               )}
+
+              {/* Blocked players - unblock anytime (Play UGC blocking rule). */}
+              {blocked.length > 0 && (
+                <View style={styles.section}>
+                  <TouchableOpacity
+                    style={styles.sectionTitleRow}
+                    onPress={() => setShowBlocked((v) => !v)}
+                    accessibilityLabel="Toggle blocked list"
+                  >
+                    <Text style={styles.sectionTitle}>BLOCKED · {blocked.length}</Text>
+                    <Feather
+                      name={showBlocked ? 'chevron-up' : 'chevron-down'}
+                      size={16}
+                      color={THEME.colors.textMuted}
+                    />
+                  </TouchableOpacity>
+                  {showBlocked && (
+                    <View style={styles.cardGroup}>
+                      {blocked.map((b) => (
+                        <View key={b.id} style={styles.blockedRow}>
+                          <Text style={styles.blockedName} numberOfLines={1}>
+                            @{b.username}
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.unblockBtn}
+                            onPress={() => void handleUnblock(b.id)}
+                            accessibilityLabel={`Unblock ${b.username}`}
+                          >
+                            <Text style={styles.unblockText}>Unblock</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
           )}
         />
@@ -504,7 +574,16 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                   const justSent = sentIds.includes(user.id);
                   const isSelf = user.id === identity?.userId;
                   return (
-                    <View key={user.id} style={styles.searchResultItem}>
+                    <TouchableOpacity
+                      key={user.id}
+                      style={styles.searchResultItem}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setShowAddModal(false);
+                        onOpenPlayerProfile({ userId: user.id, username: user.username });
+                      }}
+                      accessibilityLabel={`View ${user.username}`}
+                    >
                       <View style={styles.searchResultLeft}>
                         <View style={styles.searchAvatar}>
                           <Text style={styles.searchAvatarText}>
@@ -527,14 +606,17 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                       ) : (
                         <TouchableOpacity
                           style={styles.sendRequestBtn}
-                          onPress={() => handleSendRequestToUser(user)}
+                          onPress={(e: any) => {
+                            e?.stopPropagation?.();
+                            handleSendRequestToUser(user);
+                          }}
                           accessibilityLabel={`Add ${user.username}`}
                         >
                           <Feather name="user-plus" size={14} color={THEME.colors.textPrimary} />
                           <Text style={styles.sendRequestBtnText}>Add</Text>
                         </TouchableOpacity>
                       )}
-                    </View>
+                    </TouchableOpacity>
                   );
                 })
               ) : (
@@ -843,6 +925,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+  },
+  blockIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: THEME.colors.outlineVariant,
+    backgroundColor: THEME.colors.surfaceMuted,
+  },
+  blockedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: THEME.colors.outlineVariant,
+    backgroundColor: THEME.colors.backgroundCard,
+    marginBottom: 6,
+  },
+  blockedName: {
+    flex: 1,
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    color: THEME.colors.textPrimary,
+  },
+  unblockBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: THEME.colors.outlineVariant,
+    backgroundColor: THEME.colors.surfaceMuted,
+  },
+  unblockText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 12,
+    color: THEME.colors.primary,
   },
   rowMenuBtn: {
     width: 32,
