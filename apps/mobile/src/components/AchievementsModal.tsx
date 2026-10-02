@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   ScrollView,
@@ -11,6 +11,7 @@ import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { THEME } from '../theme';
 import type { AchievementsResponseDto, BadgeDto } from '../network/apiClient';
+import { loadViewedAchievements, markAchievementViewed } from '../storage/achievementViews';
 import {
   AchievementMedal,
   BadgeProgressBar,
@@ -22,6 +23,13 @@ import {
 } from './AchievementMedal';
 
 type CatalogItem = BadgeDto & { earned: boolean; progress?: { current: number; target: number } };
+
+/**
+ * How long an earned badge keeps its NEW pill on its own. The pill is also
+ * dismissed the moment the player opens that badge, so this is only the
+ * fallback for badges nobody has looked at.
+ */
+const NEW_WINDOW_MS = 7 * 86400000;
 
 interface AchievementsModalProps {
   visible: boolean;
@@ -48,6 +56,21 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
   onClose,
 }) => {
   const [openCode, setOpenCode] = useState<string | null>(null);
+  // Codes already opened on this device: their NEW pill is spent.
+  const [viewed, setViewed] = useState<string[]>([]);
+
+  // Re-read each time the sheet opens so a badge viewed in a previous
+  // session does not come back with its pill.
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    void loadViewedAchievements().then((codes) => {
+      if (!cancelled) setViewed(codes);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
 
   const catalog = achievements.catalog;
   const earnedCount = useMemo(() => catalog.filter((c) => c.earned).length, [catalog]);
@@ -68,6 +91,13 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
 
   const earnedAtOf = (code: string) =>
     achievements.earned.find((e) => e.code === code)?.earnedAt;
+
+  /** Opening a badge spends its NEW pill, for good. */
+  const handleToggle = useCallback((code: string) => {
+    setOpenCode((prev) => (prev === code ? null : code));
+    setViewed((prev) => (prev.includes(code) ? prev : [...prev, code]));
+    void markAchievementViewed(code);
+  }, []);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -111,13 +141,18 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                     const isEquipped = equippedCodes.has(badge.code);
                     const earnedAt = earnedAtOf(badge.code);
                     const isNew =
-                      !!earnedAt && Date.now() - new Date(earnedAt).getTime() < 7 * 86400000;
+                      !!earnedAt &&
+                      !viewed.includes(badge.code) &&
+                      Date.now() - new Date(earnedAt).getTime() < NEW_WINDOW_MS;
                     return (
-                      <View key={badge.code}>
+                      <View
+                        key={badge.code}
+                        style={[styles.rowCard, open && styles.rowCardOpen]}
+                      >
                         <TouchableOpacity
-                          style={[styles.row, open && styles.rowOpen]}
+                          style={styles.rowHead}
                           activeOpacity={0.7}
-                          onPress={() => setOpenCode(open ? null : badge.code)}
+                          onPress={() => handleToggle(badge.code)}
                           accessibilityLabel={`${badge.name}: details`}
                           accessibilityState={{ expanded: open }}
                         >
@@ -292,19 +327,23 @@ const styles = StyleSheet.create({
     color: THEME.colors.textMuted,
     fontVariant: ['tabular-nums'],
   },
-  row: {
+  rowCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainerLow,
+    marginBottom: 6,
+    overflow: 'hidden',
+  },
+  rowCardOpen: {
+    borderColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.surfaceContainerLow,
+  },
+  rowHead: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceContainerLow,
-  },
-  rowOpen: {
-    backgroundColor: THEME.colors.surfaceContainerLow,
-    borderBottomColor: THEME.colors.surfaceContainerLow,
+    paddingHorizontal: 10,
   },
   rowMeta: {
     flex: 1,
@@ -361,8 +400,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   detail: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingBottom: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: THEME.colors.surfaceContainer,
     gap: 6,
   },
   detailDesc: {

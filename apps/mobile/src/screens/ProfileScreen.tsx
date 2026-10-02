@@ -417,9 +417,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 accessibilityLabel="View all achievements"
                 accessibilityRole="button"
               >
-                <Feather name="grid" size={15} color={THEME.colors.onPrimary} />
+                <Feather name="grid" size={15} color={THEME.colors.textPrimary} />
                 <Text style={styles.viewAllText}>View All Achievements</Text>
-                <Feather name="chevron-right" size={16} color={THEME.colors.onPrimary} />
+                <Feather name="chevron-right" size={16} color={THEME.colors.textPrimary} />
               </TouchableOpacity>
             </View>
           )}
@@ -914,13 +914,15 @@ const styles = StyleSheet.create({
     gap: 8,
     height: 42,
     borderRadius: 10,
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
   },
   viewAllText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
-    color: THEME.colors.onPrimary,
+    color: THEME.colors.textPrimary,
   },
   detailOverlay: {
     flex: 1,
