@@ -78,7 +78,7 @@ export const LEGAL_DOCS: Record<LegalKind, LegalDoc> = {
       },
       {
         heading: 'Reporting & blocking',
-        body: 'Use Block on friends/profiles and Report where shown (profiles, history opponents, friend rows). Reports are reviewed and can lead to removal, warnings or bans. Urgent: digitalas.support@gmail.com with @handle, user ID and what happened. Match reactions are a fixed emoji set, ephemeral, never stored.',
+        body: 'Use Block on profiles and Report where shown (profiles). Reports are reviewed and can lead to removal, warnings or bans. Urgent: digitalas.support@gmail.com with @handle, user ID and what happened. Match reactions are a fixed emoji set, ephemeral, never stored.',
       },
       {
         heading: 'Fair play',

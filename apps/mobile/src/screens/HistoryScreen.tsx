@@ -350,9 +350,17 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
       ) : isConnected === false ? (
         <NoConnectionSection kind="offline" onRetry={() => void fetchHistory()} />
       ) : (
-        <>
-          {/* Summary, guest lock and filters sit ABOVE the list so the rows
-              below can form one continuous card (see renderMatchRow). */}
+        <FlatList
+          data={filteredGames}
+          style={styles.list}
+          keyExtractor={(item) => item.gameId}
+          renderItem={renderMatchRow}
+          contentContainerStyle={styles.rowsContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+          <>
+          {/* Summary, guest lock and filters scroll WITH the rows: one page
+              scroll instead of a fixed block over a scrolling list. */}
           <View style={styles.topBlock}>
               {/* Spacious Performance Summary Card */}
               <View style={styles.summaryCard}>
@@ -415,16 +423,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                   );
                 })}
               </View>
-            </View>
-
-          <FlatList
-            data={filteredGames}
-            style={styles.list}
-            keyExtractor={(item) => item.gameId}
-            renderItem={renderMatchRow}
-            contentContainerStyle={styles.rowsContent}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
+          </View>
+          </>
+          }
+          ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Feather name="clock" size={36} color={THEME.colors.textMuted} />
               <Text style={styles.emptyTitle}>No matches recorded</Text>
@@ -453,7 +455,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
             ) : null
           }
           />
-        </>
       )}
 
       {/* Match detail modal (Stitch) */}
@@ -488,7 +489,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: THEME.colors.onSurface,
   },
-  // Summary, guest lock and filters above the scrolling rows.
+  // Summary, guest lock and filters: the list header, so the whole page
+  // scrolls as one instead of a fixed block over scrolling rows.
   topBlock: {
     paddingHorizontal: 16,
     paddingTop: 12,

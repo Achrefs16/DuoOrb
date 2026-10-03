@@ -62,6 +62,25 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   private roomService = new RoomService();
   private challengeService = new ChallengeService();
   private matchmakingService = new MatchmakingService();
+  /**
+   * Join-pump bookkeeping (see handleJoinGame): the latest unprocessed join
+   * per game + user, and which keys currently have a pump running. Lets
+   * reconnect bursts collapse into a single replay + sync instead of one
+   * per emitted join.
+   */
+  private joinLatest = new Map<
+    string,
+    {
+      client: Socket;
+      payload: {
+        gameId: string;
+        lastSequence?: number;
+        pendingActions?: { clientActionId: string; action: GameAction }[];
+      };
+      seat: string;
+    }
+  >();
+  private joinActive = new Set<string>();
   private socketUserMap = new Map<string, SocketUserInfo>(); // socketId -> SocketUserInfo
   private userSocketMap = new Map<string, string>();         // userId -> socketId
   private activeGameUserMap = new Map<string, string>();     // userId -> gameId
@@ -762,7 +781,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   // -------------------------------------------------------------
 
   @SubscribeMessage('challenge:send')
-  handleChallengeSend(
+  async handleChallengeSend(
     @ConnectedSocket() client: Socket,
     @MessageBody()
     payload: { toUserId: string; mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number }
@@ -772,6 +791,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     if (denied) return denied;
     if (payload.toUserId === user.userId) {
       return { success: false, error: 'You cannot challenge yourself.' };
+    }
+    // Blocks run both directions and cover challenges: a blocked player can
+    // neither send nor receive. Neutral copy — it must not reveal who
+    // blocked whom.
+    if (await this.isBlockedBetween(user.userId, payload.toUserId)) {
+      return { success: false, error: 'You cannot challenge this player.' };
     }
     const targetSocketId = this.userSocketMap.get(payload.toUserId);
     const targetSocket = targetSocketId
@@ -841,6 +866,17 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     }
 
     const challenge = result.challenge;
+    // Blocked after sending (or a stale acceptance racing one): the game
+    // must not be created. Dies like a decline so the sender's toast clears
+    // instead of hanging on a match that never comes.
+    if (await this.isBlockedBetween(challenge.fromUserId, challenge.toUserId)) {
+      const senderId = this.userSocketMap.get(challenge.fromUserId);
+      senderId &&
+        this.server.sockets.sockets
+          .get(senderId)
+          ?.emit('challenge:declined', { challengeId: payload.challengeId, byUserId: user.userId });
+      return { success: false, error: 'Challenge is no longer available.' };
+    }
     const gameId = `game-challenge-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     // Coin flip seats — challenger does not always move first.
     const flipped = Math.random() < 0.5;
@@ -912,6 +948,25 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       this.server.sockets.sockets.get(targetId)?.emit('challenge:cancelled', { challengeId: payload.challengeId });
   }
 
+  /**
+   * Whether either user blocked the other. Fail-open while the database is
+   * unreachable: a blip must not break every challenge and match in flight
+   * — enforcement resumes with the connection.
+   */
+  private async isBlockedBetween(aUserId: string, bUserId: string): Promise<boolean> {
+    if (!this.prisma.isConnected) return false;
+    const row = await this.prisma.block.findFirst({
+      where: {
+        OR: [
+          { blockerId: aUserId, blockedId: bUserId },
+          { blockerId: bUserId, blockedId: aUserId },
+        ],
+      },
+      select: { id: true },
+    });
+    return !!row;
+  }
+
   private async runMatchmakingSweep() {
     const matches = this.matchmakingService.findMatches();
     for (const match of matches) {
@@ -925,6 +980,22 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
             this.matchmakingService.removeFromQueue(player.userId);
           }
         }
+        continue;
+      }
+      // Blocks are pair-wise: no seat in a matched table may have blocked
+      // (or be blocked by) another. Offenders go back in the queue rather
+      // than being dropped, so they keep searching past each other instead
+      // of matching here on the next sweep.
+      let blockedPair = false;
+      for (let a = 0; a < players.length && !blockedPair; a++) {
+        for (let b = a + 1; b < players.length && !blockedPair; b++) {
+          if (await this.isBlockedBetween(players[a].userId, players[b].userId)) {
+            blockedPair = true;
+          }
+        }
+      }
+      if (blockedPair) {
+        for (const player of players) this.matchmakingService.addToQueue(player);
         continue;
       }
       const gameId = `game-ranked-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -1073,67 +1144,112 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // post-replay truth — the timer and the sync are deliberately separate.
     this.gameService.cancelDisconnectGrace(payload.gameId, user.userId);
 
-    // Reconnect reconciliation: replay the client's unconfirmed tail
-    // through validation (never blind). Newly applied moves broadcast so
-    // any connected opponent stays exact; illegal ones die here and the
-    // final sync below rolls the sender back.
+    // Collapse overlapping joins into one replay + sync. Reconnect storms,
+    // retry loops and queue flushes all emit `game:join` within
+    // milliseconds, and each used to spawn its own DB replay, its own sync
+    // and its own opponent fan-out. The latest payload wins; a pump already
+    // running picks it up when it finishes the current pass.
+    const joinKey = `${payload.gameId}:${user.userId}`;
+    this.joinLatest.set(joinKey, {
+      client,
+      payload: {
+        gameId: payload.gameId,
+        lastSequence: payload.lastSequence,
+        pendingActions: payload.pendingActions,
+      },
+      seat,
+    });
+    if (this.joinActive.has(joinKey)) return;
+    this.joinActive.add(joinKey);
     void (async () => {
-      const pendings = (payload.pendingActions ?? []).slice(0, 20);
-      for (const p of pendings) {
-        if (!p || typeof p.clientActionId !== 'string' || !p.action) continue;
-        try {
-          const res = await this.gameService.resubmitAction(payload.gameId, user.userId, {
-            clientActionId: p.clientActionId,
-            action: p.action as GameAction,
-          });
-          if (res.success && !res.replayed) {
-            this.server.to(payload.gameId).emit('game:actionAccepted', res.recorded);
-            if (res.finished) {
-              this.server.to(payload.gameId).emit('game:playerFinished', { gameId: payload.gameId, ...res.finished });
-            }
-            if (res.ended) {
-              try {
-                await this.gameService.persistCompleted(payload.gameId);
-              } catch (err: any) {
-                this.logger.warn(`Completion persist failed ${payload.gameId}: ${err?.message}`);
-              }
-              this.server.to(payload.gameId).emit('game:ended', res.ended);
-              this.setGamePlaying(payload.gameId, false);
-            }
-          }
-        } catch {
-          // ignore one bad resubmit; the sync below is the truth
+      try {
+        let next;
+        while ((next = this.joinLatest.get(joinKey))) {
+          this.joinLatest.delete(joinKey);
+          await this.processJoin(user.userId, next);
         }
-      }
-
-      const sync = this.gameService.handleReconnect(payload.gameId, user.userId);
-      if (sync) {
-        // Opponents only — this socket just joined the room, so room
-        // fan-out would have the returnee announce their own return.
-        const others = this.otherSeatSockets(payload.gameId, user.userId);
-        if (others.length > 0) {
-          this.server.to(others).emit('game:opponentReconnected', {
-            userId: user.userId,
-            playerId: seat,
-          });
-        }
-        client.emit('game:sync', sync);
-      } else {
-        const existingSync = this.gameService.getSyncState(
-          payload.gameId,
-          payload.lastSequence ?? 0,
-          user.userId
-        );
-        if (existingSync) {
-          client.emit('game:sync', existingSync);
-        } else {
-          client.emit('game:error', {
-            code: 'GAME_NOT_IN_PROGRESS',
-            message: 'That match has already finished.',
-          });
-        }
+      } finally {
+        this.joinActive.delete(joinKey);
       }
     })();
+  }
+
+  /**
+   * One join pass: replay the unconfirmed tail, then answer with truth.
+   *
+   * Reconnect reconciliation replays the client's unconfirmed tail through
+   * validation (never blind). Newly applied moves broadcast so any
+   * connected opponent stays exact; illegal ones die here and the final
+   * sync below rolls the sender back.
+   */
+  private async processJoin(
+    userId: string,
+    join: {
+      client: Socket;
+      payload: {
+        gameId: string;
+        lastSequence?: number;
+        pendingActions?: { clientActionId: string; action: GameAction }[];
+      };
+      seat: string;
+    }
+  ): Promise<void> {
+    const { client, payload, seat } = join;
+    const pendings = (payload.pendingActions ?? []).slice(0, 20);
+    for (const p of pendings) {
+      if (!p || typeof p.clientActionId !== 'string' || !p.action) continue;
+      try {
+        const res = await this.gameService.resubmitAction(payload.gameId, userId, {
+          clientActionId: p.clientActionId,
+          action: p.action as GameAction,
+        });
+        if (res.success && !res.replayed) {
+          this.server.to(payload.gameId).emit('game:actionAccepted', res.recorded);
+          if (res.finished) {
+            this.server.to(payload.gameId).emit('game:playerFinished', { gameId: payload.gameId, ...res.finished });
+          }
+          if (res.ended) {
+            try {
+              await this.gameService.persistCompleted(payload.gameId);
+            } catch (err: any) {
+              this.logger.warn(`Completion persist failed ${payload.gameId}: ${err?.message}`);
+            }
+            this.server.to(payload.gameId).emit('game:ended', res.ended);
+            this.setGamePlaying(payload.gameId, false);
+          }
+        }
+      } catch {
+        // ignore one bad resubmit; the sync below is the truth
+      }
+    }
+
+    const sync = this.gameService.handleReconnect(payload.gameId, userId);
+    if (sync) {
+      // Opponents only — this socket just joined the room, so room
+      // fan-out would have the returnee announce their own return.
+      const others = this.otherSeatSockets(payload.gameId, userId);
+      if (others.length > 0) {
+        this.server.to(others).emit('game:opponentReconnected', {
+          userId,
+          playerId: seat,
+        });
+      }
+      client.emit('game:sync', sync);
+    } else {
+      const existingSync = this.gameService.getSyncState(
+        payload.gameId,
+        payload.lastSequence ?? 0,
+        userId
+      );
+      if (existingSync) {
+        client.emit('game:sync', existingSync);
+      } else {
+        client.emit('game:error', {
+          code: 'GAME_NOT_IN_PROGRESS',
+          message: 'That match has already finished.',
+        });
+      }
+    }
   }
 
   @SubscribeMessage('game:action')

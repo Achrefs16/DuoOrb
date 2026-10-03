@@ -11,6 +11,8 @@ interface ToastRequest {
   id: number;
   message: string;
   action?: ToastAction;
+  /** Optional leading visual (e.g. an achievement medal). Same render tree. */
+  icon?: React.ReactNode;
 }
 
 const DURATION_MS = 3500;
@@ -25,9 +27,9 @@ let seq = 0;
  * a new toast replaces the current one and restarts the timer.
  */
 export const toast = {
-  show(message: string, action?: ToastAction): void {
+  show(message: string, action?: ToastAction, icon?: React.ReactNode): void {
     seq += 1;
-    const req: ToastRequest = { id: seq, message, action };
+    const req: ToastRequest = { id: seq, message, action, icon };
     for (const fn of listeners) {
       try {
         fn(req);
@@ -62,6 +64,7 @@ export const AppToast: React.FC = () => {
   return (
     <View style={styles.layer} pointerEvents="box-none">
       <View style={styles.pill}>
+        {current.icon != null && <View style={styles.iconWrap}>{current.icon}</View>}
         <Text style={styles.message} numberOfLines={2}>
           {current.message}
         </Text>
@@ -104,6 +107,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     ...THEME.shadows.card,
+  },
+  iconWrap: {
+    marginLeft: -4,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   message: {
     flex: 1,

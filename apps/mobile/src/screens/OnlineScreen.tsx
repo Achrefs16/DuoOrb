@@ -1159,7 +1159,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
         </View>
       )}
       {showQuickAdd && (
-        <Modal visible transparent animationType="none">
+        <Modal visible transparent animationType="slide">
           <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
           <View style={styles.sheetCard}>
             <View style={styles.modalHeader}>
@@ -1199,7 +1199,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
         </Modal>
       )}
       {showRoomSetup && (
-        <Modal visible transparent animationType="none">
+        <Modal visible transparent animationType="slide">
           <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
           <View style={styles.sheetCard}>
             <View style={styles.modalHeader}>

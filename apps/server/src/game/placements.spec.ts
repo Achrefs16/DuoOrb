@@ -246,4 +246,46 @@ describe('multiplayer finish flow (service)', () => {
     expect(calls[0].ended).toBeNull();
     expect((calls[0].finished as { place: number }).place).toBe(3);
   });
+
+  it('4P: away seat takes worst place, three keep playing', () => {
+    vi.useFakeTimers();
+    const svc = new AuthoritativeGameService(undefined as any);
+    const users = ['uA', 'uB', 'uC', 'uD'].map((userId, i) => ({
+      userId,
+      displayName: `P${i + 1}`,
+      rating: { ...R },
+    }));
+    svc.createGame({ gameId: 'mp-4p-disc', mode: 'race4', users, timeControlMinutes: 3, isRanked: true });
+    const calls: { ended: unknown; finished: unknown }[] = [];
+    const res = svc.handleDisconnect('mp-4p-disc', 'uC', ((ended: unknown, finished: unknown) => {
+      calls.push({ ended, finished });
+    }) as never);
+    expect(res?.playerId).toBe('p3');
+    // 45s grace, same as every other mode — then C is out last and A, B, D
+    // continue with the clock and the turn order intact.
+    vi.advanceTimersByTime(46_000);
+    const g = svc.getGame('mp-4p-disc')!;
+    expect(g.state.players[2].status).toBe('FINISHED');
+    expect(g.state.players[2].place).toBe(4);
+    expect(g.state.status).toBe('IN_PROGRESS');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].ended).toBeNull();
+    expect((calls[0].finished as { place: number }).place).toBe(4);
+  });
+
+  it('3P: holder who idles takes worst place by AFK, two keep playing', () => {
+    vi.useFakeTimers();
+    const svc = new AuthoritativeGameService(undefined as any);
+    make3P(svc, 'mp-afk');
+    // No moves at all: the opening turn is watched, so 45s of idling ends A
+    // (worst remaining place) while B and C continue — same shape as a
+    // disconnect forfeit, with the AFK reason instead.
+    vi.advanceTimersByTime(46_000);
+    const g = svc.getGame('mp-afk')!;
+    expect(g.state.players[0].status).toBe('FINISHED');
+    expect(g.state.players[0].place).toBe(3);
+    expect(g.state.status).toBe('IN_PROGRESS');
+    // ...and the table stays watched: whoever is now on turn has a deadline.
+    expect(g.afkEndsAt).toBeGreaterThan(Date.now());
+  });
 });

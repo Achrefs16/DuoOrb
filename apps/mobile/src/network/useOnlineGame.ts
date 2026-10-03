@@ -22,6 +22,13 @@ export interface UseOnlineGameOptions {
 const JOIN_RETRY_MS = 2500;
 /** After this many unanswered retries, surface an error instead of spinning. */
 const JOIN_ATTEMPT_LIMIT = 8;
+/**
+ * Minimum gap between `game:join` wire emits. A reconnect fires several
+ * join sources within milliseconds (queue flush, reconnect effect, retry
+ * tick) — without this each spawns its own server-side replay + sync +
+ * opponent fan-out. Below the retry interval, so the backstop still fires.
+ */
+const JOIN_EMIT_COOLDOWN_MS = 2000;
 
 function sameAction(a: GameAction, b: GameAction): boolean {
   if (a.type !== b.type) return false;
@@ -80,8 +87,8 @@ const LATENCY_PROBE_INTERVAL_MS = 5000;
  * a client-supplied field — is what stops your own reconnect from arming, or
  * worse cancelling, a forfeit countdown against you.
  *
- * An event with no `playerId` is treated as NOT ours: an unnecessary banner
- * is a smaller failure than hiding a real opponent's absence.
+ * An event with no `playerId` is treated as NOT ours: an unnecessary card
+ * indicator is a smaller failure than hiding a real opponent's absence.
  */
 export function isOwnSeatEvent(
   payload: { userId?: string; playerId?: string | null },
@@ -89,6 +96,18 @@ export function isOwnSeatEvent(
 ): boolean {
   if (!myPlayerId) return false;
   return !!payload.playerId && payload.playerId === myPlayerId;
+}
+
+/**
+ * Which severity a `game:error` gets. Context decides, not the code: an
+ * error that lands while a join is still unanswered rejected the JOIN
+ * (terminal — even when a stale board from a previous game is on screen),
+ * while one that lands on a settled channel rejected a single ACTION
+ * (transient). Pure so the rule is unit-testable; the hook owns the inputs.
+ */
+export function classifyGameError(input: { joinOutstanding: boolean; hasBoard: boolean }): 'join' | 'action' {
+  if (input.joinOutstanding || !input.hasBoard) return 'join';
+  return 'action';
 }
 
 export function useOnlineGame({ gameId, initialSync, onGameEnded, onError }: UseOnlineGameOptions) {
@@ -176,18 +195,39 @@ interface OpponentGrace {
  * completely different cause (a backgrounded tab, not a dead socket) and a
  * different indicator. Merging them would tell a player their opponent is
  * "disconnected" when their opponent is sitting right there on their phone.
+ *
+ * `afkEndsAt` is the SERVER's forfeit deadline — the card countdown is
+ * derived from it (see the effect below), exactly like the grace countdown,
+ * so it ticks down in real time instead of freezing at the value the
+ * one-shot warning carried.
  */
 interface AfkWarning {
   playerId: string | null;
-  /** Seconds the server will wait before forfeiting the seat. */
+  /** Server timestamp at which the seat forfeits for inactivity. */
+  afkEndsAt: number;
+  /** Remaining seconds, derived from afkEndsAt. Render only. */
   secondsRemaining: number;
 }
 
-const [opponentGrace, setOpponentGrace] = useState<OpponentGrace | null>(null);
-  const [afkWarning, setAfkWarning] = useState<AfkWarning | null>(null);
-  // Mirror for the socket handlers (registered once): "is a seat currently
-  // inside a grace window?" decides whether an AFK notice is meaningful.
-  const opponentGraceRef = useRef<OpponentGrace | null>(opponentGrace);
+/**
+ * Seats inside a reconnect grace window, keyed by userId. A record, not a
+ * single slot: on a 3P/4P table two seats can be away at once, and either
+ * reconnect must clear only its own countdown — never the other seat's.
+ */
+const [opponentGrace, setOpponentGrace] = useState<Record<string, OpponentGrace>>({});
+  const [afkWarning, setAfkWarning] = useState<AfkWarning | null>(() => {
+    const afk = initialSync?.afk;
+    if (!afk) return null;
+    return {
+      playerId: afk.playerId,
+      afkEndsAt: afk.afkEndsAt,
+      secondsRemaining: Math.max(0, Math.ceil((afk.afkEndsAt - Date.now()) / 1000)),
+    };
+  });
+  // Mirror for the socket handlers (registered once): "is any seat
+  // currently inside a grace window?" decides whether an AFK notice is
+  // meaningful — absence owns the whole table while it lasts.
+  const opponentGraceRef = useRef<Record<string, OpponentGrace>>(opponentGrace);
   useEffect(() => {
     opponentGraceRef.current = opponentGrace;
   }, [opponentGrace]);
@@ -201,10 +241,28 @@ const [opponentGrace, setOpponentGrace] = useState<OpponentGrace | null>(null);
   // attach the room channel for live events.
   const [isSyncing, setIsSyncing] = useState<boolean>(() => !initialSync);
   const [joinError, setJoinError] = useState<string | null>(null);
+  /**
+   * A rejected ACTION on a live board (illegal move, not your turn):
+   * transient, surfaced as a sound by the screen, never a joinError — that
+   * path is terminal ("tap to leave") and must not fire for a move the
+   * server simply refused.
+   */
+  const [actionError, setActionError] = useState<{ message: string; nonce: number } | null>(null);
+  const actionErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [lastFinished, setLastFinished] = useState<{ gameId: string; playerId: string; userId: string; place: number } | null>(null);
   const joinAttemptsRef = useRef<number>(0);
+  /** Last `game:join` wire emit — collapses reconnect bursts into one join. */
+  const joinLastEmitRef = useRef<number>(0);
+  /**
+   * True from the moment a `game:join` goes out until its sync lands. This
+   * is what tells a JOIN rejection apart from an ACTION rejection: the stale
+   * board of a previous game must not downgrade a terminal join failure
+   * into a transient blip (see classifyGameError).
+   */
+  const joinOutstandingRef = useRef(false);
 
   const graceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const afkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastResyncRef = useRef(0);
   const actionCounterRef = useRef(0);
   /**
@@ -378,26 +436,32 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
     return () => clearInterval(timer);
   }, [gameState?.status, probeLatency]);
 
-  // Grace countdown: derived from the SERVER's deadline, not a local copy of
-  // "45 seconds". The old version decremented a local counter, so a phone
+  // Grace countdowns: derived from the SERVER's deadlines, not a local copy
+  // of "45 seconds". The old version decremented a local counter, so a phone
   // that slept or got throttled for 30s would still show 15s remaining while
   // the server had already forfeited — or showed the window as expired while
   // the server was still willing to wait.
+  const graceVersion = Object.keys(opponentGrace)
+    .sort()
+    .map((u) => `${u}:${opponentGrace[u].graceEndsAt}`)
+    .join(',');
   useEffect(() => {
-    if (!opponentGrace) {
+    if (Object.keys(opponentGrace).length === 0) {
       if (graceTimerRef.current) clearInterval(graceTimerRef.current);
       return;
     }
 
     const tick = () => {
       setOpponentGrace((prev) => {
-        if (!prev) return null;
-        const left = Math.max(0, Math.ceil((prev.graceEndsAt - serverNow()) / 1000));
-        if (left <= 0) {
-          if (graceTimerRef.current) clearInterval(graceTimerRef.current);
-          return null;
+        let changed = false;
+        const next: Record<string, OpponentGrace> = {};
+        for (const [userId, entry] of Object.entries(prev)) {
+          const left = Math.max(0, Math.ceil((entry.graceEndsAt - serverNow()) / 1000));
+          if (left <= 0) continue; // expired: the forfeit broadcast owns it now
+          changed = changed || left !== entry.seconds;
+          next[userId] = left !== entry.seconds ? { ...entry, seconds: left } : entry;
         }
-        return { ...prev, seconds: left };
+        return changed || Object.keys(next).length !== Object.keys(prev).length ? next : prev;
       });
     };
     tick();
@@ -406,14 +470,64 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
     return () => {
       if (graceTimerRef.current) clearInterval(graceTimerRef.current);
     };
-    // Re-arms per disconnected seat; `serverNow` is a stable callback.
-  }, [opponentGrace?.userId, opponentGrace?.graceEndsAt, serverNow]);
+    // Re-arms when the SET of away seats changes; `serverNow` is stable.
+    // Manual deps are intentional: the record itself is rewritten every tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graceVersion, serverNow]);
 
-  const joinGame = useCallback(() => {
-    const socket = socketManager.getSocket();
+  // AFK countdown: derived from the SERVER's forfeit deadline, not a local
+  // copy of "45 seconds" — same contract as the grace countdown above. A
+  // phone that slept keeps showing what the server will actually honour,
+  // and the indicator clears itself the moment the deadline passes (the
+  // forfeit broadcast lands on the same tick).
+  useEffect(() => {
+    if (!afkWarning) {
+      if (afkTimerRef.current) clearInterval(afkTimerRef.current);
+      return;
+    }
+
+    const tick = () => {
+      setAfkWarning((prev) => {
+        if (!prev) return null;
+        const left = Math.max(0, Math.ceil((prev.afkEndsAt - serverNow()) / 1000));
+        if (left <= 0) {
+          if (afkTimerRef.current) clearInterval(afkTimerRef.current);
+          return null;
+        }
+        return { ...prev, secondsRemaining: left };
+      });
+    };
+    tick();
+    afkTimerRef.current = setInterval(tick, 1000);
+
+    return () => {
+      if (afkTimerRef.current) clearInterval(afkTimerRef.current);
+    };
+    // Re-arms per warned seat; `serverNow` is a stable callback. The whole
+    // `afkWarning` object is deliberately not a dep: it is rewritten every
+    // tick, which would tear down and rebuild this interval every second.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [afkWarning?.playerId, afkWarning?.afkEndsAt, serverNow]);
+
+  // Scopes the socket's offline-queue replay to this game: emits queued
+  // while down (a join, a move) flush on reconnect, and without this a
+  // rematch switch in the same window would deliver the previous game's
+  // intents into the new one.
+  useEffect(() => {
+    socketManager.setScopedGame(gameId);
+    return () => socketManager.clearScopedGame(gameId);
+  }, [gameId]);
+
+  const joinGame = useCallback(() => {    const socket = socketManager.getSocket();
     setIsSyncing(true);
     setJoinError(null);
     joinAttemptsRef.current = 0;
+    joinOutstandingRef.current = true;
+    // Reconnect bursts (queue flush + this + retry tick) collapse here: one
+    // wire join per cooldown window, the retry loop stays the backstop.
+    const now = Date.now();
+    if (now - joinLastEmitRef.current < JOIN_EMIT_COOLDOWN_MS) return;
+    joinLastEmitRef.current = now;
     socket.emit('game:join', {
       gameId,
       lastSequence: gameStateRef.current?.history.length ?? 0,
@@ -433,6 +547,11 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
   useEffect(() => {
     if (!isSyncing) return undefined;
     const timer = setInterval(() => {
+      // Part of the same burst collapse as joinGame: a tick inside the
+      // cooldown window is not an attempt, it just yields to the join
+      // already in flight.
+      if (Date.now() - joinLastEmitRef.current < JOIN_EMIT_COOLDOWN_MS) return;
+      joinLastEmitRef.current = Date.now();
       joinAttemptsRef.current += 1;
       if (joinAttemptsRef.current > JOIN_ATTEMPT_LIMIT) {
         setJoinError(
@@ -445,6 +564,7 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
       // used to drop it, so a join that landed after a reconnect asked the
       // server for a resync while our in-flight moves were never mentioned —
       // the board came back without them.
+      joinOutstandingRef.current = true;
       socketManager.getSocket().emit('game:join', {
         gameId,
         lastSequence: gameStateRef.current?.history.length ?? 0,
@@ -473,7 +593,7 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
    * Switching games without remounting (rematch): the subscription effect
    * rejoins on the new gameId and the previous board stays visible as the
    * waiting visual — but terminal states from the old game must not leak
-   * across. An old joinError would otherwise pin an error banner over a game
+   * across. An old joinError would otherwise pin an error state over a game
    * that hasn't even been joined yet.
    */
   const prevGameIdRef = useRef(gameId);
@@ -481,17 +601,28 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
     if (prevGameIdRef.current === gameId) return;
     prevGameIdRef.current = gameId;
     joinAttemptsRef.current = 0;
+    joinOutstandingRef.current = false;
     setJoinError(null);
+    setActionError(null);
+    if (actionErrorTimerRef.current) {
+      clearTimeout(actionErrorTimerRef.current);
+      actionErrorTimerRef.current = null;
+    }
     setGameEndedResult(null);
     setRematchOffered(false);
     setRematchGameId(null);
-setOpponentGrace(null);
+setOpponentGrace({});
     setAfkWarning(null);
     setLastFinished(null);
   }, [gameId]);
 
   /**
    * Terminal server rejection.
+   *
+   * Context decides the severity, not the code: with an authoritative board in
+   * hand the game is live, so the error rejected one ACTION (illegal move, not
+   * your turn) and becomes a transient card notice. With no board yet the join
+   * itself failed, which is terminal and stays a joinError.
    *
    * Also ROLLS BACK the pending tail. Leaving a rejected move in the queue
    * meant the optimistic board kept showing it — and the optimistic state
@@ -534,8 +665,24 @@ setOpponentGrace(null);
         NO_WALLS_REMAINING: 'No walls left to place.',
       };
       const message = messages[error.code] ?? 'Could not join that match. Go back and try again.';
-      setJoinError(message);
-      setIsSyncing(false);
+      setPending([]);
+      // Context decides the severity (see classifyGameError): an error that
+      // lands while a join is still unanswered rejected the JOIN — terminal,
+      // even when a stale board from a previous game is on screen. Anything
+      // later rejected one action on a live channel.
+      if (classifyGameError({ joinOutstanding: joinOutstandingRef.current, hasBoard: !!gameStateRef.current }) === 'join') {
+        setJoinError(message);
+        setIsSyncing(false);
+      } else {
+        // Settled channel: the error rejected one action, not the join.
+        // Transient notice — the match goes on.
+        const nonce = Date.now();
+        setActionError({ message, nonce });
+        if (actionErrorTimerRef.current) clearTimeout(actionErrorTimerRef.current);
+        actionErrorTimerRef.current = setTimeout(() => {
+          setActionError((prev) => (prev?.nonce === nonce ? null : prev));
+        }, 4000);
+      }
       if (onError) onError(error);
     },
     [joinGame, setPending, onError]
@@ -595,12 +742,29 @@ setOpponentGrace(null);
 
     const handleSync = (sync: GameSyncDto) => {
       setIsSyncing(false);
+      // The join has its answer: later errors are about actions, not entry.
+      joinOutstandingRef.current = false;
       setGameState(sync.state);
 
       // The seat -> account map rides along with every sync. Keep it: the
       // opponent's chips need a userId to open a profile, and this is the
       // only place it exists (a board seat id is not a user id).
       if (sync.playerUserIds) setPlayerUserIds(sync.playerUserIds);
+
+      // Current turn's inactivity deadline, when one applies: a client that
+      // attaches (or re-attaches) mid-turn missed the one-shot warning, so
+      // it picks up the same card countdown from here. No deadline means no
+      // watchdog — clear anything stale rather than counting down to nothing.
+      if (sync.afk) {
+        const left = Math.max(0, Math.ceil((sync.afk.afkEndsAt - serverNow()) / 1000));
+        setAfkWarning(
+          left > 0
+            ? { playerId: sync.afk.playerId, afkEndsAt: sync.afk.afkEndsAt, secondsRemaining: left }
+            : null
+        );
+      } else {
+        setAfkWarning(null);
+      }
 
       // Prune the pending tail against authoritative truth: anything at or
       // below the server length is either confirmed or dead — the sync
@@ -658,6 +822,10 @@ setOpponentGrace(null);
 
     const handleEnded = (ended: GameEndedDto) => {
       setGameEndedResult(ended);
+      // The table is decided: no seat is away or idle any more, so their
+      // indicators must not outlive the game onto the result screen.
+      setOpponentGrace({});
+      setAfkWarning(null);
       setGameState((prev) => {
         if (!prev) return prev;
         // Carry the authoritative final order into local state (places +
@@ -688,26 +856,37 @@ setOpponentGrace(null);
       // This event is about a SEAT, not "the opponent". The server now
       // excludes the leaver's own sockets, but the client must not depend on
       // that: on a 3P/4P table any other seat dropping matters, and your own
-      // seat must never raise a banner telling you the opponent left — or
+      // seat must never raise an indicator telling you the opponent left — or
       // arm a grace countdown against yourself while you are standing there.
       if (isOwnSeatEvent(payload, myPlayerIdRef.current)) return;
       // Absence and idling are mutually exclusive for one seat: a player who
       // is away cannot also be idle, and showing both indicators at once would
       // be a lie about which one the server is actually counting down.
       setAfkWarning(null);
-      setOpponentGrace({
-        userId: payload.userId,
-        playerId: payload.playerId ?? null,
-        graceEndsAt: payload.graceEndsAt,
-        seconds: Math.max(0, Math.ceil((payload.graceEndsAt - serverNow()) / 1000)),
-      });
+      setOpponentGrace((prev) => ({
+        ...prev,
+        [payload.userId]: {
+          userId: payload.userId,
+          playerId: payload.playerId ?? null,
+          graceEndsAt: payload.graceEndsAt,
+          seconds: Math.max(0, Math.ceil((payload.graceEndsAt - serverNow()) / 1000)),
+        },
+      }));
     };
 
     const handleOpponentReconnected = (payload: { userId?: string; playerId?: string } = {}) => {
       // Symmetric: a reconnect event about your own seat must not cancel a
-      // real opponent's countdown.
+      // real opponent's countdown — and on a 3P/4P table it must not cancel
+      // ANOTHER away seat's countdown either. Only that user's key goes.
       if (isOwnSeatEvent(payload, myPlayerIdRef.current)) return;
-      setOpponentGrace(null);
+      if (payload.userId) {
+        setOpponentGrace((prev) => {
+          if (!prev[payload.userId!]) return prev;
+          const next = { ...prev };
+          delete next[payload.userId!];
+          return next;
+        });
+      }
       // Coming back clears the absence; whether they are idle is the server's
       // call from here, so drop any stale AFK warning too rather than
       // leaving a countdown on screen for a player who just reconnected.
@@ -715,21 +894,30 @@ setOpponentGrace(null);
     };
 
     /**
-     * Inactivity notice for the seat on turn. Fires once, shortly before the
-     * server's limit, so the player is told rather than simply losing.
+     * Inactivity notice for the seat on turn. Fires once per turn, with the
+     * full allowance — the countdown on the card IS the warning.
+     *
+     * Deliberately NOT filtered by seat: the player sitting in the warned
+     * seat must see their own countdown. Dropping own-seat events is what
+     * left idle players with no warning at all while their opponents watched
+     * one.
      */
-    const handleAfkWarning = (payload: { playerId?: string; secondsRemaining: number }) => {
-      if (isOwnSeatEvent(payload, myPlayerIdRef.current)) return;
-      // An absent seat is not an idle one.
-      if (opponentGraceRef.current) return;
+    const handleAfkWarning = (payload: { playerId?: string; afkEndsAt?: number; secondsRemaining: number }) => {
+      // An absent table is not an idle one: while ANY seat is away, absence
+      // owns every outcome and no AFK watchdog can be live server-side.
+      if (Object.keys(opponentGraceRef.current).length > 0) return;
+      const afkEndsAt =
+        payload.afkEndsAt ?? serverNow() + Math.max(0, payload.secondsRemaining) * 1000;
       setAfkWarning({
         playerId: payload.playerId ?? null,
-        secondsRemaining: payload.secondsRemaining,
+        afkEndsAt,
+        secondsRemaining: Math.max(0, Math.ceil((afkEndsAt - serverNow()) / 1000)),
       });
     };
 
-    const handleAfkCleared = (payload: { playerId?: string } = {}) => {
-      if (isOwnSeatEvent(payload, myPlayerIdRef.current)) return;
+    const handleAfkCleared = (_payload: { playerId?: string } = {}) => {
+      // A warning only ever names the seat on turn, and only one seat is
+      // ever warned at a time — any clear (including your own move) ends it.
       setAfkWarning(null);
     };
 
@@ -779,7 +967,9 @@ setOpponentGrace(null);
       socket.off('game:playerFinished', handleFinished);
       socket.off('game:error', handleError);
       if (graceTimerRef.current) clearInterval(graceTimerRef.current);
+      if (afkTimerRef.current) clearInterval(afkTimerRef.current);
       if (rematchTimerRef.current) clearTimeout(rematchTimerRef.current);
+      if (actionErrorTimerRef.current) clearTimeout(actionErrorTimerRef.current);
     };
     // Deliberately NOT depending on the handlers: `onError` is typically an
     // inline arrow from GameScreen, so listing it would re-register every
@@ -928,6 +1118,8 @@ connStatus,
     gameEndedResult,
     isSyncing,
     joinError,
+    /** Transient rejected-action notice for the player's own card. */
+    actionError,
     pendingCount,
     lastFinished,
     sendAction,

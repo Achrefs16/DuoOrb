@@ -79,8 +79,12 @@ describe('Reconnect and Grace Period', () => {
     // Advance another 50 seconds (total 70s since disconnect)
     vi.advanceTimersByTime(50000);
 
-    // Forfeit should NOT fire
+    // The GRACE forfeit must NOT fire — the timer died with the reconnect.
     expect(forfeitFired).toBe(false);
-    expect(game.state.status).toBe('IN_PROGRESS');
+    expect(game.disconnectedUsers['u1']).toBeUndefined();
+    // But coming back re-arms the turn's watchdog: Alice held the turn and
+    // then idled 50s, so the game ends for idling (winner Bob), not absence.
+    expect(game.state.status).toBe('COMPLETED');
+    expect(game.state.winnerId).toBe('p2');
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { AuthoritativeGameService } from '../src/game/authoritative-game.service.js';
+import { getLegalMoves } from '@duoorb/game-core';
 
 const RATING = { rating: 1500, rd: 350, vol: 0.06 };
 
@@ -26,37 +27,39 @@ describe('Clocks and Fischer Increment', () => {
     vi.useRealTimers();
   });
 
-  it('does not run the clock until the first move is played', () => {
+  it('runs the clock from match start — the opening turn is charged, not reset', () => {
     const service = new AuthoritativeGameService();
     const game = makeGame(service, 'armed-test', 3, 2);
 
+    // The countdown starts with the match itself: no "starts on first move"
+    // re-arm, so the first sync can never snap the clock back to full time.
+    expect(game.clockStarted).toBe(true);
     expect(game.clocksMs['p1']).toBe(180000);
     expect(game.clocksMs['p2']).toBe(180000);
-    expect(game.clockStarted).toBe(false);
 
-    // Pairing, attaching and rendering all happen before anyone can move.
-    // That latency must not be charged to either player: a client that failed
-    // to attach at all used to time out and forfeit a game it never saw.
-    vi.advanceTimersByTime(60000);
-
+    // 10s pass before anyone moves: the opener's turn is already running.
+    // The ledger only moves on moves, but the snapshot derives the turn.
+    vi.advanceTimersByTime(10000);
     expect(game.clocksMs['p1']).toBe(180000);
-    expect(game.clocksMs['p2']).toBe(180000);
-    expect(game.state.status).toBe('IN_PROGRESS');
-    expect(game.clockStarted).toBe(false);
+    expect(service.clockSnapshot(game)['p1']).toBe(170000);
+
+    // ...and idling through the whole allowance forfeits, even with no moves
+    // at all: the opening turn is watched like every later one.
+    vi.advanceTimersByTime(36000);
+    expect(game.state.status).toBe('COMPLETED');
+    expect(game.state.winnerId).toBe('p2');
   });
 
-  it('credits Fischer increment after each accepted move, charging only time since arming', () => {
+  it('credits Fischer increment after each accepted move, charging since match start', () => {
     const service = new AuthoritativeGameService();
     const game = makeGame(service, 'clock-inc-test', 3, 2);
 
     expect(game.clocksMs['p1']).toBe(180000);
     expect(game.clocksMs['p2']).toBe(180000);
 
-    // Time passes before anyone moves — not charged to anybody.
+    // 5s pass before anyone moves — charged to the opener, then +2s increment.
     vi.advanceTimersByTime(5000);
 
-    // Alice's first move arms the clock, so this move costs 0ms of her time
-    // and then banks the 2s increment.
     const res1 = service.processAction('clock-inc-test', 'p1', {
       type: 'MOVE',
       to: { row: 7, col: 4 },
@@ -64,7 +67,7 @@ describe('Clocks and Fischer Increment', () => {
 
     expect(res1.success).toBe(true);
     expect(game.clockStarted).toBe(true);
-    expect(game.clocksMs['p1']).toBe(182000);
+    expect(game.clocksMs['p1']).toBe(180000 - 5000 + 2000);
     // Bob's clock was untouched.
     expect(game.clocksMs['p2']).toBe(180000);
 
@@ -77,10 +80,10 @@ describe('Clocks and Fischer Increment', () => {
 
     expect(res2.success).toBe(true);
     expect(game.clocksMs['p2']).toBe(180000 - 4000 + 2000);
-    expect(game.clocksMs['p1']).toBe(182000);
+    expect(game.clocksMs['p1']).toBe(180000 - 5000 + 2000);
   });
 
-  it('triggers timeout and flags game when clock hits zero', () => {
+  it('an idle player forfeits by AFK before their clock runs out', () => {
     let timeoutFired = false;
     let endedReason: string | undefined;
 
@@ -103,17 +106,60 @@ describe('Clocks and Fischer Increment', () => {
 
     expect(game.state.status).toBe('IN_PROGRESS');
 
-    // Arm the clock with Alice's opening move (she holds the first turn),
-    // which leaves Bob on the move. Bob then sits and runs his clock down.
+    // Alice opens immediately, leaving Bob on the move. Bob then sits: the
+    // 45s inactivity limit fires before his 60s clock runs out, so the
+    // reason is AFK — idling — not TIMEOUT.
     const opening = service.processAction('timeout-test', 'p1', {
       type: 'MOVE',
       to: { row: 7, col: 4 },
     });
     expect(opening.success).toBe(true);
-    expect(game.clockStarted).toBe(true);
 
-    // Advance past 60 seconds of total budget.
     vi.advanceTimersByTime(61000);
+
+    expect(timeoutFired).toBe(true);
+    expect(endedReason).toBe('AFK');
+    expect(game.state.status).toBe('COMPLETED');
+    expect(game.state.winnerId).toBe('p1'); // Alice wins by Bob's idling
+  });
+
+  it('times out a clock that is actually spent, while both sides keep moving', () => {
+    let timeoutFired = false;
+    let endedReason: string | undefined;
+
+    const service = new AuthoritativeGameService();
+    const game = service.createGame({
+      gameId: 'timeout-active',
+      mode: '2p',
+      users: [
+        { userId: 'p1', displayName: 'Alice', rating: RATING },
+        { userId: 'p2', displayName: 'Bob', rating: RATING },
+      ],
+      timeControlMinutes: 1, // 60,000 ms
+      incrementSeconds: 0,
+      isRanked: true,
+      onTimeout: (_gId, ended) => {
+        timeoutFired = true;
+        endedReason = ended.reason;
+      },
+    });
+
+    // First legal move for whoever holds the turn right now.
+    const moveFor = (userId: string) => {
+      const g = service.getGame('timeout-active')!;
+      const seat = g.userPlayerIds[userId];
+      const to = getLegalMoves(g.state, seat)[0];
+      return service.processAction('timeout-active', userId, { type: 'MOVE', to });
+    };
+
+    // Both sides move inside every 45s allowance, so no AFK watchdog ever
+    // fires — but Bob's 60s clock still runs out on his second turn.
+    expect(moveFor('p1').success).toBe(true); // t0
+    vi.advanceTimersByTime(30_000);
+    expect(moveFor('p2').success).toBe(true); // t30: Bob spent 30s, 30s left
+    vi.advanceTimersByTime(20_000);
+    expect(moveFor('p1').success).toBe(true); // t50: Alice spent 20s, 40s left
+    vi.advanceTimersByTime(31_000); // t81: Bob's remaining 30s ran out at t80
 
     expect(timeoutFired).toBe(true);
     expect(endedReason).toBe('TIMEOUT');

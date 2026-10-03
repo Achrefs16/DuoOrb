@@ -30,6 +30,14 @@ const QUEUEABLE_EVENTS = new Set<string>([
 ]);
 
 /**
+ * How long the OS must report "no connection" before the transport is torn
+ * down. Shorter than socket.io's own give-up horizon (15 attempts over
+ * ~45s+), long enough to ride out tunnel/elevator/WiFi-handoff blips that
+ * socket.io survives on its own.
+ */
+const OFFLINE_TEARDOWN_MS = 6000;
+
+/**
  * The socket transport is a pure function of the canonical identity.
  *
  * Two problems are solved here, and they are the same problem:
@@ -71,6 +79,24 @@ class SocketManager {
    */
   private emitQueue: { event: string; args: unknown[]; at: number }[] = [];
   private netWatched = false;
+  /**
+   * Game the app is currently in, set by the online channel. Queue replay
+   * is scoped to it: a move or join for a PREVIOUS game flushed after a
+   * rematch switch would otherwise land in the new game (STALE_SEQUENCE at
+   * best, a rolled-back pending tail at worst). Null means unknown — flush
+   * everything, the pre-scoping behaviour.
+   */
+  private scopedGameId: string | null = null;
+
+  /** Scopes offline-queue replay to one game (see above). Null clears. */
+  public setScopedGame(gameId: string | null): void {
+    this.scopedGameId = gameId;
+  }
+
+  /** Clears the replay scope, but only if it still names this game. */
+  public clearScopedGame(gameId: string): void {
+    if (this.scopedGameId === gameId) this.scopedGameId = null;
+  }
 
   private facade: RawSocket;
 
@@ -193,6 +219,17 @@ class SocketManager {
         console.warn('[socket] dropped stale queued game:leave');
         continue;
       }
+      // Scoped replay: anything addressed to a game we have since left is
+      // dropped, never flushed into the current one.
+      const scopedTo = (q.args[0] as { gameId?: unknown } | undefined)?.gameId;
+      if (
+        this.scopedGameId !== null &&
+        typeof scopedTo === 'string' &&
+        scopedTo !== this.scopedGameId
+      ) {
+        console.warn(`[socket] dropped queued ${q.event} for a previous game`);
+        continue;
+      }
       try {
         (this.raw as unknown as { emit: (e: string, ...a: unknown[]) => void }).emit(
           q.event,
@@ -226,6 +263,20 @@ class SocketManager {
       // Same account, same credential: the connection is still correct. A
       // changed display name needs no new handshake — `syncIdentity` tells
       // the server to re-read the verified profile.
+      return;
+    }
+
+    if (this.raw && this.boundTo?.userId === next.userId) {
+      // Pure credential rotation (guest token refresh): same account, new
+      // token. Tearing the transport down here would drop a live match into
+      // a grace window for no reason — the live handshake keeps working,
+      // and socket.io presents the updated `auth` on the next (re)connect.
+      this.boundTo = next;
+      try {
+        (this.raw as unknown as { auth: unknown }).auth = { token: next.token };
+      } catch {
+        // Non-fatal: the next full rebuild picks the credential up.
+      }
       return;
     }
 
@@ -317,11 +368,16 @@ class SocketManager {
   }
 
   /**
-   * Offline gate, armed on first connect. While the device is offline the
-   * transport is torn down without burning retry attempts; coming back online
-   * rebuilds and reconnects. Lazy import keeps the native module out of
-   * module scope so unit tests never pay for it.
+   * Offline gate, armed on first connect. A transient blip must NOT tear the
+   * transport down: socket.io already retries with backoff, and destroying
+   * the socket turns a 2-second radio gap into a full grace-arm / rejoin /
+   * replay storm for both seats. Only a SUSTAINED loss (still down after
+   * OFFLINE_TEARDOWN_MS) disposes the transport — without burning the retry
+   * budget on a link that is already known dead. Lazy import keeps the native
+   * module out of module scope so unit tests never pay for it.
    */
+  private offlineTimer: ReturnType<typeof setTimeout> | null = null;
+
   private watchConnectivity(): void {
     if (this.netWatched) return;
     this.netWatched = true;
@@ -329,9 +385,20 @@ class SocketManager {
       .then((m) => {
         m.default.addEventListener((s) => {
           if (s.isConnected === false) {
-            this.disposeRaw();
-            this.setStatus('disconnected');
+            // Wait out the blip: socket.io's own heartbeat/retry reports
+            // the truth meanwhile, and a quick recovery cancels this with
+            // the transport (and its retry budget) intact.
+            if (this.offlineTimer) return;
+            this.offlineTimer = setTimeout(() => {
+              this.offlineTimer = null;
+              this.disposeRaw();
+              this.setStatus('disconnected');
+            }, OFFLINE_TEARDOWN_MS);
           } else if (s.isConnected === true) {
+            if (this.offlineTimer) {
+              clearTimeout(this.offlineTimer);
+              this.offlineTimer = null;
+            }
             this.syncWithIdentity();
             this.ensureConnected();
           }
@@ -413,6 +480,10 @@ class SocketManager {
   }
 
   public disconnect(): void {
+    if (this.offlineTimer) {
+      clearTimeout(this.offlineTimer);
+      this.offlineTimer = null;
+    }
     this.disposeRaw();
     this.boundTo = null;
     // Explicit teardown drops queued intents with the session they belong to.

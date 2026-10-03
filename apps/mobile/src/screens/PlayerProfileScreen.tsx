@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Modal,
   ScrollView,
@@ -15,12 +15,13 @@ import { useIdentity } from '../network/auth';
 import { useConnectivity } from '../network/useConnectivity';
 import {
   api,
-  EquippedBadgeDto,
   PublicProfileDto,
   RatingHistoryPointDto,
   HeadToHeadStats,
   GameHistoryItemDto,
+  type AchievementsResponseDto,
 } from '../network/apiClient';
+import { AchievementsModal } from '../components/AchievementsModal';
 import { RatingChart } from '../components/RatingChart';
 import { GuestGate } from '../components/GuestGate';
 import { toast } from '../components/AppToast';
@@ -41,7 +42,10 @@ interface PlayerProfileScreenProps {
    * Rendered as an overlay on top of a live match. Hides everything that
    * would navigate away (Challenge, replay entries): leaving the game
    * screen mid-match resigns the live game, so those actions must not be
-   * reachable here. Add Friend stays — it is a plain API call.
+   * reachable here. Google Sign-In is hidden for the same reason — it opens
+   * a browser mid-match (risking a grace-window forfeit while signing in),
+   * and linking is only offered in the viewer's own Profile after the match
+   * has finished. Add Friend stays — it is a plain API call.
    */
   inGame?: boolean;
 }
@@ -98,7 +102,12 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   const [blocked, setBlocked] = useState(false);
   const [blockBusy, setBlockBusy] = useState(false);
   const [showReport, setShowReport] = useState(false);
-  const [detailBadge, setDetailBadge] = useState<EquippedBadgeDto | null>(null);
+  const [showAchievements, setShowAchievements] = useState(false);
+  // Guest friend-request upsell: the disabled-looking button opens this,
+  // never sends directly.
+  const [showSignIn, setShowSignIn] = useState(false);
+  // Overflow safety menu (block/report): closed by default, toggled only.
+  const [showSafety, setShowSafety] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
   // The canonical identity, so "your" name in head-to-head comparisons is
@@ -106,8 +115,35 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   const identity = useIdentity();
   const { isConnected } = useConnectivity();
   // A guest viewer owns no friends and no head-to-head: friend actions and
-  // the H2H/recent sections become the link lock. Challenge stays open.
+  // the H2H/recent sections become the link lock — except inside a match,
+  // where Google Sign-In is never offered (see inGame). Challenge stays open.
   const viewerIsGuest = identity?.isGuest === true;
+  // The link lock itself: guests outside a match get the Save-with-Google
+  // gate; guests inside one get neither the gate nor the locked data.
+  const showLinkLock = viewerIsGuest && !inGame;
+
+  /**
+   * Their achievements in the same viewer as my Profile: equipped showcase
+   * plus the full list, read-only. The server only sends another player's
+   * equipped badges (no catalog, no progress), so the modal lists exactly
+   * those — earned, with descriptions, no equip actions and no rarity
+   * counts the server never sent.
+   */
+  const equippedBadges = profile?.badges?.equipped ?? [];
+  const theirAchievements = useMemo((): AchievementsResponseDto | null => {
+    const equipped = profile?.badges?.equipped ?? [];
+    if (!profile?.badges || equipped.length === 0) return null;
+    return {
+      catalog: equipped.map((b) => ({ ...b, earned: true as const })),
+      earned: equipped.map((b) => ({ ...b })),
+      equipped,
+      stats: {
+        hardWins: profile.badges.hardWins,
+        fastestPlies: profile.badges.fastestPlies,
+      },
+      owners: {},
+    };
+  }, [profile]);
 
   const loadPlayerData = useCallback(async (silent = false) => {
     // Silent = background refresh with data on screen: never flash a
@@ -343,7 +379,14 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
           <Feather name="arrow-left" size={20} color={THEME.colors.textSecondary} />
         </TouchableOpacity>
         <Text style={styles.title}>Player Profile</Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => setShowSafety((v) => !v)}
+          accessibilityLabel="More actions"
+          accessibilityRole="button"
+        >
+          <MaterialIcons name="more-vert" size={20} color={THEME.colors.textSecondary} />
+        </TouchableOpacity>
       </View>
 
       {/* Remove friend confirm */}
@@ -447,65 +490,65 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </TouchableOpacity>
               )}
 
-              {!viewerIsGuest && (
+              {/* Friend action: always visible. Blocked players get Unblock
+                  here instead of any friend request action; guests get a
+                  disabled-looking button that opens the sign-in modal. */}
               <TouchableOpacity
                 style={[
                   styles.friendBtn,
-                  friendRequestSent && styles.friendBtnActive,
+                  friendRequestSent && !viewerIsGuest && !blocked && styles.friendBtnActive,
+                  viewerIsGuest && !blocked && styles.friendBtnGuest,
                 ]}
                 activeOpacity={0.75}
-                disabled={friendRequestSent}
+                disabled={(friendRequestSent && !viewerIsGuest && !blocked) || (blocked && blockBusy)}
                 onPress={() => {
+                  if (blocked) {
+                    void handleToggleBlock();
+                    return;
+                  }
+                  if (viewerIsGuest) {
+                    setShowSignIn(true);
+                    return;
+                  }
                   if (isFriend) {
                     setShowRemove(true);
                     return;
                   }
                   void handleSendFriendRequest();
                 }}
+                accessibilityLabel={
+                  blocked ? 'Unblock player' : viewerIsGuest ? 'Add Friend (sign in required)' : 'Friend action'
+                }
               >
                 <MaterialIcons
-                  name={isFriend ? 'keyboard-arrow-down' : 'person-add'}
+                  name={blocked ? 'block' : viewerIsGuest ? 'person-add' : isFriend ? 'keyboard-arrow-down' : 'person-add'}
                   size={20}
-                  color={friendRequestSent ? THEME.colors.textMuted : THEME.colors.textPrimary}
+                  color={blocked ? THEME.colors.textPrimary : viewerIsGuest ? THEME.colors.textMuted : friendRequestSent ? THEME.colors.textMuted : THEME.colors.textPrimary}
                 />
                 <Text
                   style={[
                     styles.friendBtnText,
-                    friendRequestSent && styles.friendBtnTextActive,
+                    (friendRequestSent || viewerIsGuest) && !blocked && styles.friendBtnTextActive,
                   ]}
                 >
-                  {isFriend ? 'Friends' : friendRequestSent ? 'Sent' : 'Add Friend'}
+                  {blocked
+                    ? blockBusy
+                      ? '…'
+                      : 'Unblock'
+                    : viewerIsGuest
+                    ? 'Add Friend'
+                    : isFriend
+                    ? 'Friends'
+                    : friendRequestSent
+                    ? 'Sent'
+                    : 'Add Friend'}
                 </Text>
               </TouchableOpacity>
-              )}
             </View>
 
-            {/* Safety row: Play UGC policy - block + report, always visible. */}
-            <View style={styles.safetyRow}>
-              <TouchableOpacity
-                style={[styles.safetyBtn, blocked && styles.safetyBtnActive]}
-                onPress={() => void handleToggleBlock()}
-                disabled={blockBusy}
-                accessibilityLabel={blocked ? 'Unblock player' : 'Block player'}
-              >
-                <Feather
-                  name={blocked ? 'check-circle' : 'slash'}
-                  size={15}
-                  color={blocked ? THEME.colors.success : THEME.colors.danger}
-                />
-                <Text style={[styles.safetyText, blocked && styles.safetyTextActive]}>
-                  {blockBusy ? '…' : blocked ? 'Unblock' : 'Block'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.safetyBtn}
-                onPress={() => setShowReport(true)}
-                accessibilityLabel="Report player"
-              >
-                <Feather name="flag" size={15} color={THEME.colors.textSecondary} />
-                <Text style={styles.safetyText}>Report</Text>
-              </TouchableOpacity>
-            </View>
+          {/* Overflow safety actions are header-anchored (see the floating
+              menu below), not inline buttons. The main actions above stay
+              visually dominant. */}
             {blocked && (
               <Text style={styles.blockedNote}>Blocked — you will not match or see requests from this player.</Text>
             )}
@@ -518,31 +561,69 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
             onClose={() => setShowReport(false)}
           />
 
-          {/* Badge showcase — the 3 badges they equipped, plus hard-AI
-              totals. Server-driven; hidden when the profile has none. */}
-          {!!profile?.badges &&
-            (profile.badges.equipped.length > 0 || profile.badges.hardWins > 0) && (
-              <View style={styles.badgeCard}>
-                <Text style={styles.sectionHeading}>SHOWCASE</Text>
-                {profile.badges.equipped.length > 0 && (
-                  <View style={styles.badgeRow}>
-                    {profile.badges.equipped.map((badge) => (
-                      <TouchableOpacity
-                        key={badge.code}
-                        style={styles.badgeChip}
-                        activeOpacity={0.7}
-                        onPress={() => setDetailBadge(badge)}
-                        accessibilityLabel={`${badge.name}: details`}
-                      >
-                        <AchievementMedal icon={badge.icon} tier={badge.tier} size={32} />
-                        <Text style={styles.badgeName} numberOfLines={1}>
-                          {badge.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-                <Text style={styles.badgeStats}>
+          {/* Guest sign-in, opened from the faded Add Friend button. The
+              existing Save with Google card is the whole content — no second
+              copy of it anywhere else on this profile. Closes itself the
+              moment linking succeeds (GuestGate unmounts for linked users). */}
+          <Modal
+            visible={showSignIn && viewerIsGuest}
+            transparent
+            animationType="none"
+            onRequestClose={() => setShowSignIn(false)}
+          >
+            <View style={styles.signInOverlay}>
+              <View style={styles.signInCard}>
+                <GuestGate
+                  title="Save your account to add friends"
+                  message="Sign in to keep your friends, rating, and game history across devices."
+                  secondaryLabel="Not now"
+                  onSecondary={() => setShowSignIn(false)}
+                  mini
+                />
+              </View>
+            </View>
+          </Modal>
+
+          {/* ACHIEVEMENTS — the same viewer as my Profile: equipped
+              showcase plus the full list. Read-only here (see
+              theirAchievements): no equip, no unearned states. */}
+          {!!profile?.badges && (
+            <View style={styles.achSection}>
+              <View style={styles.achHeaderRow}>
+                <Text style={styles.sectionHeading}>ACHIEVEMENTS</Text>
+                <Text style={styles.achCount}>{equippedBadges.length} equipped</Text>
+              </View>
+              <View style={styles.showcaseRow}>
+                {[0, 1, 2].map((slot) => {
+                  const badge = equippedBadges.find((b) => b.slot === slot);
+                  return (
+                    <TouchableOpacity
+                      key={slot}
+                      style={styles.showcaseCell}
+                      activeOpacity={0.7}
+                      disabled={!badge}
+                      onPress={() => setShowAchievements(true)}
+                      accessibilityLabel={badge ? `${badge.name}: details` : `Showcase slot ${slot + 1} empty`}
+                    >
+                      {badge ? (
+                        <>
+                          <AchievementMedal icon={badge.icon} tier={badge.tier} size={52} />
+                          <Text style={styles.showcaseName} numberOfLines={1}>
+                            {badge.name}
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <View style={styles.showcaseEmpty} />
+                          <Text style={styles.showcaseEmptyText}>Slot {slot + 1}</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {(profile.badges.hardWins > 0 || profile.badges.fastestPlies !== null) && (
+                <Text style={styles.achStats}>
                   {profile.badges.hardWins > 0
                     ? `${profile.badges.hardWins} different Hard AI win${profile.badges.hardWins === 1 ? '' : 's'}`
                     : 'No hard-AI wins yet'}
@@ -550,17 +631,42 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                     ? ` · fastest ${profile.badges.fastestPlies} moves`
                     : ''}
                 </Text>
-              </View>
-            )}
+              )}
+              {theirAchievements && (
+                <TouchableOpacity
+                  style={styles.viewAllBtn}
+                  activeOpacity={0.8}
+                  onPress={() => setShowAchievements(true)}
+                  accessibilityLabel="View all achievements"
+                  accessibilityRole="button"
+                >
+                  <Feather name="grid" size={15} color={THEME.colors.textPrimary} />
+                  <Text style={styles.viewAllText}>View All Achievements</Text>
+                  <Feather name="chevron-right" size={16} color={THEME.colors.textPrimary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+          {theirAchievements && (
+            <AchievementsModal
+              visible={showAchievements}
+              achievements={theirAchievements}
+              onToggleEquip={() => {}}
+              onClose={() => setShowAchievements(false)}
+              readOnly
+            />
+          )}
 
-          {/* HEAD TO HEAD CARD (Stitch) — guests get the link lock instead. */}
-          {viewerIsGuest ? (
+          {/* HEAD TO HEAD CARD (Stitch) — guests get the link lock instead,
+              unless this is the in-match overlay, where sign-in is hidden. */}
+          {showLinkLock && (
             <GuestGate
               title="Head-to-head needs saving"
               message="Link Google to save rating, friends, history & head-to-head."
               mini
             />
-          ) : (
+          )}
+          {!viewerIsGuest && (
           <View style={styles.h2hCard}>
             <View style={styles.h2hTitleRow}>
               <View>
@@ -629,19 +735,23 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
             <RatingChart data={ratingHistory} currentRating={Math.round(rating1v1)} showHeader={false} />
           </View>
 
-          {/* Their recent matches — guests get the link lock instead. */}
-          {viewerIsGuest ? (
-            <GuestGate
-              title="Recent matches need saving"
-              message="Link Google to save rating, friends, history & head-to-head."
-              mini
-            />
-          ) : (
-          <View style={styles.matchesSection}>            <View style={styles.matchesHeaderRow}>
+          {/* Their recent matches — public record, visible to everyone
+              including guests. No second sign-in card here: the only
+              Google prompt on this profile lives in the head-to-head lock
+              (and the friend button's modal, on demand). */}
+          <View style={styles.matchesSection}>
+            <View style={styles.matchesHeaderRow}>
               <Text style={styles.sectionHeading}>RECENT MATCHES</Text>
               <Text style={styles.matchesSub}>Latest {theirGames.length} games</Text>
             </View>
 
+            {theirGames.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyCardText}>No matches yet</Text>
+                <Text style={styles.emptyCardSub}>Games against this player will appear here.</Text>
+              </View>
+            ) : (
+              <>
             {/* Filter Pills with counts */}
             <View style={styles.filterPillsRow}>
               {(['ALL', 'WINS', 'LOSSES'] as MatchFilter[]).map((f) => {
@@ -724,41 +834,60 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 <Text style={styles.loadMoreText}>Load more</Text>
               </TouchableOpacity>
             )}
+              </>
+            )}
           </View>
-          )}
         </ScrollView>
       )}
 
-      {/* Badge details (read-only for visitors): what it is and how to earn it. */}
-      <Modal
-        visible={detailBadge !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDetailBadge(null)}
-      >
-        <View style={styles.detailOverlay}>
-          <View style={styles.detailCard}>
-            <AchievementMedal
-              icon={detailBadge?.icon ?? 'award'}
-              tier={detailBadge?.tier}
-              size={80}
-            />
-            <Text style={styles.detailName}>{detailBadge?.name}</Text>
-            <Text style={styles.detailDesc}>{detailBadge?.description}</Text>
-            {!!detailBadge?.requirement && (
-              <Text style={styles.detailReq}>{detailBadge.requirement}</Text>
-            )}
+      {/* Floating overflow menu: anchored top-right under the header, above
+          everything. Opens and closes without moving a single pixel of the
+          profile layout underneath. */}
+      {showSafety && (
+        <>
+          <TouchableOpacity
+            style={styles.menuBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowSafety(false)}
+            accessibilityLabel="Close menu"
+          />
+          <View style={styles.safetyMenuFloat}>
             <TouchableOpacity
-              style={styles.detailCloseBtn}
+              style={styles.safetyItem}
               activeOpacity={0.7}
-              onPress={() => setDetailBadge(null)}
-              accessibilityLabel="Close badge details"
+              onPress={() => {
+                setShowSafety(false);
+                void handleToggleBlock();
+              }}
+              disabled={blockBusy}
+              accessibilityLabel={blocked ? 'Unblock player' : 'Block player'}
             >
-              <Text style={styles.detailCloseText}>Close</Text>
+              <Feather
+                name={blocked ? 'check-circle' : 'slash'}
+                size={15}
+                color={THEME.colors.textSecondary}
+              />
+              <Text style={styles.safetyItemText}>
+                {blockBusy ? '…' : blocked ? 'Unblock' : 'Block'}
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.safetyDivider} />
+            <TouchableOpacity
+              style={styles.safetyItem}
+              activeOpacity={0.7}
+              onPress={() => {
+                setShowSafety(false);
+                setShowReport(true);
+              }}
+              accessibilityLabel="Report player"
+            >
+              <Feather name="flag" size={15} color={THEME.colors.textSecondary} />
+              <Text style={styles.safetyItemText}>Report</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
+        </>
+      )}
+
     </View>
   );
 };
@@ -988,33 +1117,55 @@ const styles = StyleSheet.create({
   friendBtnTextActive: {
     color: THEME.colors.textMuted,
   },
-  safetyRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
+  // Guest friend button: the action exists but the account does not — light
+  // neutral, muted, faded, bordered. Deliberately not the blue CTA. Still
+  // tappable: it opens the sign-in modal instead of sending.
+  friendBtnGuest: {
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+    opacity: 0.75,
   },
-  safetyBtn: {
-    flex: 1,
+  // Floating overflow menu: backdrop + card anchored top-right under the
+  // header, above everything (zIndex + elevation). Opens and closes without
+  // moving any profile layout. Quiet by design: white card, muted rows.
+  menuBackdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 20,
+  },
+  safetyMenuFloat: {
+    position: 'absolute',
+    top: 72,
+    right: 12,
+    width: 200,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+    overflow: 'hidden',
+    zIndex: 30,
+    ...THEME.shadows.card,
+  },
+  safetyItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 9,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: THEME.colors.outlineVariant,
+    gap: 12,
+    paddingHorizontal: 16,
+    height: 44,
+  },
+  safetyDivider: {
+    height: 1,
     backgroundColor: THEME.colors.surfaceMuted,
+    marginLeft: 43,
   },
-  safetyBtnActive: {
-    borderColor: THEME.colors.success,
-  },
-  safetyText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 13,
+  safetyItemText: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 14,
     color: THEME.colors.textSecondary,
-  },
-  safetyTextActive: {
-    color: THEME.colors.success,
   },
   blockedNote: {
     fontFamily: THEME.fonts.medium,
@@ -1108,106 +1259,81 @@ const styles = StyleSheet.create({
     color: THEME.colors.textMuted,
     letterSpacing: 0.8,
   },
-  badgeCard: {
+  // Achievements viewer — same card as my Profile: heading + count,
+  // 3-slot showcase, View All. Read-only here (see theirAchievements).
+  achSection: {
+    gap: 8,
+  },
+  achHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  achCount: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    marginTop: 2,
+  },
+  showcaseRow: {
+    flexDirection: 'row',
+    gap: 8,
     backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: THEME.colors.surfaceMuted,
-    padding: 16,
-    gap: 10,
+    paddingVertical: 12,
     ...THEME.shadows.card,
   },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  badgeChip: {
-    flexDirection: 'row',
+  showcaseCell: {
+    flex: 1,
     alignItems: 'center',
     gap: 6,
-    backgroundColor: THEME.colors.warningLight,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: THEME.colors.warningBorder,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    maxWidth: '100%',
   },
-  badgeName: {
+  showcaseName: {
     fontFamily: THEME.fonts.semiBold,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
-    color: THEME.colors.onSurface,
-    flexShrink: 1,
+    color: THEME.colors.textSecondary,
+    textAlign: 'center',
   },
-  badgeStats: {
+  showcaseEmpty: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: THEME.colors.boardBorder,
+  },
+  showcaseEmptyText: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 10,
+    color: THEME.colors.textMuted,
+  },
+  achStats: {
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
     color: THEME.colors.textSecondaryStrong,
     fontVariant: ['tabular-nums'],
+    paddingHorizontal: 2,
   },
-  detailOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  detailCard: {
-    backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderRadius: THEME.radius.xl,
-    padding: 24,
-    maxWidth: 340,
-    width: '100%',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceContainer,
-    ...THEME.shadows.modal,
-  },
-  detailIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  viewAllBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    backgroundColor: THEME.colors.warningLight,
+    gap: 8,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: THEME.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: THEME.colors.warningBorder,
+    borderColor: THEME.colors.surfaceHairline,
   },
-  detailName: {
-    fontFamily: THEME.fonts.extraBold,
-    fontSize: 20,
-    fontWeight: '800',
-    color: THEME.colors.onSurface,
-    textAlign: 'center',
-  },
-  detailDesc: {
-    fontFamily: THEME.fonts.regular,
+  viewAllText: {
+    fontFamily: THEME.fonts.bold,
     fontSize: 14,
-    color: THEME.colors.onSurfaceVariant,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  detailReq: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 13,
-    fontWeight: '600',
-    color: THEME.colors.primary,
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  detailCloseBtn: {
-    marginTop: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-  },
-  detailCloseText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 13,
-    fontWeight: '600',
-    color: THEME.colors.textMuted,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
   },
   h2hStage: {
     flexDirection: 'row',
@@ -1378,6 +1504,26 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
     color: THEME.colors.textMuted,
+  },
+  emptyCardSub: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  // Guest sign-in dialog: instant dim, card from the shared gate.
+  signInOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  signInCard: {
+    maxWidth: 340,
+    width: '100%',
+    alignItems: 'center',
   },
   removeOverlay: {
     flex: 1,

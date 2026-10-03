@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
+  Animated,
   FlatList,
   Modal,
   Platform,
@@ -28,6 +29,7 @@ import { NetworkError, actionMessage, kindOf, loadMessage, sectionKind, type Err
 import { useConnectivity } from '../network/useConnectivity';
 import { FriendsSkeleton } from '../components/Skeleton';
 import { KeyboardShift } from '../components/KeyboardShift';
+import { sheetSlideStyle, useSheetSlide } from '../components/sheetAnimation';
 import { nameInitial, resolveName } from '../displayName';
 
 interface FriendsScreenProps {
@@ -59,10 +61,10 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   const [searchResults, setSearchResults] = useState<PublicProfileDto[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  // Sheet-only entrance for the add-friend sheet; dim appears instantly.
+  const addSheetSlide = useSheetSlide(showAddModal);
   const [removeTarget, setRemoveTarget] = useState<FriendItemDto | null>(null);
   const [removing, setRemoving] = useState(false);
-  const [blocked, setBlocked] = useState<{ id: string; username: string; displayName: string }[]>([]);
-  const [showBlocked, setShowBlocked] = useState(false);
   const [ownUsername, setOwnUsername] = useState<string | null>(null);
   const [sentIds, setSentIds] = useState<string[]>([]);
   const [copiedTick, setCopiedTick] = useState(false);
@@ -72,7 +74,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
   const { isConnected } = useConnectivity();
   // Guests own no social: the lock below replaces the whole screen, so no
-  // friend/request/blocked fetch ever fires for them.
+  // friend/request fetch ever fires for them.
   const isGuest = identity?.isGuest === true;
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,13 +92,6 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       friendsCache = { friends: friendsList, requests: requestsList };
       if (onRequestCountChange) {
         onRequestCountChange(requestsList.length);
-      }
-      try {
-        setBlocked(await api.getBlocked());
-      } catch (e) {
-        // A failed refresh must not wipe the list it failed to replace.
-        if (!silent) throw e;
-        toast.show(actionMessage(e));
       }
     } catch (e) {
       if (!silent) {
@@ -229,35 +224,6 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
     });
   };
 
-  const handleBlockFriend = (friend: FriendItemDto) => {
-    runWhenOnline(async () => {
-    try {
-      await api.blockUser(friend.id);
-      setFriends((prev) => prev.filter((f) => f.id !== friend.id));
-      try {
-        setBlocked(await api.getBlocked());
-      } catch (e) {
-        toast.show(actionMessage(e));
-      }
-    } catch (e) {
-      if (e instanceof NetworkError) throw e; // runWhenOnline shows the dialog
-      toast.show(actionMessage(e));
-    }
-    });
-  };
-
-  const handleUnblock = (userId: string) => {
-    runWhenOnline(async () => {
-    try {
-      await api.unblockUser(userId);
-      setBlocked((prev) => prev.filter((b) => b.id !== userId));
-    } catch (e) {
-      if (e instanceof NetworkError) throw e; // runWhenOnline shows the dialog
-      toast.show(actionMessage(e));
-    }
-    });
-  };
-
   const openAddModal = () => {
     setShowAddModal(true);
     setAddFeedback(null);
@@ -381,17 +347,9 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               <Text style={styles.playButtonText}>Challenge</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity
-            style={styles.blockIconBtn}
-            activeOpacity={0.7}
-            accessibilityLabel={`Block ${friend.username}`}
-            onPress={(e: any) => {
-              e?.stopPropagation?.();
-              void handleBlockFriend(friend);
-            }}
-          >
-            <Feather name="slash" size={15} color={THEME.colors.danger} />
-          </TouchableOpacity>
+          {/* No block action here by design: blocking lives only on the
+              Profile, where the full context (and the unblock path) sits.
+              The BLOCKED section below keeps its Unblock button. */}
         </View>
       </TouchableOpacity>
     );
@@ -562,41 +520,6 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 </View>
               )}
 
-              {/* Blocked players - unblock anytime (Play UGC blocking rule). */}
-              {blocked.length > 0 && (
-                <View style={styles.section}>
-                  <TouchableOpacity
-                    style={styles.sectionTitleRow}
-                    onPress={() => setShowBlocked((v) => !v)}
-                    accessibilityLabel="Toggle blocked list"
-                  >
-                    <Text style={styles.sectionTitle}>BLOCKED · {blocked.length}</Text>
-                    <Feather
-                      name={showBlocked ? 'chevron-up' : 'chevron-down'}
-                      size={16}
-                      color={THEME.colors.textMuted}
-                    />
-                  </TouchableOpacity>
-                  {showBlocked && (
-                    <View style={styles.cardGroup}>
-                      {blocked.map((b) => (
-                        <View key={b.id} style={styles.blockedRow}>
-                          <Text style={styles.blockedName} numberOfLines={1}>
-                            @{b.username}
-                          </Text>
-                          <TouchableOpacity
-                            style={styles.unblockBtn}
-                            onPress={() => void handleUnblock(b.id)}
-                            accessibilityLabel={`Unblock ${b.username}`}
-                          >
-                            <Text style={styles.unblockText}>Unblock</Text>
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              )}
             </View>
           )}
         />
@@ -634,10 +557,10 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       </Modal>
 
       {/* Add Friend Bottom Sheet */}
-      <Modal visible={showAddModal} transparent animationType="fade">
+      <Modal visible={showAddModal} transparent animationType="none">
         <KeyboardShift>
         <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
-          <View style={styles.sheetCard}>
+          <Animated.View style={[styles.sheetCard, sheetSlideStyle(addSheetSlide)]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Friend</Text>
               <TouchableOpacity
@@ -758,7 +681,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 <Text style={styles.ownIdCopyText}>{copiedTick ? 'Copied' : 'Copy'}</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         </SafeAreaView>
         </KeyboardShift>
       </Modal>
@@ -1052,47 +975,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-  },
-  blockIconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: THEME.colors.outlineVariant,
-    backgroundColor: THEME.colors.surfaceMuted,
-  },
-  blockedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: THEME.colors.outlineVariant,
-    backgroundColor: THEME.colors.backgroundCard,
-    marginBottom: 6,
-  },
-  blockedName: {
-    flex: 1,
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 13,
-    color: THEME.colors.textPrimary,
-  },
-  unblockBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: THEME.colors.outlineVariant,
-    backgroundColor: THEME.colors.surfaceMuted,
-  },
-  unblockText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 12,
-    color: THEME.colors.primary,
   },
   rowMenuBtn: {
     width: 32,

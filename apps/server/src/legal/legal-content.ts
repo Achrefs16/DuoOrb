@@ -136,7 +136,7 @@ export function termsHtml(): string {
 </ul>
 
 <h2>4. Reporting &amp; blocking</h2>
-<p>The app provides Block (Friends / profiles) and, where reporting is available, Report on profiles, history opponents and friend rows. Reports are reviewed and may lead to content removal, warnings, suspensions or bans. For urgent issues email <a href="mailto:${email}">${email}</a> with the @handle, user ID, and what happened. Reactions in matches are limited to a fixed emoji set, are ephemeral, and are not stored.</p>
+<p>The app provides Block and Report on profiles. Reports are reviewed and may lead to content removal, warnings, suspensions or bans. For urgent issues email <a href="mailto:${email}">${email}</a> with the @handle, user ID, and what happened. Reactions in matches are limited to a fixed emoji set, are ephemeral, and are not stored.</p>
 
 <h2>5. Fair play</h2>
 <p>The server is authoritative: clients submit moves, the server validates them and broadcasts state. Ranked status is forced server-side and cannot be spoofed as casual. Farming ratings with colluding accounts, win-trading, exploiting bugs, or using bots/scripts is prohibited and may lead to rating resets or bans. Hard-AI wins are verified by replaying notation before any badge is granted.</p>

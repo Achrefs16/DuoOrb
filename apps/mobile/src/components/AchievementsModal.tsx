@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Animated,
   Modal,
   ScrollView,
   StyleSheet,
@@ -21,6 +22,7 @@ import {
   categoryOf,
   tierOf,
 } from './AchievementMedal';
+import { sheetSlideStyle, useSheetSlide } from './sheetAnimation';
 
 type CatalogItem = BadgeDto & { earned: boolean; progress?: { current: number; target: number } };
 
@@ -38,6 +40,12 @@ interface AchievementsModalProps {
   equipping?: boolean;
   onToggleEquip: (code: string) => void;
   onClose: () => void;
+  /**
+   * Someone else's badges: no equip buttons, no rarity counts (unknown),
+   * and a viewer footnote instead of the equip hint. The sheet itself is
+   * identical — same viewer, both profiles.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -54,10 +62,13 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
   equipping = false,
   onToggleEquip,
   onClose,
+  readOnly = false,
 }) => {
   const [openCode, setOpenCode] = useState<string | null>(null);
   // Codes already opened on this device: their NEW pill is spent.
   const [viewed, setViewed] = useState<string[]>([]);
+  // Sheet-only entrance; the dim overlay appears instantly (see sheetAnimation).
+  const slide = useSheetSlide(visible);
 
   // Re-read each time the sheet opens so a badge viewed in a previous
   // session does not come back with its pill.
@@ -100,9 +111,9 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
   }, []);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
-        <View style={styles.sheetCard}>
+        <Animated.View style={[styles.sheetCard, sheetSlideStyle(slide)]}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Achievements</Text>
             <Text style={styles.headerCount}>
@@ -205,17 +216,19 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                           <View style={styles.detail}>
                             <Text style={styles.detailDesc}>{badge.description}</Text>
                             <Text style={styles.detailReq}>{badge.requirement}</Text>
-                            <Text style={styles.detailMeta}>
-                              {badge.comingSoon
-                                ? 'Not awarded yet — unlocks with a bigger player base.'
-                                : `Owned by ${achievements.owners[badge.code] ?? 0} player${
-                                    (achievements.owners[badge.code] ?? 0) === 1 ? '' : 's'
-                                  }`}
-                            </Text>
+                            {!readOnly && (
+                              <Text style={styles.detailMeta}>
+                                {badge.comingSoon
+                                  ? 'Not awarded yet — unlocks with a bigger player base.'
+                                  : `Owned by ${achievements.owners[badge.code] ?? 0} player${
+                                      (achievements.owners[badge.code] ?? 0) === 1 ? '' : 's'
+                                    }`}
+                              </Text>
+                            )}
                             {!badge.earned && !badge.comingSoon && badge.progress && (
                               <BadgeProgressBar progress={badge.progress} tier={badge.tier} />
                             )}
-                            {badge.earned && !badge.comingSoon && (
+                            {!readOnly && badge.earned && !badge.comingSoon && (
                               <TouchableOpacity
                                 style={[styles.equipBtn, isEquipped && styles.equipBtnActive]}
                                 activeOpacity={0.8}
@@ -240,10 +253,12 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
             })}
 
             <Text style={styles.footnote}>
-              Three earned badges can be equipped and appear on your profile.
+              {readOnly
+                ? 'Badges they have equipped on their profile.'
+                : 'Three earned badges can be equipped and appear on your profile.'}
             </Text>
-          </ScrollView>
-        </View>
+            </ScrollView>
+        </Animated.View>
       </SafeAreaView>
     </Modal>
   );

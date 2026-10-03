@@ -14,6 +14,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
 import { runWhenOnline } from '../components/NoConnection';
+import { BlockedUsers } from '../components/BlockedUsers';
 import { UserSettings } from '../storage/gameStorage';
 import { useSession } from '../network/session';
 import { api, ApiError } from '../network/apiClient';
@@ -109,6 +110,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [showBlocked, setShowBlocked] = useState(false);
 
   const availabilityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
@@ -587,6 +589,39 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             );
           })}
         </View>
+
+        {/* Privacy & safety — Blocked Users live here (and only here
+            plus the Profile toggle), always reachable even when empty. */}
+        {!isGuest && (
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>PRIVACY &amp; SAFETY</Text>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => setShowBlocked((v) => !v)}
+            accessibilityLabel="Toggle blocked users"
+            accessibilityRole="button"
+          >
+            <View style={styles.settingIconBox}>
+              <Feather name="slash" size={15} color={THEME.colors.textSecondary} />
+            </View>
+            <View style={styles.settingText}>
+              <Text style={styles.settingTitle}>Blocked Users</Text>
+              <Text style={styles.settingDesc}>Players you have blocked. They cannot match, challenge or message you.</Text>
+            </View>
+            <Feather
+              name={showBlocked ? 'chevron-up' : 'chevron-down'}
+              size={14}
+              color={THEME.colors.textMuted}
+            />
+          </TouchableOpacity>
+          {showBlocked && (
+            <>
+              <View style={styles.divider} />
+              <BlockedUsers />
+            </>
+          )}
+        </View>
+        )}
 
         {/* Feedback & testing */}
         <View style={styles.card}>

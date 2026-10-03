@@ -132,14 +132,31 @@ describe('socket transport follows the canonical identity', () => {
     auth.setIdentity(identity('u_one', 'token-one'));
     created[0].__fire('challenge:received', { id: 'c1' });
 
-    // Now force a rebuild by changing the credential.
-    auth.patchIdentity({ accessToken: 'token-two' });
+    // Now force a rebuild by changing the ACCOUNT (a pure token rotation
+    // updates auth in place instead — see below).
+    auth.setIdentity(identity('u_two', 'token-two'));
     expect(created).toHaveLength(2);
     expect(created[1].opts.auth).toEqual({ token: 'token-two' });
 
     // The listener must still be attached to the NEW transport.
     created[1].__fire('challenge:received', { id: 'c2' });
     expect(received).toEqual([{ id: 'c1' }, { id: 'c2' }]);
+  });
+
+  it('updates auth in place on token rotation instead of rebuilding', () => {
+    socketMod.socketManager.getSocket();
+    auth.setIdentity(identity('u_one', 'token-one'));
+    expect(created).toHaveLength(1);
+
+    // Guest token refresh: same account, new credential. Tearing the
+    // transport down here would drop a live match into a grace window for
+    // no reason — the handshake credential is updated, nothing reconnects.
+    auth.patchIdentity({ accessToken: 'token-two' });
+
+    expect(created).toHaveLength(1);
+    expect((created[0] as any).auth).toEqual({ token: 'token-two' });
+    expect(created[0].connected).toBe(true);
+    expect(socketMod.socketManager.getStatus()).toBe('connected');
   });
 
   it('never re-presents a previous identity after a rebuild', () => {
@@ -282,6 +299,41 @@ describe('offline emit queue', () => {
     const replayed = created[0].emitted.map((e: any) => e.event);
     expect(replayed).toContain('game:action');
     expect(replayed).not.toContain('game:leave');
+  });
+
+  it('drops queued intents for a previous game once scoped', () => {
+    // A move queued while down, then a rematch switch before reconnect:
+    // flushing the old move into the new game would STALE_SEQUENCE and
+    // wipe the new game's pending tail.
+    socket.emit('game:action', {
+      gameId: 'old-game',
+      action: { type: 'MOVE', to: { row: 0, col: 0 } },
+      clientTimestamp: Date.now(),
+      clientActionId: 'a1',
+    });
+    socketMod.socketManager.setScopedGame('new-game');
+    comeBackOnline();
+
+    const replayed = created[0].emitted.map((e: any) => e.event);
+    expect(replayed).not.toContain('game:action');
+  });
+
+  it('still replays the scoped game while dropping the old one', () => {
+    socket.emit('game:join', { gameId: 'old-game' });
+    socket.emit('game:join', { gameId: 'new-game' });
+    socketMod.socketManager.setScopedGame('new-game');
+    comeBackOnline();
+
+    const replayed = created[0].emitted.map((e: any) => e.args[0]?.gameId);
+    expect(replayed).toContain('new-game');
+    expect(replayed).not.toContain('old-game');
+  });
+
+  it('flushes everything while unscoped (pre-scoping behaviour)', () => {
+    socket.emit('game:join', { gameId: 'g1' });
+    comeBackOnline();
+
+    expect(created[0].emitted.map((e: any) => e.event)).toContain('game:join');
   });
 });
 

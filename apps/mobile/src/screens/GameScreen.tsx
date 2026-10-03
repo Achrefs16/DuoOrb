@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, BackHandler, Modal, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Animated, BackHandler, Modal, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   AIDifficulty,
@@ -27,12 +27,13 @@ import type { GameSyncDto } from '@duoorb/protocol';
 import { GameBoard, isInsideBoard, nearestWallSlot } from '../components/GameBoard';
 import { PlayerStrip, type SeatStatus } from '../components/GameHud';
 import { GameOverModal } from '../components/GameOverModal';
-import { GuestGate } from '../components/GuestGate';
 import { PlayerProfileScreen } from './PlayerProfileScreen';
 import { SideChoice } from './MatchSetupScreen';
 import { WallTray } from '../components/WallTray';
-import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
-import { SavedGameRecord, hasShownLinkNudge, loadOnlineGameSnapshot, markLinkNudgeShown, recordCompletedGame, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
+import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playNotifySound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
+import { toast } from '../components/AppToast';
+import { AchievementMedal } from '../components/AchievementMedal';
+import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
 import { AiWinReward, SubmitAiWinBody } from '../network/apiClient';
 import { flushAiWinQueue, reportHardAiWin } from '../aiwins/aiWins';
 import { THEME, playerColor, wallPreviewColor } from '../theme';
@@ -297,9 +298,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [profilePlayer, setProfilePlayer] = useState<{ userId: string; username: string } | null>(null);
   const [rematchSent, setRematchSent] = useState<boolean>(false);
   const [rematchIncomingDismissed, setRematchIncomingDismissed] = useState<boolean>(false);
-  // One-time Google-link nudge for guests, shown over the result modal on
-  // the 3rd completed game. Later dismisses; play is never blocked.
-  const [linkNudge, setLinkNudge] = useState(false);
   // In-match replay: null = live final board; a step number replays the
   // stored history through the existing replay reconstruction (no new page).
   const [viewingStep, setViewingStep] = useState<number | null>(null);
@@ -807,16 +805,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       };
       saveGameToHistory(record);
       setAiReward(null);
-      // One-time soft nudge: on the 3rd completed game a guest gets the link
-      // lock once, over the result modal, with Later. Never blocks play.
-      if (identity?.isGuest) {
-        void recordCompletedGame().then(async (count) => {
-          if (count !== 3) return;
-          if (await hasShownLinkNudge()) return;
-          await markLinkNudgeShown();
-          setLinkNudge(true);
-        });
-      }
       // Hard-AI victory reporting: upload the win for badges and analysis, or
       // queue it silently when offline. Celebration appears only from a live
       // server response — never an error, never while offline.
@@ -1225,6 +1213,18 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const handleBackPress = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization
     () => {
+    // Failed join: never seated, so there is nothing to resign — Back frees
+    // the dead screen directly. (The join failure itself shows on your card.)
+    if (type === 'online' && online.joinError) {
+      leaveFinishedAndHome();
+      return;
+    }
+    // Seat never resolved: there is no seat to resign with, so Back must not
+    // offer the resign dialog — it frees the unplayable screen directly.
+    if (type === 'online' && online.gameState && !online.myPlayerId) {
+      leaveFinishedAndHome();
+      return;
+    }
     if (isCompleted || type === 'local' || myAiFinished) {
       onHome();
       return;
@@ -1234,7 +1234,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       return;
     }
     setResignOpen(true);
-  }, [isCompleted, type, myAiFinished, onHome, mySeatFinished, leaveFinishedAndHome]);
+  }, [isCompleted, type, myAiFinished, onHome, mySeatFinished, leaveFinishedAndHome, online.joinError, online.gameState, online.myPlayerId]);
 
   // ---- In-match replay (finished games only) ----
   // Reconstructs the opening position from the mode + final names, then
@@ -1391,7 +1391,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // of truth for any seat's rating (AI numbers used to be hardcoded per
   // difficulty and everyone else got a flat 1500), so the board passes no
   /**
- * Per-seat connection/attention state for the player cards.
+ * Per-seat connection/attention state for the player cards. No banners: every
+ * one of these used to be a full-width strip above the board.
  *
  * Absence and idling are separate values on purpose: the disconnect window is
  * a real grace countdown the server is honouring, while the inactivity notice
@@ -1399,17 +1400,25 @@ export const GameScreen: React.FC<GameScreenProps> = ({
  * they belong to, and a seat can only ever be in one of the two — the
  * disconnect handler clears the AFK state and vice versa.
  *
+ * The player's OWN transport state lands on their own card the same way: a
+ * dropped socket reads "Reconnecting…", a failed join the failure (Back
+ * still leaves). Nobody else's card is touched. A move in flight and a
+ * rejected move deliberately stay off the card — the board locks while a
+ * move is unconfirmed, and a rejection is a sound, not a status.
+ *
  * Empty for local/AI play: there is no socket state to report.
  */
 const onlineSeatStatus = useMemo<Record<string, SeatStatus>>(() => {
   if (type !== 'online') return {};
   const map: Record<string, SeatStatus> = {};
-  if (online.opponentGrace) {
-    const seat = online.opponentGrace.playerId ?? online.myPlayerId;
-    // playerId is always sent for online matches; the fallback keeps the
-    // indicator visible rather than silently dropping it if it ever is not.
+  // Every away seat gets its own countdown — on a 3P/4P table two seats can
+  // be away at once, and each card counts down its own window.
+  for (const grace of Object.values(online.opponentGrace)) {
+    const seat = grace.playerId ?? null;
+    // playerId is always sent for online matches; an entry without one names
+    // no card, so it is skipped rather than pinned on the wrong seat.
     if (seat) {
-      map[seat] = { kind: 'disconnected', secondsLeft: online.opponentGrace.seconds };
+      map[seat] = { kind: 'disconnected', secondsLeft: grace.seconds };
     }
   }
   if (online.afkWarning) {
@@ -1418,13 +1427,81 @@ const onlineSeatStatus = useMemo<Record<string, SeatStatus>>(() => {
       map[seat] = { kind: 'afk', secondsLeft: online.afkWarning.secondsRemaining };
     }
   }
+  // Own transport state, on the player's own card only — and only when no
+  // server-driven state already owns that seat. Just the two states that
+  // need no other UI: a dropped socket and a failed join. (A move in flight
+  // and a rejected move stay off the card — the board locks while sending,
+  // and a rejection is a sound, not a status.)
+  const ownSeat = online.myPlayerId;
+  if (ownSeat && !map[ownSeat]) {
+    if (online.joinError) {
+      map[ownSeat] = { kind: 'rejected', message: online.joinError };
+    } else if (online.connStatus === 'reconnecting' || online.connStatus === 'disconnected') {
+      map[ownSeat] = { kind: 'reconnecting', pendingCount: online.pendingCount };
+    }
+  }
   return map;
 }, [
   type,
   online.opponentGrace,
   online.afkWarning,
   online.myPlayerId,
+  online.joinError,
+  online.connStatus,
+  online.pendingCount,
 ]);
+
+// Seat miss: sync arrived but neither your id nor name matches a seat
+// (changed identity mid-flow). Never silently play as someone else — the
+// seat resolves as soon as the ids line up, and Back frees the screen
+// meanwhile (see handleBackPress). Retried on an interval, not once: the
+// usual cause is an identity that hydrates a moment after the first sync,
+// and one shot would miss the recovery. No banner: there is no seat to hang
+// an indicator on until the resync lands.
+useEffect(() => {
+  if (type !== 'online' || !online.gameState) return;
+  if (online.gameState.status !== 'IN_PROGRESS') return;
+  if (online.myPlayerId || online.joinError) return;
+  online.resync();
+  const timer = setInterval(online.resync, 5000);
+  return () => clearInterval(timer);
+// Manual deps are intentional (React Compiler is not enabled): the whole
+// `online` object changes on every clock tick. Scalar deps only, so moves
+// and ticks never re-arm this — identity, seat and game identity do.
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [type, online.gameState?.gameId, online.gameState?.status, online.myPlayerId, online.joinError, online.resync]);
+
+// A server-rejected move is a sound, not a card status: the board already
+// rolled the move back, so the illegal-move click is the whole feedback.
+const lastActionErrorNonce = useRef<number | null>(null);
+useEffect(() => {
+  if (type !== 'online' || !online.actionError) return;
+  if (lastActionErrorNonce.current === online.actionError.nonce) return;
+  lastActionErrorNonce.current = online.actionError.nonce;
+  void playIllegalMoveSound();
+}, [type, online.actionError]);
+
+// A newly earned achievement is a toast with its medal + the notify sound —
+// never content inside the Win modal. Fires once per reward: aiReward
+// persists while the result is on screen, so the key guards the re-fire.
+// Deferred past the Win modal (a native modal renders above the app-level
+// toast): if the result is still up when the reward lands, the toast waits
+// for the dismiss and celebrates over the finished board instead.
+const lastRewardToastKey = useRef<string | null>(null);
+useEffect(() => {
+  const first = aiReward?.newAchievements?.[0];
+  if (!first || !aiReward) return;
+  const key = `${aiReward.win.id}:${first.code}`;
+  if (lastRewardToastKey.current === key) return;
+  if (showGameOver) return;
+  lastRewardToastKey.current = key;
+  void playNotifySound();
+  toast.show(
+    `New Achievement — ${first.name}`,
+    undefined,
+    <AchievementMedal icon={first.icon} tier={first.tier} size={30} />
+  );
+}, [aiReward, showGameOver]);
 
 // ratings at all and PlayerStrip hides the pills instead of showing fiction.
 
@@ -1536,9 +1613,9 @@ const onlineSeatStatus = useMemo<Record<string, SeatStatus>>(() => {
 
   // No connecting page exists on this screen anymore: every entry is gated
   // pre-navigation and arrives with the board (or, for a rematch switch,
-  // keeps the finished board visible). The banners below cover the only two
-  // degraded states — a definitively rejected join, and a new game whose
-  // first sync has not landed yet.
+  // keeps the finished board visible). Degraded states never take banner
+  // space — they show on the affected player's card (see onlineSeatStatus),
+  // and a definitively rejected join still leaves through Back.
 
   return (
     <View
@@ -1551,85 +1628,6 @@ const onlineSeatStatus = useMemo<Record<string, SeatStatus>>(() => {
     >
       {/* White status strip on Android so the header truly reaches the top. */}
       <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.backgroundCard} />
-      {/* Network Banners */}
-      {type === 'online' && (online.connStatus === 'reconnecting' || online.connStatus === 'disconnected') && (
-        <View style={styles.bannerWarning}>
-          <ActivityIndicator size="small" color={THEME.colors.onPrimary} style={{ marginRight: 8 }} />
-          <Text style={styles.bannerText}>
-            Connection lost · Reconnecting…{online.pendingCount > 0 ? ` · ${online.pendingCount} pending` : ''}
-          </Text>
-        </View>
-      )}
-
-      {/* Move in flight. Deliberately NOT tied to the connection banner: the
-          interesting case is healthy-but-slow, where the socket never drops
-          and the player would otherwise see a locked board with no reason. */}
-      {type === 'online' && online.pendingCount > 0 && online.connStatus === 'connected' && (
-        <View style={styles.bannerNeutral} pointerEvents="none">
-          <Text style={styles.bannerText}>
-            {online.pendingCount === 1 ? 'Sending your move…' : `Sending ${online.pendingCount} moves…`}
-          </Text>
-        </View>
-      )}
-
-      {/* Definitively rejected join (unseated, expired, gone game). A banner,
-          not a page: the board underneath is the last known truth, and Back
-          releases the seat instead of just navigating away. */}
-      {type === 'online' && !!online.joinError && (
-        <TouchableOpacity style={styles.bannerDanger} onPress={leaveFinishedAndHome}>
-          <Text style={styles.bannerText}>{online.joinError} — tap to leave.</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* New game syncing over a finished board (rematch switch). The old
-          board stays visible; this banner is the whole wait. */}
-      {type === 'online' &&
-        !online.joinError &&
-        !!onlineGameId &&
-        !!online.gameState &&
-        online.gameState.gameId !== onlineGameId && (
-          <View style={styles.bannerWarning}>
-            <ActivityIndicator size="small" color={THEME.colors.onPrimary} style={{ marginRight: 8 }} />
-            <Text style={styles.bannerText}>Starting match…</Text>
-          </View>
-        )}
-
-      {/* Seat miss: sync arrived but neither your id nor name matches a
-          seat (changed identity mid-flow). Never silently play as P1 —
-          one tap resyncs, and the seat resolves as soon as ids line up. */}
-      {type === 'online' && !!online.gameState && !online.myPlayerId && (
-        <TouchableOpacity style={styles.bannerDanger} onPress={() => online.resync()}>
-          <Text style={styles.bannerText}>
-            Couldn't find your seat — tap to resync.
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {type === 'online' && online.opponentGrace && (
-        <View style={styles.bannerDanger}>
-          <Text style={styles.bannerText}>
-            {online.opponentGrace.playerId && online.myPlayerId
-              ? 'Another player disconnected'
-              : 'Opponent disconnected'}
-            {`. Reconnect grace: ${online.opponentGrace.seconds}s`}
-          </Text>
-        </View>
-      )}
-
-      {/* Inactivity: a DIFFERENT state from the line above. That seat is
-          connected and simply has not moved, so it gets its own wording —
-          telling a player their opponent "disconnected" while they watch them
-          sit on their phone is worse than saying nothing. */}
-      {type === 'online' && online.afkWarning && (
-        <View style={styles.bannerWarning}>
-          <Text style={styles.bannerText}>
-            {online.afkWarning.playerId && online.myPlayerId
-              ? 'Another player is not moving'
-              : 'Opponent has not moved'}
-            {` · no move in ${online.afkWarning.secondsRemaining}s loses the game`}
-          </Text>
-        </View>
-      )}
 
       {/* Measured top chrome (header + opponent cards) for board sizing.
           Back in the bar: it resigns an active match, frees a finished seat,
@@ -1995,7 +1993,6 @@ state={topStripState}
           onNewGame();
         }}
         onReplay={enterReplay}
-        reward={aiReward}
         opponentUserId={opponentAccountForResult?.userId ?? null}
         onViewOpponentProfile={
           opponentAccountForResult
@@ -2015,26 +2012,6 @@ state={topStripState}
         }}
         onClose={() => setShowGameOver(false)}
       />
-
-      {/* One-time link nudge: floats above the result modal on a guest's 3rd
-          completed game. Later dismisses; the result stays underneath. */}
-      <Modal
-        visible={linkNudge}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLinkNudge(false)}
-      >
-        <SafeAreaView style={styles.nudgeOverlay} edges={['top', 'bottom']}>
-          <View style={styles.nudgeCard}>
-            <GuestGate
-              title="Keep your wins"
-              message="Link Google to save rating, friends, history & head-to-head."
-              secondaryLabel="Later"
-              onSecondary={() => setLinkNudge(false)}
-            />
-          </View>
-        </SafeAreaView>
-      </Modal>
 
       {/* Rematch toast rendered as its own Modal so it floats above the
           win/lose result modal, anchored to the bottom like the room invite. */}
@@ -2187,18 +2164,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
-  },
-  // One-time link-nudge overlay: same dim + centered card as resign.
-  nudgeOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  nudgeCard: {
-    maxWidth: 340,
-    width: '100%',
   },
   resignCard: {
     backgroundColor: THEME.colors.backgroundCard,
@@ -2397,54 +2362,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
-  },
-  bannerWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(234, 179, 8, 0.95)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: THEME.radius.sm,
-    marginBottom: 6,
-  },
-  bannerDanger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.95)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: THEME.radius.sm,
-    marginBottom: 6,
-  },
-  bannerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(59, 130, 246, 0.95)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: THEME.radius.sm,
-    marginBottom: 6,
-  },
-  // In-flight move: calm, not alarming. Blue rather than amber/red, because a
-  // move in flight is normal play — the input lock is a formality, not a fault.
-  bannerNeutral: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(100, 116, 139, 0.92)',
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    borderRadius: THEME.radius.sm,
-    marginBottom: 6,
-  },
-  bannerText: {
-    fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
-    fontSize: 12,
-    fontWeight: '700',
   },
   rematchToastOverlay: {
     flex: 1,

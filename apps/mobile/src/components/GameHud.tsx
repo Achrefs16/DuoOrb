@@ -25,10 +25,57 @@ function formatTimer(seconds?: number): string {
  * copy: one player has lost their socket and is inside a reconnect window,
  * the other is connected and simply has not moved. Collapsing them would tell
  * a player their opponent is disconnected while they are watching them play.
+ *
+ * `reconnecting` is the player's OWN transport state (their socket dropped)
+ * — shown on their own card, never on an opponent's. `rejected` is a
+ * terminal join failure, shown where it happened.
  */
 export type SeatStatus =
   | { kind: 'disconnected'; secondsLeft: number }
-  | { kind: 'afk'; secondsLeft: number };
+  | { kind: 'afk'; secondsLeft: number }
+  | { kind: 'reconnecting'; pendingCount: number }
+  | { kind: 'rejected'; message: string };
+
+/**
+ * One-line card copy for a seat state. Compact cards truncate (`numberOfLines`)
+ * at the call site, so server messages stay short on the wire already.
+ */
+export function seatStatusLabel(status: SeatStatus): string {
+  switch (status.kind) {
+    case 'disconnected':
+      return `Disconnected · ${status.secondsLeft}s`;
+    case 'afk':
+      return `No move · ${status.secondsLeft}s`;
+    case 'reconnecting':
+      return status.pendingCount > 0
+        ? `Reconnecting… · ${status.pendingCount} pending`
+        : 'Reconnecting…';
+    case 'rejected':
+      return status.message;
+  }
+}
+
+/** Pill severity for the large card; compact cards use the text equivalent. */
+function seatStatusTone(status: SeatStatus): 'danger' | 'warn' {
+  switch (status.kind) {
+    case 'disconnected':
+    case 'reconnecting':
+    case 'rejected':
+      return 'danger';
+    case 'afk':
+      return 'warn';
+  }
+}
+
+/** Compact-card text color matching the large-card pill severity. */
+function seatStatusCompactColor(status: SeatStatus): string {
+  switch (seatStatusTone(status)) {
+    case 'danger':
+      return THEME.colors.danger;
+    case 'warn':
+      return THEME.colors.warning;
+  }
+}
 
 interface InGamePlayerChipProps {
   player: PlayerState;
@@ -98,15 +145,18 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
   const identityLabel = onPressIdentity
     ? `View ${player.displayName}'s profile`
     : undefined;
-  // While a seat is unreachable or idle, its numbers are stale: a rating and
-  // wall count frozen at the moment of the disconnect would read as current
-  // truth, so both are hidden until the seat is back.
+  // While a seat is unreachable, idle, syncing or rejected, its numbers are
+  // stale: a rating and wall count frozen at that moment would read as
+  // current truth, so both are hidden until the seat is back.
   const hideStats = status !== null;
-  const statusLabel =
-    status?.kind === 'disconnected'
-      ? `Disconnected · ${status.secondsLeft}s`
+  const tone = status ? seatStatusTone(status) : null;
+  const statusIcon =
+    status?.kind === 'disconnected' || status?.kind === 'reconnecting'
+      ? 'wifi-off'
       : status?.kind === 'afk'
-      ? `No move · ${status.secondsLeft}s`
+      ? 'clock'
+      : status?.kind === 'rejected'
+      ? 'alert-circle'
       : null;
 
   return (
@@ -158,21 +208,17 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
               stats above rather than stacking on them: a card that is already
               saying "Disconnected · 31s" has nothing useful to add with a
               stale rating. */}
-          {statusLabel && (
+          {status && statusIcon && tone && (
             <View
               style={[
                 styles.statusPill,
-                status?.kind === 'disconnected'
-                  ? styles.statusPillDanger
-                  : styles.statusPillWarn,
+                tone === 'danger' ? styles.statusPillDanger : styles.statusPillWarn,
               ]}
             >
-              <Feather
-                name={status?.kind === 'disconnected' ? 'wifi-off' : 'clock'}
-                size={11}
-                color={THEME.colors.onPrimary}
-              />
-              <Text style={styles.statusText}>{statusLabel}</Text>
+              <Feather name={statusIcon} size={11} color={THEME.colors.onPrimary} />
+              <Text style={styles.statusText} numberOfLines={1} ellipsizeMode="tail">
+                {seatStatusLabel(status)}
+              </Text>
             </View>
           )}
         </View>
@@ -283,17 +329,11 @@ export const PlayerStrip: React.FC<{
                 <View style={styles.compactSub}>
                   {seat ? (
                     <Text
-                      style={[
-                        styles.compactStatus,
-                        {
-                          color:
-                            seat.kind === 'disconnected' ? THEME.colors.danger : THEME.colors.warning,
-                        },
-                      ]}
+                      style={[styles.compactStatus, { color: seatStatusCompactColor(seat) }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
                     >
-                      {seat.kind === 'disconnected'
-                        ? `Disconnected · ${seat.secondsLeft}s`
-                        : `No move · ${seat.secondsLeft}s`}
+                      {seatStatusLabel(seat)}
                     </Text>
                   ) : (
                     <>
@@ -380,17 +420,11 @@ export const PlayerStrip: React.FC<{
                 <View style={styles.compactSub}>
                   {seat ? (
                     <Text
-                      style={[
-                        styles.compactStatus,
-                        {
-                          color:
-                            seat.kind === 'disconnected' ? THEME.colors.danger : THEME.colors.warning,
-                        },
-                      ]}
+                      style={[styles.compactStatus, { color: seatStatusCompactColor(seat) }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
                     >
-                      {seat.kind === 'disconnected'
-                        ? `Disconnected · ${seat.secondsLeft}s`
-                        : `No move · ${seat.secondsLeft}s`}
+                      {seatStatusLabel(seat)}
                     </Text>
                   ) : (
                     ratings?.[p.id] !== undefined && (

@@ -33,9 +33,8 @@ function makeGame(svc: AuthoritativeGameService, gameId = 'g1', userIds = ['uA',
     disconnectGenerations: {},
     latencyMs: {},
     disconnectGraceEndsAt: {},
-    clockPausedAt: null,
     afkTimers: new Map(),
-    afkWarningAt: null,
+    afkEndsAt: null,
     rematchOffers: new Set<string>(),
     isRanked: true,
     timeControlMinutes: 3,
@@ -79,9 +78,13 @@ describe('disconnect grace', () => {
     svc.handleDisconnect('g1', 'uA', onForfeit);
     svc.handleReconnect('g1', 'uA');
     vi.advanceTimersByTime(120_000);
+    // The GRACE timer never fired...
     expect(onForfeit).not.toHaveBeenCalled();
     expect(game.disconnectedUsers.uA).toBeUndefined();
-    expect(game.state.status).toBe('IN_PROGRESS');
+    // ...but coming back re-arms the turn's watchdog, so 120s of idling
+    // still ends the game — for idling (uA held the turn), not absence.
+    expect(game.state.status).toBe('COMPLETED');
+    expect(game.state.winnerId).toBe('p2');
   });
 
   it('cancelDisconnectGrace is enough on its own (reconnect cancels before it awaits)', () => {
@@ -92,8 +95,10 @@ describe('disconnect grace', () => {
     expect(svc.cancelDisconnectGrace('g1', 'uA')).toBe(true);
     expect(svc.cancelDisconnectGrace('g1', 'uA')).toBe(false);
     vi.advanceTimersByTime(120_000);
+    // Grace dead, as before — and the re-armed watchdog owns the idle table.
     expect(onForfeit).not.toHaveBeenCalled();
-    expect(game.state.status).toBe('IN_PROGRESS');
+    expect(game.state.status).toBe('COMPLETED');
+    expect(game.state.winnerId).toBe('p2');
   });
 
   it('a SECOND disconnect replaces the timer instead of stacking an orphan on it', () => {

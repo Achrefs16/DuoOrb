@@ -370,6 +370,9 @@ export class UsersService {
 
     await this.prisma.$transaction(async (tx) => {
       // Adopt the guest's single universal rating onto a fresh account.
+      // The update branch matters: signup seeds a 1500 row on the account
+      // first, so a no-op update would keep 1500 and silently drop the
+      // guest's real rating (and its gamesPlayed) with the guest row.
       if (accountGames === 0) {
         const gr = guest.ratings[0];
         if (gr) {
@@ -385,7 +388,21 @@ export class UsersService {
               losses: gr.losses,
               draws: gr.draws,
             },
-            update: {},
+            update: {
+              rating: gr.rating,
+              rd: gr.rd,
+              vol: gr.vol,
+              gamesPlayed: gr.gamesPlayed,
+              wins: gr.wins,
+              losses: gr.losses,
+              draws: gr.draws,
+            },
+          });
+          // Same gate: a fresh account has no history rows, so re-pointing
+          // cannot collide — the chart continues instead of restarting.
+          await tx.ratingHistory.updateMany({
+            where: { userId: guestId },
+            data: { userId: accountId },
           });
         }
       }

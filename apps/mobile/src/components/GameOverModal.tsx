@@ -3,8 +3,6 @@ import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { GameState } from '@duoorb/game-core';
-import { AiWinReward } from '../network/apiClient';
-import { AchievementMedal } from './AchievementMedal';
 import { THEME, playerColor } from '../theme';
 import { modeLabel } from '../matchModes';
 import { nameInitial } from '../displayName';
@@ -35,12 +33,6 @@ interface GameOverModalProps {
   onHome: () => void;
   /** Dismiss the modal and stay on the finished match screen. */
   onClose: () => void;
-  /**
-   * Hard-AI victory reward, set only when the win was uploaded while online.
-   * Null while offline or when no badge was earned: the reward UI renders
-   * exclusively from this prop, so offline play can never show an error.
-   */
-  reward?: AiWinReward | null;
 }
 
 function ordinal(place: number): string {
@@ -67,7 +59,6 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onAnalyze,
   onHome,
   onClose,
-  reward = null,
 }) => {
   const winner = state.players.find((p) => p.id === state.winnerId);
   const isDraw = !state.winnerId && state.status === 'COMPLETED';
@@ -246,39 +237,6 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   </View>
                 )}
               </View>
-            </View>
-          )}
-
-          {/* Hard-AI victory reward. Rendered only from a live server response
-              (new badges earned for this win) — offline play, AI losses, and
-              online matches never set the prop, so this can never appear as
-              an error or out of place. */}
-          {reward && reward.newAchievements.length > 0 && (
-            <View style={styles.rewardCard}>
-              <View style={styles.rewardHeaderRow}>
-                <Feather name="award" size={18} color={THEME.colors.assessmentInaccuracy} />
-                <Text style={styles.rewardTitle}>HARD AI CONQUERED</Text>
-              </View>
-              {reward.newAchievements.map((badge) => (
-                <View key={badge.code} style={styles.badgeRow}>
-                  <AchievementMedal icon={badge.icon} tier={badge.tier} size={40} />
-                  <View style={styles.badgeTextWrap}>
-                    <Text style={styles.badgeName}>{badge.name}</Text>
-                    <Text style={styles.badgeDesc} numberOfLines={2}>
-                      {badge.description}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-              {!!reward.message && (
-                <Text style={styles.rewardMessage}>{reward.message}</Text>
-              )}
-              <Text style={styles.rewardStats}>
-                {`${reward.stats.hardWins} different Hard AI win${reward.stats.hardWins === 1 ? '' : 's'}`}
-                {reward.stats.fastestPlies !== null
-                  ? ` · fastest ${reward.stats.fastestPlies} moves`
-                  : ''}
-              </Text>
             </View>
           )}
 
@@ -545,70 +503,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: THEME.colors.onSurface,
-    fontVariant: ['tabular-nums'],
-  },
-  rewardCard: {
-    width: '100%',
-    backgroundColor: THEME.colors.warningLight,
-    borderRadius: THEME.radius.lg,
-    borderWidth: 1,
-    borderColor: THEME.colors.warningBorder,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    alignItems: 'center',
-    gap: 8,
-  },
-  rewardHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  rewardTitle: {
-    fontFamily: THEME.fonts.extraBold,
-    fontSize: 13,
-    fontWeight: '800',
-    color: THEME.colors.onSurface,
-    letterSpacing: 1,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    width: '100%',
-    backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderRadius: THEME.radius.md,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceContainer,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  badgeTextWrap: {
-    flex: 1,
-    gap: 1,
-  },
-  badgeName: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 14,
-    fontWeight: '700',
-    color: THEME.colors.onSurface,
-  },
-  badgeDesc: {
-    fontFamily: THEME.fonts.regular,
-    fontSize: 12,
-    color: THEME.colors.onSurfaceVariant,
-  },
-  rewardMessage: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 13,
-    fontWeight: '600',
-    color: THEME.colors.onSurface,
-    textAlign: 'center',
-  },
-  rewardStats: {
-    fontFamily: THEME.fonts.regular,
-    fontSize: 11,
-    color: THEME.colors.textMuted,
     fontVariant: ['tabular-nums'],
   },
   actionsList: {

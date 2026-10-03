@@ -122,6 +122,13 @@ export interface GameSyncDto {
    * stuck behind a "Connecting to match" overlay while moves still arrived.
    */
   you?: string | null;
+  /**
+   * Current turn's inactivity deadline, when one applies. A client that
+   * attaches (or re-attaches) mid-turn missed the one-shot `game:afkWarning`,
+   * so it derives the same card countdown from this instead of showing
+   * nothing until the forfeit.
+   */
+  afk?: { playerId: string; afkEndsAt: number } | null;
 }
 
 /**
@@ -235,12 +242,16 @@ export interface ServerToClientEvents {
   }) => void;
   'game:sync': (sync: GameSyncDto) => void;
   /**
-   * Inactivity notice for the seat on turn, sent shortly before the server
-   * would forfeit it. Distinct from `game:opponentDisconnected`: that seat is
-   * connected and simply not moving, and the client shows a different state
-   * for it. `secondsRemaining` is the server's own remaining allowance.
+   * Inactivity notice for the seat on turn. Fires at the start of the turn's
+   * allowance (45s), not near its end — the countdown IS the warning, shown
+   * on that seat's card, and the player sitting in it must see their own.
+   * Distinct from `game:opponentDisconnected`: that seat is connected and
+   * simply not moving, and the client shows a different state for it.
+   * `afkEndsAt` is the SERVER's forfeit deadline; the client counts down to
+   * it instead of decrementing its own copy. `secondsRemaining` is the same
+   * allowance expressed once, for the first paint.
    */
-  'game:afkWarning': (payload: { playerId?: string; secondsRemaining: number }) => void;
+  'game:afkWarning': (payload: { playerId?: string; afkEndsAt: number; secondsRemaining: number }) => void;
   /** The inactivity notice no longer applies (that seat moved, or left). */
   'game:afkCleared': (payload: { playerId?: string }) => void;
   'game:rematchOffered': (payload: { gameId: string; fromUserId: string }) => void;

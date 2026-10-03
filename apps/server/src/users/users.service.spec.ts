@@ -77,3 +77,94 @@ describe('user search excludes the searching account', () => {
     expect(prisma.calls).toHaveLength(0);
   });
 });
+
+/**
+ * Guest linking must carry the guest's REAL rating onto the account.
+ *
+ * The regression: signup seeds a 1500 row on the fresh account first, and the
+ * merge upserted with `update: {}` — a no-op that kept 1500 and dropped the
+ * guest's rating (and its gamesPlayed) with the deleted guest row.
+ */
+function makeLinkPrisma(guestRating: any, accountRatings: any[]) {
+  const upserts: any[] = [];
+  const historyMoves: any[] = [];
+  const tx = {
+    rating: {
+      upsert: async (args: any) => {
+        upserts.push(args);
+        return {};
+      },
+    },
+    ratingHistory: {
+      updateMany: async (args: any) => {
+        historyMoves.push(args);
+        return { count: 1 };
+      },
+    },
+    friendship: { findMany: async () => [] },
+    friendRequest: { updateMany: async () => ({ count: 0 }) },
+    block: { updateMany: async () => ({ count: 0 }) },
+    gamePlayer: { updateMany: async () => ({ count: 0 }) },
+    aiWin: { updateMany: async () => ({ count: 0 }) },
+    achievement: { findMany: async () => [] },
+    equippedBadge: {
+      count: async () => 1,
+      deleteMany: async () => ({ count: 0 }),
+    },
+    user: { delete: async () => ({}) },
+  };
+  const prisma = {
+    isConnected: true,
+    user: {
+      findUnique: async () => ({ id: 'u_guest', ratings: [guestRating] }),
+    },
+    rating: {
+      findMany: async () => accountRatings,
+    },
+    $transaction: async (fn: (tx: unknown) => Promise<void>) => fn(tx),
+  };
+  return { prisma: prisma as any, upserts, historyMoves };
+}
+
+describe('linkGuest adopts the guest rating', () => {
+  const guestRating = {
+    rating: 1640,
+    rd: 200,
+    vol: 0.06,
+    gamesPlayed: 12,
+    wins: 8,
+    losses: 4,
+    draws: 0,
+  };
+  // Fresh Google account: signup already seeded its 1500 row (0 games).
+  const seeded = [{ rating: 1500, rd: 350, vol: 0.06, gamesPlayed: 0 }];
+
+  it('overwrites the seeded 1500 with the guest values', async () => {
+    const { prisma, upserts, historyMoves } = makeLinkPrisma(guestRating, seeded);
+    const svc = new UsersService(prisma);
+    const res = await svc.linkGuest('u_google', 'u_guest');
+    expect(res.merged).toBe(true);
+    expect(upserts).toHaveLength(1);
+    // The update branch is the whole fix: a seeded row exists, so create
+    // never runs and only update can carry the rating over.
+    expect(upserts[0].where).toEqual({ userId: 'u_google' });
+    expect(upserts[0].update).toMatchObject({
+      rating: 1640,
+      gamesPlayed: 12,
+      wins: 8,
+      losses: 4,
+    });
+    // Rating history follows the rating onto the fresh account.
+    expect(historyMoves).toEqual([{ where: { userId: 'u_guest' }, data: { userId: 'u_google' } }]);
+  });
+
+  it('leaves a played account rating alone', async () => {
+    const played = [{ rating: 1550, rd: 300, vol: 0.06, gamesPlayed: 5 }];
+    const { prisma, upserts } = makeLinkPrisma(guestRating, played);
+    const svc = new UsersService(prisma);
+    const res = await svc.linkGuest('u_google', 'u_guest');
+    expect(res.merged).toBe(true);
+    expect(res.adoptedRatings).toBe(false);
+    expect(upserts).toHaveLength(0);
+  });
+});

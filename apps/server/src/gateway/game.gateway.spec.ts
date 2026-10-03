@@ -19,25 +19,42 @@ function fakeSocket(id: string) {
 function fakeServer(roomName = 'g1') {
   const emits: { target: unknown; event: string; payload: any }[] = [];
   const room = new Set<string>();
+  const liveSockets = new Map<
+    string,
+    {
+      join: (room: string) => void;
+      emit?: (event: string, payload: any) => void;
+      directEmits?: { event: string }[];
+    }
+  >();
   const server = {
-    sockets: { adapter: { rooms: { get: (r: string) => (r === roomName ? room : undefined) } } },
+    sockets: {
+      adapter: { rooms: { get: (r: string) => (r === roomName ? room : undefined) } },
+      sockets: {
+        get: (id: string) => liveSockets.get(id),
+      },
+    },
     to: (target: any) => ({
       emit: (event: string, payload: any) => emits.push({ target, event, payload }),
     }),
   };
-  return { server: server as any, emits, room };
+  return { server: server as any, emits, room, liveSockets };
 }
 
 function makeGateway(prismaConnected = false) {
   const prisma = {
     isConnected: prismaConnected,
     profile: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    block: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   };
   const authService = {} as any;
   const gateway = new GameGateway(authService, prisma as any);
   const handleDisconnectSpy = vi.fn().mockReturnValue({ gracePeriodSeconds: 60, playerId: 'p1' });
   (gateway as any).gameService.handleDisconnect = handleDisconnectSpy;
-  return { gateway, handleDisconnectSpy };
+  return { gateway, handleDisconnectSpy, prisma };
 }
 
 describe('GameGateway.handleDisconnect', () => {
@@ -126,5 +143,176 @@ describe('GameGateway.handleDisconnect', () => {
     g.gateway.handleDisconnect(fakeSocket('sock-UNKNOWN'));
     expect(g.handleDisconnectSpy).not.toHaveBeenCalled();
     expect(f.emits).toHaveLength(0);
+  });
+});
+
+/**
+ * Blocks must actually block: a blocked player can neither send nor receive
+ * challenges, and matchmaking must never seat a blocked pair — in any mode.
+ */
+describe('GameGateway block enforcement', () => {
+  let g: ReturnType<typeof makeGateway>;
+  let f: ReturnType<typeof fakeServer>;
+
+  beforeEach(() => {
+    g = makeGateway(true);
+    f = fakeServer();
+    (g.gateway as any).server = f.server;
+  });
+
+  function seat(userId: string, socketId: string) {
+    const gw = g.gateway as any;
+    gw.socketUserMap.set(socketId, { userId, displayName: userId, rating: 1500, verified: true });
+    gw.userSocketMap.set(userId, socketId);
+    const directEmits: { event: string; payload: any }[] = [];
+    f.liveSockets.set(socketId, {
+      join: () => {},
+      emit: (event: string, payload: any) => directEmits.push({ event, payload }),
+      directEmits,
+    });
+  }
+
+  const challengePayload = { toUserId: 'uB', mode: '2p' as const, timeControlMinutes: 3 };
+
+  it('rejects challenge:send to a blocked player, target never sees it', async () => {
+    seat('uA', 'sock-A');
+    seat('uB', 'sock-B');
+    g.prisma.block.findFirst.mockResolvedValue({ id: 'b1' });
+
+    const res = await g.gateway.handleChallengeSend(fakeSocket('sock-A'), challengePayload);
+
+    expect(res).toMatchObject({ success: false });
+    expect(g.prisma.block.findFirst).toHaveBeenCalled();
+    expect(f.emits.filter((e) => e.event === 'challenge:received')).toHaveLength(0);
+  });
+
+  it('still sends when no block exists (target offline is the next gate)', async () => {
+    seat('uA', 'sock-A');
+    // uB has no live socket: the block check passes, presence fails next.
+    const res = await g.gateway.handleChallengeSend(fakeSocket('sock-A'), challengePayload);
+
+    expect(res).toMatchObject({ success: false, error: 'Friend is offline.' });
+  });
+
+  it('kills a challenge accepted after a block landed', async () => {
+    seat('uA', 'sock-A');
+    seat('uB', 'sock-B');
+    const created = (g.gateway as any).challengeService.createChallenge(
+      'uA', 'A', 'uB', '2p', 3, 0, 10, () => {}
+    );
+    g.prisma.block.findFirst.mockResolvedValue({ id: 'b1' });
+
+    const res = await g.gateway.handleChallengeRespond(fakeSocket('sock-B'), {
+      challengeId: created.challenge.id,
+      accept: true,
+    });
+
+    expect(res).toMatchObject({ success: false });
+    // No game is seated for either side...
+    expect((g.gateway as any).activeGameUserMap.size).toBe(0);
+    expect(f.emits.filter((e) => e.event === 'challenge:accepted')).toHaveLength(0);
+    // ...and the sender's toast clears like a decline, not a hang.
+    const senderEmits = (f.liveSockets.get('sock-A') as any).directEmits as { event: string }[];
+    expect(senderEmits.map((e) => e.event)).toContain('challenge:declined');
+  });
+
+  it('matchmaking re-queues a blocked pair instead of seating them', async () => {
+    seat('uA', 'sock-A');
+    seat('uB', 'sock-B');
+    const mm = (g.gateway as any).matchmakingService;
+    const base = { mode: '2p', timeControlMinutes: 3, incrementSeconds: 0, wallsEach: 10, rating: 1500 };
+    mm.addToQueue({ ...base, userId: 'uA', displayName: 'A', socketId: 'sock-A', joinedAt: Date.now() });
+    mm.addToQueue({ ...base, userId: 'uB', displayName: 'B', socketId: 'sock-B', joinedAt: Date.now() });
+    g.prisma.block.findFirst.mockResolvedValue({ id: 'b1' });
+
+    await (g.gateway as any).runMatchmakingSweep();
+
+    // No game, nobody seated — and both keep searching past each other.
+    expect((g.gateway as any).activeGameUserMap.size).toBe(0);
+    expect(mm.getQueueLength()).toBe(2);
+  });
+
+  it('matchmaking still seats an unblocked pair', async () => {
+    seat('uA', 'sock-A');
+    seat('uB', 'sock-B');
+    const mm = (g.gateway as any).matchmakingService;
+    const base = { mode: '2p', timeControlMinutes: 3, incrementSeconds: 0, wallsEach: 10, rating: 1500 };
+    mm.addToQueue({ ...base, userId: 'uA', displayName: 'A', socketId: 'sock-A', joinedAt: Date.now() });
+    mm.addToQueue({ ...base, userId: 'uB', displayName: 'B', socketId: 'sock-B', joinedAt: Date.now() });
+
+    await (g.gateway as any).runMatchmakingSweep();
+
+    expect((g.gateway as any).activeGameUserMap.size).toBe(2);
+    expect(mm.getQueueLength()).toBe(0);
+  });
+});
+
+/**
+ * Reconnect bursts (queue flush + reconnect effect + retry tick) emit
+ * several `game:join` within milliseconds. The pump answers every join
+ * (the retry backstop depends on it) while replay side effects stay
+ * exactly-once — no lost moves, no double applies, one fan-out per truth.
+ */
+describe('GameGateway join pump', () => {
+  it('burst joins are all answered with exactly-once side effects', async () => {
+    const { gateway } = makeGateway(false);
+    const gw = gateway as any;
+    const roomEmits: { event: string; payload: unknown }[] = [];
+    gw.server = {
+      sockets: { sockets: { get: () => undefined }, adapter: { rooms: { get: () => undefined } } },
+      to: () => ({ emit: (event: string, payload: unknown) => roomEmits.push({ event, payload }) }),
+    };
+    gw.gameService.createGame({
+      gameId: 'jp1',
+      mode: '2p',
+      users: [
+        { userId: 'uA', displayName: 'A', rating: { rating: 1500, rd: 350, vol: 0.06 } },
+        { userId: 'uB', displayName: 'B', rating: { rating: 1500, rd: 350, vol: 0.06 } },
+      ],
+      timeControlMinutes: 3,
+      isRanked: true,
+    });
+    gw.socketUserMap.set('sock-A', { userId: 'uA', displayName: 'A', rating: 1500, verified: true });
+    gw.userSocketMap.set('uA', 'sock-A');
+    const syncs: unknown[] = [];
+    const client = {
+      id: 'sock-A',
+      handshake: { query: {} },
+      join: () => {},
+      emit: (event: string, payload: unknown) => {
+        if (event === 'game:sync') syncs.push(payload);
+      },
+    };
+    const move = { type: 'MOVE', to: { row: 7, col: 4 } };
+    const withMove = {
+      gameId: 'jp1',
+      lastSequence: 0,
+      pendingActions: [{ clientActionId: 'c1', action: move }],
+    };
+
+    // Burst: bare join, join carrying the unconfirmed move, same join again.
+    gw.handleJoinGame(client, { gameId: 'jp1', lastSequence: 0, pendingActions: [] });
+    gw.handleJoinGame(client, withMove);
+    gw.handleJoinGame(client, withMove);
+    // Let every queued pump pass settle.
+    await new Promise((r) => setTimeout(r, 50));
+
+    // First + latest passes answer the burst (the middle payload is
+    // superseded, not lost — the trailing sync is the fresher truth)...
+    expect(syncs).toHaveLength(2);
+    // ...the move applied exactly once, broadcast exactly once.
+    expect(roomEmits.filter((e) => e.event === 'game:actionAccepted')).toHaveLength(1);
+    expect(gw.gameService.getGame('jp1')!.state.history).toHaveLength(1);
+
+    // ...and a later sequential join (the retry backstop) is answered on
+    // its own, with the replay suppressed as a duplicate.
+    gw.handleJoinGame(client, withMove);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(syncs).toHaveLength(3);
+    expect(roomEmits.filter((e) => e.event === 'game:actionAccepted')).toHaveLength(1);
+
+    const game = gw.gameService.getGame('jp1')!;
+    if (game.timerInterval) clearInterval(game.timerInterval);
+    for (const t of game.afkTimers.values()) clearTimeout(t);
   });
 });
