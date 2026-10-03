@@ -10,6 +10,8 @@ import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-ico
 import { GameState, PlayerState } from '@duoorb/game-core';
 import { THEME, hexToRgba, playerColor } from '../theme';
 import { nameInitial } from '../displayName';
+import { ReactionDock } from './QuickReactions';
+import type { IncomingReaction } from '../network/useQuickReactions';
 
 function formatTimer(seconds?: number): string {
   if (seconds === undefined || seconds <= 0) return '0:00';
@@ -113,6 +115,14 @@ interface InGamePlayerChipProps {
    */
   status?: SeatStatus | null;
   /**
+   * Relayed reactions sent by THIS seat: the bubble renders over this card
+   * (top-anchored, like the old strip dock) instead of piling onto a shared
+   * strip where 3P/4P tables cannot tell who reacted. Empty/omitted: none.
+   */
+  reactions?: IncomingReaction[];
+  /** Dismisses one reaction bubble by id (shared global registry). */
+  onReactionDone?: (id: number) => void;
+  /**
    * Opens this seat's profile. Present for opponents with a real account and
    * absent for your own seat, AI and local play, so the avatar and the name
    * are the only tappable parts of the card.
@@ -159,6 +169,8 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
   bonus,
   hideWallsBadge = false,
   status = null,
+  reactions,
+  onReactionDone,
   onPressIdentity,
 }) => {
   const ball = playerColor(player.index, player.color);
@@ -263,6 +275,14 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
           )}
         </View>
       )}
+      {/* This seat's own relayed reactions, over its own card. */}
+      {reactions && reactions.length > 0 && (
+        <ReactionDock
+          items={reactions}
+          side="top"
+          onDone={(id) => onReactionDone?.(id)}
+        />
+      )}
     </View>
   );
 };
@@ -286,6 +306,14 @@ export const PlayerStrip: React.FC<{
   /** Per-seat connection/attention state, keyed by seat id. */
   seatStatus?: Record<string, SeatStatus>;
   /**
+   * Relayed reactions grouped by seat id (see groupReactionsBySeat): each
+   * card renders only its sender's bubbles over itself. Seats without an
+   * entry render none — the legacy shared strip dock covers the fallback.
+   */
+  reactionsBySeat?: Record<string, IncomingReaction[]>;
+  /** Dismisses one reaction bubble by id (shared global registry). */
+  onReactionDone?: (id: number) => void;
+  /**
    * Called with the seat id of the tapped opponent. Omitted entirely when
    * the seats have no account behind them, which keeps every chip inert
    * without a per-player "is this tappable" map.
@@ -300,6 +328,8 @@ export const PlayerStrip: React.FC<{
   grid = false,
   hideWallsForPlayerId,
   seatStatus,
+  reactionsBySeat,
+  onReactionDone,
   onPressPlayer,
 }) => {
   // Split multiplayer tables (2 up / 2 down): side-by-side compact cards
@@ -394,6 +424,13 @@ export const PlayerStrip: React.FC<{
                 </View>
               </View>
               {isActive && <View style={[styles.turnDot, { backgroundColor: ball }]} />}
+              {reactionsBySeat?.[p.id] && reactionsBySeat[p.id].length > 0 && (
+                <ReactionDock
+                  items={reactionsBySeat[p.id]}
+                  side="top"
+                  onDone={(id) => onReactionDone?.(id)}
+                />
+              )}
             </View>
           );
         })}
@@ -483,6 +520,13 @@ export const PlayerStrip: React.FC<{
                 </View>
               </View>
               {isActive && <View style={[styles.turnDot, { backgroundColor: ball }]} />}
+              {reactionsBySeat?.[p.id] && reactionsBySeat[p.id].length > 0 && (
+                <ReactionDock
+                  items={reactionsBySeat[p.id]}
+                  side="top"
+                  onDone={(id) => onReactionDone?.(id)}
+                />
+              )}
             </View>
           );
         })}
@@ -507,6 +551,8 @@ export const PlayerStrip: React.FC<{
             bonus={playerBonus}
             hideWallsBadge={hideWallsBadge}
             status={seatStatus?.[p.id] ?? null}
+            reactions={reactionsBySeat?.[p.id]}
+            onReactionDone={onReactionDone}
             onPressIdentity={onPressPlayer ? () => onPressPlayer(p.id) : undefined}
           />
         );

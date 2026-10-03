@@ -59,6 +59,36 @@ function isReactionKind(value: unknown): value is ReactionKind {
 export interface IncomingReaction {
   id: number;
   kind: ReactionKind;
+  /**
+   * Sender's account id for relayed reactions (drives per-card placement:
+   * the bubble renders over the seat that sent it). Absent for local echo
+   * and engine banter, which keep their fixed sides.
+   */
+  fromUserId?: string;
+}
+
+/**
+ * Partitions relayed reactions by seat id for per-card docks. `userIdToSeat`
+ * maps account ids to seat ids (the inverse of the sync's seat→account map).
+ * Anything unresolvable (unknown/left seats, local echo, engine banter)
+ * falls into `fallback`, which keeps the legacy top-strip dock — never
+ * dropped, never misattributed. Pure, unit-tested.
+ */
+export function groupReactionsBySeat(
+  items: IncomingReaction[],
+  userIdToSeat: Record<string, string>
+): { bySeat: Record<string, IncomingReaction[]>; fallback: IncomingReaction[] } {
+  const bySeat: Record<string, IncomingReaction[]> = {};
+  const fallback: IncomingReaction[] = [];
+  for (const item of items) {
+    const seat = item.fromUserId ? userIdToSeat[item.fromUserId] : undefined;
+    if (seat) {
+      (bySeat[seat] ??= []).push(item);
+    } else {
+      fallback.push(item);
+    }
+  }
+  return { bySeat, fallback };
 }
 
 /** Max bubbles stacked in the receiving area: newer ones evict older. */
@@ -81,10 +111,15 @@ export function useQuickReactions({ enabled, socketLive, gameId, myUserId }: Use
   const idRef = useRef(0);
 
   const pushInto = useCallback(
-    (setList: (updater: (prev: IncomingReaction[]) => IncomingReaction[]) => void, kind: ReactionKind) => {
+    (
+      setList: (updater: (prev: IncomingReaction[]) => IncomingReaction[]) => void,
+      kind: ReactionKind,
+      fromUserId?: string
+    ) => {
       if (!enabled || !isReactionKind(kind)) return;
       idRef.current += 1;
       const item: IncomingReaction = { id: idRef.current, kind };
+      if (fromUserId) item.fromUserId = fromUserId;
       setList((prev) => [...prev.slice(-(MAX_STACK - 1)), item]);
     },
     [enabled]
@@ -92,8 +127,8 @@ export function useQuickReactions({ enabled, socketLive, gameId, myUserId }: Use
 
   /** Opponent-side bubble (relayed online, or the engine's own banter). */
   const preview = useCallback(
-    (kind: ReactionKind) => {
-      pushInto(setIncoming, kind);
+    (kind: ReactionKind, fromUserId?: string) => {
+      pushInto(setIncoming, kind, fromUserId);
     },
     [pushInto]
   );
@@ -113,7 +148,8 @@ export function useQuickReactions({ enabled, socketLive, gameId, myUserId }: Use
       if (!p || p.gameId !== gameId) return;
       if (p.fromUserId && myUserId && p.fromUserId === myUserId) return;
       if (!isReactionKind(p.reaction)) return;
-      preview(p.reaction);
+      // Sender kept: the screen places the bubble over their card.
+      preview(p.reaction, p.fromUserId);
     };
     socket.on('game:reaction', onReaction);
     return () => {

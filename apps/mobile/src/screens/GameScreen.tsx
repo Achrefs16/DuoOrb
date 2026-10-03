@@ -40,8 +40,7 @@ import { flushAiWinQueue, reportHardAiWin } from '../aiwins/aiWins';
 import { THEME, playerColor, wallPreviewColor } from '../theme';
 import { CLOCK_ENABLED, DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
-import { useQuickReactions } from '../network/useQuickReactions';
-import { ReactionDock, ReactionTray } from '../components/QuickReactions';
+import { useQuickReactions, groupReactionsBySeat } from '../network/useQuickReactions';import { ReactionDock, ReactionTray } from '../components/QuickReactions';
 import type { ReactionKind } from '../network/useQuickReactions';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
 import { useIdentity } from '../network/auth';
@@ -1476,6 +1475,19 @@ const onlineSeatStatus = useMemo<Record<string, SeatStatus>>(() => {
   online.pendingCount,
 ]);
 
+// Reactions, attributed to the sender's card: invert the sync's seat→
+// account map once, group incoming by seat. Unresolvable items (engine
+// banter with no sender, left seats) keep the legacy top-strip dock below —
+// never dropped, never pinned on the wrong card.
+const groupedReactions = useMemo(() => {
+  if (type !== 'online') return { bySeat: {}, fallback: [] };
+  const userIdToSeat: Record<string, string> = {};
+  for (const [seatId, userId] of Object.entries(online.playerUserIds ?? {})) {
+    userIdToSeat[userId] = seatId;
+  }
+  return groupReactionsBySeat(reactions.incoming, userIdToSeat);
+}, [type, reactions.incoming, online.playerUserIds]);
+
 // Seat miss: sync arrived but neither your id nor name matches a seat
 // (changed identity mid-flow). Never silently play as someone else — the
 // seat resolves as soon as the ids line up, and Back frees the screen
@@ -1707,7 +1719,7 @@ useEffect(() => {
       {/* Their reaction dock floats over the card, out of layout. */}
       <View style={styles.sideWrap}>
       {reactionsVisible && (
-        <ReactionDock items={reactions.incoming} side="top" onDone={reactions.dismiss} />
+        <ReactionDock items={groupedReactions.fallback} side="top" onDone={reactions.dismiss} />
       )}
       <View
         pointerEvents={wallDrag ? 'none' : 'auto'}
@@ -1716,13 +1728,15 @@ useEffect(() => {
           isMultiplayer ? { width: measuredBoardSize, alignSelf: 'center' } : null,
         ]}
       >
-        <PlayerStrip
+          <PlayerStrip
 state={topStripState}
             timers={timers}
             compact
             grid={splitActive}
             bonus={lastBonus}
             seatStatus={onlineSeatStatus}
+            reactionsBySeat={groupedReactions.bySeat}
+            onReactionDone={reactions.dismiss}
             onPressPlayer={handleOpponentPress}
           />
       </View>
@@ -1799,6 +1813,8 @@ state={topStripState}
                 grid={splitActive}
                 hideWallsForPlayerId={splitActive ? seatPlayer?.id : undefined}
                 seatStatus={onlineSeatStatus}
+                reactionsBySeat={groupedReactions.bySeat}
+                onReactionDone={reactions.dismiss}
                 onPressPlayer={splitActive ? handleBottomGridPress : undefined}
               />
             </View>
