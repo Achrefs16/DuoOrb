@@ -125,10 +125,11 @@ export interface GameSyncDto {
    */
   you?: string | null;
   /**
-   * Current turn's inactivity deadline, when one applies. A client that
-   * attaches (or re-attaches) mid-turn missed the one-shot `game:afkWarning`,
-   * so it derives the same card countdown from this instead of showing
-   * nothing until the forfeit.
+   * Current turn's inactivity deadline, when one applies AND the notice
+   * delay has elapsed. A client that attaches (or re-attaches) mid-turn
+   * missed the one-shot `game:afkWarning`, so it derives the same card
+   * countdown from this instead — but only once the countdown would
+   * surface live (early attachers get null, then the broadcast).
    */
   afk?: { playerId: string; afkEndsAt: number } | null;
   /**
@@ -257,9 +258,10 @@ export interface ServerToClientEvents {
   }) => void;
   'game:sync': (sync: GameSyncDto) => void;
   /**
-   * Inactivity notice for the seat on turn. Fires at the start of the turn's
-   * allowance (45s), not near its end — the countdown IS the warning, shown
-   * on that seat's card, and the player sitting in it must see their own.
+   * Inactivity notice for the seat on turn. Fires after 15s of stillness, not
+   * at the turn start — the countdown IS the warning, shown on that seat's
+   * card, and the player sitting in it must see their own. At emission the
+   * remainder is ~30s of a 45s allowance (shorter for banked remainders).
    * Distinct from `game:opponentDisconnected`: that seat is connected and
    * simply not moving, and the client shows a different state for it.
    * `afkEndsAt` is the SERVER's forfeit deadline; the client counts down to

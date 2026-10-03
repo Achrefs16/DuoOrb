@@ -40,6 +40,16 @@ const MAX_LATENCY_REFUND_MS = 1200;
 export const AFK_TIMEOUT_MS = 45_000;
 
 /**
+ * Stillness before the inactivity countdown surfaces on cards. The forfeit
+ * deadline runs from the turn start, but the WARNING (card pill + chime)
+ * waits this long: a player thinking through the opening seconds must not
+ * be told they are about to forfeit, and emitting at turn start flashed the
+ * pill for a frame before the move's own afkCleared wiped it. After the
+ * delay the countdown shows the true remainder (30s of a 45s allowance).
+ */
+export const AFK_NOTICE_DELAY_MS = 15_000;
+
+/**
  * Join quorum: how long a created game waits for every seat's first
  * `game:join` before treating no-shows as disconnected (standard 45s grace
  * from there). Covers slow clients without billing the opening turn to
@@ -128,6 +138,12 @@ onAfkWarning?: (gameId: string, payload: { playerId: string; afkEndsAt: number; 
    * must not be able to end the same game twice.
    */
   afkTimers: Map<string, NodeJS.Timeout>;
+  /**
+   * Pending warning emission for the current turn (see AFK_NOTICE_DELAY_MS).
+   * Cleared with the watchdog on every turn transition — a move inside the
+   * delay means no warning was ever shown and none is owed.
+   */
+  afkNoticeTimeout?: NodeJS.Timeout;
   /**
    * Server time at which the seat on turn forfeits for inactivity, or null
    * when no watchdog applies. Emitted with the warning and repeated in every
@@ -1686,6 +1702,12 @@ public async recoverInProgressGames(hooks: {
    * through the grace timer, and a connected player thinking through their
    * opponent's disconnect must not be forfeited for idling on top of it.
    *
+   * The EMISSION waits AFK_NOTICE_DELAY_MS of stillness (notice timer
+   * below); the deadline itself runs from the turn start. So a turn that
+   * ends inside the delay warns nobody, and a warning that does go out
+   * shows the true remainder — never a full allowance the holder no longer
+   * has. The forfeit timer is unaffected and still fires at the deadline.
+   *
    * @param allowanceMs inactivity budget for this arming. Fresh turns pass
    * the full 45s; grace returns pass the banked remainder (see afkCarryMs).
    * Zero or negative means the deadline already passed while away — the
@@ -1700,11 +1722,23 @@ public async recoverInProgressGames(hooks: {
 
     const afkEndsAt = Date.now() + allowanceMs;
     game.afkEndsAt = afkEndsAt;
-    game.onAfkWarning?.(game.id, {
-      playerId,
-      afkEndsAt,
-      secondsRemaining: Math.max(0, Math.ceil(allowanceMs / 1000)),
-    });
+    // Short allowances (banked remainders under the delay) warn at once:
+    // there is no quiet period left to wait out.
+    const noticeDelay = allowanceMs <= AFK_NOTICE_DELAY_MS ? 0 : AFK_NOTICE_DELAY_MS;
+    game.afkNoticeTimeout = setTimeout(() => {
+      game.afkNoticeTimeout = undefined;
+      if (game.state.status !== 'IN_PROGRESS' || !game.clockStarted) return;
+      if (Object.keys(game.disconnectedUsers).length > 0) return;
+      // Turn moved on or a fresher watch replaced this one: stay silent.
+      if (game.state.players[game.state.currentPlayerIndex]?.id !== playerId) return;
+      if (game.afkEndsAt !== afkEndsAt) return;
+      game.onAfkWarning?.(game.id, {
+        playerId,
+        afkEndsAt,
+        secondsRemaining: Math.max(0, Math.ceil(allowanceMs / 1000)),
+      });
+    }, noticeDelay);
+    this.unrefTimer(game.afkNoticeTimeout);
 
     const timeoutId = setTimeout(() => {
       if (game.afkTimers.get(playerId) !== timeoutId) return;
@@ -1759,6 +1793,8 @@ public async recoverInProgressGames(hooks: {
     for (const timer of game.afkTimers.values()) clearTimeout(timer);
     game.afkTimers.clear();
     game.afkEndsAt = null;
+    if (game.afkNoticeTimeout) clearTimeout(game.afkNoticeTimeout);
+    game.afkNoticeTimeout = undefined;
   }
 
   /**
@@ -1810,9 +1846,13 @@ public async recoverInProgressGames(hooks: {
       you: forUserId ? game.userPlayerIds[forUserId] ?? null : undefined,
       // Current turn's inactivity deadline, when one applies: a client that
       // attaches (or re-attaches) mid-turn missed the one-shot warning, so
-      // it derives the same card countdown from this instead.
+      // it derives the same card countdown from here. Follows the same
+      // notice rule as the broadcast (AFK_NOTICE_DELAY_MS of stillness):
+      // early attachers see nothing until the countdown would surface live.
       afk:
-        game.state.status === 'IN_PROGRESS' && game.afkEndsAt !== null
+        game.state.status === 'IN_PROGRESS' &&
+        game.afkEndsAt !== null &&
+        game.afkEndsAt - now <= AFK_TIMEOUT_MS - AFK_NOTICE_DELAY_MS
           ? {
               playerId: game.state.players[game.state.currentPlayerIndex]?.id ?? '',
               afkEndsAt: game.afkEndsAt,

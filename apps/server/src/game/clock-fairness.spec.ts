@@ -318,37 +318,59 @@ describe('inactivity (AFK) is separate from disconnect', () => {
 
   it('watches the OPENING turn too — a player who never moves is still warned and forfeited', () => {
     const seen = makeGameWithAfkSpy();
-    // No moves at all. The warning went out at creation, for the opener.
-    expect(seen.length).toBe(1);
+    // No moves at all: nothing surfaces for the first 15s of stillness.
+    expect(seen).toHaveLength(0);
+    vi.advanceTimersByTime(15_000);
+    // Then the warning lands with the true deadline (30s shown, 45s allowance).
+    expect(seen).toHaveLength(1);
     expect(seen[0].playerId).toBe('p1');
-    expect(seen[0].secondsRemaining).toBe(45);
+    expect(seen[0].afkEndsAt).toBe(Date.now() + 30_000);
 
-    vi.advanceTimersByTime(44_000);
+    vi.advanceTimersByTime(29_000);
     expect(g(svc).state.status).toBe('IN_PROGRESS');
     vi.advanceTimersByTime(2_000);
     expect(g(svc).state.status).toBe('COMPLETED');
     expect(g(svc).state.winnerId).toBe('p2');
   });
 
-  it('warns immediately with the full 45s deadline, once per turn', () => {
+  it('warns after 15s of stillness, once per turn', () => {
     const seen = makeGameWithAfkSpy();
-    expect(seen.length).toBe(1);
-    expect(seen[0].afkEndsAt).toBe(Date.now() + 45_000);
+    expect(seen).toHaveLength(0);
+    vi.advanceTimersByTime(15_000);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].afkEndsAt).toBe(Date.now() + 30_000);
 
     // The next turn warns again, for the new holder — never twice for one.
+    // A move inside the delay warns nobody and leaves nothing stale behind.
     play(svc, 'uA');
-    expect(seen.length).toBe(2);
+    expect(seen).toHaveLength(1);
+    vi.advanceTimersByTime(15_000);
+    expect(seen).toHaveLength(2);
     expect(seen[1].playerId).toBe('p2');
-    expect(seen[1].afkEndsAt).toBe(Date.now() + 45_000);
+    expect(seen[1].afkEndsAt).toBe(Date.now() + 30_000);
   });
 
-  it('carries the deadline in the sync, for clients that attach mid-turn', () => {
+  it('a turn that ends inside the delay warns nobody', () => {
+    const seen = makeGameWithAfkSpy();
+    vi.advanceTimersByTime(10_000);
+    play(svc, 'uA'); // turn passes at t10: the notice dies unheard
+    vi.advanceTimersByTime(10_000); // t20: only 10s into the new turn
+    expect(seen).toHaveLength(0);
+    vi.advanceTimersByTime(6_000); // t26: 16s into uB's turn
+    expect(seen).toHaveLength(1);
+    expect(seen[0].playerId).toBe('p2');
+  });
+
+  it('hides the deadline from sync until the notice delay elapses', () => {
     makeGameWithAfkSpy();
     vi.advanceTimersByTime(10_000);
+    // Early attachers see nothing — same rule as the broadcast.
+    expect(svc.getSyncState('c1', 0, 'uA')!.afk).toBeNull();
+    vi.advanceTimersByTime(10_000); // t20: 25s remain
     const sync = svc.getSyncState('c1', 0, 'uA')!;
     expect(sync.afk).toEqual({ playerId: 'p1', afkEndsAt: expect.any(Number) });
-    expect(sync.afk!.afkEndsAt).toBeLessThanOrEqual(Date.now() + 35_000);
-    expect(sync.afk!.afkEndsAt).toBeGreaterThan(Date.now() + 34_000);
+    expect(sync.afk!.afkEndsAt).toBeLessThanOrEqual(Date.now() + 25_000);
+    expect(sync.afk!.afkEndsAt).toBeGreaterThan(Date.now() + 24_000);
   });
 
   it('re-arms for a returnee back on turn — coming back does not disarm idling', () => {
