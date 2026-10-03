@@ -29,12 +29,16 @@ function makeGame(svc: AuthoritativeGameService, gameId = 'g1', userIds = ['uA',
     incrementSeconds: 0,
     turnStartTimestamp: Date.now(),
     clockStarted: true,
+    joinedUserIds: new Set(userIds),
+    quorumReached: true,
+    flagToken: 0,
     disconnectedUsers: {},
     disconnectGenerations: {},
     latencyMs: {},
     disconnectGraceEndsAt: {},
     afkTimers: new Map(),
     afkEndsAt: null,
+    afkCarryMs: null,
     rematchOffers: new Set<string>(),
     isRanked: true,
     timeControlMinutes: 3,
@@ -115,7 +119,10 @@ describe('disconnect grace', () => {
     expect(Object.keys(game.disconnectedUsers)).toEqual(['uA']);
 
     // Even if the orphaned callback were still delivered, it must not act.
-    expect(game.disconnectGenerations.uA).toBe(1);
+    // Generations are monotonic (bumped on arm AND cancel, never deleted):
+    // two disconnect cycles bump four times, so the first cycle's token (2)
+    // can never equal the live one (4).
+    expect(game.disconnectGenerations.uA).toBe(4);
   });
 
   it('an orphaned callback cannot delete the live entry or forfeit', () => {
@@ -159,5 +166,53 @@ describe('disconnect grace', () => {
     };
     expect(svc.handleDisconnect('g1', 'uA', () => {})).toBeNull();
     expect(game.disconnectedUsers.uA).toBeUndefined();
+  });
+
+  it('identity migration mid-grace re-arms the forfeit under the new id (C8)', () => {
+    const game = makeGame(svc);
+    const onForfeit = vi.fn();
+    // The re-arm callback uses the game's stored hook, like production.
+    game.onForfeit = (gId, ended, finished, move) => onForfeit(ended, finished, move);
+    svc.handleDisconnect('g1', 'uA', onForfeit);
+    vi.advanceTimersByTime(10_000); // 10s of the 45s elapse pre-sign-in
+
+    // Guest signs in mid-grace: seat + remaining window move to the account.
+    svc.migrateUser('uA', 'uNew');
+
+    // Old entry retired, new entry armed — same seat, remaining time only.
+    expect(game.disconnectedUsers.uA).toBeUndefined();
+    expect(game.disconnectedUsers.uNew).toBeTruthy();
+    expect(game.userPlayerIds.uA).toBeUndefined();
+    expect(game.userPlayerIds.uNew).toBe('p1');
+    expect(game.disconnectGraceEndsAt.uNew).toBeLessThanOrEqual(Date.now() + 35_000);
+    vi.advanceTimersByTime(34_000);
+    expect(onForfeit).not.toHaveBeenCalled();
+    // Remaining window expires under the new id: the forfeit still fires —
+    // sign-in is not a forfeit dodge — exactly once, for the right seat.
+    vi.advanceTimersByTime(2_000);
+    expect(onForfeit).toHaveBeenCalledTimes(1);
+    expect(game.state.status).toBe('COMPLETED');
+    expect(game.state.winnerId).toBe('p2');
+  });
+
+  it('migration without an armed grace moves the seat and nothing else', () => {
+    const game = makeGame(svc);
+    svc.migrateUser('uA', 'uNew');
+    expect(game.userPlayerIds.uNew).toBe('p1');
+    expect(game.disconnectedUsers.uNew).toBeUndefined();
+    expect(game.disconnectGraceEndsAt.uNew).toBeUndefined();
+  });
+
+  it('a terminal ending retires every absence with the game (M6-timing)', () => {
+    const game = makeGame(svc);
+    svc.handleDisconnect('g1', 'uA', () => {});
+    expect(game.disconnectedUsers.uA).toBeTruthy();
+    // uB resigns: terminal, uA wins — uA's armed grace must die with the
+    // game instead of firing into a completed match.
+    const res = svc.resign('g1', 'uB');
+    expect(res.success).toBe(true);
+    expect(game.state.status).toBe('COMPLETED');
+    expect(game.disconnectedUsers.uA).toBeUndefined();
+    expect(game.disconnectGraceEndsAt.uA).toBeUndefined();
   });
 });

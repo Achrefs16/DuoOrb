@@ -51,7 +51,7 @@ export class ChallengeService {
       this.challenges.delete(challenge.id);
       this.timers.delete(challenge.id);
       onExpired?.(pending);
-    }, CHALLENGE_TTL_MS + 500);
+    }, CHALLENGE_TTL_MS);
     // Don't hold the process open for lobby furniture.
     if (typeof timer.unref === 'function') timer.unref();
     this.timers.set(challenge.id, timer);

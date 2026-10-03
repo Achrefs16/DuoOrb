@@ -16,6 +16,9 @@ interface ToastRequest {
 }
 
 const DURATION_MS = 3500;
+/** Backlog depth: achievements earned together are celebrated in order, and
+ * a session toast can no longer erase an achievement toast mid-read. */
+const QUEUE_DEPTH = 4;
 
 type ToastListener = (t: ToastRequest | null) => void;
 const listeners = new Set<ToastListener>();
@@ -23,8 +26,9 @@ let seq = 0;
 
 /**
  * Tiny event-bus toast. Any layer calls `toast.show(...)`; one mounted
- * `<AppToast />` renders it bottom-above-nav for 3.5s. Queue depth is one:
- * a new toast replaces the current one and restarts the timer.
+ * `<AppToast />` renders them bottom-above-nav for 3.5s each, first in first
+ * out (depth 4 — overflow drops the oldest queued, never the one on
+ * screen). A new toast no longer replaces the current one mid-read.
  */
 export const toast = {
   show(message: string, action?: ToastAction, icon?: React.ReactNode): void {
@@ -42,21 +46,40 @@ export const toast = {
 
 export const AppToast: React.FC = () => {
   const [current, setCurrent] = useState<ToastRequest | null>(null);
+  const queue = useRef<ToastRequest[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const advanceRef = useRef<() => void>(() => {});
 
   useEffect(() => {
-    const onToast = (req: ToastRequest | null) => {
-      if (timer.current) clearTimeout(timer.current);
-      setCurrent(req);
-      if (req) {
-        timer.current = setTimeout(() => setCurrent(null), DURATION_MS);
+    const showNext = () => {
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
       }
+      const next = queue.current.shift() ?? null;
+      setCurrent(next);
+      if (next) {
+        timer.current = setTimeout(() => {
+          timer.current = null;
+          showNext();
+        }, DURATION_MS);
+      }
+    };
+    advanceRef.current = showNext;
+    const onToast = (req: ToastRequest | null) => {
+      if (!req) return;
+      queue.current.push(req);
+      while (queue.current.length > QUEUE_DEPTH) queue.current.shift();
+      // Idle: start the chain. Busy: the running timer advances it.
+      if (!timer.current && !current) showNext();
     };
     listeners.add(onToast);
     return () => {
       listeners.delete(onToast);
       if (timer.current) clearTimeout(timer.current);
     };
+    // `current` read once for the idle check; the queue ref owns the rest.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!current) return null;
@@ -73,7 +96,9 @@ export const AppToast: React.FC = () => {
             activeOpacity={0.7}
             onPress={() => {
               const fn = current.action?.onPress;
-              setCurrent(null);
+              // Dismissing early advances the queue now — the next toast
+              // must not wait out the remainder of this one's timer.
+              advanceRef.current();
               fn?.();
             }}
             accessibilityLabel={current.action.label}

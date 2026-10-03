@@ -17,7 +17,7 @@ import type { ActionAck } from '@duoorb/protocol';
 import { GameAction, GameMode, RecordedAction } from '@duoorb/game-core';
 import { AuthoritativeGameService } from '../game/authoritative-game.service.js';
 import { AiwinsService } from '../aiwins/aiwins.service.js';
-import { MatchmakingService } from '../matchmaking/matchmaking.service.js';
+import { MatchmakingService, type MatchmakingRequest } from '../matchmaking/matchmaking.service.js';
 import { GuestService } from '../guest/guest.service.js';
 import { resolveCorsOrigins } from '../config/cors.js';
 import { RoomService, shuffleSeats } from '../rooms/room.service.js';
@@ -88,6 +88,10 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * room be handed back to its lobby when that game finishes. */
   private gameRoomMap = new Map<string, string>();
   private sweepInterval?: NodeJS.Timeout;
+  /** Per-seat ping throttle (gameId:userId → last accepted sample). */
+  private pingThrottle = new Map<string, number>();
+  /** Last-known live rating per user: lobby fallback when no live socket. */
+  private userRatingCache = new Map<string, number>();
   /** Last reaction timestamp per socket, for the tap-flood throttle. */
   private reactionLastAt = new Map<string, number>();
 
@@ -99,11 +103,21 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     this.gameService = new AuthoritativeGameService(this.prisma, new AiwinsService(this.prisma));
   }
 
-  afterInit() {
-    // 2-second periodic sweep for matchmaking queue
+  /** Housekeeping must not outlive the module (tests, HMR, restarts). */
+  onModuleDestroy() {
+    if (this.sweepInterval) {
+      clearInterval(this.sweepInterval);
+      this.sweepInterval = undefined;
+    }
+  }
+
+  afterInit() {    // 2-second periodic sweep for matchmaking queue
     this.sweepInterval = setInterval(() => {
       this.runMatchmakingSweep();
     }, 2000);
+    if (typeof this.sweepInterval.unref === 'function') {
+      this.sweepInterval.unref();
+    }
     this.logger.log('GameGateway initialized with 2s matchmaking sweep loop.');
 
     // Crash recovery: rebuild every IN_PROGRESS game from Postgres through
@@ -114,6 +128,8 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         onTimeout: (gId, ended, move) => this.emitTimeoutEnded(gId, ended, move),
         onAfkWarning: (gId, payload) => this.server.to(gId).emit('game:afkWarning', payload),
+        onForfeit: (gId, ended, finished, move) =>
+          this.emitMidGameForfeit(gId, ended, finished, move),
       })
       .then(({ recovered, abandoned }) => {
         this.logger.log(`Startup recovery: ${recovered} recovered, ${abandoned.length} abandoned.`);
@@ -220,12 +236,39 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       const userInfo: SocketUserInfo = { userId: effectiveId, displayName, rating, verified };
       this.socketUserMap.set(client.id, userInfo);
       this.userSocketMap.delete(earlyId);
+      // Single controlling session: if a different LIVE socket already spoke
+      // for this user, it is now stale — tell it to stand down instead of
+      // leaving a half-dead tab that misses directs and acts on ghosts.
+      // (M2: one map entry, latest wins, loser told explicitly.)
+      const prevSid = this.userSocketMap.get(effectiveId);
+      if (prevSid && prevSid !== client.id) {
+        this.server.sockets.sockets.get(prevSid)?.emit('session:superseded');
+      }
       this.userSocketMap.set(effectiveId, client.id);
       // Presence only for a real identity — never for an opaque handle.
       if (verified) this.setPresence(effectiveId, { isOnline: true });
+      // Cache the live rating for lobby display: enrichRoom falls back to
+      // this when the member has no live socket, instead of a fictional
+      // 1500 that conflates strangers with newcomers.
+      if (verified) this.userRatingCache.set(effectiveId, rating);
       // Fresh socket for someone already searching: refresh their queue
       // line so the sweep never matches a dead connection.
       this.matchmakingService.updateSocket(effectiveId, client.id);
+      // Reconnect-sign-in (M11): the client upgraded identities (guest →
+      // account) across a reconnect and tells us the previous id via the
+      // handshake. Same guarded migration as in-place adopt — seats, grace,
+      // rooms, challenges follow the verified identity instead of orphaning
+      // the old seat. Refusals (previous session still live) keep the new
+      // identity as-is: the caller surfaces NOT_SEATED and searches again.
+      if (verified) {
+        const previousUserId = client.handshake.query?.previousUserId as string | undefined;
+        if (previousUserId && previousUserId !== effectiveId) {
+          const migrated = this.migrateIdentity(previousUserId, effectiveId, displayName, client, rating);
+          if (!migrated.success) {
+            this.logger.warn(`Reconnect migration refused ${previousUserId} -> ${effectiveId}: ${migrated.error}`);
+          }
+        }
+      }
 
       this.logger.log(`Socket connected: ${client.id} (User: ${effectiveId}, Rating: ${rating})`);
     } catch (err: any) {
@@ -240,6 +283,62 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
    * client-supplied field. Naming somebody else's id is therefore useless:
    * you can only ever migrate yourself.
    */
+  /**
+   * Single identity-migration path for guest→account upgrades, used by
+   * in-place adopt AND reconnect-sign-in alike (M11). Moves queue, game
+   * seats (including mid-grace state, via the service), rooms, challenges,
+   * and the game mapping — then fixes routing + presence for both ids.
+   *
+   * Safety: a seat is only ever taken from an identity whose socket is gone
+   * (or is this same socket). A client asserting someone else's live id gets
+   * a refusal, never their game.
+   */
+  private migrateIdentity(
+    prevId: string,
+    newId: string,
+    newName: string,
+    client: Socket,
+    priorRating: number
+  ): { success: true } | { success: false; error: string } {
+    if (!prevId || !newId || prevId === newId) return { success: true };
+    const prevSocketId = this.userSocketMap.get(prevId);
+    const prevSocket =
+      prevSocketId ? this.server.sockets.sockets.get(prevSocketId) : undefined;
+    if (prevSocket && prevSocket.id !== client.id) {
+      return { success: false, error: 'Previous session is still active.' };
+    }
+    // Drop stale routing to the old id (M10): same-socket adopt, or a dead
+    // previous socket that must never address a ghost connection again.
+    const touchedRooms = this.roomService.migrateUser(prevId, newId, newName);
+    for (const room of touchedRooms) {
+      client.join(room.id);
+      this.server.to(room.id).emit('room:state', this.enrichRoom(room));
+    }
+    this.gameService.migrateUser(prevId, newId);
+    this.matchmakingService.migrateUser(prevId, newId);
+    this.challengeService.migrateUser(prevId, newId);
+    if (this.activeGameUserMap.get(prevId)) {
+      this.activeGameUserMap.set(newId, this.activeGameUserMap.get(prevId)!);
+      this.activeGameUserMap.delete(prevId);
+    }
+    // Drop stale routing to the old id (M10): same-socket adopt, or a dead
+    // previous socket that must never address a ghost connection again.
+    if (!prevSocket || prevSocketId === client.id) {
+      this.userSocketMap.delete(prevId);
+    }
+    this.socketUserMap.set(client.id, {
+      userId: newId,
+      displayName: newName,
+      rating: priorRating,
+      verified: true,
+    });
+    this.userSocketMap.set(newId, client.id);
+    this.setPresence(prevId, { isOnline: false });
+    this.setPresence(newId, { isOnline: true });
+    this.logger.log(`Adopted live state ${prevId} -> ${newId}`);
+    return { success: true };
+  }
+
   @SubscribeMessage('session:adopt')
   async handleSessionAdopt(
     @ConnectedSocket() client: Socket,
@@ -263,27 +362,8 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       return { success: true, userId: user.userId };
     }
 
-    const prevId = user.userId;
-    const touchedRooms = this.roomService.migrateUser(prevId, newId, newName);
-    for (const room of touchedRooms) {
-      client.join(room.id);
-      this.server.to(room.id).emit('room:state', this.enrichRoom(room));
-    }
-    this.gameService.migrateUser(prevId, newId);
-    this.matchmakingService.migrateUser(prevId, newId);
-    this.challengeService.migrateUser(prevId, newId);
-    if (this.activeGameUserMap.get(prevId)) {
-      this.activeGameUserMap.set(newId, this.activeGameUserMap.get(prevId)!);
-      this.activeGameUserMap.delete(prevId);
-    }
-    this.socketUserMap.set(client.id, {
-      userId: newId,
-      displayName: newName,
-      rating: user.rating,
-      verified: true,
-    });
-    this.userSocketMap.set(newId, client.id);
-    this.logger.log(`Adopted live state ${prevId} -> ${newId}`);
+    const migrated = this.migrateIdentity(user.userId, newId, newName, client, user.rating);
+    if (!migrated.success) return { success: false, error: migrated.error };
     return { success: true, userId: newId };
   }
 
@@ -352,6 +432,16 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
 
     this.matchmakingService.removeFromQueue(userId);
     this.setPresence(userId, { isOnline: false, isPlaying: false });
+
+    // Free WAITING lobby seats (host hands over, empty rooms disband with
+    // their invites): without this a blipped lobby seat — crown included —
+    // stayed occupied forever. IN_GAME rooms are untouched: grace covers a
+    // mid-match absence and the room is still theirs on return.
+    for (const left of this.roomService.leaveAllWaitingRooms(userId)) {
+      if (!left.disbanded && left.room) {
+        this.server.to(left.roomId).emit('room:state', this.enrichRoom(left.room));
+      }
+    }
 
     // Check if user is in an active game
     const gameId = this.activeGameUserMap.get(userId);
@@ -511,7 +601,10 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     @MessageBody() payload: { roomId: string; isReady: boolean }
   ) {
     const user = this.getUser(client);
-    if (!user.verified) return;
+    if (!user.verified) {
+      client.emit('game:error', { code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
+      return;
+    }
     const room = this.roomService.setReady(payload.roomId, user.userId, payload.isReady);
     if (room) {
       this.server.to(room.id).emit('room:state', this.enrichRoom(room));
@@ -597,7 +690,11 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     if (!game || game.state.status !== 'IN_PROGRESS') return false;
     // A FINISHED seat is watching, not playing: it must not block the host,
     // or a finished multiplayer player could never leave the board.
-    const seat = game.state.players.find((p) => p.id === userId);
+    // Seats are keyed by playerId (`p1`, `p2`, …), never by userId — resolve
+    // through userPlayerIds first, or the lookup misses and every seated
+    // player (even finished) counts as busy.
+    const seatId = game.userPlayerIds[userId];
+    const seat = seatId ? game.state.players.find((p) => p.id === seatId) : undefined;
     return !seat || seat.status === 'ACTIVE';
   }
 
@@ -615,20 +712,8 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // A seat can only be readied from the lobby. If someone is still mid-match
     // they are not in the lobby, so they must not count towards the quorum —
     // otherwise the host starts a game that one player never joined.
-    const room = this.roomService.getRoom(payload.roomId);
-    if (room) {
-      const busy = room.slots
-        .filter((s) => s.userId !== null && s.userId !== user.userId)
-        .filter((s) => this.isUserInLiveGame(s.userId!))
-        .map((s) => s.displayName ?? 'A player');
-      if (busy.length > 0) {
-        client.emit('game:error', {
-          code: 'START_FAILED',
-          message: `${busy.join(', ')} ${busy.length > 1 ? 'are' : 'is'} still in a match.`,
-        });
-        return;
-      }
-    }
+    // Liveness + busy (self included) is enforced inside createGameChecked;
+    // the room only needs its own start preconditions before that.
 
     const result = this.roomService.startRoom(payload.roomId, user.userId);
     if (!result.success) {
@@ -637,49 +722,29 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     }
 
     const gameId = `game-room-${Date.now()}`;
-    // ALL online human games are rated (server-decided — no client flag):
-    // seed every seat with its live universal rating, not defaults.
-    const usersWithRatings = await Promise.all(
-      result.players.map(async (p) => ({
-        userId: p.userId,
-        displayName: p.displayName,
-        rating: await this.fullRating(p.userId),
-      }))
-    );
-
     // Random seat order every match. Seats map to colors and to first move in
     // order, so without this the host is always blue and always starts. The
     // host crown is untouched — only table positions shuffle.
-    const shuffled = shuffleSeats(usersWithRatings);
+    const shuffledIds = shuffleSeats(result.players.map((p) => p.userId));
 
-    await this.gameService.createGame({
+    // ALL online human games are rated (server-decided — no client flag).
+    const created = await this.createGameChecked({
       gameId,
       mode: result.room.mode,
-      users: shuffled,
+      seatUserIds: shuffledIds,
       timeControlMinutes: result.room.timeControlMinutes,
       incrementSeconds: result.room.incrementSeconds,
       wallsEach: result.room.wallsEach,
       isRanked: true,
-      onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
-        onAfkWarning: (gId, payload) => this.server.to(gId).emit('game:afkWarning', payload),
-        onForfeit: (gId, ended, finished, move) =>
-          this.emitMidGameForfeit(gId, ended, finished, move),
-      onTimeout: (gId, ended, move) => this.emitTimeoutEnded(gId, ended, move),
     });
+    if (!created.success) {
+      client.emit('game:error', { code: 'START_FAILED', message: created.error });
+      return;
+    }
 
-    this.setGamePlaying(gameId, true);
     // Remember the room so it can be returned to its lobby when this game
     // finishes (see returnRoomToLobby).
     this.gameRoomMap.set(gameId, payload.roomId);
-
-    for (const p of result.players) {
-      this.activeGameUserMap.set(p.userId, gameId);
-      const socketId = this.userSocketMap.get(p.userId);
-      if (socketId) {
-        const playerSocket = this.server.sockets.sockets.get(socketId);
-        playerSocket?.join(gameId);
-      }
-    }
 
     // Tell the room the game is running and that nobody is ready any more, so
     // no client keeps showing a stale "ready" lobby.
@@ -792,6 +857,13 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     if (payload.toUserId === user.userId) {
       return { success: false, error: 'You cannot challenge yourself.' };
     }
+    // Fail CLOSED while the database is unreachable: block enforcement
+    // cannot be checked, and a challenge must not go through unchecked.
+    // (Matchmaking stays fail-open by design — availability over strictness
+    // for open queueing; challenges are directed and stay strict.)
+    if (!this.prisma.isConnected) {
+      return { success: false, error: 'Could not verify blocks. Try again.' };
+    }
     // Blocks run both directions and cover challenges: a blocked player can
     // neither send nor receive. Neutral copy — it must not reveal who
     // blocked whom.
@@ -868,7 +940,11 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     const challenge = result.challenge;
     // Blocked after sending (or a stale acceptance racing one): the game
     // must not be created. Dies like a decline so the sender's toast clears
-    // instead of hanging on a match that never comes.
+    // instead of hanging on a match that never comes. Fail closed while the
+    // database is unreachable, like challenge:send.
+    if (!this.prisma.isConnected) {
+      return { success: false, error: 'Could not verify blocks. Try again.' };
+    }
     if (await this.isBlockedBetween(challenge.fromUserId, challenge.toUserId)) {
       const senderId = this.userSocketMap.get(challenge.fromUserId);
       senderId &&
@@ -880,46 +956,35 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     const gameId = `game-challenge-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     // Coin flip seats — challenger does not always move first.
     const flipped = Math.random() < 0.5;
-    const firstId = flipped ? challenge.toUserId : challenge.fromUserId;
-    const secondId = flipped ? challenge.fromUserId : challenge.toUserId;
-    const [firstRating, secondRating] = await Promise.all([
-      this.fullRating(firstId),
-      this.fullRating(secondId),
-    ]);
-    const firstSocket = this.server.sockets.sockets.get(this.userSocketMap.get(firstId) ?? '');
-    const secondSocket = this.server.sockets.sockets.get(this.userSocketMap.get(secondId) ?? '');
-    const firstName =
-      firstId === challenge.fromUserId
-        ? challenge.fromDisplayName
-        : this.socketUserMap.get(this.userSocketMap.get(firstId) ?? '')?.displayName ?? 'Player';
-    const secondName =
-      secondId === challenge.fromUserId
-        ? challenge.fromDisplayName
-        : this.socketUserMap.get(this.userSocketMap.get(secondId) ?? '')?.displayName ?? 'Player';
+    const seatIds = flipped
+      ? [challenge.toUserId, challenge.fromUserId]
+      : [challenge.fromUserId, challenge.toUserId];
 
-    await this.gameService.createGame({
+    // Both sides re-checked live here: an accept for an offline sender (or a
+    // seat already in another game) dies like a decline instead of creating
+    // a ghost game nobody can join (C2). Names/ratings are re-read live
+    // inside — never the frozen send-time snapshot (M17).
+    const created = await this.createGameChecked({
       gameId,
       mode: challenge.mode,
-      users: [
-        { userId: firstId, displayName: firstName, rating: firstRating },
-        { userId: secondId, displayName: secondName, rating: secondRating },
-      ],
+      seatUserIds: seatIds,
       timeControlMinutes: challenge.timeControlMinutes,
       incrementSeconds: challenge.incrementSeconds,
       wallsEach: challenge.wallsEach,
       isRanked: true,
-      onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
-        onAfkWarning: (gId, payload) => this.server.to(gId).emit('game:afkWarning', payload),
-        onForfeit: (gId, ended, finished, move) =>
-          this.emitMidGameForfeit(gId, ended, finished, move),
-      onTimeout: (gId, ended, move) => this.emitTimeoutEnded(gId, ended, move),
     });
+    if (!created.success) {
+      const senderId = this.userSocketMap.get(challenge.fromUserId);
+      senderId &&
+        this.server.sockets.sockets
+          .get(senderId)
+          ?.emit('challenge:declined', { challengeId: payload.challengeId, byUserId: user.userId });
+      client.emit('game:error', { code: 'CHALLENGE_FAILED', message: created.error });
+      return { success: false, error: created.error };
+    }
 
-    this.setGamePlaying(gameId, true);
-    this.activeGameUserMap.set(firstId, gameId);
-    this.activeGameUserMap.set(secondId, gameId);
-    firstSocket?.join(gameId);
-    secondSocket?.join(gameId);
+    const firstSocket = this.server.sockets.sockets.get(this.userSocketMap.get(seatIds[0]) ?? '');
+    const secondSocket = this.server.sockets.sockets.get(this.userSocketMap.get(seatIds[1]) ?? '');
 
     const accepted = {
       challengeId: challenge.id,
@@ -967,21 +1032,39 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     return !!row;
   }
 
+  /**
+   * Put a swept player back in line with FRESH routing data. findMatches
+   * hands out snapshots; by requeue time the socket/name may have moved on
+   * (reconnect, rename) and re-pushing the stale copy would seat the next
+   * sweep against a dead line or a wrong name (M9). Offline players are not
+   * requeued at all. Wait time (joinedAt) is preserved — requeue never
+   * resets it, only a fresh search does.
+   */
+  private requeuePlayer(player: MatchmakingRequest): void {
+    const sid = this.userSocketMap.get(player.userId);
+    const live = sid ? this.server.sockets.sockets.get(sid) : undefined;
+    if (!live || !sid) return;
+    const info = this.socketUserMap.get(sid);
+    this.matchmakingService.requeue({
+      ...player,
+      socketId: sid,
+      displayName: info?.displayName ?? player.displayName,
+      rating: info?.rating ?? player.rating,
+    });
+  }
+
   private async runMatchmakingSweep() {
+    // Dead entries never reach findMatches: purge them first so a drifted
+    // queue (missed socket update, async gap) cannot seat a ghost table.
+    const purged = this.matchmakingService.purgeDisconnected((sid) =>
+      this.server.sockets.sockets.has(sid)
+    );
+    if (purged.length > 0) {
+      this.logger.log(`Matchmaking purged ${purged.length} dead queue entries.`);
+    }
     const matches = this.matchmakingService.findMatches();
     for (const match of matches) {
       const players = match.players;
-      const sockets = players.map((player) => this.server.sockets.sockets.get(player.socketId));
-      // All seats must still be live — otherwise skip (no ghost games)
-      // and drop the dead entries so they re-search on return.
-      if (sockets.some((socket) => !socket)) {
-        for (const player of players) {
-          if (!this.server.sockets.sockets.get(player.socketId)) {
-            this.matchmakingService.removeFromQueue(player.userId);
-          }
-        }
-        continue;
-      }
       // Blocks are pair-wise: no seat in a matched table may have blocked
       // (or be blocked by) another. Offenders go back in the queue rather
       // than being dropped, so they keep searching past each other instead
@@ -995,7 +1078,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         }
       }
       if (blockedPair) {
-        for (const player of players) this.matchmakingService.addToQueue(player);
+        for (const player of players) this.requeuePlayer(player);
         continue;
       }
       const gameId = `game-ranked-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -1003,47 +1086,45 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       // Coin flip seats: waiting longest must not mean always-blue-first.
       const flipped = Math.random() < 0.5;
       const orderedPlayers = flipped ? [...players].reverse() : players;
-      const ratings = await Promise.all(
-        orderedPlayers.map((player) => this.fullRating(player.userId))
-      );
 
-      await this.gameService.createGame({
+      // Liveness is enforced inside createGameChecked, against the LIVE
+      // socket map — not the pre-sweep snapshot. On failure the live seats go
+      // back in the queue and keep searching (never silently dropped, C1);
+      // the sweep re-runs every 2s, so this is a delay, not a dead end.
+      // NOTE: re-queue re-pushes the snapshot (joinedAt not preserved) —
+      // fairness pass (F3) fixes preservation.
+      const created = await this.createGameChecked({
         gameId,
         mode: match.mode,
-        users: orderedPlayers.map((player, index) => ({
-          userId: player.userId,
-          displayName: player.displayName,
-          rating: ratings[index],
-        })),
+        seatUserIds: orderedPlayers.map((p) => p.userId),
         timeControlMinutes: match.timeControlMinutes,
         incrementSeconds: match.incrementSeconds,
         wallsEach: match.wallsEach,
-        onAfkWarning: (gId, payload) => this.server.to(gId).emit('game:afkWarning', payload),
-        onForfeit: (gId, ended, finished, move) =>
-          this.emitMidGameForfeit(gId, ended, finished, move),
         isRanked: true,
-        onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
-        onTimeout: (gId, ended, move) => this.emitTimeoutEnded(gId, ended, move),
       });
-
-      this.setGamePlaying(gameId, true);
-      for (const player of orderedPlayers) {
-        this.activeGameUserMap.set(player.userId, gameId);
-      }
-      for (const socket of sockets) {
-        socket?.join(gameId);
+      if (!created.success) {
+        // Live seats keep searching with fresh routing + preserved wait
+        // (requeuePlayer); the sweep re-runs every 2s, so this is a delay,
+        // not a dead end — no failure toast on transient churn.
+        this.logger.warn(`Matchmaking creation failed for ${gameId}: ${created.error}`);
+        for (const player of players) this.requeuePlayer(player);
+        continue;
       }
       // Personalized payload: everyone sees WHO they matched, not just
       // a game id. The finding screen shows the opponent card straight
-      // from this instead of a blank connecting page.
-      const seats = orderedPlayers.map((player, index) => ({
-        userId: player.userId,
-        displayName: player.displayName,
-        rating: ratings[index] ?? 1500,
+      // from this instead of a blank connecting page. Emitted to the live
+      // socket (not the pre-sweep snapshot) so a reconnected seat still
+      // hears its match.
+      const seats = created.users.map((u) => ({
+        userId: u.userId,
+        displayName: u.displayName,
+        rating: u.rating.rating ?? 1500,
       }));
       for (const player of players) {
+        const liveSid = this.userSocketMap.get(player.userId);
+        if (!liveSid) continue;
         this.server
-          .to(player.socketId)
+          .to(liveSid)
           .emit('matchmaking:matched', {
             gameId,
             mode: match.mode,
@@ -1089,13 +1170,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       this.server.to(payload.gameId).emit('game:playerFinished', { gameId: payload.gameId, ...result.finished });
     }
     if (result.ended) {
-      try {
-        await this.gameService.persistCompleted(payload.gameId);
-      } catch (err: any) {
-        this.logger.warn(`Completion persist failed ${payload.gameId}: ${err?.message}`);
-      }
-      this.server.to(payload.gameId).emit('game:ended', result.ended);
-      this.setGamePlaying(payload.gameId, false);
+      await this.endGame(payload.gameId, result.ended);
     }
   }
 
@@ -1135,7 +1210,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       return;
     }
     client.join(payload.gameId);
-    this.activeGameUserMap.set(user.userId, payload.gameId);
+    // Point at live games only: a drop mid-pump still arms grace through
+    // this mapping, but joining a finished table must not resurrect a
+    // mapping that completion already cleared (M13).
+    if (this.gameService.getGame(payload.gameId)?.state.status === 'IN_PROGRESS') {
+      this.activeGameUserMap.set(user.userId, payload.gameId);
+    }
 
     // Kill the grace timer NOW, synchronously. The loop below awaits a DB
     // round-trip per unconfirmed move; if the grace window expires inside it,
@@ -1143,6 +1223,10 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // sync is still taken after the replay, so the client still gets
     // post-replay truth — the timer and the sync are deliberately separate.
     this.gameService.cancelDisconnectGrace(payload.gameId, user.userId);
+    // Count this seat toward the join quorum: when every seat has joined,
+    // the clock starts from now with full time (never billed for pairing +
+    // join latency). Idempotent — rejoins are no-ops.
+    this.gameService.markSeatJoined(payload.gameId, user.userId);
 
     // Collapse overlapping joins into one replay + sync. Reconnect storms,
     // retry loops and queue flushes all emit `game:join` within
@@ -1195,7 +1279,17 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     }
   ): Promise<void> {
     const { client, payload, seat } = join;
-    const pendings = (payload.pendingActions ?? []).slice(0, 20);
+    // A socket that died mid-pump gets no replay and no sync: answering it
+    // wastes a DB replay per pass and can announce a return that never
+    // happened. The client rejoins and pumps again when it is actually back.
+    if (client.disconnected) return;
+    // Tails are capped client-side (19); beyond 100 this is abuse or a bug,
+    // so process a bounded page and log instead of truncating silently.
+    const rawTail = payload.pendingActions ?? [];
+    if (rawTail.length > 100) {
+      this.logger.warn(`Join tail over cap, truncating ${payload.gameId} (${rawTail.length})`);
+    }
+    const pendings = rawTail.slice(0, 100);
     for (const p of pendings) {
       if (!p || typeof p.clientActionId !== 'string' || !p.action) continue;
       try {
@@ -1209,13 +1303,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
             this.server.to(payload.gameId).emit('game:playerFinished', { gameId: payload.gameId, ...res.finished });
           }
           if (res.ended) {
-            try {
-              await this.gameService.persistCompleted(payload.gameId);
-            } catch (err: any) {
-              this.logger.warn(`Completion persist failed ${payload.gameId}: ${err?.message}`);
-            }
-            this.server.to(payload.gameId).emit('game:ended', res.ended);
-            this.setGamePlaying(payload.gameId, false);
+            await this.endGame(payload.gameId, res.ended);
           }
         }
       } catch {
@@ -1225,6 +1313,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
 
     const sync = this.gameService.handleReconnect(payload.gameId, userId);
     if (sync) {
+      if (client.disconnected) return;
       // Opponents only — this socket just joined the room, so room
       // fan-out would have the returnee announce their own return.
       const others = this.otherSeatSockets(payload.gameId, userId);
@@ -1242,6 +1331,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         userId
       );
       if (existingSync) {
+        if (client.disconnected) return;
         client.emit('game:sync', existingSync);
       } else {
         client.emit('game:error', {
@@ -1285,13 +1375,9 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         this.server.to(payload.gameId).emit('game:playerFinished', { gameId: payload.gameId, ...result.finished });
       }
       if (result.ended) {
-        try {
-          await this.gameService.persistCompleted(payload.gameId);
-        } catch (err: any) {
-          this.logger.warn(`Completion persist failed ${payload.gameId}: ${err?.message}`);
-        }
-        this.server.to(payload.gameId).emit('game:ended', result.ended);
-        this.setGamePlaying(payload.gameId, false);
+        // `result.recorded` was already emitted above; endGame only sends it
+        // when passed explicitly, so no double-emit here.
+        await this.endGame(payload.gameId, result.ended);
       }
     } else {
       ack?.({ ok: false, code: result.error.code, message: result.error.message });
@@ -1322,12 +1408,9 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         }
         return;
       }
-      try {
-        await this.gameService.persistCompleted(payload.gameId);
-      } catch (err: any) {
-        this.logger.warn(`Completion persist failed ${payload.gameId}: ${err?.message}`);
-      }
-      this.server.to(payload.gameId).emit('game:ended', result.ended);
+      // Terminal resign: recorded + finished already emitted above; endGame
+      // persists, announces the ending, and frees seats/presence/room.
+      await this.endGame(payload.gameId, result.ended);
     } else {
       client.emit('game:error', { code: 'RESIGN_FAILED', message: result.error });
     }
@@ -1356,10 +1439,16 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     const existing = this.gameService.getGame(gameId);
     if (!existing?.userPlayerIds[user.userId]) return;
     const now = Date.now();
-    const last = this.reactionLastAt.get(client.id) ?? 0;
+    const last = this.reactionLastAt.get(user.userId) ?? 0;
     if (now - last < REACTION_THROTTLE_MS) return;
-    this.reactionLastAt.set(client.id, now);
-    if (this.reactionLastAt.size > 5000) this.reactionLastAt.clear();
+    this.reactionLastAt.set(user.userId, now);
+    // Per-user throttle with a bounded map: the old socket-keyed map cleared
+    // EVERYONE's throttle at 5000 entries, so one flood reset the whole
+    // server's. Oldest-user eviction keeps it bounded without cross-talk.
+    if (this.reactionLastAt.size > 5000) {
+      const oldest = this.reactionLastAt.keys().next();
+      if (!oldest.done) this.reactionLastAt.delete(oldest.value);
+    }
     client.to(gameId).emit('game:reaction', { gameId, reaction, fromUserId: user.userId });
   }
 
@@ -1387,29 +1476,24 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         // value derived from the old snapshot, so real points vanished.
         // Matchmaking, challenges and rooms all re-read here; rematch now
         // matches them.
-        const users = await Promise.all(
-          params.users.map(async (u: { userId: string; [key: string]: unknown }) => ({
-            ...u,
-            rating: await this.fullRating(u.userId),
-          }))
-        );
-        await this.gameService.createGame({
-          ...params,
-          users,
-          onClockTick: (gId: string, clock: ClockStateDto) => this.server.to(gId).emit('game:clock', clock),
-          onTimeout: (gId: string, ended: GameEndedDto, move: any) =>
-            this.emitTimeoutEnded(gId, ended, move as RecordedAction),
+        // Same guarded path as every other creation site: all four hooks
+        // (a rematch that omitted AFK/forfeit desynced mid-table with zero
+        // broadcast, C7), liveness re-checked (a seat that died since
+        // accepting fails cleanly instead of ghosting). Ratings are re-read
+        // live inside — never the pre-match snapshot (which recomputed every
+        // rematch from a stale base and ate real points).
+        const created = await this.createGameChecked({
+          gameId: params.gameId,
+          mode: params.mode,
+          seatUserIds: params.users.map((u: { userId: string }) => u.userId),
+          timeControlMinutes: params.timeControlMinutes,
+          incrementSeconds: params.incrementSeconds,
+          wallsEach: (params as { wallsEach?: number }).wallsEach,
+          isRanked: params.isRanked ?? true,
         });
-
-        this.setGamePlaying(params.gameId, true);
-
-        for (const p of params.users) {
-          this.activeGameUserMap.set(p.userId, params.gameId);
-          const socketId = this.userSocketMap.get(p.userId);
-          if (socketId) {
-            const playerSocket = this.server.sockets.sockets.get(socketId);
-            playerSocket?.join(params.gameId);
-          }
+        if (!created.success) {
+          client.emit('game:error', { code: 'REMATCH_FAILED', message: created.error });
+          return { success: false, error: created.error };
         }
 
         this.server.to(payload.gameId).emit('matchmaking:matched', { gameId: params.gameId });
@@ -1421,6 +1505,21 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         });
       }
     }
+  }
+
+  @SubscribeMessage('game:rematchDecline')
+  handleRematchDecline(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { gameId: string }
+  ) {
+    const user = this.getUser(client);
+    if (!user.verified) return;
+    if (!this.gameService.declineRematch(payload.gameId, user.userId)) return;
+    // Tell the waiting seats now instead of letting them idle out the TTL.
+    this.server.to(payload.gameId).emit('game:rematchDeclined', {
+      gameId: payload.gameId,
+      byUserId: user.userId,
+    });
   }
 
   /**
@@ -1472,6 +1571,112 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     }
   }
 
+  /**
+   * Single guarded game-creation path for all four entries (room, challenge,
+   * matchmaking sweep, rematch). Each site used to hand-roll its own checks:
+   * challenge:accept never checked liveness (ghost games with a dead seat and
+   * no grace), rematch omitted the AFK/forfeit hooks (silent mid-table
+   * desync), and none dequeued the queue (double-booking a queued player).
+   *
+   * Guards, in order: every seat's socket live → nobody already in a live
+   * game (self included) → dequeue all seats → live names + live ratings →
+   * create with all four hooks asserted in ONE place → mappings + channel
+   * joins. On any failure nothing is created and the caller notifies its
+   * seats like a decline, so nobody waits on a match that never comes.
+   */
+  private async createGameChecked(args: {
+    gameId: string;
+    mode: GameMode;
+    /** Seat order = table order. Shuffling stays with the caller. */
+    seatUserIds: string[];
+    timeControlMinutes: number;
+    incrementSeconds?: number;
+    wallsEach?: number;
+    isRanked: boolean;
+  }): Promise<
+    | { success: true; users: { userId: string; displayName: string; rating: { rating: number; rd: number; vol: number } }[] }
+    | { success: false; error: string }
+  > {
+    const nameOf = (userId: string): string => {
+      const sid = this.userSocketMap.get(userId);
+      return (
+        (sid && this.socketUserMap.get(sid)?.displayName) || 'A player'
+      );
+    };
+    // 1. Every seat's socket still live — otherwise no ghost game.
+    const liveSockets = new Map<string, Socket>();
+    const offline = args.seatUserIds.filter((id) => {
+      const sid = this.userSocketMap.get(id);
+      const s = sid ? this.server.sockets.sockets.get(sid) : undefined;
+      if (!s) return true;
+      liveSockets.set(id, s);
+      return false;
+    });
+    if (offline.length > 0) {
+      return {
+        success: false,
+        error: `${offline.map(nameOf).join(', ')} ${offline.length > 1 ? 'are' : 'is'} no longer online.`,
+      };
+    }
+    // 2. Nobody already in a live game — self included, so a host cannot
+    // orphan their own match by starting another (M16).
+    const busy = args.seatUserIds.filter((id) => this.isUserInLiveGame(id));
+    if (busy.length > 0) {
+      return {
+        success: false,
+        error: `${busy.map(nameOf).join(', ')} ${busy.length > 1 ? 'are' : 'is'} still in a match.`,
+      };
+    }
+    // 3. A new game consumes the queue entry — otherwise the sweep matches
+    // the same player twice and orphans the first game (C3).
+    for (const id of args.seatUserIds) this.matchmakingService.removeFromQueue(id);
+    // 4. Live names + live ratings, never frozen snapshots (M17).
+    const users = await Promise.all(
+      args.seatUserIds.map(async (userId) => ({
+        userId,
+        displayName: nameOf(userId),
+        rating: await this.fullRating(userId),
+      }))
+    );
+    // 5. All four hooks, asserted in this one place — a creation site can no
+    // longer silently drop AFK/forfeit handling (C7). Plus the quorum hook:
+    // seats that never join are put on standard grace, and the waiting seats
+    // get the same countdown broadcast as a mid-game disconnect.
+    this.gameService.createGame({
+      gameId: args.gameId,
+      mode: args.mode,
+      users,
+      timeControlMinutes: args.timeControlMinutes,
+      incrementSeconds: args.incrementSeconds,
+      wallsEach: args.wallsEach,
+      isRanked: args.isRanked,
+      onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
+      onAfkWarning: (gId, payload) => this.server.to(gId).emit('game:afkWarning', payload),
+      onForfeit: (gId, ended, finished, move) =>
+        this.emitMidGameForfeit(gId, ended, finished, move),
+      onTimeout: (gId, ended, move) => this.emitTimeoutEnded(gId, ended, move),
+      onQuorumExpired: (gId, missing) => {
+        for (const m of missing) {
+          const others = this.otherSeatSockets(gId, m.userId);
+          if (others.length > 0) {
+            this.server.to(others).emit('game:opponentDisconnected', {
+              userId: m.userId,
+              playerId: m.playerId,
+              gracePeriodSeconds: m.gracePeriodSeconds,
+              graceEndsAt: m.graceEndsAt,
+            });
+          }
+        }
+      },
+    });
+    this.setGamePlaying(args.gameId, true);
+    for (const id of args.seatUserIds) {
+      this.activeGameUserMap.set(id, args.gameId);
+      liveSockets.get(id)?.join(args.gameId);
+    }
+    return { success: true, users };
+  }
+
   // Identity comes straight from the handshake so it is stable from the
   // very first message — never wait on the async connection handler.
   // The handler later enriches the map (verified name, rating).
@@ -1495,20 +1700,31 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   }
 
   /**
+   * Single terminal game-ending path: persist-then-emit, then release seats,
+   * presence, and the room. Every ended game flows through here (action,
+   * resubmit, resign, leave, timeout, forfeit) so no path can end a game
+   * without freeing it — a missing `setGamePlaying(false)` used to strand
+   * rooms in IN_GAME and players as permanently "playing".
+   * The final move is emitted only when provided: most callers already
+   * emitted their `actionAccepted` before knowing the game ended.
+   */
+  private async endGame(gameId: string, ended: GameEndedDto, move?: RecordedAction): Promise<void> {
+    try {
+      await this.gameService.persistCompleted(gameId);
+    } catch (err: any) {
+      this.logger.warn(`Completion persist failed ${gameId}: ${err?.message}`);
+    }
+    if (move) this.server.to(gameId).emit('game:actionAccepted', move);
+    this.server.to(gameId).emit('game:ended', ended);
+    this.setGamePlaying(gameId, false);
+  }
+
+  /**
    * Timeout path shares the durability gate: persist-then-emit, so a
    * clocked-out game can never be observed without its full history.
    */
   private emitTimeoutEnded(gId: string, ended: GameEndedDto, move: RecordedAction): void {
-    void (async () => {
-      try {
-        await this.gameService.persistCompleted(gId);
-      } catch (err: any) {
-        this.logger.warn(`Completion persist failed ${gId}: ${err?.message}`);
-      }
-      this.server.to(gId).emit('game:actionAccepted', move);
-      this.server.to(gId).emit('game:ended', ended);
-      this.setGamePlaying(gId, false);
-    })();
+    void this.endGame(gId, ended, move);
   }
 
   /**
@@ -1527,20 +1743,15 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     lastMove?: RecordedAction
   ): void {
     if (finished && !ended) {
+      // Same ordering as the terminal branch: the forfeit move lands on
+      // opponents' boards before they learn the placement. Without this,
+      // their board misses the TIMEOUT move until a resync.
+      if (lastMove) this.server.to(gameId).emit('game:actionAccepted', lastMove);
       this.server.to(gameId).emit('game:playerFinished', { gameId, ...finished });
       return;
     }
     if (!ended) return;
-    void (async () => {
-      try {
-        await this.gameService.persistCompleted(gameId);
-      } catch (err: any) {
-        this.logger.warn(`Completion persist failed ${gameId}: ${err?.message}`);
-      }
-      if (lastMove) this.server.to(gameId).emit('game:actionAccepted', lastMove);
-      this.server.to(gameId).emit('game:ended', ended);
-      this.setGamePlaying(gameId, false);
-    })();
+    void this.endGame(gameId, ended, lastMove);
   }
 
   private getUser(client: Socket): SocketUserInfo {
@@ -1580,8 +1791,23 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     const now = Date.now();
     if (payload?.gameId && typeof payload.clientSentAt === 'number') {
       const user = this.getUser(client);
+      // Samples are trusted ONLY from the seat whose clock they refund (the
+      // turn holder), in a live game, at most one per second. Anything wider
+      // let any verified seat bank the 1200ms cap with backdated stamps,
+      // farmed off-turn in games they were not even playing.
       if (user.verified) {
-        this.gameService.recordLatency(payload.gameId, user.userId, now - payload.clientSentAt);
+        const game = this.gameService.getGame(payload.gameId);
+        if (game && game.state.status === 'IN_PROGRESS') {
+          const holderId = game.state.players[game.state.currentPlayerIndex]?.id;
+          if (holderId && game.userPlayerIds[user.userId] === holderId) {
+            const throttleKey = `${payload.gameId}:${user.userId}`;
+            const last = this.pingThrottle.get(throttleKey) ?? 0;
+            if (now - last >= 1000) {
+              this.pingThrottle.set(throttleKey, now);
+              this.gameService.recordLatency(payload.gameId, user.userId, now - payload.clientSentAt);
+            }
+          }
+        }
       }
     }
     ack?.({ serverTimestamp: now, clientSentAt: payload?.clientSentAt });
@@ -1607,7 +1833,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         if (!s.userId) return s;
         const socketId = this.userSocketMap.get(s.userId);
         const info = socketId ? this.socketUserMap.get(socketId) : undefined;
-        return { ...s, rating: info?.rating ?? 1500 };
+        return { ...s, rating: info?.rating ?? this.userRatingCache.get(s.userId) ?? 1500 };
       }),
     };
   }

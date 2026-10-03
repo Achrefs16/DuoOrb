@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { RoomService, shuffleSeats } from './room.service.js';
 
 function makeRoom(svc: RoomService, mode: '2p' | 'race3' | 'race4' = '2p') {
   return svc.createRoom('host1', 'Host', mode, 3, 0, 10);
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('configureRoom', () => {
   it('lets the host change clock and walls without touching seats', () => {
@@ -85,5 +89,59 @@ describe('shuffleSeats', () => {
     for (let i = 0; i < 50; i++) firsts.add(shuffleSeats(['h', 'a', 'b', 'c'])[0]);
     // P(all 50 identical) = (1/4)^49 — a failure here means no shuffle.
     expect(firsts.size).toBeGreaterThan(1);
+  });
+});
+
+describe('invite lifecycle + disconnect hygiene (F10)', () => {
+  it('invites carry an expiry and die on their own timer', () => {
+    vi.useFakeTimers();
+    const svc = new RoomService();
+    const room = makeRoom(svc);
+    const res = svc.createInvite(room.id, 'host1', 'u2');
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    expect(res.invite.expiresAt).toBeGreaterThan(Date.now());
+    expect((svc as any).invites.size).toBe(1);
+    vi.advanceTimersByTime(RoomService.INVITE_TTL_MS + 1000);
+    expect((svc as any).invites.size).toBe(0);
+    // Answering late fails instead of joining a ghost.
+    expect(svc.respondInvite(res.invite.inviteId, 'u2', 'Two', true).success).toBe(false);
+  });
+
+  it('disbanding a room cascades to its invites', () => {
+    const svc = new RoomService();
+    const room = makeRoom(svc);
+    svc.createInvite(room.id, 'host1', 'u2');
+    expect((svc as any).invites.size).toBe(1);
+    // Last seat leaves: room disbands, invites die with it.
+    const left = svc.leaveRoom(room.id, 'host1');
+    expect(left.disbanded).toBe(true);
+    expect((svc as any).invites.size).toBe(0);
+  });
+
+  it('leaveAllWaitingRooms frees lobbies but never live games', () => {
+    const svc = new RoomService();
+    const lobby = makeRoom(svc);
+    svc.joinRoom(lobby.code, 'u2', 'Two');
+    const live = svc.createRoom('host1', 'Host', '2p', 3, 0, 10);
+    svc.joinRoom(live.code, 'u9', 'Nine');
+    live.status = 'IN_GAME';
+
+    const out = svc.leaveAllWaitingRooms('u2');
+    expect(out).toHaveLength(1);
+    expect(out[0].disbanded).toBe(false);
+    // u9's live seat is untouched.
+    const liveAfter = (svc as any).rooms.get(live.id);
+    expect(liveAfter.slots.some((s: any) => s.userId === 'u9')).toBe(true);
+  });
+
+  it('a disconnecting host hands the crown to the next seat', () => {
+    const svc = new RoomService();
+    const lobby = makeRoom(svc);
+    svc.joinRoom(lobby.code, 'u2', 'Two');
+    const out = svc.leaveAllWaitingRooms('host1');
+    expect(out).toHaveLength(1);
+    expect(out[0].room?.hostId).toBe('u2');
+    expect(out[0].room?.status).toBe('WAITING');
   });
 });

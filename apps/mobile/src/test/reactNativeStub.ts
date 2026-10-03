@@ -17,4 +17,16 @@ export const AppState = {
   addEventListener: () => ({ remove: () => {} }),
 };
 
-export default { Platform, AppState };
+/**
+ * Minimal StyleSheet for component modules imported by pure-function tests
+ * (label/copy helpers). Only `create` runs at import time; components
+ * themselves are never rendered in Node.
+ */
+export const StyleSheet = {
+  create: <T extends Record<string, unknown>>(styles: T): T => styles,
+  absoluteFill: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
+  hairlineWidth: 1,
+  flatten: <T,>(style: T): T => style,
+};
+
+export default { Platform, AppState, StyleSheet };

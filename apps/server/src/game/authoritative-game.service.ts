@@ -39,6 +39,14 @@ const MAX_LATENCY_REFUND_MS = 1200;
  */
 export const AFK_TIMEOUT_MS = 45_000;
 
+/**
+ * Join quorum: how long a created game waits for every seat's first
+ * `game:join` before treating no-shows as disconnected (standard 45s grace
+ * from there). Covers slow clients without billing the opening turn to
+ * whoever arrived first (see clockStarted).
+ */
+export const JOIN_QUORUM_MS = 90_000;
+
 /** EWMA weight for the latency estimate. Heavily favours recent samples. */
 const LATENCY_SMOOTHING = 0.3;
 
@@ -66,12 +74,29 @@ export interface ActiveOnlineGame {
    */
   disconnectGraceEndsAt: Record<string, number>;
   /**
-   * Whether the countdown is running. Always true for a live game: the clock
-   * starts with the match itself, so the first mover pays for the whole
-   * opening turn like every later one. Retained as a guard (recovered games,
-   * zero time controls) rather than removed.
+   * Whether the countdown is running. False from creation until every seat
+   * has sent its first `game:join` (join quorum): the opening turn must not
+   * bill pairing + join latency to whoever arrived first. No flag, no AFK,
+   * no charge while false — only the quorum timer runs.
    */
   clockStarted: boolean;
+  /**
+   * Seats that sent at least one `game:join`. Drives the join quorum; moved
+   * by migrateUser like every other user-keyed seat state.
+   */
+  joinedUserIds: Set<string>;
+  /** True once every seat joined (or for recovered games, immediately). */
+  quorumReached: boolean;
+  /** No-show timer, armed at creation, cleared at quorum or completion. */
+  quorumTimeout?: NodeJS.Timeout;
+  /**
+   * One-shot flag timer for the CURRENT turn: fires exactly at the holder's
+   * deadline instead of at the next 1s tick. The tick loop stays for
+   * broadcast only. Rearmed on every turn transition, cleared on completion.
+   */
+  flagTimeout?: NodeJS.Timeout;
+  /** Turn token: a flag callback whose token mismatches is stale. */
+  flagToken: number;
   timerInterval?: NodeJS.Timeout;
   /** Retained so the clock loop can restart after a mid-game forfeit. */
   onClockTick?: (gameId: string, clock: ClockStateDto) => void;
@@ -87,6 +112,15 @@ export interface ActiveOnlineGame {
     finished?: { playerId: string; userId: string; place: number },
     lastMove?: RecordedAction
   ) => void;
+  /**
+   * Fired once when the join quorum times out, listing the seats that never
+   * joined (already put on standard disconnect grace by then). The gateway
+   * uses it to broadcast the grace countdown to the waiting seats.
+   */
+  onQuorumExpired?: (
+    gameId: string,
+    missing: { userId: string; playerId: string; gracePeriodSeconds: number; graceEndsAt: number }[]
+  ) => void;
 onAfkWarning?: (gameId: string, payload: { playerId: string; afkEndsAt: number; secondsRemaining: number }) => void;
   /**
    * Inactivity watchdog, keyed by seat. Never armed for a seat inside a
@@ -100,6 +134,15 @@ onAfkWarning?: (gameId: string, payload: { playerId: string; afkEndsAt: number; 
    * sync, so a client that attaches mid-turn derives the same countdown.
    */
   afkEndsAt: number | null;
+  /**
+   * Inactivity allowance surviving a disconnect, in ms. When a seat drops
+   * mid-turn, the running AFK watch is banked here instead of discarded; the
+   * returnee resumes with the REMAINING time, not a fresh 45s. Reset on every
+   * turn transition (a new turn earns a full allowance) and consumed on
+   * re-arm. Without this, idling 44s then blipping the connection granted a
+   * fresh 45s — and chained disconnects extended idling indefinitely.
+   */
+  afkCarryMs: number | null;
   disconnectedUsers: Record<string, { disconnectTime: number; timeoutId: NodeJS.Timeout }>;
   /**
    * Monotonic token per user, bumped on every arm AND every cancel. A grace
@@ -186,7 +229,102 @@ export class AuthoritativeGameService {
    * window back on reconnect, which read as the clock restarting and gaining
    * seconds.
    */
-private startClockLoop(
+  /** Housekeeping timers must never hold the process open on their own. */
+  private unrefTimer(t: NodeJS.Timeout): void {
+    if (typeof (t as unknown as { unref?: unknown }).unref === 'function') {
+      (t as unknown as { unref: () => void }).unref();
+    }
+  }
+
+  /**
+   * Wall time spent on the current turn, never negative: Date.now() can step
+   * back (NTP), and a negative elapsed used to read as a free turn through
+   * every Math.max(0, …) below. Clamp once, here, for all clock math.
+   */
+  private elapsedMs(game: ActiveOnlineGame, now: number): number {
+    return Math.max(0, now - game.turnStartTimestamp);
+  }
+
+  /**
+   * THE clock math: ms left for the turn holder after their latency refund.
+   * Tick flag, one-shot flag timer, on-move deadline, snapshot display, and
+   * move charging ALL derive from this — one helper, no drift between what
+   * is shown, what is charged, and what kills. (Previously the tick/snapshot
+   * used raw elapsed while charging refunded it, so the display was
+   * pessimistic by up to 1200ms and the tick could flag a player whose
+   * refund would have saved them.)
+   */
+  private refundedRemainingMs(game: ActiveOnlineGame, now: number): number {
+    const holder = game.state.players[game.state.currentPlayerIndex]?.id;
+    if (holder === undefined) return 0;
+    const billable = Math.max(
+      0,
+      this.elapsedMs(game, now) - this.latencyCompensationMs(game, holder)
+    );
+    return Math.max(0, game.clocksMs[holder] - billable);
+  }
+
+  /**
+   * Flag-fall, shared by the tick, the one-shot flag timer, and the on-move
+   * deadline check: the holder's clock is zeroed and the engine records the
+   * TIMEOUT. Returns the broadcast payloads so callers stay thin.
+   */
+  private flagPlayer(
+    game: ActiveOnlineGame,
+    now: number
+  ): { recorded: RecordedAction; ended: GameEndedDto } | null {
+    if (game.state.status !== 'IN_PROGRESS') return null;
+    const holder = game.state.players[game.state.currentPlayerIndex]?.id;
+    if (!holder) return null;
+    if (game.timerInterval) clearInterval(game.timerInterval);
+    if (game.flagTimeout) clearTimeout(game.flagTimeout);
+    game.clocksMs[holder] = 0;
+    const timeoutRes = applyAction(game.state, { type: 'TIMEOUT' }, {
+      timestamp: now,
+      clockRemainingMs: 0,
+    });
+    if (!timeoutRes.success) return null;
+    game.state = timeoutRes.state;
+    this.ledgerMove(game, timeoutRes.state.lastMove!);
+    const ended = this.finalizeGame(game, 'TIMEOUT');
+    return { recorded: timeoutRes.state.lastMove!, ended };
+  }
+
+  /**
+   * One-shot expiry for the current turn. Fires flagPlayer exactly at the
+   * holder's deadline — a move arriving after the deadline but before the
+   * next 1s tick can no longer dodge the flag, and a stalled event loop
+   * delays expiry by the stall only, not stall + quantum. No-op for untimed
+   * games (no enforcement) and pre-quorum (clock not running).
+   */
+  private armFlagTimer(game: ActiveOnlineGame): void {
+    if (game.flagTimeout) clearTimeout(game.flagTimeout);
+    game.flagTimeout = undefined;
+    if (
+      game.state.status !== 'IN_PROGRESS' ||
+      !game.clockStarted ||
+      game.timeControlMinutes <= 0
+    ) {
+      return;
+    }
+    const remaining = this.refundedRemainingMs(game, Date.now());
+    const token = (game.flagToken ?? 0) + 1;
+    game.flagToken = token;
+    game.flagTimeout = setTimeout(() => {
+      if (game.flagToken !== token) return; // turn moved on already
+      if (game.state.status !== 'IN_PROGRESS' || !game.clockStarted) return;
+      // Same precedence as the tick: grace owns the table while anyone is
+      // away. The return path re-arms (see cancelDisconnectGrace).
+      if (Object.keys(game.disconnectedUsers).length > 0) return;
+      const flagged = this.flagPlayer(game, Date.now());
+      if (flagged && game.onTimeout) {
+        game.onTimeout(game.id, flagged.ended, flagged.recorded);
+      }
+    }, Math.max(0, remaining));
+    this.unrefTimer(game.flagTimeout);
+  }
+
+  private startClockLoop(
     game: ActiveOnlineGame,
     onClockTick?: (gameId: string, clock: ClockStateDto) => void,
     onTimeout?: (gameId: string, ended: GameEndedDto, lastMove: RecordedAction) => void,
@@ -204,28 +342,21 @@ private startClockLoop(
       if (!game.clockStarted) return;
 
       const now = Date.now();
-      const activePlayerId = game.state.players[game.state.currentPlayerIndex].id;
-      const elapsed = now - game.turnStartTimestamp;
-      const currentRemaining = Math.max(0, game.clocksMs[activePlayerId] - elapsed);
+      const currentRemaining = this.refundedRemainingMs(game, now);
 
-      if (currentRemaining <= 0) {
+      // Absence owns the table: while any seat is away, the grace timer —
+      // not the clock — decides outcomes, so a low clock can never finalize
+      // TIMEOUT underneath a pending DISCONNECT (reason precedence, M19).
+      // Broadcasts continue; only the flag is suspended.
+      const anyoneAway = Object.keys(game.disconnectedUsers).length > 0;
+      if (currentRemaining <= 0 && !anyoneAway) {
         // Timeout reached (always the active side to move — finished
         // players never hold the clock, so they can never time out).
-        if (game.timerInterval) clearInterval(game.timerInterval);
-        game.clocksMs[activePlayerId] = 0;
-
-        const timeoutRes = applyAction(game.state, { type: 'TIMEOUT' }, {
-          timestamp: now,
-          clockRemainingMs: 0,
-        });
-
-        if (timeoutRes.success) {
-          game.state = timeoutRes.state;
-          this.ledgerMove(game, timeoutRes.state.lastMove!);
-          const ended = this.finalizeGame(game, 'TIMEOUT');
-          if (onTimeout) {
-            onTimeout(game.id, ended, timeoutRes.state.lastMove!);
-          }
+        // The one-shot flag timer normally fires first; this is the belt
+        // to those braces (timer lost, untimed drift, clock skew).
+        const flagged = this.flagPlayer(game, now);
+        if (flagged && onTimeout) {
+          onTimeout(game.id, flagged.ended, flagged.recorded);
         }
         return;
       }
@@ -292,6 +423,10 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
       finished?: { playerId: string; userId: string; place: number },
       lastMove?: RecordedAction
     ) => void;
+    onQuorumExpired?: (
+      gameId: string,
+      missing: { userId: string; playerId: string; gracePeriodSeconds: number; graceEndsAt: number }[]
+    ) => void;
   }): ActiveOnlineGame {
     const playerNames = params.users.map((u) => u.displayName);
     const initialState = createInitialState({
@@ -326,24 +461,28 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
       ratings,
       clocksMs,
       incrementSeconds: incrementSec,
-      // The clock starts with the match itself: the opening turn runs from
-      // creation, so the first mover pays for it like every later one. This
-      // used to wait for the first move (pairing latency was not charged),
-      // but the client counts from match start too — a clock that only
-      // starts on move one snaps back to full time on the first sync and
-      // reads as a reset.
+      // The clock does NOT start here. It starts at the join quorum — the
+      // first game:join from every seat — so the opener never pays pairing +
+      // join latency, and a seat that never joins is a no-show (quorum
+      // timeout → standard grace), never a free AFK win against the player
+      // who showed up. Pre-quorum turns are playable but unbilled.
       turnStartTimestamp: Date.now(),
-      clockStarted: true,
+      clockStarted: false,
+      joinedUserIds: new Set(),
+      quorumReached: false,
+      flagToken: 0,
       latencyMs: {},
       disconnectGraceEndsAt: {},
-      onClockTick: params.onClockTick,
+    onClockTick: params.onClockTick,
       onTimeout: params.onTimeout,
       onAfkWarning: params.onAfkWarning,
       onForfeit: params.onForfeit,
+      onQuorumExpired: params.onQuorumExpired,
       afkTimers: new Map(),
       afkEndsAt: null,
-disconnectedUsers: {},
-        disconnectGenerations: {},
+      afkCarryMs: null,
+      disconnectedUsers: {},
+      disconnectGenerations: {},
       rematchOffers: new Set(),
       isRanked: params.isRanked,
       timeControlMinutes: params.timeControlMinutes,
@@ -353,15 +492,15 @@ disconnectedUsers: {},
       leftUserIds: new Set(),
     };
 
-    this.startClockLoop(activeGame, params.onClockTick, params.onTimeout);
-
     this.games.set(params.gameId, activeGame);
 
-    // The opening turn is a turn like any other: whoever holds it gets the
-    // same 45s allowance (and the same warning) as every later one. Without
-    // this a player who never moves at all is never warned and never
-    // forfeited.
-    this.armAfkTimer(activeGame);
+    // No clock loop, no AFK watchdog yet — both start at the join quorum.
+    // Only the no-show timer runs: seats that never join are treated as
+    // disconnected (standard grace from there), never as free wins.
+    activeGame.quorumTimeout = setTimeout(() => {
+      this.enforceJoinQuorum(params.gameId);
+    }, JOIN_QUORUM_MS);
+    this.unrefTimer(activeGame.quorumTimeout);
 
     // Asynchronously persist game in PostgreSQL
     this.persistGameCreated(activeGame, params.users).catch((err) => {
@@ -373,6 +512,78 @@ disconnectedUsers: {},
 
   public getGame(gameId: string): ActiveOnlineGame | undefined {
     return this.games.get(gameId);
+  }
+
+  /**
+   * Records a seat's first `game:join`. When every seat has joined, the join
+   * quorum is reached and the clock starts — from NOW, with full time, so
+   * pairing + join latency is never billed to anyone. Idempotent; safe to
+   * call on every join, including rejoins. Returns true when the quorum is
+   * satisfied after this call.
+   */
+  public markSeatJoined(gameId: string, userId: string): boolean {
+    const game = this.games.get(gameId);
+    if (!game) return false;
+    if (game.userPlayerIds[userId] === undefined) return false;
+    game.joinedUserIds.add(userId);
+    if (!game.quorumReached && game.state.status === 'IN_PROGRESS') {
+      const seated = Object.keys(game.userPlayerIds);
+      if (seated.every((u) => game.joinedUserIds.has(u))) {
+        this.reachQuorum(game);
+      }
+    }
+    return game.quorumReached;
+  }
+
+  private reachQuorum(game: ActiveOnlineGame): void {
+    game.quorumReached = true;
+    if (game.quorumTimeout) clearTimeout(game.quorumTimeout);
+    game.quorumTimeout = undefined;
+    game.clockStarted = true;
+    game.turnStartTimestamp = Date.now();
+    this.startClockLoop(game, game.onClockTick, game.onTimeout);
+    // The opening turn is a turn like any other: whoever holds it gets the
+    // same 45s allowance (and the same warning) as every later one. Without
+    // this a player who never moves at all is never warned and never
+    // forfeited.
+    this.armAfkTimer(game);
+    this.armFlagTimer(game);
+  }
+
+  /**
+   * No-show enforcement: seats that never sent `game:join` within
+   * JOIN_QUORUM_MS are treated exactly like disconnects — standard 45s grace
+   * from here, then forfeit. The waiting seats learn about it through
+   * onQuorumExpired (grace countdown broadcast), not silence. Never fires
+   * for completed games or after the quorum was reached.
+   */
+  public enforceJoinQuorum(gameId: string): void {
+    const game = this.games.get(gameId);
+    if (!game || game.quorumReached || game.state.status !== 'IN_PROGRESS') return;
+    const missing = Object.keys(game.userPlayerIds).filter(
+      (u) => !game.joinedUserIds.has(u)
+    );
+    if (missing.length === 0) {
+      this.reachQuorum(game);
+      return;
+    }
+    const armed: { userId: string; playerId: string; gracePeriodSeconds: number; graceEndsAt: number }[] = [];
+    for (const userId of missing) {
+      const res = this.handleDisconnect(game.id, userId, (ended, finished, lastMove) =>
+        game.onForfeit?.(game.id, ended, finished, lastMove)
+      );
+      if (res) {
+        armed.push({
+          userId,
+          playerId: res.playerId,
+          gracePeriodSeconds: res.gracePeriodSeconds,
+          graceEndsAt: res.graceEndsAt,
+        });
+      }
+    }
+    if (armed.length > 0) {
+      game.onQuorumExpired?.(game.id, armed);
+    }
   }
 
   /**
@@ -564,15 +775,22 @@ disconnectedUsers: {},
         ratings,
         clocksMs,
         incrementSeconds: row.incrementSeconds,
-turnStartTimestamp: Date.now(),
+        turnStartTimestamp: Date.now(),
         // A recovered game was already under way before the restart, so its
         // clock resumes immediately rather than waiting for a first move.
         clockStarted: true,
+        // ...and its quorum is already satisfied for the same reason: every
+        // seat was live pre-crash. Re-arming a join wait here would forfeit
+        // the whole table 90s after every deploy.
+        joinedUserIds: new Set(Object.values(userPlayerIds)),
+        quorumReached: true,
+        flagToken: 0,
         latencyMs: {},
         disconnectGraceEndsAt: {},
         afkTimers: new Map(),
-      afkEndsAt: null,
- disconnectedUsers: {},
+        afkEndsAt: null,
+        afkCarryMs: null,
+        disconnectedUsers: {},
       disconnectGenerations: {},
         rematchOffers: new Set(),
         isRanked: row.isRanked,
@@ -596,6 +814,12 @@ public async recoverInProgressGames(hooks: {
     onClockTick?: (gameId: string, clock: ClockStateDto) => void;
     onTimeout?: (gameId: string, ended: GameEndedDto, lastMove: RecordedAction) => void;
     onAfkWarning?: (gameId: string, payload: { playerId: string; afkEndsAt: number; secondsRemaining: number }) => void;
+    onForfeit?: (
+      gameId: string,
+      ended: GameEndedDto | null,
+      finished?: { playerId: string; userId: string; place: number },
+      lastMove?: RecordedAction
+    ) => void;
   } = {}): Promise<{ recovered: number; abandoned: string[] }> {
     // afterInit fires before Postgres is reachable on fresh boots — wait
     // for the connection instead of concluding "nothing to recover".
@@ -672,12 +896,14 @@ public async recoverInProgressGames(hooks: {
         game.onClockTick = hooks.onClockTick;
         game.onTimeout = hooks.onTimeout;
         game.onAfkWarning = hooks.onAfkWarning;
+        game.onForfeit = hooks.onForfeit;
         this.startClockLoop(game, hooks.onClockTick, hooks.onTimeout);
         // Whoever holds the turn gets a fresh allowance: the pre-crash
         // watchdog died with the process, and without this a recovered game
         // whose player never moves is never warned and never forfeited.
         if (game.state.status === 'IN_PROGRESS') {
           this.armAfkTimer(game);
+          this.armFlagTimer(game);
         }
         recovered++;
         this.logger.log(`Recovered in-progress game ${game.id} at sequence ${moveRows.length}.`);
@@ -832,21 +1058,46 @@ public async recoverInProgressGames(hooks: {
         delete game.userPlayerIds[oldUserId];
         changed = true;
       }
+      if (game.joinedUserIds.has(oldUserId)) {
+        game.joinedUserIds.delete(oldUserId);
+        game.joinedUserIds.add(newUserId);
+        changed = true;
+      }
       if (game.ratings[oldUserId] !== undefined) {
         game.ratings[newUserId] = game.ratings[oldUserId];
         delete game.ratings[oldUserId];
         changed = true;
       }
       if (game.disconnectedUsers[oldUserId] !== undefined) {
-        game.disconnectedUsers[newUserId] = game.disconnectedUsers[oldUserId];
+        // Identity change mid-grace (guest→account sign-in): the armed timer
+        // closes over the OLD id, so without a re-arm its guards fail and the
+        // forfeit never fires — infinite grace, and a forfeit dodge via
+        // sign-in. Move the entry and re-arm the SAME expiry under the new id
+        // with the REMAINING window: the returnee keeps exactly the time they
+        // had, no more, no less. `latencyMs` needs no move: it is keyed by
+        // seat (playerId), which does not change.
+        const oldEntry = game.disconnectedUsers[oldUserId];
+        const oldDeadline = game.disconnectGraceEndsAt[oldUserId];
+        clearTimeout(oldEntry.timeoutId);
         delete game.disconnectedUsers[oldUserId];
-        changed = true;
-      }
-      if (game.disconnectGenerations[oldUserId] !== undefined) {
-        // The armed timer closes over the OLD id, so migrating the token
-        // would let it act on a seat that no longer exists. Retiring the
-        // token makes any pending callback for it a no-op.
+        delete game.disconnectGraceEndsAt[oldUserId];
         delete game.disconnectGenerations[oldUserId];
+        if (oldDeadline !== undefined) {
+          const remaining = Math.max(0, oldDeadline - Date.now());
+          const generation = (game.disconnectGenerations[newUserId] ?? 0) + 1;
+          game.disconnectGenerations[newUserId] = generation;
+          game.disconnectGraceEndsAt[newUserId] = Date.now() + remaining;
+          const forfeit = game.onForfeit;
+          const timeoutId = setTimeout(() => {
+            this.fireGraceExpiry(game.id, newUserId, generation, timeoutId, (ended, finished, lastMove) =>
+              forfeit?.(game.id, ended, finished, lastMove));
+          }, remaining);
+          this.unrefTimer(timeoutId);
+          game.disconnectedUsers[newUserId] = {
+            disconnectTime: Date.now(),
+            timeoutId,
+          };
+        }
         changed = true;
       }
       if (game.rematchOffers.has(oldUserId)) {
@@ -911,10 +1162,15 @@ public async recoverInProgressGames(hooks: {
    */
   public clockSnapshot(game: ActiveOnlineGame, now = Date.now()): Record<string, number> {
     const out = { ...game.clocksMs };
+    // Untimed games have no enforcement: the ledger baseline is shown
+    // static, never counted down (explicit policy — AFK remains the stall
+    // guard, the clock display simply does not run).
+    if (game.timeControlMinutes <= 0) return out;
     const activePlayerId = game.state.players[game.state.currentPlayerIndex]?.id;
     if (activePlayerId !== undefined && game.clockStarted) {
-      const elapsed = now - game.turnStartTimestamp;
-      out[activePlayerId] = Math.max(0, out[activePlayerId] - elapsed);
+      // Same refunded math as flag and charge: the display can never show
+      // less than the mover would actually be left with.
+      out[activePlayerId] = this.refundedRemainingMs(game, now);
     }
     return out;
   }
@@ -972,34 +1228,61 @@ public async recoverInProgressGames(hooks: {
 
     const now = Date.now();
 
+    // Flag check on move: a move arriving after the deadline but before the
+    // next 1s tick (or with a lost one-shot timer) is a TIMEOUT loss, not an
+    // accepted move. Without this, lost-on-time positions were winnable
+    // inside the tick gap — including with increment attached. Untimed games
+    // and pre-quorum turns have no enforcement, so they skip the check.
+    if (
+      action.type !== 'RESIGN' &&
+      game.timeControlMinutes > 0 &&
+      game.clockStarted &&
+      this.refundedRemainingMs(game, now) <= 0
+    ) {
+      const flagged = this.flagPlayer(game, now);
+      if (flagged) {
+        if (opts?.clientActionId) {
+          game.seenActions.set(opts.clientActionId, { recorded: flagged.recorded, ended: flagged.ended });
+        }
+        return { success: true, recorded: flagged.recorded, ended: flagged.ended };
+      }
+      // Engine refused the flag (already finished concurrently): the move
+      // cannot be accepted on a non-live game either.
+      return { success: false, error: { code: 'GAME_NOT_IN_PROGRESS', message: 'Game has already ended.' } };
+    }
+
     // Clock charge.
     //
-    // Two separate corrections, both of which used to be missing:
+    // The clock is only ever charged to the seat that actually holds the
+    // turn: an off-turn resign moves nobody's clock at all, and an on-turn
+    // move/resign charges the holder minus their latency refund. (An older
+    // comment claimed the actor pays; the code never did — off-turn resigns
+    // used to deduct from the innocent opponent, and that was the bug.)
     //
-    // 1. WHO is charged. A resignation is legal off-turn, so the actor — not
-    //    whoever happens to hold the turn — pays for the elapsed time. An
-    //    off-turn resign used to deduct from the innocent opponent.
-    // 2. LATENCY. The mover's own round trip is subtracted, so a bad network
+    // Two corrections below, both of which used to be missing:
+    //
+    // 1. LATENCY. The mover's own round trip is subtracted, so a bad network
     //    costs them thinking time only. Without this the charge was
     //    `downlink + thinking + uplink`.
+    // 2. MONOTONIC elapsed (see elapsedMs): a clock step back cannot grant
+    //    a free turn.
     //
-    // The clock runs from match start (see createGame) and is never paused —
-    // not even while a seat is away. A disconnected player's time keeps
-    // running until they return or the grace window forfeits them.
-    //
-    // The clock is only ever charged to the seat that actually holds the
-    // turn, so an off-turn resign moves nobody's clock at all.
+    // The clock runs from the join quorum (see clockStarted) and is never
+    // paused — not even while a seat is away. A disconnected player's time
+    // keeps running until they return or the grace window forfeits them.
     const clockOwner = expectedPlayerId;
     const isClockOwnerActor = senderPlayerId === clockOwner || senderPlayerId === undefined;
 
-    if (game.timeControlMinutes > 0) {
-      const wallElapsed = now - game.turnStartTimestamp;
+    // Pre-quorum turns are playable but unbilled: the ledger only moves once
+    // the quorum starts the clock, so pairing latency never sticks.
+    if (game.timeControlMinutes > 0 && game.clockStarted) {
       // Only the seat on turn burns clock. A resignation from off-turn (or a
       // forfeit attributed to an absent player) costs the actor nothing.
-      const charged = isClockOwnerActor
-        ? Math.max(0, wallElapsed - this.latencyCompensationMs(game, clockOwner))
-        : 0;
-      game.clocksMs[clockOwner] = Math.max(0, game.clocksMs[clockOwner] - charged);
+      // Charging IS the unified deadline math: the ledger lands exactly where
+      // the display and the flag already agree it is.
+      if (isClockOwnerActor) {
+        game.clocksMs[clockOwner] = this.refundedRemainingMs(game, now);
+      }
 
       // Add Fischer increment after move completion (if not timeout or resign)
       if (action.type !== 'RESIGN' && action.type !== 'TIMEOUT' && game.incrementSeconds > 0) {
@@ -1025,10 +1308,16 @@ public async recoverInProgressGames(hooks: {
 
     // The turn passed: the watchdog for it is done, and whoever is now on
     // turn gets their own (with a fresh warning, even if the seat is the
-    // same one that just reconnected).
+    // same one that just reconnected). The flag timer moves with the turn
+    // too, so expiry always tracks the current holder's live deadline.
+    // A new turn earns a full allowance: any banked remainder dies here.
     this.clearAfkTimers(game);
+    game.afkCarryMs = null;
     if (game.state.status === 'IN_PROGRESS' && game.clockStarted) {
       this.armAfkTimer(game);
+    }
+    if (game.state.status === 'IN_PROGRESS') {
+      this.armFlagTimer(game);
     }
 
     const recordedMove: RecordedAction = {
@@ -1114,6 +1403,21 @@ public async recoverInProgressGames(hooks: {
     const res = this.processAction(gameId, userId, { type: 'RESIGN' });
     if (!res.success) return { left: false, error: res.error.message };
     return { left: true, forfeited: true, recorded: res.recorded, ended: res.ended, finished: res.finished };
+  }
+
+  /**
+   * Explicit rematch decline. Removes the decliner from the offer set so a
+   * later offer starts clean; the gateway notifies the waiting seats so the
+   * offeror stops waiting out the 30s TTL. No-ops on unknown/finished games
+   * and for non-seats.
+   */
+  public declineRematch(gameId: string, userId: string): boolean {
+    const game = this.games.get(gameId);
+    if (!game) return false;
+    if (game.state.status !== 'COMPLETED') return false;
+    if (game.userPlayerIds[userId] === undefined) return false;
+    game.rematchOffers.delete(userId);
+    return true;
   }
 
   /**
@@ -1212,6 +1516,14 @@ public async recoverInProgressGames(hooks: {
     this.cancelDisconnectGrace(gameId, userId);
     game.disconnectGraceEndsAt[userId] = graceEndsAt;
 
+    // Bank the running inactivity watch before absence kills it (see
+    // afkCarryMs): the returnee resumes the remainder, not a fresh 45s.
+    // Only banked when a watch was actually running — chained disconnects
+    // keep the FIRST remainder instead of resetting it.
+    if (game.afkEndsAt !== null) {
+      game.afkCarryMs = Math.max(0, game.afkEndsAt - Date.now());
+    }
+
     // The clock keeps running while the seat is away: it is only the grace
     // window that decides the outcome, and a frozen-then-credited clock read
     // as time being added back on reconnect.
@@ -1223,41 +1535,9 @@ public async recoverInProgressGames(hooks: {
     game.disconnectGenerations[userId] = generation;
 
     const timeoutId = setTimeout(() => {
-      // Superseded by a newer disconnect (or a reconnect): not ours to run.
-      if (game.disconnectGenerations[userId] !== generation) return;
-      if (game.disconnectedUsers[userId]?.timeoutId !== timeoutId) return;
-delete game.disconnectedUsers[userId];
-    delete game.disconnectGenerations[userId];
-    delete game.disconnectGraceEndsAt[userId];
-      const g = this.games.get(gameId);
-      if (!g || g.state.status !== 'IN_PROGRESS') return;
-      const seatNow = g.state.players.find((p) => p.id === playerId);
-      if (!seatNow || seatNow.status === 'FINISHED') return;
-      // Disconnect forfeit = TIMEOUT by the absent player (works off-turn).
-      const res = applyAction(g.state, { type: 'TIMEOUT' }, {
-        timestamp: Date.now(),
-        clockRemainingMs: 0,
-        actorId: playerId,
-      });
-      if (!res.success) return;
-      g.state = res.state;
-      // The grace expired: the clock was never paused, so there is nothing
-      // to credit back — the remaining seats simply continue on real time.
-      g.clockStarted = true;
-      g.turnStartTimestamp = Date.now();
-      this.ledgerMove(g, res.state.lastMove!);
-      if (res.state.status !== 'COMPLETED') {
-        if (g.timerInterval) { clearInterval(g.timerInterval); }
-        this.startClockLoop(g, g.onClockTick, g.onTimeout);
-        this.armAfkTimer(g);
-        const last = res.state.placements[res.state.placements.length - 1];
-        onForfeit(null, { playerId: last.playerId, userId: g.playerUserIds[last.playerId], place: last.place }, res.state.lastMove!);
-        return;
-      }
-      if (g.timerInterval) clearInterval(g.timerInterval);
-      const ended = this.finalizeGame(g, 'DISCONNECT');
-      onForfeit(ended, undefined, res.state.lastMove!);
+      this.fireGraceExpiry(gameId, userId, generation, timeoutId, onForfeit);
     }, graceSeconds * 1000);
+    this.unrefTimer(timeoutId);
 
     game.disconnectedUsers[userId] = {
       disconnectTime: Date.now(),
@@ -1265,6 +1545,78 @@ delete game.disconnectedUsers[userId];
     };
 
     return { gracePeriodSeconds: graceSeconds, playerId, graceEndsAt };
+  }
+
+  /**
+   * Grace-expiry body, shared by the armed timer and by `migrateUser`'s
+   * re-arm. Extracted so an identity change mid-grace cannot orphan the
+   * forfeit: the migration re-arms this same logic under the new id with
+   * the remaining window instead of retiring the token and granting
+   * infinite grace.
+   */
+  private fireGraceExpiry(
+    gameId: string,
+    userId: string,
+    generation: number,
+    timeoutId: NodeJS.Timeout,
+    onForfeit: (ended: GameEndedDto | null, finished?: { playerId: string; userId: string; place: number }, lastMove?: RecordedAction) => void
+  ): void {
+    const game = this.games.get(gameId);
+    if (!game) return;
+    // Superseded by a newer disconnect (or a reconnect): not ours to run.
+    if (game.disconnectGenerations[userId] !== generation) return;
+    if (game.disconnectedUsers[userId]?.timeoutId !== timeoutId) return;
+    delete game.disconnectedUsers[userId];
+    delete game.disconnectGenerations[userId];
+    delete game.disconnectGraceEndsAt[userId];
+    const g = this.games.get(gameId);
+    if (!g || g.state.status !== 'IN_PROGRESS') return;
+    const playerId = g.userPlayerIds[userId];
+    const seatNow = g.state.players.find((p) => p.id === playerId);
+    if (!playerId || !seatNow || seatNow.status === 'FINISHED') return;
+    // Disconnect forfeit = TIMEOUT by the absent player (works off-turn).
+    const res = applyAction(g.state, { type: 'TIMEOUT' }, {
+      timestamp: Date.now(),
+      clockRemainingMs: 0,
+      actorId: playerId,
+    });
+    if (!res.success) return;
+    // Grace debit FIRST, against the seat that actually held the turn through
+    // the window: the clock visibly ran the whole 45s, so the holder pays for
+    // it before the forfeit passes the turn on. Debiting after the state
+    // change would bill the wrong seat (whoever inherits the turn). An
+    // off-turn disconnect therefore gifts the thinker nothing, and an
+    // on-turn leaver's clock runs to forfeit instead of freezing at
+    // disconnect.
+    {
+      const holderBefore = g.state.players[g.state.currentPlayerIndex]?.id;
+      if (holderBefore !== undefined && g.timeControlMinutes > 0) {
+        const debit = Math.max(
+          0,
+          this.elapsedMs(g, Date.now()) - this.latencyCompensationMs(g, holderBefore)
+        );
+        g.clocksMs[holderBefore] = Math.max(0, g.clocksMs[holderBefore] - debit);
+      }
+    }
+    g.state = res.state;
+    // The grace expired: the clock was never paused, so there is nothing
+    // to credit back — the remaining seats simply continue on real time.
+    g.clockStarted = true;
+    g.turnStartTimestamp = Date.now();
+    this.ledgerMove(g, res.state.lastMove!);
+    if (res.state.status !== 'COMPLETED') {
+      if (g.timerInterval) { clearInterval(g.timerInterval); }
+      this.startClockLoop(g, g.onClockTick, g.onTimeout);
+      g.afkCarryMs = null; // forfeit advanced the turn: fresh allowance
+      this.armAfkTimer(g);
+      this.armFlagTimer(g);
+      const last = res.state.placements[res.state.placements.length - 1];
+      onForfeit(null, { playerId: last.playerId, userId: g.playerUserIds[last.playerId], place: last.place }, res.state.lastMove!);
+      return;
+    }
+    if (g.timerInterval) clearInterval(g.timerInterval);
+    const ended = this.finalizeGame(g, 'DISCONNECT');
+    onForfeit(ended, undefined, res.state.lastMove!);
   }
 
   /**
@@ -1286,9 +1638,10 @@ delete game.disconnectedUsers[userId];
       delete game.disconnectedUsers[userId];
     }
     delete game.disconnectGraceEndsAt[userId];
-    // Invalidate any callback already queued for that entry.
+    // Monotonic tokens: bump, never delete. Deleting reset the next arm to
+    // 1 and let a superseded callback's generation check pass — the timeoutId
+    // check below was the only thing saving it (M3).
     game.disconnectGenerations[userId] = (game.disconnectGenerations[userId] ?? 0) + 1;
-    delete game.disconnectGenerations[userId];
     // A cancelled LIVE timer means its owner is back: whoever holds the turn
     // gets their inactivity watchdog (re)armed — but only once nobody is
     // away any more. A returnee who is back on turn and then idles must
@@ -1298,7 +1651,19 @@ delete game.disconnectedUsers[userId];
     // replace — arming there would only emit a spurious warning.)
     const stillAway = Object.keys(game.disconnectedUsers).length > 0;
     if (!!entry && !stillAway) {
-      this.armAfkTimer(game);
+      // Returnee resumes the banked remainder when there is one (idling
+      // through someone's absence earns no fresh allowance); otherwise a
+      // full watch, as before. The flag timer resumes alongside: it stood
+      // down for the whole absence (M19) and the deadline may already have
+      // passed — in which case it fires honestly on re-arm.
+      if (game.afkCarryMs !== null) {
+        const carry = game.afkCarryMs;
+        game.afkCarryMs = null;
+        this.armAfkTimer(game, carry);
+      } else {
+        this.armAfkTimer(game);
+      }
+      this.armFlagTimer(game);
     }
     return !!entry;
   }
@@ -1320,20 +1685,25 @@ delete game.disconnectedUsers[userId];
    * Never armed while any seat is away: absence already owns the outcome
    * through the grace timer, and a connected player thinking through their
    * opponent's disconnect must not be forfeited for idling on top of it.
+   *
+   * @param allowanceMs inactivity budget for this arming. Fresh turns pass
+   * the full 45s; grace returns pass the banked remainder (see afkCarryMs).
+   * Zero or negative means the deadline already passed while away — the
+   * timer fires on its next tick and forfeits honestly.
    */
-  private armAfkTimer(game: ActiveOnlineGame): void {
+  private armAfkTimer(game: ActiveOnlineGame, allowanceMs: number = AFK_TIMEOUT_MS): void {
     this.clearAfkTimers(game);
     if (game.state.status !== 'IN_PROGRESS' || !game.clockStarted) return;
     if (Object.keys(game.disconnectedUsers).length > 0) return;
     const playerId = game.state.players[game.state.currentPlayerIndex]?.id;
     if (!playerId) return;
 
-    const afkEndsAt = Date.now() + AFK_TIMEOUT_MS;
+    const afkEndsAt = Date.now() + allowanceMs;
     game.afkEndsAt = afkEndsAt;
     game.onAfkWarning?.(game.id, {
       playerId,
       afkEndsAt,
-      secondsRemaining: Math.ceil(AFK_TIMEOUT_MS / 1000),
+      secondsRemaining: Math.max(0, Math.ceil(allowanceMs / 1000)),
     });
 
     const timeoutId = setTimeout(() => {
@@ -1366,7 +1736,9 @@ delete game.disconnectedUsers[userId];
       // broadcasts through one code path. Whoever is now on turn gets a fresh
       // watchdog — the table stays watched no matter how quiet it gets.
       this.startClockLoop(game, game.onClockTick, game.onTimeout);
+      game.afkCarryMs = null; // forfeit advanced the turn: fresh allowance
       this.armAfkTimer(game);
+      this.armFlagTimer(game);
       const last = res.state.placements[res.state.placements.length - 1];
       if (game.onForfeit && last) {
         game.onForfeit(
@@ -1376,7 +1748,7 @@ delete game.disconnectedUsers[userId];
           res.state.lastMove!
         );
       }
-    }, AFK_TIMEOUT_MS);
+    }, Math.max(0, allowanceMs));
     if (typeof (timeoutId as unknown as { unref?: unknown }).unref === 'function') {
       (timeoutId as unknown as { unref: () => void }).unref();
     }
@@ -1446,6 +1818,17 @@ delete game.disconnectedUsers[userId];
               afkEndsAt: game.afkEndsAt,
             }
           : null,
+      // Every seat currently inside a grace window (ALL seats, including the
+      // requester's own): a re-attaching client missed the one-shot
+      // broadcast and would otherwise show no countdown — least of all for
+      // the deadline it is itself racing.
+      grace: Object.entries(game.disconnectGraceEndsAt)
+        .filter(([userId]) => game.userPlayerIds[userId] !== undefined)
+        .map(([userId, graceEndsAt]) => ({
+          userId,
+          playerId: game.userPlayerIds[userId],
+          graceEndsAt,
+        })),
     };
   }
 
@@ -1503,10 +1886,29 @@ delete game.disconnectedUsers[userId];
     // persistCompleted() commits moves + completion atomically.
     game.pendingCompletion = { reason, winnerUserId, updated, ratingChanges };
 
+    // Terminal teardown: no timer may outlive the game. The tick loop is
+    // cleared by callers; the flag, quorum, and AFK timers die here so a
+    // finished game can never flag, forfeit, or bill again. Pending grace
+    // timers die too: a move/timeout/AFK that ends the game retires every
+    // absence with it (reconnects only cancel on the live path).
+    if (game.timerInterval) clearInterval(game.timerInterval);
+    if (game.flagTimeout) clearTimeout(game.flagTimeout);
+    game.flagTimeout = undefined;
+    if (game.quorumTimeout) clearTimeout(game.quorumTimeout);
+    game.quorumTimeout = undefined;
+    for (const away of Object.values(game.disconnectedUsers)) {
+      clearTimeout(away.timeoutId);
+    }
+    game.disconnectedUsers = {};
+    game.disconnectGraceEndsAt = {};
+    game.disconnectGenerations = {};
+    this.clearAfkTimers(game);
+
     // Schedule in-memory TTL cleanup after 15 minutes
-    setTimeout(() => {
+    const ttl = setTimeout(() => {
       this.games.delete(game.id);
     }, 15 * 60 * 1000);
+    this.unrefTimer(ttl);
 
     const placements =
       seats.length > 2

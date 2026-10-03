@@ -35,6 +35,31 @@ export class MatchmakingService {
     this.queue.push(req);
   }
 
+  /**
+   * Drop entries whose socket is already dead, BEFORE findMatches can seat
+   * them. Disconnects normally remove themselves via removeFromQueue, but any
+   * drift (missed update, async gap) would otherwise dequeue a ghost table
+   * and burn a whole sweep on it. Returns the removed user ids for logging.
+   */
+  public purgeDisconnected(isAlive: (socketId: string) => boolean): string[] {
+    const dead = this.queue.filter((q) => !isAlive(q.socketId)).map((q) => q.userId);
+    if (dead.length > 0) {
+      this.queue = this.queue.filter((q) => isAlive(q.socketId));
+    }
+    return dead;
+  }
+
+  /**
+   * Put a dequeued entry back (blocked pair, failed creation). The passed
+   * snapshot keeps its ORIGINAL joinedAt — wait time is never reset by a
+   * requeue, only by a fresh search. Callers must refresh socketId/name
+   * first (see gateway requeuePlayer): this method trusts what it is given.
+   */
+  public requeue(req: MatchmakingRequest): void {
+    this.queue = this.queue.filter((q) => q.userId !== req.userId);
+    this.queue.push(req);
+  }
+
   public removeFromQueue(userId: string): boolean {
     const initialLength = this.queue.length;
     this.queue = this.queue.filter((q) => q.userId !== userId);

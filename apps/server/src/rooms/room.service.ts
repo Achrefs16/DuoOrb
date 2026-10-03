@@ -19,6 +19,14 @@ export class RoomService {
   private rooms = new Map<string, RoomDto>();
   private codeToId = new Map<string, string>();
   private invites = new Map<string, RoomInviteDto>();
+  private inviteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * Lobby invites live 5 minutes, then die silently. Challenges get 30s
+   * because both ends stare at a toast; invites wait on a friend who may be
+   * mid-game, so they get room to breathe — but never forever.
+   */
+  public static readonly INVITE_TTL_MS = 5 * 60_000;
 
   private generateCode(): string {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -181,9 +189,26 @@ export class RoomService {
       fromDisplayName: '',
       toUserId,
       createdAt: Date.now(),
+      expiresAt: Date.now() + RoomService.INVITE_TTL_MS,
     };
     this.invites.set(invite.inviteId, invite);
+    const timer = setTimeout(() => {
+      this.invites.delete(invite.inviteId);
+      this.inviteTimers.delete(invite.inviteId);
+    }, RoomService.INVITE_TTL_MS);
+    // Lobby furniture must never hold the process open.
+    if (typeof (timer as unknown as { unref?: unknown }).unref === 'function') {
+      (timer as unknown as { unref: () => void }).unref();
+    }
+    this.inviteTimers.set(invite.inviteId, timer);
     return { success: true, invite };
+  }
+
+  private clearInvite(inviteId: string): void {
+    this.invites.delete(inviteId);
+    const timer = this.inviteTimers.get(inviteId);
+    if (timer) clearTimeout(timer);
+    this.inviteTimers.delete(inviteId);
   }
 
   public respondInvite(
@@ -195,13 +220,17 @@ export class RoomService {
     const invite = this.invites.get(inviteId);
     if (!invite) return { success: false, error: 'Invite not found or expired.' };
     if (invite.toUserId !== userId) return { success: false, error: 'Invite is not for this player.' };
+    if (Date.now() > invite.expiresAt) {
+      this.clearInvite(inviteId);
+      return { success: false, error: 'Invite expired.' };
+    }
     if (!accept) {
-      this.invites.delete(inviteId);
+      this.clearInvite(inviteId);
       return { success: true, room: null, invite };
     }
     const joined = this.joinRoom(invite.code, userId, displayName);
     if (!joined.success) return { success: false, error: joined.error };
-    this.invites.delete(inviteId);
+    this.clearInvite(inviteId);
     return { success: true, room: joined.room, invite };
   }
 
@@ -361,6 +390,11 @@ export class RoomService {
     if (remainingSlots.length === 0) {
       this.rooms.delete(roomId);
       this.codeToId.delete(room.code);
+      // Disbanded rooms take their invites with them: answering one would
+      // only fail against a room that no longer exists.
+      for (const [id, invite] of this.invites) {
+        if (invite.roomId === roomId) this.clearInvite(id);
+      }
       return { room: null, disbanded: true };
     }
 
@@ -381,6 +415,26 @@ export class RoomService {
    * reference (slots, host, creator) so seats and crowns survive sign-in.
    * Returns the touched rooms so callers can rebroadcast them.
    */
+  /**
+   * Removes a disconnected user from every WAITING lobby they sit in
+   * (host crown hands over, empty rooms disband with their invites).
+   * IN_GAME rooms are untouched: a mid-match blip must not eject the seat
+   * from its own lobby — grace covers the absence and the room is still
+   * theirs on return. Returns per-room outcomes for rebroadcast.
+   */
+  public leaveAllWaitingRooms(
+    userId: string
+  ): { roomId: string; room: RoomDto | null; disbanded: boolean }[] {
+    const out: { roomId: string; room: RoomDto | null; disbanded: boolean }[] = [];
+    for (const room of this.rooms.values()) {
+      if (room.status !== 'WAITING') continue;
+      if (!room.slots.some((s) => s.userId === userId)) continue;
+      const { room: after, disbanded } = this.leaveRoom(room.id, userId);
+      out.push({ roomId: room.id, room: after, disbanded });
+    }
+    return out;
+  }
+
   public migrateUser(oldUserId: string, newUserId: string, displayName: string): RoomDto[] {
     if (oldUserId === newUserId) return [];
     const touched: RoomDto[] = [];

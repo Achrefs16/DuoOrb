@@ -26,6 +26,8 @@ describe('Reconnect and Grace Period', () => {
       timeControlMinutes: 3,
       isRanked: true,
     });
+    service.markSeatJoined('reconnect-game', 'u1');
+    service.markSeatJoined('reconnect-game', 'u2');
 
     // Alice disconnects
     const res = service.handleDisconnect('reconnect-game', 'u1', (ended) => {
@@ -63,6 +65,8 @@ describe('Reconnect and Grace Period', () => {
       timeControlMinutes: 3,
       isRanked: true,
     });
+    service.markSeatJoined('reconnect-save', 'u1');
+    service.markSeatJoined('reconnect-save', 'u2');
 
     service.handleDisconnect('reconnect-save', 'u1', () => {
       forfeitFired = true;

@@ -76,6 +76,8 @@ export interface RoomInviteDto {
   fromDisplayName: string;
   toUserId: string;
   createdAt: number;
+  /** Server expiry: invites die silently instead of piling up. */
+  expiresAt: number;
 }
 
 export interface ChallengeDto {
@@ -129,6 +131,14 @@ export interface GameSyncDto {
    * nothing until the forfeit.
    */
   afk?: { playerId: string; afkEndsAt: number } | null;
+  /**
+   * Seats currently inside a disconnect grace window, with the SERVER's
+   * reconnect deadline each. A client (re)attaching after missing the
+   * one-shot `game:opponentDisconnected` derives the same card countdowns
+   * from this — including its OWN seat, whose deadline the returnee is
+   * racing but could otherwise never see. Absent when no seat is away.
+   */
+  grace?: { userId: string; playerId: string; graceEndsAt: number }[];
 }
 
 /**
@@ -182,8 +192,13 @@ export interface ClientToServerEvents {
    * and queue entries from the profile — never from client strings.
    */
   'session:sync': () => void;
-  'game:resign': (payload: { gameId: string }) => void;
-  'game:rematch': (payload: { gameId: string }) => void;
+  'game:resign': (payload: { gameId: string }) => void;  'game:rematch': (payload: { gameId: string }) => void;
+  /**
+   * Explicit rematch decline. Without it a dismissed offer lived out its full
+   * server TTL while the offeror waited — the decline lets the other side
+   * stop waiting now.
+   */
+  'game:rematchDecline': (payload: { gameId: string }) => void;
   /**
    * Ephemeral quick reaction. Validated kinds are enforced server-side;
    * anything outside them is dropped, never stored, never sequenced.
@@ -255,6 +270,8 @@ export interface ServerToClientEvents {
   /** The inactivity notice no longer applies (that seat moved, or left). */
   'game:afkCleared': (payload: { playerId?: string }) => void;
   'game:rematchOffered': (payload: { gameId: string; fromUserId: string }) => void;
+  /** Someone dismissed the rematch offer: stop waiting, stay on the result. */
+  'game:rematchDeclined': (payload: { gameId: string; byUserId: string }) => void;
   /** Relay of another seat's quick reaction. Ephemeral: render and forget. */
   'game:reaction': (payload: { gameId: string; reaction: string; fromUserId: string }) => void;
   'room:state': (room: RoomDto) => void;
@@ -273,4 +290,10 @@ export interface ServerToClientEvents {
   'challenge:declined': (payload: { challengeId: string; byUserId: string }) => void;
   'challenge:expired': (payload: { challengeId: string }) => void;
   'challenge:cancelled': (payload: { challengeId: string }) => void;
+  /**
+   * This socket was superseded: the same account connected elsewhere, which
+   * is now the single controlling session. The old tab must stand down
+   * (it would otherwise miss every direct and half-act on stale state).
+   */
+  'session:superseded': () => void;
 }

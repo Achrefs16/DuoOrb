@@ -3,6 +3,7 @@ import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { GameState } from '@duoorb/game-core';
+import type { GameEndedDto } from '@duoorb/protocol';
 import { THEME, playerColor } from '../theme';
 import { modeLabel } from '../matchModes';
 import { nameInitial } from '../displayName';
@@ -12,6 +13,14 @@ interface GameOverModalProps {
   state: GameState;
   ratingDelta?: number;
   ratingAfter?: number;
+  /**
+   * Why the game ended (online only). Rendered as a one-line meta: every
+   * ending used to read identically, so a timeout win, a disconnect walkover
+   * and an AFK forfeit were indistinguishable on the result screen.
+   */
+  endReason?: GameEndedDto['reason'] | null;
+  /** Online matches are all rated server-side; AI/local never are. */
+  isRanked?: boolean;
   opponentName?: string;
   isWinner?: boolean;
   /**
@@ -47,6 +56,8 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   state,
   ratingDelta,
   ratingAfter,
+  endReason = null,
+  isRanked = false,
   opponentName,
   isWinner,
   opponentUserId,
@@ -110,6 +121,39 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     : opponentName
     ? `vs ${opponentName}`
     : null;
+
+  // Ending reason, resolved against whose seat is whose: the last history
+  // move names the actor for resign/timeout/AFK forfeits (the engine records
+  // the forfeited seat as the move's player). Draws carry no lesson — no line.
+  const lastMove = state.history[state.history.length - 1];
+  const actorIsMe =
+    !!myPlayerId && !!lastMove && (lastMove as { playerId?: string }).playerId === myPlayerId;
+  const iWon = isMultiplayer ? myPlace === 1 : outcomeWin;
+  let reasonCopy: string | null = null;
+  if (!isDraw && endReason) {
+    switch (endReason) {
+      case 'GOAL_REACHED':
+        reasonCopy = 'Decided on the board';
+        break;
+      case 'RESIGNATION':
+        reasonCopy = actorIsMe ? 'You resigned' : 'Opponent resigned';
+        break;
+      case 'TIMEOUT':
+        reasonCopy = actorIsMe ? 'You ran out of time' : 'Opponent ran out of time';
+        break;
+      case 'DISCONNECT':
+        reasonCopy = iWon ? 'Opponent disconnected' : 'You disconnected';
+        break;
+      case 'AFK':
+        reasonCopy = actorIsMe ? 'Forfeited for inactivity' : 'Opponent forfeited for inactivity';
+        break;
+    }
+  }
+  const metaLine = reasonCopy
+    ? `${isRanked ? 'Ranked' : 'Unrated'} · ${reasonCopy}`
+    : isRanked
+    ? 'Ranked'
+    : 'Unrated';
 
   const ratingBefore =
     ratingAfter !== undefined && ratingDelta !== undefined
@@ -176,6 +220,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             <Text style={styles.outcomeTitle}>{outcomeTitle}</Text>
 
             {subtitle && <Text style={styles.opponentSubtitle}>{subtitle}</Text>}
+            <Text style={styles.metaLine}>{metaLine}</Text>
           </View>
 
           {/* Multiplayer finishing order — clean ranking list, no clocks. */}
@@ -215,8 +260,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </View>
           )}
 
-          {/* Rating change (online matches only). */}
-          {ratingDelta !== undefined && (
+          {/* Rating change (online matches only). Three states, never a
+              vanishing row: the delta, a calculating skeleton while the
+              result is still in flight, or an explicit Unrated. */}
+          {ratingDelta !== undefined ? (
             <View style={styles.ratingSection}>
               <View style={styles.ratingDeltaBlock}>
                 <Text
@@ -237,6 +284,19 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   </View>
                 )}
               </View>
+            </View>
+          ) : (
+            <View style={styles.ratingSection}>
+              <Text style={styles.ratingPending}>
+                {isRanked ? 'Calculating…' : 'Unrated'}
+              </Text>
+              {/* Same timing truth as the mid-game finish modal: the number
+                  lands with the full result, never piecemeal. */}
+              {isRanked && (
+                <Text style={styles.ratingTiming}>
+                  Final rating appears after the full result is finalized.
+                </Text>
+              )}
             </View>
           )}
 
@@ -391,6 +451,29 @@ const styles = StyleSheet.create({
     color: THEME.colors.onSurfaceVariant,
     marginTop: 2,
     fontWeight: '500',
+  },
+  metaLine: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 11,
+    fontWeight: '600',
+    color: THEME.colors.textMuted,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  ratingPending: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.textMuted,
+  },
+  ratingTiming: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    textAlign: 'center',
+    marginTop: 4,
   },
   rowsCard: {
     width: '100%',

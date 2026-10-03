@@ -27,15 +27,22 @@ describe('Clocks and Fischer Increment', () => {
     vi.useRealTimers();
   });
 
-  it('runs the clock from match start — the opening turn is charged, not reset', () => {
+  it('runs the clock from the join quorum — the opening turn is charged, not reset', () => {
     const service = new AuthoritativeGameService();
     const game = makeGame(service, 'armed-test', 3, 2);
 
-    // The countdown starts with the match itself: no "starts on first move"
-    // re-arm, so the first sync can never snap the clock back to full time.
+    // Pre-quorum the clock is parked: pairing + join latency bills nobody,
+    // and no watchdog runs — the opening turn cannot forfeit a player whose
+    // opponent simply never joined.
+    expect(game.clockStarted).toBe(false);
+    vi.advanceTimersByTime(10000);
+    expect(service.clockSnapshot(game)['p1']).toBe(180000);
+
+    // Both seats join: the countdown starts from NOW with full time, so the
+    // first sync can never snap the clock back to full time either.
+    service.markSeatJoined('armed-test', 'p1');
+    service.markSeatJoined('armed-test', 'p2');
     expect(game.clockStarted).toBe(true);
-    expect(game.clocksMs['p1']).toBe(180000);
-    expect(game.clocksMs['p2']).toBe(180000);
 
     // 10s pass before anyone moves: the opener's turn is already running.
     // The ledger only moves on moves, but the snapshot derives the turn.
@@ -50,9 +57,11 @@ describe('Clocks and Fischer Increment', () => {
     expect(game.state.winnerId).toBe('p2');
   });
 
-  it('credits Fischer increment after each accepted move, charging since match start', () => {
+  it('credits Fischer increment after each accepted move, charging since the join quorum', () => {
     const service = new AuthoritativeGameService();
     const game = makeGame(service, 'clock-inc-test', 3, 2);
+    service.markSeatJoined('clock-inc-test', 'p1');
+    service.markSeatJoined('clock-inc-test', 'p2');
 
     expect(game.clocksMs['p1']).toBe(180000);
     expect(game.clocksMs['p2']).toBe(180000);
@@ -103,6 +112,8 @@ describe('Clocks and Fischer Increment', () => {
         endedReason = ended.reason;
       },
     });
+    service.markSeatJoined('timeout-test', 'p1');
+    service.markSeatJoined('timeout-test', 'p2');
 
     expect(game.state.status).toBe('IN_PROGRESS');
 
@@ -143,6 +154,8 @@ describe('Clocks and Fischer Increment', () => {
         endedReason = ended.reason;
       },
     });
+    service.markSeatJoined('timeout-active', 'p1');
+    service.markSeatJoined('timeout-active', 'p2');
 
     // First legal move for whoever holds the turn right now.
     const moveFor = (userId: string) => {

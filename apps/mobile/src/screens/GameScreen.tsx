@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, BackHandler, Modal, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Animated, BackHandler, Modal, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 
+'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   AIDifficulty,
@@ -332,6 +333,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setReplaying(false);
     setPremoveQueue([]);
     setPremoveSel(null);
+    // Fresh clocks, fresh warnings: the 30s crossing refs belong to the old
+    // game — without this a rematch (same mount) never warns (I4).
+    warned30Ref.current = false;
+    lastMySecsRef.current = null;
   }, [type, onlineGameId]);
 
   const [timers, setTimers] = useState<Record<string, number>>(() => {
@@ -756,21 +761,33 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [humanTurn, state, premoveQueue, currentPlayer, type, online, creditIncrement]);
 
   // Game over persistence
-  // Rematch toasts auto-dismiss after 4s; the offer itself stays pending on
-  // the server, and the result modal's Rematch button can still accept it.
-  // Keyed on the offer nonce so a re-sent offer always re-shows the toast.
+  // Rematch offers persist as a chip until accepted, declined, expired
+  // server-side (30s hook timer), or superseded — the 4s auto-dismiss used
+  // to strand the offeror waiting the full TTL with no visible offer, and a
+  // Decline that only hid the toast locally. Keyed on the offer nonce so a
+  // re-sent offer always re-shows.
   useEffect(() => {
     if (type !== 'online' || online.rematchOfferNonce === 0) return;
     setRematchIncomingDismissed(false);
-    const t = setTimeout(() => setRematchIncomingDismissed(true), 4000);
-    return () => clearTimeout(t);
   }, [type, online.rematchOfferNonce]);
 
+  // The offeror waits with a visible chip for the server TTL, not 4s — then
+  // stops on its own. An explicit decline from the other side clears it
+  // immediately (see below).
   useEffect(() => {
     if (type !== 'online' || !rematchSent) return;
-    const t = setTimeout(() => setRematchSent(false), 4000);
+    const t = setTimeout(() => setRematchSent(false), 30000);
     return () => clearTimeout(t);
   }, [type, rematchSent]);
+
+  // The other side declined: stop waiting now.
+  const lastRematchDeclinedRef = useRef(0);
+  useEffect(() => {
+    if (type !== 'online' || online.rematchDeclinedNonce === 0) return;
+    if (lastRematchDeclinedRef.current === online.rematchDeclinedNonce) return;
+    lastRematchDeclinedRef.current = online.rematchDeclinedNonce;
+    setRematchSent(false);
+  }, [type, online.rematchDeclinedNonce]);
 
   useEffect(() => {
     if (type === 'online' && online.rematchGameId && onRematchAccepted) {
@@ -1411,20 +1428,23 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 const onlineSeatStatus = useMemo<Record<string, SeatStatus>>(() => {
   if (type !== 'online') return {};
   const map: Record<string, SeatStatus> = {};
+  const ownSeat = online.myPlayerId;
   // Every away seat gets its own countdown — on a 3P/4P table two seats can
   // be away at once, and each card counts down its own window.
   for (const grace of Object.values(online.opponentGrace)) {
     const seat = grace.playerId ?? null;
     // playerId is always sent for online matches; an entry without one names
     // no card, so it is skipped rather than pinned on the wrong seat.
+    // `mine` names the consequence on the card of the player racing the
+    // deadline (I3): everyone else reads the neutral condition.
     if (seat) {
-      map[seat] = { kind: 'disconnected', secondsLeft: grace.seconds };
+      map[seat] = { kind: 'disconnected', secondsLeft: grace.seconds, mine: seat === ownSeat };
     }
   }
   if (online.afkWarning) {
     const seat = online.afkWarning.playerId ?? online.myPlayerId;
     if (seat) {
-      map[seat] = { kind: 'afk', secondsLeft: online.afkWarning.secondsRemaining };
+      map[seat] = { kind: 'afk', secondsLeft: online.afkWarning.secondsRemaining, mine: seat === ownSeat };
     }
   }
   // Own transport state, on the player's own card only — and only when no
@@ -1432,12 +1452,16 @@ const onlineSeatStatus = useMemo<Record<string, SeatStatus>>(() => {
   // need no other UI: a dropped socket and a failed join. (A move in flight
   // and a rejected move stay off the card — the board locks while sending,
   // and a rejection is a sound, not a status.)
-  const ownSeat = online.myPlayerId;
   if (ownSeat && !map[ownSeat]) {
     if (online.joinError) {
       map[ownSeat] = { kind: 'rejected', message: online.joinError };
     } else if (online.connStatus === 'reconnecting' || online.connStatus === 'disconnected') {
-      map[ownSeat] = { kind: 'reconnecting', pendingCount: online.pendingCount };
+      map[ownSeat] = {
+        kind: 'reconnecting',
+        pendingCount: online.pendingCount,
+        // A known-dead OS link reads as offline, not as a dropped socket.
+        offline: online.linkDown,
+      };
     }
   }
   return map;
@@ -1448,38 +1472,61 @@ const onlineSeatStatus = useMemo<Record<string, SeatStatus>>(() => {
   online.myPlayerId,
   online.joinError,
   online.connStatus,
+  online.linkDown,
   online.pendingCount,
 ]);
 
 // Seat miss: sync arrived but neither your id nor name matches a seat
 // (changed identity mid-flow). Never silently play as someone else — the
 // seat resolves as soon as the ids line up, and Back frees the screen
-// meanwhile (see handleBackPress). Retried on an interval, not once: the
-// usual cause is an identity that hydrates a moment after the first sync,
-// and one shot would miss the recovery. No banner: there is no seat to hang
-// an indicator on until the resync lands.
-useEffect(() => {
-  if (type !== 'online' || !online.gameState) return;
-  if (online.gameState.status !== 'IN_PROGRESS') return;
-  if (online.myPlayerId || online.joinError) return;
-  online.resync();
-  const timer = setInterval(online.resync, 5000);
-  return () => clearInterval(timer);
-// Manual deps are intentional (React Compiler is not enabled): the whole
-// `online` object changes on every clock tick. Scalar deps only, so moves
-// and ticks never re-arm this — identity, seat and game identity do.
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, [type, online.gameState?.gameId, online.gameState?.status, online.myPlayerId, online.joinError, online.resync]);
+// meanwhile (see handleBackPress). The rejoin pump lives in useOnlineGame
+// (single owner: same cooldown + attempt budget as every other rejoin path),
+// so this screen only READS the seat state. No banner: there is no seat to
+// hang an indicator on until the resync lands.
+// (No effect here by design — see the hook's seat-miss pump.)
 
-// A server-rejected move is a sound, not a card status: the board already
-// rolled the move back, so the illegal-move click is the whole feedback.
+// A server-rejected move is a sound AND a line, not a card status: the board
+// already rolled the move back, so the illegal-move click is the instant
+// feedback — but with sound off (a supported setting) that was nothing at
+// all. The computed message ("That move was not legal here.") already exists
+// and was discarded; it now also rides the toast bus.
 const lastActionErrorNonce = useRef<number | null>(null);
 useEffect(() => {
   if (type !== 'online' || !online.actionError) return;
   if (lastActionErrorNonce.current === online.actionError.nonce) return;
   lastActionErrorNonce.current = online.actionError.nonce;
   void playIllegalMoveSound();
+  if (online.actionError.message) toast.show(online.actionError.message);
 }, [type, online.actionError]);
+
+// Grace/AFK arming is soundless by default — yet the addressee is by
+// definition not looking (away, idle, backgrounded). One notify chime per
+// newly-away seat / fresh warning; the card countdown carries the rest.
+const seenGraceKeysRef = useRef<Set<string>>(new Set());
+const seenAfkKeyRef = useRef<string | null>(null);
+useEffect(() => {
+  if (type !== 'online') return;
+  const keys = Object.keys(online.opponentGrace);
+  const fresh = keys.filter((k) => !seenGraceKeysRef.current.has(k));
+  seenGraceKeysRef.current = new Set(keys);
+  const afkKey = online.afkWarning
+    ? `${online.afkWarning.playerId ?? ''}:${online.afkWarning.afkEndsAt}`
+    : null;
+  const afkFresh = afkKey !== null && afkKey !== seenAfkKeyRef.current;
+  seenAfkKeyRef.current = afkKey;
+  if (fresh.length > 0 || afkFresh) void playNotifySound();
+}, [type, online.opponentGrace, online.afkWarning]);
+
+// A queued move the transport discarded after the board showed it: rolled
+// back by the hook already, announced here with words (no illegal-move
+// click — the move was never illegal, just never sent).
+const lastDropNonce = useRef<number | null>(null);
+useEffect(() => {
+  if (type !== 'online' || !online.dropNotice) return;
+  if (lastDropNonce.current === online.dropNotice.nonce) return;
+  lastDropNonce.current = online.dropNotice.nonce;
+  toast.show(online.dropNotice.message);
+}, [type, online.dropNotice]);
 
 // A newly earned achievement is a toast with its medal + the notify sound —
 // never content inside the Win modal. Fires once per reward: aiReward
@@ -1683,7 +1730,15 @@ state={topStripState}
       </View>
 
       {/* Board + bottom packed with zero gaps, sized to fit the screen. */}
-      <View style={styles.boardWrap}>
+      <View
+        style={[
+          styles.boardWrap,
+          type === 'online' &&
+            online.inputLocked &&
+            online.connStatus !== 'connected' &&
+            styles.boardDimmed,
+        ]}
+      >
         <View
           ref={anchorRef}
           collapsable={false}
@@ -1960,9 +2015,43 @@ state={topStripState}
         </SafeAreaView>
       </Modal>
 
+      {/* Blocking join/seat states (I1/I11/I12): without these a failed join
+          with no seat rendered nothing over a phantom playable board, a
+          seat-less sync played silently as the wrong seat, and a rematch
+          switch sat on a stale result screen with no progress signal. */}
+      {type === 'online' && online.joinError && !online.gameState && !offlineSnapshot && (
+        <View style={styles.blockingOverlay}>
+          <Feather name="alert-circle" size={28} color={THEME.colors.danger} />
+          <Text style={styles.blockingTitle}>{online.joinError}</Text>
+          <Text style={styles.blockingSub}>Use Back to search again.</Text>
+        </View>
+      )}
+      {type === 'online' &&
+        !online.joinError &&
+        online.gameState?.status === 'IN_PROGRESS' &&
+        !online.myPlayerId && (
+          <View style={styles.blockingOverlay}>
+            <ActivityIndicator size="large" color={THEME.colors.primary} />
+            <Text style={styles.blockingTitle}>Finding your seat…</Text>
+            <Text style={styles.blockingSub}>Input resumes when your seat resolves.</Text>
+          </View>
+        )}
+      {type === 'online' &&
+        onlineGameId &&
+        online.gameState &&
+        online.gameState.gameId !== onlineGameId &&
+        online.isSyncing && (
+          <View style={styles.blockingOverlay}>
+            <ActivityIndicator size="large" color={THEME.colors.primary} />
+            <Text style={styles.blockingTitle}>Joining match…</Text>
+          </View>
+        )}
+
       <GameOverModal
         visible={showGameOver}
         state={state}
+        endReason={type === 'online' ? online.gameEndedResult?.reason ?? null : null}
+        isRanked={type === 'online'}
         ratingDelta={type === 'online' && identity ? online.gameEndedResult?.ratingChanges?.[identity.userId]?.delta : undefined}
         ratingAfter={type === 'online' && identity ? online.gameEndedResult?.ratingChanges?.[identity.userId]?.after : undefined}
         opponentName={
@@ -2031,14 +2120,17 @@ state={topStripState}
                 ? 'Opponent wants a rematch'
                 : 'Waiting for opponent…'}
             </Text>
-            {online.rematchOffered && !rematchIncomingDismissed && (
-              <>
-                <TouchableOpacity
-                  style={styles.rematchDeclineBtn}
-                  onPress={() => setRematchIncomingDismissed(true)}
-                >
-                  <Text style={styles.rematchDeclineText}>Decline</Text>
-                </TouchableOpacity>
+              {online.rematchOffered && !rematchIncomingDismissed && (
+                <>
+                  <TouchableOpacity
+                    style={styles.rematchDeclineBtn}
+                    onPress={() => {
+                      online.declineRematch();
+                      setRematchIncomingDismissed(true);
+                    }}
+                  >
+                    <Text style={styles.rematchDeclineText}>Decline</Text>
+                  </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.rematchAcceptBtn}
                   onPress={() => {
@@ -2115,6 +2207,12 @@ const styles = StyleSheet.create({
   boardWrap: {
     flex: 1,
     justifyContent: 'flex-start',
+  },
+  // Locked while a move is unconfirmed AND the transport is down: the board
+  // looks live but every tap is dropped. Online-but-slow moves dim nothing —
+  // a sub-second flicker per move would be worse than the lock it signals.
+  boardDimmed: {
+    opacity: 0.9,
   },
   boardAnchor: {
     width: '100%',
@@ -2390,4 +2488,29 @@ const styles = StyleSheet.create({
   rematchDeclineText: { fontFamily: THEME.fonts.semiBold, fontSize: 12, color: THEME.colors.textSecondaryStrong },
   rematchAcceptBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.primary },
   rematchAcceptText: { fontFamily: THEME.fonts.bold, fontSize: 12, color: THEME.colors.onPrimary },
+  // Blocking join/seat states: full-screen, input-eating, above the board
+  // but below native modals (render order). A spinner for waits, an icon
+  // for terminal failures — never a playable-looking board underneath.
+  blockingOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: THEME.colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    padding: 32,
+    zIndex: 5,
+  },
+  blockingTitle: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 15,
+    fontWeight: '600',
+    color: THEME.colors.onSurface,
+    textAlign: 'center',
+  },
+  blockingSub: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    textAlign: 'center',
+  },
 });

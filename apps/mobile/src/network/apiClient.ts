@@ -416,6 +416,17 @@ async function parseJson<T>(res: Response): Promise<T> {
 }
 
 /**
+ * Silent single credential rotation for a dying session. Guest-only by
+ * construction (accounts carry no refresh token here — only a re-login
+ * fixes those). Shared in-flight with HTTP 401 recovery, so a socket auth
+ * failure racing an API 401 rotates exactly once. Returns true when play
+ * can continue on the new credential.
+ */
+export function refreshSessionOnce(): Promise<boolean> {
+  return refreshOnce();
+}
+
+/**
  * In-flight guest refresh, shared so parallel 401s trigger exactly one
  * rotation. Without this, five simultaneous requests would each present the
  * same refresh token — and since rotation invalidates the previous one, four

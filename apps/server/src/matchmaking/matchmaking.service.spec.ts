@@ -16,6 +16,32 @@ function req(partial: Partial<Parameters<MatchmakingService['addToQueue']>[0]> =
   };
 }
 
+describe('MatchmakingService liveness (F3)', () => {
+  it('purges dead-socket entries before they can be seated', () => {
+    const mm = new MatchmakingService();
+    mm.addToQueue(req({ userId: 'u1', socketId: 's-live' }));
+    mm.addToQueue(req({ userId: 'uGhost', socketId: 's-dead' }));
+    const purged = mm.purgeDisconnected((sid) => sid === 's-live');
+    expect(purged).toEqual(['uGhost']);
+    expect(mm.getQueueLength()).toBe(1);
+    expect(mm.findMatches()).toHaveLength(0); // u1 alone: no pair, still queued
+    expect(mm.getQueueLength()).toBe(1);
+  });
+
+  it('requeue preserves the original joinedAt — wait time survives a requeue', () => {
+    const mm = new MatchmakingService();
+    const joinedAt = Date.now() - 30_000;
+    mm.addToQueue(req({ userId: 'u1', socketId: 's1', joinedAt }));
+    mm.addToQueue(req({ userId: 'u2', socketId: 's2', joinedAt }));
+    const [match] = mm.findMatches(); // dequeued by the sweep
+    expect(match).toBeTruthy();
+    expect(mm.getQueueLength()).toBe(0);
+    mm.requeue(match.players[0]); // blocked pair / failed creation path
+    const requeued = (mm as any).queue.find((q: any) => q.userId === 'u1');
+    expect(requeued.joinedAt).toBe(joinedAt);
+  });
+});
+
 describe('MatchmakingService concurrency', () => {
   it('keeps exactly one entry per user across reconnects/requeues', () => {
     const mm = new MatchmakingService();

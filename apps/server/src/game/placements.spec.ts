@@ -277,6 +277,11 @@ describe('multiplayer finish flow (service)', () => {
     vi.useFakeTimers();
     const svc = new AuthoritativeGameService(undefined as any);
     make3P(svc, 'mp-afk');
+    // Quorum first (production joins): the opening turn is watched only
+    // once every seat is in — no move is needed for the watch to run.
+    svc.markSeatJoined('mp-afk', 'uA');
+    svc.markSeatJoined('mp-afk', 'uB');
+    svc.markSeatJoined('mp-afk', 'uC');
     // No moves at all: the opening turn is watched, so 45s of idling ends A
     // (worst remaining place) while B and C continue — same shape as a
     // disconnect forfeit, with the AFK reason instead.

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { AppState } from 'react-native';
 import { GameAction, GameError, GameState, RecordedAction, applyAction } from '@duoorb/game-core';
 import { ClockStateDto, GameEndedDto, GameSyncDto } from '@duoorb/protocol';
 import { socketManager, ConnectionStatus } from './socket';
 import { getIdentity, useIdentity } from './auth';
+import { refreshSessionOnce } from './apiClient';
 
 export interface UseOnlineGameOptions {
   gameId: string;
@@ -20,6 +22,11 @@ export interface UseOnlineGameOptions {
 
 /** How often to re-ask the server for game state while still syncing. */
 const JOIN_RETRY_MS = 2500;
+/** How often a seat-less but synced client re-asks for its seat (the hook's
+ * own pump — see below). Same order as the join retry: slow enough to stay
+ * inside the emit cooldown's spirit, fast enough to catch a hydrating
+ * identity within seconds. */
+const SEAT_MISS_RETRY_MS = 5000;
 /** After this many unanswered retries, surface an error instead of spinning. */
 const JOIN_ATTEMPT_LIMIT = 8;
 /**
@@ -172,6 +179,9 @@ export function useOnlineGame({ gameId, initialSync, onGameEnded, onError }: Use
     () => initialSync?.playerUserIds ?? {}
   );
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('connecting');
+  // OS link verdict, for honest copy ("You're offline" vs "Reconnecting…").
+  const [linkDown, setLinkDown] = useState<boolean>(() => socketManager.isLinkDown());
+  useEffect(() => socketManager.subscribeLink(setLinkDown), []);
   /**
  * A seat that is inside a reconnect grace window.
  *
@@ -215,9 +225,25 @@ interface AfkWarning {
  * reconnect must clear only its own countdown — never the other seat's.
  */
 const [opponentGrace, setOpponentGrace] = useState<Record<string, OpponentGrace>>({});
+  /**
+   * Offset between the server's clock and ours, in ms (server minus local).
+   *
+   * Measured from the `game:ping` round trip: with a symmetric path, the
+   * server's stamp sits at the midpoint of the exchange. Every authoritative
+   * timestamp is then interpreted through this instead of being treated as
+   * local time — which is what made a phone whose clock was minutes off show
+   * a frozen or instantly-expired game clock.
+   */
+  const serverSkewMsRef = useRef<number>(0);
+  const roundTripMsRef = useRef<number>(0);
+  /** Local instant of the last RTT sample: one-way correction expires with it. */
+  const roundTripAtRef = useRef<number>(0);
   const [afkWarning, setAfkWarning] = useState<AfkWarning | null>(() => {
     const afk = initialSync?.afk;
     if (!afk) return null;
+    // Date.now(), not serverNow(): skew starts at 0 on first render, so this
+    // IS server time at seed; the 1s ticker self-corrects from the first
+    // probe on. Reading the skew ref here would only trip render purity.
     return {
       playerId: afk.playerId,
       afkEndsAt: afk.afkEndsAt,
@@ -233,6 +259,7 @@ const [opponentGrace, setOpponentGrace] = useState<Record<string, OpponentGrace>
   }, [opponentGrace]);
   const [rematchOffered, setRematchOffered] = useState<boolean>(false);
   const [rematchOfferNonce, setRematchOfferNonce] = useState<number>(0);
+  const [rematchDeclinedNonce, setRematchDeclinedNonce] = useState<number>(0);
   const [rematchGameId, setRematchGameId] = useState<string | null>(null);
   const rematchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [gameEndedResult, setGameEndedResult] = useState<GameEndedDto | null>(null);
@@ -249,6 +276,13 @@ const [opponentGrace, setOpponentGrace] = useState<Record<string, OpponentGrace>
    */
   const [actionError, setActionError] = useState<{ message: string; nonce: number } | null>(null);
   const actionErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * A queued move the transport discarded (cap overflow / TTL expiry) AFTER
+   * the board showed it optimistically. Not illegal — just never sent — so
+   * it rolls the tail back and rides the toast bus without the illegal-move
+   * sound. The screen announces it; the hook only records it.
+   */
+  const [dropNotice, setDropNotice] = useState<{ message: string; nonce: number } | null>(null);
   const [lastFinished, setLastFinished] = useState<{ gameId: string; playerId: string; userId: string; place: number } | null>(null);
   const joinAttemptsRef = useRef<number>(0);
   /** Last `game:join` wire emit — collapses reconnect bursts into one join. */
@@ -298,16 +332,6 @@ const [opponentGrace, setOpponentGrace] = useState<Record<string, OpponentGrace>
   // second-clocks above are already correct, and the mount join's live sync
   // replaces all of this within milliseconds anyway.
   const clockAnchorRef = useRef<{ remainingMs: Record<string, number>; at: number } | null>(null);
-  useEffect(() => {
-    if (initialSync && !clockAnchorRef.current) {
-      clockAnchorRef.current = {
-        remainingMs: { ...initialSync.clock.remainingMs },
-        at: Date.now(),
-      };
-    }
-    // Runs once per mount: the seed belongs to the mounted game.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   /**
  * Latest authoritative clock map, for handoff snapshots. The display
  * `clocks` state holds derived seconds; gates need the raw ms deadlines.
@@ -318,18 +342,6 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
   const everConnectedRef = useRef(false);
   const gameStateRef = useRef<GameState | null>(null);
   gameStateRef.current = gameState;
-
-  /**
-   * Offset between the server's clock and ours, in ms (server minus local).
-   *
-   * Measured from the `game:ping` round trip: with a symmetric path, the
-   * server's stamp sits at the midpoint of the exchange. Every authoritative
-   * timestamp is then interpreted through this instead of being treated as
-   * local time — which is what made a phone whose clock was minutes off show
-   * a frozen or instantly-expired game clock.
-   */
-  const serverSkewMsRef = useRef<number>(0);
-  const roundTripMsRef = useRef<number>(0);
 
   /** Server time, as best we can tell, right now. */
   const serverNow = useCallback((): number => {
@@ -360,12 +372,17 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
       // from sleep can produce a "round trip" of minutes.
       if (rtt < 0 || rtt > 5000) return;
       roundTripMsRef.current = roundTripMsRef.current === 0 ? rtt : roundTripMsRef.current + (rtt - roundTripMsRef.current) * 0.3;
+      roundTripAtRef.current = receivedAt;
       // The server stamped its reply at the midpoint of the exchange on a
       // symmetric path, so that midpoint minus the server stamp is our skew.
       const serverMidpoint = res.serverTimestamp + rtt / 2;
       const sample = serverMidpoint - receivedAt;
       serverSkewMsRef.current =
         serverSkewMsRef.current === 0 ? sample : serverSkewMsRef.current + (sample - serverSkewMsRef.current) * 0.3;
+      // NOTE: a skew correction moves serverNow() (grace/AFK countdowns)
+      // immediately but deliberately NOT the clock anchor: the anchor is a
+      // LOCAL receive instant, already correct independent of skew.
+      // Re-basing it on skew jumps would introduce error, not remove it.
     });
   }, [gameId]);
 
@@ -376,14 +393,28 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
    * roughly half a round trip to reach us, so anchoring at `Date.now()` would
    * hide that delay and show the mover slightly more time than they have.
    * The anchor is placed at the local instant corresponding to the server's
-   * sample, corrected by skew and by the measured one-way delay.
+   * sample, corrected by the measured one-way delay.
+   *
+   * The ONLY constructor for anchors (mount seed, syncs, ticks): one place
+   * builds them, so the one-way correction can never be forgotten on one
+   * path. A stale RTT sample (older than 30s, e.g. post-sleep) corrects by
+   * zero and triggers a fresh probe instead of anchoring on ancient data.
    */
   const anchorClock = useCallback(
     (packet: { remainingMs: Record<string, number>; serverTimestamp: number }) => {
       const localReceive = Date.now();
       // One-way delay is half the last measured round trip (capped so a single
       // pathological sample cannot shift the whole clock).
-      const oneWay = Math.min(roundTripMsRef.current / 2, 1000);
+      const rttAge = localReceive - roundTripAtRef.current;
+      const oneWay =
+        roundTripAtRef.current === 0 || rttAge > 30_000
+          ? 0
+          : Math.min(roundTripMsRef.current / 2, 1000);
+      if (oneWay === 0 && roundTripAtRef.current !== 0) {
+        // Sample too old to trust: re-measure now; this anchor goes out
+        // uncorrected and the next tick replaces it.
+        probeLatency();
+      }
       const anchorLocalTime = localReceive - oneWay;
       clockAnchorRef.current = {
         remainingMs: { ...packet.remainingMs },
@@ -395,8 +426,20 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
       }
       setClocks(seconds);
     },
-    []
+    [probeLatency]
   );
+
+  useEffect(() => {
+    // Mount seed, through the same anchor constructor as every live packet,
+    // so the first frame gets the one-way correction (or its honest absence)
+    // like everything after it. Placed after anchorClock: effects run post-
+    // render, but the declaration must still precede the use statically.
+    if (initialSync && !clockAnchorRef.current) {
+      anchorClock(initialSync.clock);
+    }
+    // Runs once per mount: the seed belongs to the mounted game.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Local second ticker for the ACTIVE clock, derived from the last
   // server deadline (never decremented blindly — a stalled event loop
@@ -457,7 +500,15 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
         const next: Record<string, OpponentGrace> = {};
         for (const [userId, entry] of Object.entries(prev)) {
           const left = Math.max(0, Math.ceil((entry.graceEndsAt - serverNow()) / 1000));
-          if (left <= 0) continue; // expired: the forfeit broadcast owns it now
+          // Hold the last "0s" frame instead of deleting: the forfeit
+          // broadcast owns the outcome now, and in the gap the card must
+          // read "about to finalize", never healthy-again. Deletion comes
+          // from ended/sync/reconnect — never from the ticker.
+          if (left <= 0) {
+            next[userId] = entry.seconds !== 0 ? { ...entry, seconds: 0 } : entry;
+            changed = changed || entry.seconds !== 0;
+            continue;
+          }
           changed = changed || left !== entry.seconds;
           next[userId] = left !== entry.seconds ? { ...entry, seconds: left } : entry;
         }
@@ -491,10 +542,12 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
         if (!prev) return null;
         const left = Math.max(0, Math.ceil((prev.afkEndsAt - serverNow()) / 1000));
         if (left <= 0) {
+          // Hold "0s" like the grace ticker: removal comes from the forfeit
+          // broadcast, a fresh sync, or an explicit clear — never from here.
           if (afkTimerRef.current) clearInterval(afkTimerRef.current);
-          return null;
+          return prev.secondsRemaining !== 0 ? { ...prev, secondsRemaining: 0 } : prev;
         }
-        return { ...prev, secondsRemaining: left };
+        return prev.secondsRemaining !== left ? { ...prev, secondsRemaining: left } : prev;
       });
     };
     tick();
@@ -518,16 +571,43 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
     return () => socketManager.clearScopedGame(gameId);
   }, [gameId]);
 
-  const joinGame = useCallback(() => {    const socket = socketManager.getSocket();
+  // Silent queue losses (cap/TTL) roll the optimistic tail back: the entry
+  // will never send, but the board is still rendering it. Only this game's
+  // entries — each mounted channel filters to its own gameId.
+  useEffect(() => {
+    return socketManager.subscribeDrops((dropped) => {
+      const ids = new Set(
+        dropped
+          .filter((d) => d.gameId === gameId && d.clientActionId)
+          .map((d) => d.clientActionId as string)
+      );
+      if (ids.size === 0) return;
+      setPending(pendingFor().filter((p) => !ids.has(p.clientActionId)));
+      setDropNotice({
+        message: 'Move not sent — connection was down too long. Tap again.',
+        nonce: Date.now(),
+      });
+    });
+  }, [gameId, pendingFor, setPending]);
+
+  /**
+   * Emits `game:join` for this game. Mount/manual calls reset the attempt
+   * budget (fresh start); rejoin-path calls (transport reconnect, seat miss,
+   * foreground return) do NOT — resetting there is what let a flapping
+   * connection spin on "Connecting" forever without ever surfacing the
+   * after-8 error. `joinOutstanding` is set only when an emit is actually
+   * attempted (wire or queue), never on a cooldown early-return.
+   */
+  const joinGame = useCallback((resetAttempts = true) => {    const socket = socketManager.getSocket();
     setIsSyncing(true);
     setJoinError(null);
-    joinAttemptsRef.current = 0;
-    joinOutstandingRef.current = true;
+    if (resetAttempts) joinAttemptsRef.current = 0;
     // Reconnect bursts (queue flush + this + retry tick) collapse here: one
     // wire join per cooldown window, the retry loop stays the backstop.
     const now = Date.now();
     if (now - joinLastEmitRef.current < JOIN_EMIT_COOLDOWN_MS) return;
     joinLastEmitRef.current = now;
+    joinOutstandingRef.current = true;
     socket.emit('game:join', {
       gameId,
       lastSequence: gameStateRef.current?.history.length ?? 0,
@@ -543,9 +623,16 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
    * or coalesced emit leaves isSyncing true forever: the overlay in GameScreen
    * is gated purely on that flag, so the player sits on "Connecting to match"
    * with no way out except a Cancel button that does not release their seat.
+   *
+   * Stops on its own for finished games: rejoining a COMPLETED board only
+   * produces GAME_NOT_IN_PROGRESS errors over the result modal.
    */
+  const gameStatus = gameState?.status;
+  // Boolean, not the board object: effects below must not restart on moves.
+  const hasBoard = gameState !== null;
   useEffect(() => {
     if (!isSyncing) return undefined;
+    if (gameEndedResult || gameStatus === 'COMPLETED') return undefined;
     const timer = setInterval(() => {
       // Part of the same burst collapse as joinGame: a tick inside the
       // cooldown window is not an attempt, it just yields to the join
@@ -577,17 +664,61 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
     return () => clearInterval(timer);
   // `pendingFor` reads a ref keyed by gameId; gameId is already a
     // dependency, so the closure is never stale for this subscription.
+  // gameStatus is a scalar (not the whole board): moves never restart this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSyncing, gameId]);
+  }, [isSyncing, gameId, gameEndedResult, gameStatus]);
 
   // Rejoin + resync automatically after a transport reconnect (e.g. fresh
-  // token). Skipped on first connect — mount already joins.
+  // token). Skipped on first connect — mount already joins. Rejoin-path: no
+  // attempt reset (see joinGame), and never for a finished game.
   useEffect(() => {
     if (connStatus === 'connected') {
-      if (everConnectedRef.current) joinGame();
+      if (everConnectedRef.current && !gameEndedResult && gameStatus !== 'COMPLETED') {
+        joinGame(false);
+      }
       everConnectedRef.current = true;
     }
-  }, [connStatus, joinGame]);
+  }, [connStatus, joinGame, gameEndedResult, gameStatus]);
+
+  // Seat miss, owned here instead of the screen: sync arrived but no seat
+  // resolved (identity hydrating a moment after the first sync). Same single
+  // pump — same cooldown, same attempt budget — so a genuinely unseated
+  // client surfaces joinError after N instead of interval-joining forever
+  // from two places at once. Stops the moment the seat, an error, or the
+  // game end lands. Interval-only (no immediate emit): the mount join is
+  // already in flight, and an immediate emit here would re-trigger the
+  // set-state-in-effect pattern this file otherwise avoids adding to.
+  useEffect(() => {
+    if (!hasBoard || gameStatus !== 'IN_PROGRESS') return undefined;
+    if (myPlayerId || joinError || gameEndedResult) return undefined;
+    const timer = setInterval(() => {
+      joinGame(false);
+    }, SEAT_MISS_RETRY_MS);
+    return () => clearInterval(timer);
+  }, [gameId, hasBoard, gameStatus, myPlayerId, joinError, gameEndedResult, joinGame]);
+
+  // Foreground rejoin (R2): the OS may freeze JS timers AND the socket with
+  // no disconnect ever firing (half-open TCP looks connected), while server
+  // grace/AFK keep billing the absence. socket.io's own heartbeat can take
+  // its full timeout to notice; an explicit foreground pass — probe, sync
+  // identity, reconnect, rejoin — collapses that window to one cooldown.
+  // Rejoin-path throughout (no attempt reset): the budget keeps accounting
+  // across backgrounding instead of restarting from zero every return.
+  useEffect(() => {
+    if (typeof AppState?.addEventListener !== 'function') return;
+    let lastState = 'active';
+    const sub = AppState.addEventListener('change', (next) => {
+      const wasAway = lastState !== 'active';
+      lastState = next;
+      if (next === 'active' && wasAway && !gameEndedResult) {
+        probeLatency();
+        socketManager.syncWithIdentity();
+        socketManager.getSocket();
+        joinGame(false);
+      }
+    });
+    return () => sub.remove();
+  }, [joinGame, probeLatency, gameEndedResult]);
 
   /**
    * Switching games without remounting (rematch): the subscription effect
@@ -611,6 +742,7 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
     setGameEndedResult(null);
     setRematchOffered(false);
     setRematchGameId(null);
+    setDropNotice(null);
 setOpponentGrace({});
     setAfkWarning(null);
     setLastFinished(null);
@@ -643,13 +775,37 @@ setOpponentGrace({});
         joinGame();
         return;
       }
+      if (error.code === 'UNAUTHENTICATED') {
+        // Credential death, not a rules rejection: never an actionError
+        // click on a "broken" board while the clock runs out. Silent
+        // refresh-once (guests) keeps the tail — same userId, so resubmits
+        // stay valid — and rejoins with no error at all. Otherwise a
+        // persistent joinError with honest copy (guests have no sign-in).
+        // The pending tail is kept for the rejoin and cleared only if the
+        // recovery itself fails.
+        void (async () => {
+          const ok = await refreshSessionOnce().catch(() => false);
+          if (ok) {
+            joinGame(false);
+            return;
+          }
+          setPending([]);
+          const msg =
+            getIdentity()?.isGuest === false
+              ? 'Session expired — sign in again.'
+              : 'Session expired. Restart the app to play again.';
+          setJoinError(msg);
+          setIsSyncing(false);
+        })();
+        if (onError) onError(error);
+        return;
+      }
       setPending([]);
       // isSyncing MUST be cleared here: the GameScreen overlay renders purely
       // off that flag, so leaving it true pins the player on "Connecting to
       // match" indefinitely with no message, while their clock runs down and
       // the game is eventually forfeited in their name.
       const messages: Record<string, string> = {
-        UNAUTHENTICATED: 'Your session expired. Reconnect and try again.',
         NOT_SEATED:
           'This match belongs to a different account. Go back and find a new opponent.',
         GAME_NOT_IN_PROGRESS: 'That match is no longer available. Go back and search again.',
@@ -764,6 +920,23 @@ setOpponentGrace({});
         );
       } else {
         setAfkWarning(null);
+      }
+
+      // Grace truth, whole table including our own seat: a (re)joining client
+      // missed the one-shot broadcasts and would otherwise show no countdown
+      // — least of all for the deadline it is itself racing. A present list
+      // (even empty) replaces the map; an absent list (old server) leaves it.
+      if (sync.grace !== undefined) {
+        const next: Record<string, OpponentGrace> = {};
+        for (const ge of sync.grace) {
+          next[ge.userId] = {
+            userId: ge.userId,
+            playerId: ge.playerId,
+            graceEndsAt: ge.graceEndsAt,
+            seconds: Math.max(0, Math.ceil((ge.graceEndsAt - serverNow()) / 1000)),
+          };
+        }
+        setOpponentGrace(next);
       }
 
       // Prune the pending tail against authoritative truth: anything at or
@@ -936,6 +1109,12 @@ setOpponentGrace({});
       setRematchGameId(payload.gameId);
     };
 
+    const handleRematchDeclined = () => {
+      // The other side dismissed the offer: stop waiting now instead of
+      // idling out the server TTL. The screen clears its sent state.
+      setRematchDeclinedNonce((n) => n + 1);
+    };
+
     const handleFinished = (finished: { gameId: string; playerId: string; userId: string; place: number }) => {
       setLastFinished(finished);
     };
@@ -949,6 +1128,7 @@ setOpponentGrace({});
     socket.on('game:afkWarning', handleAfkWarning);
     socket.on('game:afkCleared', handleAfkCleared);
     socket.on('game:rematchOffered', handleRematchOffered);
+    socket.on('game:rematchDeclined', handleRematchDeclined);
     socket.on('matchmaking:matched', handleRematchMatched);
     socket.on('game:playerFinished', handleFinished);
     socket.on('game:error', handleError);
@@ -963,6 +1143,7 @@ setOpponentGrace({});
       socket.off('game:afkWarning', handleAfkWarning);
       socket.off('game:afkCleared', handleAfkCleared);
       socket.off('game:rematchOffered', handleRematchOffered);
+      socket.off('game:rematchDeclined', handleRematchDeclined);
       socket.off('matchmaking:matched', handleRematchMatched);
       socket.off('game:playerFinished', handleFinished);
       socket.off('game:error', handleError);
@@ -975,8 +1156,10 @@ setOpponentGrace({});
     // inline arrow from GameScreen, so listing it would re-register every
     // socket listener on every render of the screen. The handlers read only
     // refs and setters that are stable for the life of the subscription.
+    // `identity?.userId` (not displayName): a rename must not rejoin the
+    // match — syncIdentity already refreshes the name server-side.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, identity?.userId, identity?.displayName, joinGame, onGameEnded]);
+  }, [gameId, identity?.userId, joinGame, onGameEnded]);
 
   /**
    * Derived display state: the confirmed board with our own unconfirmed
@@ -1095,6 +1278,24 @@ setOpponentGrace({});
     socket.emit('game:rematch', { gameId });
   }, [gameId]);
 
+  /**
+   * Explicitly dismiss an incoming rematch offer: clears it locally AND tells
+   * the server, so the offeror stops waiting out the 30s TTL. Fire-and-forget
+   * by design — the local state is already correct even if the emit drops.
+   */
+  const declineRematch = useCallback(() => {
+    setRematchOffered(false);
+    if (rematchTimerRef.current) {
+      clearTimeout(rematchTimerRef.current);
+      rematchTimerRef.current = null;
+    }
+    try {
+      socketManager.getSocket().emit('game:rematchDecline', { gameId });
+    } catch {
+      // Local state already dismissed; the server TTL is the backstop.
+    }
+  }, [gameId]);
+
 return {
     gameState,
     /** Confirmed board + our in-flight moves, for rendering. See above. */
@@ -1112,19 +1313,25 @@ return {
     myPlayerIndex,
     playerUserIds,
 connStatus,
+    /** OS link verdict: true while the OS reports no usable connection. */
+    linkDown,
     rematchOffered,
     rematchOfferNonce,
+    rematchDeclinedNonce,
     rematchGameId,
     gameEndedResult,
     isSyncing,
     joinError,
     /** Transient rejected-action notice for the player's own card. */
     actionError,
+    /** A queued move the transport discarded after optimistic display. */
+    dropNotice,
     pendingCount,
     lastFinished,
     sendAction,
     resign,
     offerRematch,
+    declineRematch,
     resync: joinGame,
     getSyncClockMs,
   };

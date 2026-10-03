@@ -19,6 +19,19 @@ function formatTimer(seconds?: number): string {
 }
 
 /**
+ * Visual low-time urgency, independent of audio: the 30s sound has a muted
+ * audience, and opponents get no cue at all. ≤30s warns, ≤10s alarms — on
+ * every layout (chip, grid, strip), computed from the same seconds the chip
+ * already renders.
+ */
+function urgencyColor(seconds?: number): string | null {
+  if (seconds === undefined || seconds <= 0) return null;
+  if (seconds <= 10) return THEME.colors.danger;
+  if (seconds <= 30) return THEME.colors.warning;
+  return null;
+}
+
+/**
  * Connection/attention state of a seat, shown on its card.
  *
  * `disconnected` and `afk` are deliberately different values with different
@@ -31,24 +44,33 @@ function formatTimer(seconds?: number): string {
  * terminal join failure, shown where it happened.
  */
 export type SeatStatus =
-  | { kind: 'disconnected'; secondsLeft: number }
-  | { kind: 'afk'; secondsLeft: number }
-  | { kind: 'reconnecting'; pendingCount: number }
+  | { kind: 'disconnected'; secondsLeft: number; mine?: boolean }
+  | { kind: 'afk'; secondsLeft: number; mine?: boolean }
+  | { kind: 'reconnecting'; pendingCount: number; offline?: boolean }
   | { kind: 'rejected'; message: string };
 
 /**
  * One-line card copy for a seat state. Compact cards truncate (`numberOfLines`)
  * at the call site, so server messages stay short on the wire already.
+ *
+ * `mine` states name the consequence, not just the condition: the one human
+ * who can act on the deadline is the one racing it. `offline` distinguishes
+ * a known-dead link from a mere dropped socket.
  */
 export function seatStatusLabel(status: SeatStatus): string {
   switch (status.kind) {
     case 'disconnected':
-      return `Disconnected · ${status.secondsLeft}s`;
+      return status.mine
+        ? `You forfeit in ${status.secondsLeft}s`
+        : `Disconnected · ${status.secondsLeft}s`;
     case 'afk':
-      return `No move · ${status.secondsLeft}s`;
+      return status.mine
+        ? `Move or forfeit · ${status.secondsLeft}s`
+        : `No move · ${status.secondsLeft}s`;
     case 'reconnecting':
+      if (status.offline) return "You're offline · retrying";
       return status.pendingCount > 0
-        ? `Reconnecting… · ${status.pendingCount} pending`
+        ? `Reconnecting… · ${status.pendingCount} to send`
         : 'Reconnecting…';
     case 'rejected':
       return status.message;
@@ -150,6 +172,7 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
   // current truth, so both are hidden until the seat is back.
   const hideStats = status !== null;
   const tone = status ? seatStatusTone(status) : null;
+  const urgent = urgencyColor(timeLeft);
   const statusIcon =
     status?.kind === 'disconnected' || status?.kind === 'reconnecting'
       ? 'wifi-off'
@@ -227,8 +250,12 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
       {/* Right: timer chip — identical on both cards, every turn. */}
       {timeLeft !== undefined && (
         <View style={styles.timerBox}>
-          <MaterialCommunityIcons name="timer-outline" size={17} color={THEME.colors.textSecondaryStrong} />
-          <Text style={styles.timerText}>
+          <MaterialCommunityIcons
+            name="timer-outline"
+            size={17}
+            color={urgent ?? THEME.colors.textSecondaryStrong}
+          />
+          <Text style={[styles.timerText, urgent !== null && { color: urgent }]}>
             {formatTimer(timeLeft)}
           </Text>
           {bonus !== undefined && bonus !== null && bonus > 0 && (
@@ -293,6 +320,7 @@ export const PlayerStrip: React.FC<{
           // Stale while the seat is unreachable: hide rather than freeze.
           const showWalls = !hideWallsBadge && hideWallsForPlayerId !== p.id && seat === null;
           const playerBonus = bonus?.playerId === p.id ? bonus.amount : null;
+          const urgent = urgencyColor(timers?.[p.id]);
           return (
             <View
               key={p.id}
@@ -356,7 +384,9 @@ export const PlayerStrip: React.FC<{
                     </View>
                   )}
                   {timers?.[p.id] !== undefined && (
-                    <Text style={styles.compactTime}>{formatTimer(timers[p.id])}</Text>
+                    <Text style={[styles.compactTime, urgent !== null && { color: urgent }]}>
+                      {formatTimer(timers[p.id])}
+                    </Text>
                   )}
                   {playerBonus !== null && playerBonus > 0 && (
                     <Text style={styles.bonusText}>+{playerBonus}</Text>
@@ -387,6 +417,7 @@ export const PlayerStrip: React.FC<{
           const onPressIdentity = onPressPlayer ? () => onPressPlayer(p.id) : undefined;
           const identityLabel = onPressIdentity ? `View ${p.displayName}'s profile` : undefined;
           const seat = seatStatus?.[p.id] ?? null;
+          const urgent = urgencyColor(timers?.[p.id]);
           return (
             <View
               key={p.id}
@@ -445,7 +476,9 @@ export const PlayerStrip: React.FC<{
                     </View>
                   )}
                   {timers?.[p.id] !== undefined && (
-                    <Text style={styles.compactTime}>{formatTimer(timers[p.id])}</Text>
+                    <Text style={[styles.compactTime, urgent !== null && { color: urgent }]}>
+                      {formatTimer(timers[p.id])}
+                    </Text>
                   )}
                 </View>
               </View>

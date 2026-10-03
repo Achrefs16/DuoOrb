@@ -285,7 +285,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         });
         // The socket observes identity changes itself and rebuilds with the
         // account credential, then migrates live rooms/seats/queue.
-        socketManager.adoptSession(action.accessToken);
+        // A failed migration must not strand the socket on the old identity:
+        // fall back to a plain re-sync so the new credential still connects.
+        socketManager.adoptSession(action.accessToken).then((ok) => {
+          if (!ok) socketManager.syncWithIdentity();
+        });
         if (mergingGuest) void linkGuestProgress(action.accessToken, mergingGuest);
 
         const next = await loadCanonicalProfile(action.accessToken, fetchProfile);

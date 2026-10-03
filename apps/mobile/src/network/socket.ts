@@ -4,9 +4,23 @@ import { io, Socket } from 'socket.io-client';
 import type { ClientToServerEvents, ServerToClientEvents } from '@duoorb/protocol';
 import { SERVER_URL } from './config';
 import { getIdentity, subscribeIdentity } from './auth';
-import { COPY } from './errors';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
+
+/** A queued intent the transport discarded instead of sending. */
+export interface DroppedIntent {
+  event: string;
+  gameId?: string;
+  clientActionId?: string;
+}
+
+function toDroppedIntent(event: string, args: unknown[]): DroppedIntent {
+  const first = args[0] as { gameId?: unknown; clientActionId?: unknown } | undefined;
+  const out: DroppedIntent = { event };
+  if (typeof first?.gameId === 'string') out.gameId = first.gameId;
+  if (typeof first?.clientActionId === 'string') out.clientActionId = first.clientActionId;
+  return out;
+}
 
 type StatusListener = (status: ConnectionStatus) => void;
 type RawSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -36,6 +50,15 @@ const QUEUEABLE_EVENTS = new Set<string>([
  * socket.io survives on its own.
  */
 const OFFLINE_TEARDOWN_MS = 6000;
+
+/**
+ * Quiet period after socket.io gives up (15 failed attempts): the transport
+ * stays down instead of being re-cranked by every join tick, which used to
+ * restart fresh 15-burst loops forever on a dead server (battery + load).
+ * Re-armed by a real signal only: NetInfo back online, a new scoped game, an
+ * explicit retryNow(), a credential rebuild, or a successful connect.
+ */
+const RECONNECT_COOLDOWN_MS = 45000;
 
 /**
  * The socket transport is a pure function of the canonical identity.
@@ -73,12 +96,76 @@ class SocketManager {
    */
   private authDead = false;
   /**
+   * When socket.io exhausted its attempts. ensureConnected() will not crank
+   * the transport again until RECONNECT_COOLDOWN_MS passes or a re-arm
+   * signal arrives (see above). Null means no give-up is in effect.
+   */
+  private giveUpAt: number | null = null;
+  /**
    * Emits waiting for a transport: joins, leaves and moves only, max 20,
    * 30s TTL. Everything else (presence, reactions, probes) is stale by the
    * time the transport returns and is dropped, never queued.
    */
   private emitQueue: { event: string; args: unknown[]; at: number }[] = [];
   private netWatched = false;
+  /**
+   * Last OS link verdict: true after an explicit offline report, false after
+   * an online one. Lets the UI say "You're offline" instead of a generic
+   * "Reconnecting…" while the transport is down for a known-dead link.
+   */
+  private linkDown = false;
+  private linkListeners = new Set<(down: boolean) => void>();
+  /**
+   * Intents the queue silently discarded: cap overflow (oldest shifted out)
+   * or TTL expiry (older than 30s at flush). Deliberate routing drops
+   * (stale leaves, cross-game scope) are NOT reported — only genuine
+   * losses, so the game channel can roll the optimistic tail back instead
+   * of rendering a move that will never send.
+   */
+  private dropListeners = new Set<(dropped: DroppedIntent[]) => void>();
+
+  /** Subscribe to silent queue losses. Returns the unsubscribe. */
+  public subscribeDrops(fn: (dropped: DroppedIntent[]) => void): () => void {
+    this.dropListeners.add(fn);
+    return () => {
+      this.dropListeners.delete(fn);
+    };
+  }
+
+  private notifyDrops(dropped: DroppedIntent[]): void {
+    if (dropped.length === 0) return;
+    for (const fn of this.dropListeners) {
+      try {
+        fn(dropped);
+      } catch {
+        // One bad listener must not break the rest.
+      }
+    }
+  }
+  /** Current OS link verdict (see above). */
+  public isLinkDown(): boolean {
+    return this.linkDown;
+  }
+
+  /** Subscribe to OS link verdict changes. Returns the unsubscribe. */
+  public subscribeLink(fn: (down: boolean) => void): () => void {
+    this.linkListeners.add(fn);
+    return () => {
+      this.linkListeners.delete(fn);
+    };
+  }
+
+  private setLinkDown(down: boolean): void {
+    if (this.linkDown === down) return;
+    this.linkDown = down;
+    for (const fn of this.linkListeners) {
+      try {
+        fn(down);
+      } catch {
+        // One bad listener must not break the rest.
+      }
+    }
+  }
   /**
    * Game the app is currently in, set by the online channel. Queue replay
    * is scoped to it: a move or join for a PREVIOUS game flushed after a
@@ -90,6 +177,11 @@ class SocketManager {
 
   /** Scopes offline-queue replay to one game (see above). Null clears. */
   public setScopedGame(gameId: string | null): void {
+    if (gameId !== this.scopedGameId) {
+      // A new match is a fresh start: a give-up from the previous game must
+      // not gate this one's connects for the remainder of the cooldown.
+      this.giveUpAt = null;
+    }
     this.scopedGameId = gameId;
   }
 
@@ -121,7 +213,13 @@ class SocketManager {
           );
         } else if (self.isQueueable(event)) {
           self.emitQueue.push({ event, args, at: Date.now() });
-          while (self.emitQueue.length > 20) self.emitQueue.shift();
+          // Cap overflow discards the OLDEST intents — genuinely lost, so
+          // report them for optimistic rollback instead of rendering moves
+          // that will never send.
+          if (self.emitQueue.length > 20) {
+            const lost = self.emitQueue.splice(0, self.emitQueue.length - 20);
+            self.notifyDrops(lost.map((q) => toDroppedIntent(q.event, q.args)));
+          }
         }
         // Anything else emitted while down is dropped, not queued.
         return self.facade;
@@ -206,9 +304,21 @@ class SocketManager {
   private flushQueue(): void {
     if (this.emitQueue.length === 0) return;
     const now = Date.now();
+    const expired = this.emitQueue.filter((q) => now - q.at > 30000);
+    this.notifyDrops(expired.map((q) => toDroppedIntent(q.event, q.args)));
     const due = this.emitQueue.filter((q) => now - q.at <= 30000);
     this.emitQueue = [];
     if (!this.raw?.connected) return;
+    // Join-owns-tail: a game:action carrying an idempotency key is part of
+    // the channel's pending tail, which every game:join in this batch
+    // resubmits. Flushing both double-submits (safe only by server dedupe);
+    // the join alone suffices. Keyless actions (legacy/raw emits outside
+    // any tail) still flush exactly as before.
+    const joinedGames = new Set(
+      due
+        .filter((q) => q.event === 'game:join')
+        .map((q) => (q.args[0] as { gameId?: unknown } | undefined)?.gameId)
+    );
     for (const q of due) {
       // A leave that sat in the queue is stale by definition: the socket it
       // was meant for is gone and the player has since moved on. Sending it
@@ -229,6 +339,15 @@ class SocketManager {
       ) {
         console.warn(`[socket] dropped queued ${q.event} for a previous game`);
         continue;
+      }
+      // Join-owns-tail (see above): skip the keyed action, the join in this
+      // batch carries it.
+      if (q.event === 'game:action' && typeof scopedTo === 'string' && joinedGames.has(scopedTo)) {
+        const key = (q.args[0] as { clientActionId?: unknown } | undefined)?.clientActionId;
+        if (typeof key === 'string' && key.length > 0) {
+          console.warn(`[socket] join owns the tail: skipping queued game:action for ${scopedTo}`);
+          continue;
+        }
       }
       try {
         (this.raw as unknown as { emit: (e: string, ...a: unknown[]) => void }).emit(
@@ -271,7 +390,11 @@ class SocketManager {
       // token. Tearing the transport down here would drop a live match into
       // a grace window for no reason — the live handshake keeps working,
       // and socket.io presents the updated `auth` on the next (re)connect.
+      // A new credential also retries freely: any previous auth rejection
+      // belonged to the old one, so authDead dies with it. Without this a
+      // 401 followed by a successful refresh stayed offline until restart.
       this.boundTo = next;
+      this.authDead = false;
       try {
         (this.raw as unknown as { auth: unknown }).auth = { token: next.token };
       } catch {
@@ -285,6 +408,7 @@ class SocketManager {
     // A new credential retries freely: any previous auth rejection belonged
     // to the old one.
     this.authDead = false;
+    this.giveUpAt = null;
     this.raw = this.buildRaw(identity.userId, identity.displayName, next.token);
     this.raw.connect();
   }
@@ -322,7 +446,21 @@ class SocketManager {
 
     s.on('connect', () => {
       this.setStatus('connected');
+      // A live connection proves the credential and the server at once.
+      this.authDead = false;
+      this.giveUpAt = null;
       this.flushQueue();
+    });
+
+    // Superseded: this account connected elsewhere, which is now the single
+    // controlling session. Standing down (instead of lingering half-dead,
+    // missing directs and acting on stale boards) is the honest move.
+    s.on('session:superseded', () => {
+      console.warn('[socket] superseded: same account connected elsewhere, standing down');
+      void import('../components/AppToast')
+        .then((m) => m.toast.show('Signed in on another device. This session disconnected.'))
+        .catch(() => {});
+      this.disconnect();
     });
 
     s.on('disconnect', (reason) => {
@@ -343,8 +481,15 @@ class SocketManager {
           // Already down.
         }
         this.setStatus('disconnected');
+        // Guest-aware copy: guests have no sign-in to go to.
         void import('../components/AppToast')
-          .then((m) => m.toast.show(COPY.sessionExpired))
+          .then((m) =>
+            m.toast.show(
+              getIdentity()?.isGuest === false
+                ? 'Session expired, sign in again.'
+                : 'Session expired. Restart to play again.'
+            )
+          )
           .catch(() => {});
       } else {
         this.setStatus('reconnecting');
@@ -353,7 +498,8 @@ class SocketManager {
 
     s.io.on('reconnect_attempt', () => this.setStatus('reconnecting'));
     s.io.on('reconnect_failed', () => {
-      console.warn('[socket] reconnect_failed: giving up, staying disconnected');
+      console.warn('[socket] reconnect_failed: cooling down, transport stays down');
+      this.giveUpAt = Date.now();
       this.setStatus('disconnected');
     });
     s.io.on('reconnect', () => {
@@ -384,7 +530,16 @@ class SocketManager {
     void import('@react-native-community/netinfo')
       .then((m) => {
         m.default.addEventListener((s) => {
-          if (s.isConnected === false) {
+          // A captive portal (connected, not reachable) is NOT online:
+          // treating it as online used to hammer connect() against a login
+          // page. Unknown reachability (null) is trusted — only an explicit
+          // false arms the teardown.
+          const online =
+            s.isConnected === true && s.isInternetReachable !== false;
+          const offline =
+            s.isConnected === false || s.isInternetReachable === false;
+          if (offline) {
+            this.setLinkDown(true);
             // Wait out the blip: socket.io's own heartbeat/retry reports
             // the truth meanwhile, and a quick recovery cancels this with
             // the transport (and its retry budget) intact.
@@ -394,11 +549,16 @@ class SocketManager {
               this.disposeRaw();
               this.setStatus('disconnected');
             }, OFFLINE_TEARDOWN_MS);
-          } else if (s.isConnected === true) {
+          } else if (online) {
+            this.setLinkDown(false);
             if (this.offlineTimer) {
               clearTimeout(this.offlineTimer);
               this.offlineTimer = null;
             }
+            // A real network signal re-arms everything: post-give-up
+            // cooldown included. This is what lets a dead-server error
+            // recover without an app restart when the link returns.
+            this.giveUpAt = null;
             this.syncWithIdentity();
             this.ensureConnected();
           }
@@ -406,7 +566,18 @@ class SocketManager {
       })
       .catch(() => {
         // No NetInfo here: socket still works, just without offline gating.
+        console.warn('[socket] NetInfo unavailable: offline gating disabled');
       });
+  }
+
+  /**
+   * Explicit user retry (e.g. a "try again" affordance after a join error):
+   * drops any post-give-up cooldown and cranks the transport now, instead
+   * of waiting out RECONNECT_COOLDOWN_MS.
+   */
+  public retryNow(): void {
+    this.giveUpAt = null;
+    this.ensureConnected();
   }
 
   private ensureConnected(): void {
@@ -422,6 +593,12 @@ class SocketManager {
     }
     // A rejected credential never reconnects on its own.
     if (this.authDead) return;
+    // Post-give-up cooldown: the join tick is not allowed to restart burst
+    // loops on a dead server. Re-armed by NetInfo, retryNow(), a rebuild, a
+    // new scoped game, or a successful connect — never by the tick itself.
+    if (this.giveUpAt !== null && Date.now() - this.giveUpAt < RECONNECT_COOLDOWN_MS) {
+      return;
+    }
     if (!this.raw) {
       this.syncWithIdentity();
       return;
@@ -488,6 +665,8 @@ class SocketManager {
     this.boundTo = null;
     // Explicit teardown drops queued intents with the session they belong to.
     this.emitQueue = [];
+    // A fresh session starts with a clean slate: no stale give-up gating it.
+    this.giveUpAt = null;
     this.setStatus('disconnected');
   }
 }

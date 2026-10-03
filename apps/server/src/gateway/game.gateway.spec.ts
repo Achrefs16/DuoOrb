@@ -32,6 +32,7 @@ function fakeServer(roomName = 'g1') {
       adapter: { rooms: { get: (r: string) => (r === roomName ? room : undefined) } },
       sockets: {
         get: (id: string) => liveSockets.get(id),
+        has: (id: string) => liveSockets.has(id),
       },
     },
     to: (target: any) => ({
@@ -314,5 +315,464 @@ describe('GameGateway join pump', () => {
     const game = gw.gameService.getGame('jp1')!;
     if (game.timerInterval) clearInterval(game.timerInterval);
     for (const t of game.afkTimers.values()) clearTimeout(t);
+  });
+});
+
+/**
+ * F1 terminal-path unification: every ended game must flow through endGame()
+ * (persist → emit → free seats/presence/room). The regression this exists
+ * for: terminal resign emitted `game:ended` but never freed the game, so the
+ * room stayed IN_GAME and both players looked permanently "playing".
+ */
+describe('GameGateway terminal resign (F1)', () => {
+  function seatedGateway() {
+    const { gateway } = makeGateway();
+    const gw = gateway as any;
+    const f = fakeServer('g1');
+    gw.server = f.server;
+    gw.socketUserMap.set('sock-A', { userId: 'uA', displayName: 'A', rating: 1500, verified: true });
+    gw.userSocketMap.set('uA', 'sock-A');
+    gw.activeGameUserMap.set('uA', 'g1');
+    gw.activeGameUserMap.set('uB', 'g1');
+    vi.spyOn(gw.gameService, 'getGame').mockReturnValue({
+      playerUserIds: { p1: 'uA', p2: 'uB' },
+    } as any);
+    vi.spyOn(gw.gameService, 'persistCompleted').mockResolvedValue(undefined);
+    return { gw, f };
+  }
+
+  it('terminal resign emits ended, frees both seats, and returns the room to lobby', async () => {
+    const { gw, f } = seatedGateway();
+    const room = gw.roomService.createRoom('uA', 'A', 'classic', 5);
+    room.status = 'IN_GAME';
+    gw.gameRoomMap.set('g1', room.id);
+    const ended = { gameId: 'g1', reason: 'RESIGNATION' };
+    vi.spyOn(gw.gameService, 'resign').mockResolvedValue({
+      success: true,
+      recorded: { seq: 1 },
+      finished: { playerId: 'p1', userId: 'uA', place: 2 },
+      ended,
+    } as any);
+    const client = { id: 'sock-A', handshake: { query: {} }, emit: vi.fn() };
+
+    await gw.handleResign(client, { gameId: 'g1' });
+
+    const events = f.emits.map((e: { event: string }) => e.event);
+    expect(events).toContain('game:ended');
+    // Seats freed so rematch/challenge/matchmaking work again.
+    expect(gw.activeGameUserMap.has('uA')).toBe(false);
+    expect(gw.activeGameUserMap.has('uB')).toBe(false);
+    // Room handed back to its lobby and announced.
+    expect(gw.gameRoomMap.has('g1')).toBe(false);
+    expect(room.status).toBe('WAITING');
+    expect(events).toContain('room:state');
+  });
+
+  it('mid-table forfeit emits the forfeit move before playerFinished', () => {
+    const { gateway } = makeGateway();
+    const gw = gateway as any;
+    const f = fakeServer('g1');
+    gw.server = f.server;
+    const move = { seq: 7, action: { type: 'TIMEOUT' } };
+
+    gw.emitMidGameForfeit('g1', null, { playerId: 'p1', userId: 'uA', place: 2 }, move as any);
+
+    expect(f.emits.map((e: { event: string }) => e.event)).toEqual([
+      'game:actionAccepted',
+      'game:playerFinished',
+    ]);
+  });
+});
+
+/**
+ * F2 guarded creation + migration unity.
+ */
+describe('GameGateway createGameChecked + migrateIdentity (F2)', () => {
+  function liveGateway() {
+    const { gateway } = makeGateway();
+    const gw = gateway as any;
+    const f = fakeServer('g1');
+    gw.server = f.server;
+    return { gw, f };
+  }
+
+  function seatLive(gw: any, userId: string, socketId: string, clients: Map<string, any>) {
+    gw.socketUserMap.set(socketId, { userId, displayName: userId, rating: 1500, verified: true });
+    gw.userSocketMap.set(userId, socketId);
+    clients.set(socketId, { id: socketId, join: () => {} });
+  }
+
+  it('refuses to create a game with an offline seat — nothing is created', async () => {
+    const { gw } = liveGateway();
+    const clients = new Map<string, any>();
+    seatLive(gw, 'uA', 'sock-A', clients);
+    // uB has no socket at all.
+    gw.server.sockets.sockets.get = (id: string) => clients.get(id);
+    const createSpy = vi.spyOn(gw.gameService, 'createGame');
+
+    const res = await gw.createGameChecked({
+      gameId: 'gX',
+      mode: '2p',
+      seatUserIds: ['uA', 'uB'],
+      timeControlMinutes: 3,
+      isRanked: true,
+    });
+
+    expect(res.success).toBe(false);
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(gw.activeGameUserMap.has('uA')).toBe(false);
+  });
+
+  it('challenge accept with an offline sender dies like a decline (C2)', async () => {
+    const { gw, f } = liveGateway();
+    const clients = new Map<string, any>();
+    // Recipient live; sender gone.
+    seatLive(gw, 'uB', 'sock-B', clients);
+    gw.server.sockets.sockets.get = (id: string) => clients.get(id);
+    vi.spyOn(gw.challengeService, 'resolve').mockReturnValue({
+      success: true,
+      challenge: {
+        id: 'c1', fromUserId: 'uA', fromDisplayName: 'A', toUserId: 'uB',
+        mode: '2p', timeControlMinutes: 3, incrementSeconds: 0, wallsEach: 10,
+      },
+    } as any);
+    vi.spyOn(gw, 'isBlockedBetween').mockResolvedValue(false);
+    const createSpy = vi.spyOn(gw.gameService, 'createGame');
+    const client = { id: 'sock-B', handshake: { query: {} }, emit: vi.fn() };
+
+    const res = await gw.handleChallengeRespond(client, { challengeId: 'c1', accept: true });
+
+    expect(res.success).toBe(false);
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(gw.activeGameUserMap.has('uB')).toBe(false);
+    expect(f.emits).toHaveLength(0); // nobody told about a match that never came
+  });
+
+  it('isUserInLiveGame resolves seats by playerId: finished seats do not block (M1)', () => {
+    const { gw } = liveGateway();
+    gw.activeGameUserMap.set('uA', 'g1');
+    gw.activeGameUserMap.set('uB', 'g1');
+    vi.spyOn(gw.gameService, 'getGame').mockReturnValue({
+      state: {
+        status: 'IN_PROGRESS',
+        players: [
+          { id: 'p1', status: 'FINISHED' },
+          { id: 'p2', status: 'ACTIVE' },
+        ],
+      },
+      userPlayerIds: { uA: 'p1', uB: 'p2' },
+    } as any);
+
+    expect(gw.isUserInLiveGame('uA')).toBe(false);
+    expect(gw.isUserInLiveGame('uB')).toBe(true);
+    expect(gw.isUserInLiveGame('uNobody')).toBe(false);
+  });
+
+  it('migrateIdentity moves state, drops stale routing, and refuses live steals', () => {
+    const { gw } = liveGateway();
+    const joins: string[] = [];
+    const client = { id: 's-new', join: (r: string) => joins.push(r) };
+    // Previous identity on a dead socket: free to migrate.
+    gw.socketUserMap.set('s-new', { userId: 'uGuest', displayName: 'G', rating: 1500, verified: true });
+    gw.userSocketMap.set('uGuest', 's-dead');
+    gw.activeGameUserMap.set('uGuest', 'g1');
+    gw.server.sockets.sockets.get = () => undefined;
+
+    const ok = gw.migrateIdentity('uGuest', 'uAcc', 'Acc', client as any, 1500);
+
+    expect(ok).toEqual({ success: true });
+    expect(gw.userSocketMap.get('uGuest')).toBeUndefined();
+    expect(gw.userSocketMap.get('uAcc')).toBe('s-new');
+    expect(gw.activeGameUserMap.get('uAcc')).toBe('g1');
+    expect(gw.activeGameUserMap.has('uGuest')).toBe(false);
+
+    // Same call against a LIVE previous socket: refusal, nothing moved.
+    gw.userSocketMap.set('uLive', 's-live');
+    gw.server.sockets.sockets.get = (id: string) =>
+      id === 's-live' ? { id: 's-live' } : undefined;
+    const refused = gw.migrateIdentity('uLive', 'uAcc2', 'Acc2', client as any, 1500);
+    expect(refused.success).toBe(false);
+    expect(gw.userSocketMap.get('uLive')).toBe('s-live');
+    expect(gw.userSocketMap.has('uAcc2')).toBe(false);
+  });
+});
+
+/**
+ * F3 sweep liveness: dead queue entries are purged before matching, and the
+ * matched event reaches live sockets (not pre-sweep snapshots).
+ */
+describe('GameGateway sweep liveness (F3)', () => {
+  function queued(mm: any, userId: string, socketId: string) {
+    mm.addToQueue({
+      userId, displayName: userId, rating: 1500, mode: '2p' as const,
+      timeControlMinutes: 3, incrementSeconds: 0, wallsEach: 10,
+      joinedAt: Date.now(), socketId,
+    });
+  }
+
+  it('purges dead queue entries, matches the live pair on live sockets', async () => {
+    const { gateway } = makeGateway();
+    const gw = gateway as any;
+    const f = fakeServer('g1');
+    gw.server = f.server;
+    // Real Map so purgeDisconnected (.has) and lookups (.get) both work.
+    const liveSockets = new Map<string, any>();
+    for (const [uid, sid] of [['uA', 'sock-A'], ['uB', 'sock-B']]) {
+      gw.socketUserMap.set(sid, { userId: uid, displayName: uid, rating: 1500, verified: true });
+      gw.userSocketMap.set(uid, sid);
+      liveSockets.set(sid, { id: sid, join: () => {} });
+    }
+    gw.server.sockets.sockets = liveSockets;
+    queued(gw.matchmakingService, 'uA', 'sock-A');
+    queued(gw.matchmakingService, 'uB', 'sock-B');
+    queued(gw.matchmakingService, 'uGhost', 'sock-dead');
+
+    await gw.runMatchmakingSweep();
+
+    // Live pair seated in one game; ghost purged, never seated, queue empty.
+    const gA = gw.activeGameUserMap.get('uA');
+    expect(gA).toBeTruthy();
+    expect(gw.activeGameUserMap.get('uB')).toBe(gA);
+    expect(gw.matchmakingService.getQueueLength()).toBe(0);
+    const matched = f.emits.filter((e: { event: string }) => e.event === 'matchmaking:matched');
+    expect(matched.map((e: { target: unknown }) => e.target).sort()).toEqual(['sock-A', 'sock-B']);
+
+    // Cleanup: the sweep created a real game with real timers.
+    const game = gw.gameService.getGame(gA);
+    if (game?.timerInterval) clearInterval(game.timerInterval);
+    if (game) for (const t of game.afkTimers.values()) clearTimeout(t);
+  });
+});
+
+/**
+ * F5 ping gating: latency samples are trusted only from the turn holder, in
+ * a live game, at most one per second. Anything wider let any seat bank the
+ * refund cap with backdated stamps, farmed off-turn.
+ */describe('GameGateway ping gating (F5)', () => {
+  function pingGame() {
+    const { gateway } = makeGateway();
+    const gw = gateway as any;
+    const f = fakeServer('gping');
+    gw.server = f.server;
+    const R = { rating: 1500, rd: 350, vol: 0.06 };
+    gw.gameService.createGame({
+      gameId: 'gping',
+      mode: '2p' as const,
+      users: [
+        { userId: 'uA', displayName: 'A', rating: R },
+        { userId: 'uB', displayName: 'B', rating: R },
+      ],
+      timeControlMinutes: 3,
+      isRanked: true,
+    });
+    gw.gameService.markSeatJoined('gping', 'uA');
+    gw.gameService.markSeatJoined('gping', 'uB');
+    gw.socketUserMap.set('sock-A', { userId: 'uA', displayName: 'A', rating: 1500, verified: true });
+    gw.socketUserMap.set('sock-B', { userId: 'uB', displayName: 'B', rating: 1500, verified: true });
+    const sock = (id: string) => ({ id, handshake: { query: {} } }) as any;
+    return { gw, sock };
+  }
+
+  function cleanup(gw: any) {
+    const game = gw.gameService.getGame('gping');
+    if (game?.timerInterval) clearInterval(game.timerInterval);
+    if (game?.quorumTimeout) clearTimeout(game.quorumTimeout);
+    if (game?.flagTimeout) clearTimeout(game.flagTimeout);
+    if (game) for (const t of game.afkTimers.values()) clearTimeout(t);
+  }
+
+  it('samples only the turn holder, throttled — ack always answers', () => {
+    const { gw, sock } = pingGame();
+    try {
+      const rec = vi.spyOn(gw.gameService, 'recordLatency');
+      const ack = vi.fn();
+      // uB is not on turn (uA opens): ignored.
+      gw.handleGamePing(sock('sock-B'), { gameId: 'gping', clientSentAt: Date.now() - 100 }, ack);
+      expect(rec).not.toHaveBeenCalled();
+      // Holder's sample records...
+      gw.handleGamePing(sock('sock-A'), { gameId: 'gping', clientSentAt: Date.now() - 100 }, ack);
+      expect(rec).toHaveBeenCalledTimes(1);
+      // ...but a second sample inside the throttle window does not.
+      gw.handleGamePing(sock('sock-A'), { gameId: 'gping', clientSentAt: Date.now() - 100 }, ack);
+      expect(rec).toHaveBeenCalledTimes(1);
+      // The ack (client clock correction) is ungated: probes stay useful
+      // for sync even when the sample is refused.
+      expect(ack).toHaveBeenCalledTimes(3);
+    } finally {
+      cleanup(gw);
+    }
+  });
+});
+
+/**
+ * F8 explicit rematch decline: the offeror stops waiting now instead of
+ * idling out the 30s server TTL.
+ */describe('GameGateway rematch decline (F8)', () => {
+  it('decline clears the offer and notifies the room', () => {
+    const { gateway } = makeGateway();
+    const gw = gateway as any;
+    const f = fakeServer('gold');
+    gw.server = f.server;
+    const R = { rating: 1500, rd: 350, vol: 0.06 };
+    gw.gameService.createGame({
+      gameId: 'gold',
+      mode: '2p' as const,
+      users: [
+        { userId: 'uA', displayName: 'A', rating: R },
+        { userId: 'uB', displayName: 'B', rating: R },
+      ],
+      timeControlMinutes: 3,
+      isRanked: true,
+    });
+    try {
+      const game = gw.gameService.getGame('gold');
+      game.state.status = 'COMPLETED';
+      game.rematchOffers.add('uA'); // offeror waiting
+      gw.socketUserMap.set('sock-B', { userId: 'uB', displayName: 'B', rating: 1500, verified: true });
+
+      gw.handleRematchDecline({ id: 'sock-B', handshake: { query: {} } } as any, { gameId: 'gold' });
+
+      expect(game.rematchOffers.has('uA')).toBe(true); // offeror's wait untouched server-side
+      expect(game.rematchOffers.has('uB')).toBe(false);
+      const declined = f.emits.filter((e: { event: string }) => e.event === 'game:rematchDeclined');
+      expect(declined).toHaveLength(1);
+      expect(declined[0].payload).toMatchObject({ gameId: 'gold', byUserId: 'uB' });
+      // Strangers and live games: silent no-ops, no broadcast.
+      gw.handleRematchDecline({ id: 'sock-X', handshake: { query: {} } } as any, { gameId: 'gold' });
+      game.state.status = 'IN_PROGRESS';
+      gw.handleRematchDecline({ id: 'sock-B', handshake: { query: {} } } as any, { gameId: 'gold' });
+      expect(f.emits.filter((e: { event: string }) => e.event === 'game:rematchDeclined')).toHaveLength(1);
+    } finally {
+      const game = gw.gameService.getGame('gold');
+      if (game?.timerInterval) clearInterval(game.timerInterval);
+      if (game?.quorumTimeout) clearTimeout(game.quorumTimeout);
+      if (game?.flagTimeout) clearTimeout(game.flagTimeout);
+      if (game) for (const t of game.afkTimers.values()) clearTimeout(t);
+    }
+  });
+});
+
+/**
+ * F10 lobby hygiene on disconnect + fail-closed challenges + ready auth.
+ */
+describe('GameGateway lobby hygiene (F10)', () => {
+  function liveGateway() {
+    const { gateway } = makeGateway();
+    const gw = gateway as any;
+    const f = fakeServer('g1');
+    gw.server = f.server;
+    return { gw, f };
+  }
+
+  it('disconnect frees WAITING seats (host hands over) with a broadcast', () => {
+    const { gw, f } = liveGateway();
+    const room = gw.roomService.createRoom('uA', 'A', '2p', 3, 0, 10);
+    gw.roomService.joinRoom(room.code, 'uB', 'B');
+    gw.socketUserMap.set('sock-A', { userId: 'uA', displayName: 'A', rating: 1500, verified: true });
+    gw.socketUserMap.set('sock-B', { userId: 'uB', displayName: 'B', rating: 1500, verified: true });
+    gw.userSocketMap.set('uA', 'sock-A');
+    gw.userSocketMap.set('uB', 'sock-B');
+
+    gw.handleDisconnect({ id: 'sock-A', handshake: { query: {} } } as any);
+
+    const after = gw.roomService.getRoom(room.id);
+    expect(after.slots.some((s: any) => s.userId === 'uA')).toBe(false);
+    expect(after.hostId).toBe('uB');
+    const states = f.emits.filter((e: { event: string }) => e.event === 'room:state');
+    expect(states.length).toBeGreaterThan(0);
+  });
+
+  it('disconnect never ejects a seat from an IN_GAME room', () => {
+    const { gw } = liveGateway();
+    const room = gw.roomService.createRoom('uA', 'A', '2p', 3, 0, 10);
+    gw.roomService.joinRoom(room.code, 'uB', 'B');
+    room.status = 'IN_GAME';
+    gw.socketUserMap.set('sock-A', { userId: 'uA', displayName: 'A', rating: 1500, verified: true });
+    gw.userSocketMap.set('uA', 'sock-A');
+
+    gw.handleDisconnect({ id: 'sock-A', handshake: { query: {} } } as any);
+
+    const after = gw.roomService.getRoom(room.id);
+    expect(after.slots.some((s: any) => s.userId === 'uA')).toBe(true);
+  });
+
+  it('challenges fail closed while the database is unreachable', async () => {
+    const { gw } = liveGateway(); // makeGateway(false): prisma disconnected
+    gw.socketUserMap.set('sock-A', { userId: 'uA', displayName: 'A', rating: 1500, verified: true });
+    const sendRes = await gw.handleChallengeSend(
+      { id: 'sock-A', handshake: { query: {} } } as any,
+      { toUserId: 'uB', mode: '2p', timeControlMinutes: 3 }
+    );
+    expect(sendRes.success).toBe(false);
+    expect(sendRes.error).toMatch(/blocks/i);
+  });
+
+  it('room:ready from an unverified socket answers instead of silent-return', () => {
+    const { gw, f } = liveGateway();
+    const client = {
+      id: 'sock-X',
+      handshake: { query: {} },
+      emit: vi.fn(),
+    };
+    gw.handleRoomReady(client as any, { roomId: 'r1', isReady: true });
+    expect(client.emit).toHaveBeenCalledWith(
+      'game:error',
+      expect.objectContaining({ code: 'UNAUTHENTICATED' })
+    );
+    expect(f.emits).toHaveLength(0);
+  });
+});
+
+/**
+ * F11 join pump edges: dead sockets skipped, long tails paged, live mapping.
+ */
+describe('GameGateway join pump edges (F11)', () => {
+  it('replays a >20 tail fully instead of truncating silently (M6)', async () => {
+    const { gateway } = makeGateway(false);
+    const gw = gateway as any;
+    const roomEmits: { event: string; payload: unknown }[] = [];
+    gw.server = {
+      sockets: { sockets: { get: () => undefined }, adapter: { rooms: { get: () => undefined } } },
+      to: () => ({ emit: (event: string, payload: unknown) => roomEmits.push({ event, payload }) }),
+    };
+    gw.gameService.createGame({
+      gameId: 'jp-long',
+      mode: '2p',
+      users: [
+        { userId: 'uA', displayName: 'A', rating: { rating: 1500, rd: 350, vol: 0.06 } },
+        { userId: 'uB', displayName: 'B', rating: { rating: 1500, rd: 350, vol: 0.06 } },
+      ],
+      timeControlMinutes: 3,
+      isRanked: true,
+    });
+    gw.socketUserMap.set('sock-A', { userId: 'uA', displayName: 'A', rating: 1500, verified: true });
+    gw.userSocketMap.set('uA', 'sock-A');
+    const syncs: unknown[] = [];
+    const client = {
+      id: 'sock-A',
+      handshake: { query: {} },
+      join: () => {},
+      emit: (event: string, payload: unknown) => {
+        if (event === 'game:sync') syncs.push(payload);
+      },
+    };
+    const resubmit = vi.spyOn(gw.gameService, 'resubmitAction');
+    const pendings = Array.from({ length: 25 }, (_, i) => ({
+      clientActionId: `long-${i}`,
+      action: { type: 'MOVE', to: { row: 7, col: 4 } },
+    }));
+    try {
+      gw.handleJoinGame(client, { gameId: 'jp-long', lastSequence: 0, pendingActions: pendings });
+      await new Promise((r) => setTimeout(r, 50));
+      // Paginated, not truncated at 20: every entry offered to validation.
+      expect(resubmit).toHaveBeenCalledTimes(25);
+      expect(syncs).toHaveLength(1);
+    } finally {
+      const game = gw.gameService.getGame('jp-long');
+      if (game?.timerInterval) clearInterval(game.timerInterval);
+      if (game?.quorumTimeout) clearTimeout(game.quorumTimeout);
+      if (game?.flagTimeout) clearTimeout(game.flagTimeout);
+      if (game) for (const t of game.afkTimers.values()) clearTimeout(t);
+    }
   });
 });

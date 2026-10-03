@@ -29,6 +29,7 @@ const created: any[] = [];
 vi.mock('socket.io-client', () => ({
   io: (_url: string, opts: any) => {
     const listeners = new Map<string, Set<Function>>();
+    const ioListeners = new Map<string, Set<Function>>();
     const emitted: { event: string; args: unknown[] }[] = [];
     const socket: any = {
       opts,
@@ -63,7 +64,14 @@ vi.mock('socket.io-client', () => ({
         return socket;
       },
       io: {
-        on() {},
+        on(event: string, fn: Function) {
+          if (!ioListeners.has(event)) ioListeners.set(event, new Set());
+          ioListeners.get(event)!.add(fn);
+        },
+        // test helper: deliver a manager-level event (reconnect_failed, ...)
+        __fireIo(event: string, ...args: unknown[]) {
+          ioListeners.get(event)?.forEach((fn) => fn(...args));
+        },
       },
       // test helper: deliver a server event to whatever is attached now
       __fire(event: string, ...args: unknown[]) {
@@ -335,6 +343,73 @@ describe('offline emit queue', () => {
 
     expect(created[0].emitted.map((e: any) => e.event)).toContain('game:join');
   });
+
+  it('join owns the tail: a keyed action is skipped when its join is queued (R4)', () => {
+    socket.emit('game:join', { gameId: 'g1' });
+    socket.emit('game:action', {
+      gameId: 'g1',
+      action: { type: 'MOVE', to: { row: 0, col: 0 } },
+      clientTimestamp: Date.now(),
+      clientActionId: 'tail-1',
+    });
+    comeBackOnline();
+
+    // The join resubmits the whole pending tail server-side; flushing the
+    // action too would double-submit it.
+    const replayed = created[0].emitted.map((e: any) => e.event);
+    expect(replayed).toContain('game:join');
+    expect(replayed).not.toContain('game:action');
+  });
+
+  it('still flushes keyless actions alongside a join (legacy/raw emits)', () => {
+    socket.emit('game:join', { gameId: 'g1' });
+    socket.emit('game:action', {
+      gameId: 'g1',
+      action: { type: 'MOVE', to: { row: 0, col: 0 } },
+      clientTimestamp: Date.now(),
+    });
+    comeBackOnline();
+
+    const replayed = created[0].emitted.map((e: any) => e.event);
+    expect(replayed).toContain('game:join');
+    expect(replayed).toContain('game:action');
+  });
+
+  it('reports cap-overflow losses for optimistic rollback (R3)', () => {
+    const dropped: any[] = [];
+    socketMod.socketManager.subscribeDrops((d) => dropped.push(...d));
+    for (let i = 0; i < 21; i++) {
+      socket.emit('game:action', {
+        gameId: 'g1',
+        action: { type: 'MOVE', to: { row: 0, col: 0 } },
+        clientTimestamp: Date.now(),
+        clientActionId: `cap-${i}`,
+      });
+    }
+    // The oldest intent fell off; the hook learns which key died.
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0]).toMatchObject({ event: 'game:action', gameId: 'g1', clientActionId: 'cap-0' });
+  });
+
+  it('reports TTL-expired intents at flush time (R3)', () => {
+    vi.useFakeTimers();
+    try {
+      const dropped: any[] = [];
+      socketMod.socketManager.subscribeDrops((d) => dropped.push(...d));
+      socket.emit('game:action', {
+        gameId: 'g1',
+        action: { type: 'MOVE', to: { row: 0, col: 0 } },
+        clientTimestamp: Date.now(),
+        clientActionId: 'old-1',
+      });
+      vi.advanceTimersByTime(31_000);
+      comeBackOnline();
+      expect(dropped).toMatchObject([{ event: 'game:action', gameId: 'g1', clientActionId: 'old-1' }]);
+      expect(created[0].emitted.map((e: any) => e.event)).not.toContain('game:action');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('seat-level disconnect events', () => {
@@ -347,5 +422,64 @@ describe('seat-level disconnect events', () => {
     expect(isOwnSeatEvent({ userId: 'u_other' }, 'p1')).toBe(false);
     // We do not know our own seat yet: cannot claim ownership of anything.
     expect(isOwnSeatEvent({ userId: 'u_me', playerId: 'p1' }, null)).toBe(false);
+  });
+});
+
+/**
+ * F6 reconnect core.
+ *
+ * R1: a 401 followed by a same-account refresh used to stay offline until
+ * app restart (authDead cleared only on full rebuild, never on rotation).
+ * R5: reconnect_failed used to be re-cranked by every join tick — fresh
+ * 15-burst loops forever on a dead server.
+ */
+describe('reconnect core (F6)', () => {
+  it('a rotated credential retries after a 401 — no restart needed (R1)', () => {
+    socketMod.socketManager.getSocket();
+    auth.setIdentity(identity('u_one', 'token-one'));
+    expect(socketMod.socketManager.getStatus()).toBe('connected');
+
+    // Server rejects the credential mid-match.
+    created[0].__fire('connect_error', new Error('unauthorized'));
+    expect(socketMod.socketManager.getStatus()).toBe('disconnected');
+
+    // Guest refresh lands: same account, new token. Rotation clears the
+    // dead credential, so the next ensure reconnects on it.
+    auth.patchIdentity({ accessToken: 'token-two' });
+    socketMod.socketManager.getSocket();
+    expect(created[0].connected).toBe(true);
+    expect(socketMod.socketManager.getStatus()).toBe('connected');
+  });
+
+  it('post-give-up cooldown holds the transport until retryNow (R5)', () => {
+    socketMod.socketManager.getSocket();
+    auth.setIdentity(identity('u_one', 'token-one'));
+    expect(created[0].connected).toBe(true);
+
+    // socket.io exhausts its attempts, then the link drops too.
+    (created[0].io as any).__fireIo('reconnect_failed');
+    expect(socketMod.socketManager.getStatus()).toBe('disconnected');
+    created[0].disconnect();
+
+    // The join tick's ensureConnected must NOT crank the transport again.
+    socketMod.socketManager.getSocket();
+    expect(created[0].connected).toBe(false);
+    expect(socketMod.socketManager.getStatus()).toBe('disconnected');
+
+    // Explicit user retry re-arms immediately.
+    socketMod.socketManager.retryNow();
+    expect(created[0].connected).toBe(true);
+    expect(socketMod.socketManager.getStatus()).toBe('connected');
+  });
+
+  it('a superseded session stands down instead of lingering half-dead (M2)', () => {
+    socketMod.socketManager.getSocket();
+    auth.setIdentity(identity('u_one', 'token-one'));
+    expect(created[0].connected).toBe(true);
+
+    // Same account connected elsewhere: this tab is now stale.
+    created[0].__fire('session:superseded');
+    expect(created[0].connected).toBe(false);
+    expect(socketMod.socketManager.getStatus()).toBe('disconnected');
   });
 });

@@ -11,7 +11,7 @@ import { createInitialState, getLegalMoves, type GameAction } from '@duoorb/game
  *    `downlink + thinking + uplink`;
  *  - a sync reports the clock as the 1 Hz tick derives it, never raw;
  *  - RESIGN is billed to the actor, and an off-turn resign moves nobody's clock;
- *  - the clock starts with the match and never pauses — not even while a
+ *  - the clock starts at the join quorum and never pauses — not even while a
  *    seat is away — and reconnecting credits nothing back.
  */
 
@@ -29,6 +29,9 @@ function makeGame(svc: AuthoritativeGameService, gameId = 'c1') {
     timeControlMinutes: 3,
     isRanked: true,
   });
+  // Production joins: every clock/AFK test runs post-quorum.
+  svc.markSeatJoined(gameId, 'uA');
+  svc.markSeatJoined(gameId, 'uB');
   return game ?? (svc.getGame(gameId) as NonNullable<ReturnType<typeof svc.getGame>>);
 }
 
@@ -294,6 +297,9 @@ describe('inactivity (AFK) is separate from disconnect', () => {
         seen.push(payload);
       },
     });
+    // Production joins: the watch only runs post-quorum.
+    svc.markSeatJoined(gameId, 'uA');
+    svc.markSeatJoined(gameId, 'uB');
     return seen;
   }
 
@@ -378,5 +384,186 @@ describe('inactivity (AFK) is separate from disconnect', () => {
     // A fresh 45s runs from the move: the game is still live because uB moved.
     vi.advanceTimersByTime(40_000);
     expect(g(svc).state.status).toBe('IN_PROGRESS');
+  });
+});
+
+describe('join quorum + flag hardening (F4)', () => {
+  let svc: AuthoritativeGameService;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    svc = new AuthoritativeGameService(undefined as any);
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('a move after the deadline is a TIMEOUT loss even if no tick ran (C1-timing)', () => {
+    makeGame(svc); // quorum at t0, uA to move, 180s clock
+    // Jump past the deadline WITHOUT running any timer: the 1s tick and the
+    // one-shot flag never fire. The old code accepted this move (with
+    // increment); now it converts to a flag.
+    vi.setSystemTime(Date.now() + 181_000);
+    const res = svc.processAction('c1', 'uA', { type: 'MOVE', to: firstMove(svc, 'uA') } as GameAction);
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    expect(res.recorded.action.type).toBe('TIMEOUT');
+    expect(res.ended?.reason).toBe('TIMEOUT');
+    expect(g(svc).state.status).toBe('COMPLETED');
+    expect(g(svc).state.winnerId).toBe('p2');
+  });
+
+  it('grace expiry bills the holder for the window — no free 45s (C5-timing)', () => {
+    makeGame(svc);
+    play(svc, 'uA'); // uB to move; then uA (off-turn) drops
+    svc.handleDisconnect('c1', 'uA', () => {});
+    vi.advanceTimersByTime(46_000); // grace expires: uA forfeits, uB wins
+    expect(g(svc).state.status).toBe('COMPLETED');
+    // uB held the turn through the whole window: billed the 45s to expiry.
+    expect(g(svc).clocksMs['p2']).toBe(180_000 - 45_000);
+    // uA paid only their own t0 move (~0ms), nothing for the absence.
+    expect(g(svc).clocksMs['p1']).toBe(180_000);
+  });
+
+  it('an on-turn leaver runs their own clock to forfeit (C5-timing)', () => {
+    makeGame(svc);
+    // uA holds the turn and drops without moving.
+    svc.handleDisconnect('c1', 'uA', () => {});
+    vi.advanceTimersByTime(46_000);
+    expect(g(svc).state.status).toBe('COMPLETED');
+    expect(g(svc).state.winnerId).toBe('p2');
+    // The leaver's clock ran the window instead of freezing at disconnect.
+    expect(g(svc).clocksMs['p1']).toBe(180_000 - 45_000);
+  });
+
+  it('pre-quorum turns are unbilled and unwatched (M1-timing)', () => {
+    svc.createGame({
+      gameId: 'c9',
+      mode: MODE,
+      users: [
+        { userId: 'uA', displayName: 'A', rating: { rating: 1500, rd: 350, vol: 0.06 } },
+        { userId: 'uB', displayName: 'B', rating: { rating: 1500, rd: 350, vol: 0.06 } },
+      ],
+      timeControlMinutes: 3,
+      isRanked: true,
+    });
+    const game = svc.getGame('c9')!;
+    expect(game.clockStarted).toBe(false);
+    // Past the AFK allowance with no joins: still live, clock parked.
+    vi.advanceTimersByTime(60_000);
+    expect(game.state.status).toBe('IN_PROGRESS');
+    expect(svc.clockSnapshot(game)['p1']).toBe(180_000);
+    // A pre-quorum move is accepted but bills nothing...
+    expect(play(svc, 'uA', undefined, 'c9')).toBe(true);
+    expect(svc.getGame('c9')!.clocksMs['p1']).toBe(180_000);
+    // ...and the quorum starts the clock from NOW with full time.
+    expect(svc.markSeatJoined('c9', 'uA')).toBe(false); // one seat: not yet
+    expect(svc.markSeatJoined('c9', 'uB')).toBe(true);
+    expect(svc.markSeatJoined('c9', 'uNobody')).toBe(false);
+    vi.advanceTimersByTime(10_000);
+    // Turn is uB's after uA's pre-quorum move: uB derived, uA ledger-intact.
+    expect(svc.clockSnapshot(svc.getGame('c9')!)['p2']).toBe(170_000);
+    expect(svc.getGame('c9')!.clocksMs['p1']).toBe(180_000);
+  });
+
+  it('quorum timeout puts no-show seats on standard grace and reports them (M1-timing)', () => {    svc.createGame({
+      gameId: 'cQ',
+      mode: MODE,
+      users: [
+        { userId: 'uA', displayName: 'A', rating: { rating: 1500, rd: 350, vol: 0.06 } },
+        { userId: 'uB', displayName: 'B', rating: { rating: 1500, rd: 350, vol: 0.06 } },
+      ],
+      timeControlMinutes: 3,
+      isRanked: true,
+    });
+    svc.markSeatJoined('cQ', 'uA'); // only A shows up
+    const game = svc.getGame('cQ')!;
+    const missing: { userId: string; gracePeriodSeconds: number }[] = [];
+    game.onQuorumExpired = (_gId, m) => missing.push(...m);
+    vi.advanceTimersByTime(91_000);
+    // uB never joined: standard 45s grace armed, gateway notified.
+    expect(game.disconnectedUsers['uB']).toBeTruthy();
+    expect(game.disconnectedUsers['uA']).toBeUndefined();
+    expect(missing).toHaveLength(1);
+    expect(missing[0].userId).toBe('uB');
+    expect(missing[0].gracePeriodSeconds).toBe(45);
+    // ...and the grace still forfeits if they never come.
+    vi.advanceTimersByTime(46_000);
+    expect(game.state.status).toBe('COMPLETED');
+    expect(game.state.winnerId).toBe('p1');
+  });
+});
+
+describe('refund unity + AFK carry (F5)', () => {
+  let svc: AuthoritativeGameService;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    svc = new AuthoritativeGameService(undefined as any);
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('flag, snapshot, and charge share one refunded deadline (C4-timing)', () => {
+    makeGame(svc); // quorum at t0, uA to move, 180s clock
+    const game = g(svc);
+    game.clocksMs['p1'] = 3_000;
+    // A 5000ms probe smooths to exactly 5000 (first sample), refunded at the
+    // 1200ms cap: raw deadline 3.0s, refunded deadline 4.2s.
+    svc.recordLatency('c1', 'uA', 5_000);
+    vi.advanceTimersByTime(3_500);
+    // Past the RAW deadline but inside the refunded one: the tick did not
+    // flag (old code flagged here), and the display agrees with the charge.
+    expect(game.state.status).toBe('IN_PROGRESS');
+    expect(svc.clockSnapshot(game)['p1']).toBe(700);
+    const res = svc.processAction('c1', 'uA', { type: 'MOVE', to: firstMove(svc, 'uA') } as GameAction);
+    expect(res.success).toBe(true);
+    // Charged exactly to the shared deadline: 3000 - (3500 - 1200).
+    expect(game.clocksMs['p1']).toBe(700);
+  });
+
+  it('flags past the refunded deadline, not the raw one (C4-timing)', () => {
+    makeGame(svc);
+    const game = g(svc);
+    game.clocksMs['p1'] = 3_000;
+    svc.recordLatency('c1', 'uA', 5_000); // refund 1200ms → deadline 4.2s
+    vi.advanceTimersByTime(5_000);
+    expect(game.state.status).toBe('COMPLETED');
+    expect(game.state.winnerId).toBe('p2');
+  });
+
+  it('a grace interruption banks the AFK remainder instead of resetting it', () => {    makeGame(svc); // quorum at t0, AFK armed for uA's turn
+    vi.advanceTimersByTime(40_000); // 5s of allowance left
+    svc.handleDisconnect('c1', 'uB', () => {}); // unrelated seat drops
+    vi.advanceTimersByTime(2_000);
+    expect(svc.cancelDisconnectGrace('c1', 'uB')).toBe(true); // uB back fast
+    // 3s of banked allowance left — NOT a fresh 45s: still live...
+    vi.advanceTimersByTime(2_000);
+    expect(g(svc).state.status).toBe('IN_PROGRESS');
+    // ...then forfeited for idling past it (deadline was t47).
+    vi.advanceTimersByTime(4_000);
+    expect(g(svc).state.status).toBe('COMPLETED');
+    expect(g(svc).state.winnerId).toBe('p2');
+  });
+
+  it('defers the flag while a seat is away — absence wins the reason (M19)', () => {
+    makeGame(svc); // quorum at t0, uA to move, 180s clock
+    const game = g(svc);
+    game.clocksMs['p1'] = 5_000; // holder nearly spent
+    const reasons: (string | undefined)[] = [];
+    svc.handleDisconnect('c1', 'uB', (ended) => {
+      reasons.push(ended?.reason);
+    });
+    // Past the 5s clock but inside the 45s grace: no TIMEOUT steal.
+    vi.advanceTimersByTime(6_000);
+    expect(game.state.status).toBe('IN_PROGRESS');
+    // Grace expires: uB forfeits, uA wins — recorded as absence.
+    vi.advanceTimersByTime(40_000);
+    expect(game.state.status).toBe('COMPLETED');
+    expect(game.state.winnerId).toBe('p1');
+    expect(reasons).toEqual(['DISCONNECT']);
   });
 });
