@@ -73,7 +73,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                   </View>
                 )}
               </View>
-              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+              <Text
+                style={[styles.tabLabel, isActive && styles.tabLabelActive]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {tab.label}
               </Text>
               {isActive && <View style={styles.activePill} />}
@@ -119,12 +123,18 @@ const styles = StyleSheet.create({
     width: 28,
     height: 24,
   },
+  // Single line, always: at ~360px each tab owns ~72px and "Leaderboard"
+  // at 11sp overflows it, wraps to two lines and breaks the 54px row.
+  // 10sp fits the longest label even bolded (active state); anything
+  // narrower still degrades to a graceful ellipsis, never a wrap.
   tabLabel: {
     fontFamily: THEME.fonts.medium,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '500',
     color: THEME.colors.textSecondary,
     marginTop: 2,
+    width: '100%',
+    textAlign: 'center',
   },
   tabLabelActive: {
     fontFamily: THEME.fonts.bold,

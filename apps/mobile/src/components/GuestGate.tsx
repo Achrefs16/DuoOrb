@@ -52,11 +52,13 @@ export const GuestGate: React.FC<GuestGateProps> = memo(function GuestGate({
         accessibilityLabel="Save with Google"
         accessibilityRole="button"
       >
-        {signingIn ? (
-          <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
-        ) : (
-          <GoogleGLogo size={18} />
-        )}
+        <View style={styles.logoBox}>
+          {signingIn ? (
+            <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
+          ) : (
+            <GoogleGLogo size={18} />
+          )}
+        </View>
         <Text style={styles.linkButtonText}>
           {signingIn ? 'Saving…' : 'Save with Google'}
         </Text>
@@ -119,7 +121,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+  },
+  // Pinned left, outside layout: the label stays optically centered no
+  // matter the icon's metrics, and no gap quirk can shift the row.
+  logoBox: {
+    position: 'absolute',
+    left: 16,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   disabled: {
     opacity: 0.7,
@@ -128,6 +139,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 15,
     color: THEME.colors.textPrimary,
+    textAlign: 'center',
   },
   errorText: {
     marginTop: 8,
