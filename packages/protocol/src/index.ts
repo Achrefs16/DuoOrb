@@ -117,6 +117,13 @@ export interface GameSyncDto {
   missingActions: RecordedAction[];
   playerUserIds?: Record<string, string>;
   /**
+   * UserIds holding effective premium at game creation (P5.2 seat/GameOver
+   * badges). FROZEN for the match — a mid-match subscription appears from the
+   * next game, so badges never pop in late and shift card layout. Absent on
+   * old servers = no badges, never an error.
+   */
+  premiumUserIds?: string[];
+  /**
    * The seat THIS socket is sitting in, resolved by the server from the
    * verified token. The client must use this rather than searching
    * `playerUserIds` for its own id: that comparison was made against a
@@ -226,6 +233,13 @@ export interface ClientToServerEvents {
   'room:sync': (payload: { roomId?: string; code?: string }, callback?: (res: { success: boolean; error?: string }) => void) => void;
   'matchmaking:find': (payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number }) => void;
   'matchmaking:cancel': () => void;
+  /**
+   * Presence heartbeat (ONLINE_HEALTH C1): verified sockets ping at most
+   * every ~60s so `updatedAt` stays fresh while the app is open. The 5-minute
+   * freshness rule therefore only ever demotes killed apps and dead
+   * connections — never a live, idle lobby sitter. Throttled server-side.
+   */
+  'presence:ping': () => void;
   'challenge:send': (payload: { toUserId: string; mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number }, callback?: (res: { success: boolean; challenge?: ChallengeDto; error?: string }) => void) => void;
   'challenge:respond': (payload: { challengeId: string; accept: boolean }, callback?: (res: { success: boolean; error?: string }) => void) => void;
   'challenge:cancel': (payload: { challengeId: string }) => void;
@@ -298,4 +312,17 @@ export interface ServerToClientEvents {
    * (it would otherwise miss every direct and half-act on stale state).
    */
   'session:superseded': () => void;
+  /**
+   * Handshake verdict for THIS socket (ONLINE_HEALTH Phase A). The transport
+   * connects even with an expired credential; only this event tells the
+   * client whether the server recognized it. Clients must treat connected +
+   * unverified as offline-with-retry, never as healthy.
+   */
+  'session:authState': (payload: { verified: boolean; userId: string }) => void;
+  /**
+   * Live online-player count, broadcast on verified connect/disconnect
+   * (same 5-minute freshness rule as GET /presence/online). Clients use it
+   * instantly and keep the REST poll as backup.
+   */
+  'presence:count': (payload: { count: number }) => void;
 }

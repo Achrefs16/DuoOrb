@@ -69,10 +69,10 @@ export function privacyHtml(): string {
   return shell(
     'Privacy Policy',
     `<h1>Privacy Policy</h1>
-<div class="updated">Last updated: 2026-10-01. Applies to DuoOrb for Android (package com.duoorb.mobile) and the DuoOrb game server.</div>
+<div class="updated">Last updated: 2026-10-05. Applies to DuoOrb for Android (package com.asdigital.duoorb) and the DuoOrb game server.</div>
 
 <h2>1. Who we are</h2>
-<p>DuoOrb is a two-player tactical board game. The mobile app talks to our authoritative game server for accounts, matchmaking, friends, history and ratings. Authentication is provided by Supabase Auth (Google sign-in and guest sessions minted by our server). Contact: <a href="mailto:${email}">${email}</a>.</p>
+<p>DuoOrb is a tactical grid-strategy game by AS Digital. The mobile app talks to our authoritative game server for accounts, matchmaking, friends, history and ratings. Authentication is provided by Supabase Auth (Google sign-in and guest sessions minted by our server). Free play shows Google AdMob ads; DuoOrb Premium (sold through Google Play) removes them. Contact: <a href="mailto:${email}">${email}</a>.</p>
 
 <h2>2. Data we collect</h2>
 <table>
@@ -81,15 +81,17 @@ export function privacyHtml(): string {
 <tr><td>Player content (UGC)</td><td>Bio (max 280 chars), avatar URL, badge showcase</td><td>Profile display, social features</td></tr>
 <tr><td>Game activity</td><td>Match history, moves, results, ratings (Glicko-2), achievements, AI wins</td><td>Gameplay, leaderboards, fair play / anti-cheat, progress</td></tr>
 <tr><td>Social graph</td><td>Friend requests, friendships, blocks</td><td>Friends, challenges, blocking</td></tr>
+<tr><td>Premium status</td><td>Whether Premium is active and when it expires (from Google Play via RevenueCat; we never receive card or payment details)</td><td>Unlocking Premium features</td></tr>
 <tr><td>Diagnostics</td><td>Hashed IP (SHA-256, for guest rate limiting), user-agent, crash/error logs</td><td>Security, abuse prevention, stability</td></tr>
+<tr><td>Advertising (AdMob)</td><td>Advertising ID, approximate location, ad-interaction data, collected by Google under its own Privacy Policy</td><td>Serving banner and rewarded ads to free players</td></tr>
 </table>
-<p>We do <strong>not</strong> collect precise location, contacts, camera, microphone, files, or advertising IDs. There is no in-game chat and no third-party ad SDK.</p>
+<p>We do <strong>not</strong> collect precise location, contacts, camera, microphone, or files. There is no in-game chat.</p>
 
 <h2>3. How we use data</h2>
-<p>Account management, gameplay and matchmaking, leaderboards and ratings, friends/challenges/rooms, safety (rate limiting, replay detection, cheat validation), and support. We never sell personal data and never use it for third-party advertising.</p>
+<p>Account management, gameplay and matchmaking, leaderboards and ratings, friends/challenges/rooms, Premium entitlement, safety (rate limiting, replay detection, cheat validation), and support. Free players see banner and rewarded ads; Premium members see none. We never sell personal data and never share it with data brokers.</p>
 
 <h2>4. Sharing</h2>
-<p>Processors only: (a) Supabase (authentication - email, auth tokens), (b) hosting provider for the game server / database (account, game and social rows needed to run the service). No data is shared with advertisers or data brokers. Reactions during matches are ephemeral and never stored.</p>
+<p>Processors only: (a) Supabase (authentication - email, auth tokens), (b) hosting provider for the game server / database (account, game and social rows needed to run the service), (c) Google AdMob (advertising ID and ad-interaction data, under Google's policies), (d) Google Play Billing via RevenueCat (subscription status only - no payment details touch our servers). No data is shared with data brokers. Reactions during matches are ephemeral and never stored.</p>
 
 <h2>5. Security &amp; encryption</h2>
 <p>All client-server traffic uses HTTPS (TLS) / WSS. Passwords are never handled by us (Google OAuth via Supabase). Guest refresh tokens are stored only as SHA-256 hashes and rotate on every refresh; replayed tokens revoke the session. Access is limited to what is needed to operate the game.</p>
@@ -118,10 +120,10 @@ export function termsHtml(): string {
   return shell(
     'Terms of Service',
     `<h1>Terms of Service</h1>
-<div class="updated">Last updated: 2026-10-01.</div>
+<div class="updated">Last updated: 2026-10-05.</div>
 
 <h2>1. The game</h2>
-<p>DuoOrb provides local AI, pass-and-play, and online ranked matches with matchmaking, rooms, friends, challenges and leaderboards. Online games are ranked on one universal Glicko-2 rating. There is no real-money gambling, no loot boxes, no ads and no in-app purchases.</p>
+<p>DuoOrb provides local AI, pass-and-play, and online ranked matches with matchmaking, rooms, friends, challenges and leaderboards. Online games are ranked on one universal Glicko-2 rating. There is no real-money gambling and no loot boxes. Free play is ad-supported; DuoOrb Premium removes ads and unlocks extras (section 6 below).</p>
 
 <h2>2. Accounts</h2>
 <p>You may play as a guest (progress stays on the server under a guest ID) or sign in with Google. One person, one account; do not share credentials or impersonate others. You must be at least 13 years old (or the minimum age in your country) to create an account. Guest progress can be merged once into a signed-in account via Settings; the merge is one-shot.</p>
@@ -141,16 +143,19 @@ export function termsHtml(): string {
 <h2>5. Fair play</h2>
 <p>The server is authoritative: clients submit moves, the server validates them and broadcasts state. Ranked status is forced server-side and cannot be spoofed as casual. Farming ratings with colluding accounts, win-trading, exploiting bugs, or using bots/scripts is prohibited and may lead to rating resets or bans. Hard-AI wins are verified by replaying notation before any badge is granted.</p>
 
-<h2>6. Availability</h2>
+<h2>6. Premium subscriptions</h2>
+<p>DuoOrb Premium ($3.99/month or $24.99/year; prices vary by country) removes all ads and unlocks unlimited game analysis, exclusive bots, the Midnight board theme and the Premium profile badge. Both plans start with a 7-day free trial, then bill automatically each period until cancelled. Billing is handled entirely by Google Play: we never receive payment details. Cancel any time in the app under Settings &gt; Premium &gt; Manage subscription (or Play Store &gt; Payments &amp; subscriptions); access continues until the end of the paid period. Refunds follow Google Play policy. Promotional prices, if offered, renew at the standard rate stated at purchase. Guests must save with Google before purchasing so Premium attaches to an account. Deleting your DuoOrb account does <strong>not</strong> cancel billing - cancel the subscription separately first.</p>
+
+<h2>7. Availability</h2>
 <p>Online features require a connection and may be interrupted for maintenance. We may change, suspend or discontinue features. Guest sessions expire after 180 days of inactivity.</p>
 
-<h2>7. Termination &amp; deletion</h2>
-<p>You may delete your account at any time via Settings &gt; Delete account or the <a href="${baseUrl()}/legal/delete-account">web deletion page</a>. We may suspend or terminate accounts that violate these terms. Termination deletes or disables access as described in the Privacy Policy.</p>
+<h2>8. Termination &amp; deletion</h2>
+<p>You may delete your account at any time via Settings &gt; Delete account or the <a href="${baseUrl()}/legal/delete-account">web deletion page</a>. Deleting the account does <strong>not</strong> cancel a Premium subscription - cancel it separately first (Settings &gt; Premium &gt; Manage subscription), otherwise billing continues. We may suspend or terminate accounts that violate these terms. Termination deletes or disables access as described in the Privacy Policy.</p>
 
-<h2>8. Liability</h2>
-<p>The game is provided "as is" without warranties to the maximum extent permitted by law. To the extent permitted by law our liability is limited to the amounts you paid for the service (DuoOrb is currently free, so $0).</p>
+<h2>9. Liability</h2>
+<p>The game is provided "as is" without warranties to the maximum extent permitted by law. To the extent permitted by law our liability is limited to the amounts you paid for the service (free players who never subscribed: $0).</p>
 
-<h2>9. Contact</h2>
+<h2>10. Contact</h2>
 <p>Questions about these terms: <a href="mailto:${email}">${email}</a>.</p>`
   );
 }
@@ -184,8 +189,10 @@ export function deleteAccountHtml(): string {
 <li>User row + profile (username, display name, bio, avatar), ratings + rating history</li>
 <li>Game-player links, friend requests, friendships, blocks</li>
 <li>AI wins, achievements, equipped badges, guest sessions + tokens</li>
+<li>Premium status and subscription records on our side</li>
 <li>Local credentials on the device (on in-app deletion)</li>
 </ul>
+<p><strong>Important:</strong> deleting your account does <strong>not</strong> cancel a DuoOrb Premium subscription - cancel it separately first in the app (Settings &gt; Premium &gt; Manage subscription) or in Play Store &gt; Payments &amp; subscriptions, otherwise Google Play keeps billing.</p>
 <p>Finished Game rows may remain without your seat so opponents' records stay intact. Backups age out within 90 days.</p>
 
 <h2>Questions</h2>

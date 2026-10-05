@@ -45,6 +45,8 @@ export class UsersService {
         wins: 0,
         losses: 0,
         draws: 0,
+        isPremium: false,
+        premiumExpiresAt: null,
       };
     }
 
@@ -82,6 +84,29 @@ export class UsersService {
 
     const badges = await this.profileBadges(userId);
 
+    // Premium entitlement with lazy expiry (covers missed webhooks and
+    // grace-period overruns): a stored `true` whose expiry passed reads as
+    // `false`, and the flip is persisted so the next read is already correct.
+    // The write must never fail this read — a failed flip still returns the
+    // correct effective value.
+    let isPremium = user.profile?.isPremium ?? false;
+    const premiumExpiresAt = user.profile?.premiumExpiresAt ?? null;
+    if (
+      isPremium &&
+      premiumExpiresAt &&
+      new Date(premiumExpiresAt).getTime() <= Date.now()
+    ) {
+      isPremium = false;
+      try {
+        await this.prisma.profile.update({
+          where: { userId },
+          data: { isPremium: false, premiumUpdatedAt: new Date() },
+        });
+      } catch {
+        // Read stays correct; the next /me retries the flip.
+      }
+    }
+
     return {
       id: user.id,
       email: user.email,
@@ -89,6 +114,8 @@ export class UsersService {
       displayName: user.profile?.displayName ?? `Player ${userId.slice(0, 4)}`,
       avatarUrl: user.profile?.avatarUrl,
       bio: user.profile?.bio,
+      isPremium,
+      premiumExpiresAt,
       // Flat fields (legacy) + nested ratings map (mobile contract).
       rating1v1: rating?.rating ?? 1500,
       rating4p: rating?.rating ?? 1500,
@@ -246,6 +273,12 @@ export class UsersService {
       bio: profile.bio,
       isOnline: profile.isOnline,
       isPlaying: profile.isPlaying,
+      // Badge correctness without write amplification on this hot public
+      // endpoint: report the effective value; /me persists the flip.
+      isPremium:
+        (profile.isPremium ?? false) &&
+        (!profile.premiumExpiresAt ||
+          new Date(profile.premiumExpiresAt).getTime() > Date.now()),
       rating1v1: rating?.rating ?? 1500,
       rating4p: rating?.rating ?? 1500,
       gamesPlayed: rating?.gamesPlayed ?? 0,
@@ -504,7 +537,7 @@ export class UsersService {
    * `DELETE /api/me` (Settings > Delete account) and the web deletion page
    * both resolve here. Prisma `onDelete: Cascade` removes profile, ratings,
    * rating history, game-player links, friend requests, friendships, blocks,
-   * AI wins, achievements, badge slots and guest sessions. Finished `Game`
+   * AI wins, achievements, badge slots, subscription events and guest sessions. Finished `Game`
    * rows stay (without this player's seat) so opponents' records survive.
    * Supabase Auth users are removed via the admin API when configured;
    * guest ids (`u_*`) are local-only and skip that step.

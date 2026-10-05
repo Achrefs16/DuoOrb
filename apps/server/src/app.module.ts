@@ -11,6 +11,7 @@ import { RatingModule } from './rating/rating.module.js';
 import { AiwinsModule } from './aiwins/aiwins.module.js';
 import { LegalModule } from './legal/legal.module.js';
 import { ReportsModule } from './reports/reports.module.js';
+import { BillingModule } from './billing/billing.module.js';
 import { GameGateway } from './gateway/game.gateway.js';
 
 @Module({
@@ -30,6 +31,7 @@ import { GameGateway } from './gateway/game.gateway.js';
     AiwinsModule,
     LegalModule,
     ReportsModule,
+    BillingModule,
   ],
   providers: [GameGateway, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

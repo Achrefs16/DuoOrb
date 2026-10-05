@@ -74,6 +74,16 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
       opts: { mode: GameMode; clock: TimeControl; wallsEach: number }
     ) => {
       const socket = socketManager.getSocket();
+      // ONLINE_HEALTH Phase B: ack watchdog. A dropped emit (dead socket) or
+      // a server that never answers previously left zero feedback — no card,
+      // no error. 20s with no ack is an answer: the request went nowhere.
+      let answered = false;
+      const watchdog = setTimeout(() => {
+        if (!answered) {
+          answered = true;
+          flashNotice('No answer from the server. Check your connection and try again.');
+        }
+      }, 20000);
       socket.emit(
         'challenge:send',
         {
@@ -84,6 +94,9 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
           wallsEach: opts.wallsEach,
         },
         (res) => {
+          if (answered) return;
+          answered = true;
+          clearTimeout(watchdog);
           if (res?.success && res.challenge) {
             setOutgoing({ challenge: res.challenge, toName });
           } else {

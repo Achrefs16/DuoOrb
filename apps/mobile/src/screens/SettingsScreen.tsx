@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -11,12 +12,15 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME } from '../theme';
 import { runWhenOnline } from '../components/NoConnection';
 import { BlockedUsers } from '../components/BlockedUsers';
 import { UserSettings } from '../storage/gameStorage';
 import { useSession } from '../network/session';
+import { isPremiumActive, refreshPremium, usePremium } from '../monetization/premium';
+import { PREMIUM_GOLD } from '../components/PremiumBadge';
+import { PremiumSheet } from '../components/PremiumSheet';
 import { api, ApiError } from '../network/apiClient';
 import { NetworkError } from '../network/errors';
 import { LEGAL_CONTACT_EMAIL } from '../legal';
@@ -101,6 +105,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [savingUsername, setSavingUsername] = useState(false);
   const [availability, setAvailability] = useState<Availability>('idle');
+  // Board theme picker (MONETIZATION.md P5.1): Classic free, Midnight premium.
+  // TEMP-TEST ONLY — REMOVE BEFORE ANY RELEASE BUILD (with DEV_UNLOCK_BOTS).
+  const DEV_UNLOCK_THEME = true;
+  const premiumState = usePremium();
+  const midnightUnlocked = DEV_UNLOCK_THEME || isPremiumActive(premiumState);
+  // Premium membership itself (P7.3 card): strictly the live entitlement —
+  // never a dev flag. Test purchases flow through here like production.
+  const isPremiumMember = isPremiumActive(premiumState);
+  const [premiumOpen, setPremiumOpen] = useState(false);
+  // Paywall entry routing (P7.2): the card sells as "settings", the locked
+  // Midnight row as "theme".
+  const [premiumEntry, setPremiumEntry] = useState('settings');
+  // Legally required cancel path (P7.3): Play Subscription Center always
+  // handles cancel/plan/payment — never an in-app flow of our own.
+  const openSubscriptionCenter = () => {
+    void Linking.openURL('https://play.google.com/store/account/subscriptions');
+  };
 
   const [editingDisplayName, setEditingDisplayName] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState('');
@@ -422,6 +443,78 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           )}
         </View>
 
+        {/* Premium (MONETIZATION.md P7.3): the manage/cancel path is legally
+            required — premium members get the Play Subscription Center link
+            right here, next to the upgrade entry. */}
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>PREMIUM</Text>
+          {isPremiumMember ? (
+            <View style={styles.settingRow}>
+              <View style={styles.settingIconBox}>
+                <MaterialCommunityIcons name="crown" size={15} color={PREMIUM_GOLD} />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingTitle}>Premium active</Text>
+                <Text style={styles.settingDesc}>
+                  No ads · unlimited analysis · bots · Midnight · crown
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => {
+                setPremiumEntry('settings');
+                setPremiumOpen(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Get DuoOrb Premium"
+            >
+              <View style={styles.settingIconBox}>
+                <MaterialCommunityIcons name="crown" size={15} color={THEME.colors.textSecondary} />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={styles.settingTitle}>Get DuoOrb Premium</Text>
+                <Text style={styles.settingDesc}>
+                  No ads · unlimited analysis · bots · Midnight · $3.99/mo
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={14} color={THEME.colors.textMuted} />
+            </TouchableOpacity>
+          )}
+          {isPremiumMember && (
+            <>
+              <View style={styles.divider} />
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={openSubscriptionCenter}
+                accessibilityRole="button"
+                accessibilityLabel="Manage subscription"
+              >
+                <View style={styles.settingIconBox}>
+                  <Feather name="settings" size={15} color={THEME.colors.textSecondary} />
+                </View>
+                <View style={styles.settingText}>
+                  <Text style={styles.settingTitle}>Manage subscription</Text>
+                  <Text style={styles.settingDesc}>
+                    Cancel, change plan, or update payment in Google Play.
+                  </Text>
+                </View>
+                <Feather name="external-link" size={14} color={THEME.colors.textMuted} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+        <PremiumSheet
+          visible={premiumOpen}
+          entry={premiumEntry}
+          onClose={() => setPremiumOpen(false)}
+          onDone={() => {
+            setPremiumOpen(false);
+            void refreshPremium();
+          }}
+        />
+
         {/* Display name */}
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>DISPLAY NAME</Text>
@@ -632,6 +725,62 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               {renderToggleRow(row)}
             </View>
           ))}
+        </View>
+
+        {/* Board theme (MONETIZATION.md P5.1): Classic free, Midnight
+            premium. Locked taps explain instead of dead-ending — P7's
+            PremiumSheet takes over this entry when it lands. */}
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>BOARD THEME</Text>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => onChange({ themeName: 'light' })}
+            accessibilityRole="button"
+            accessibilityLabel="Classic board theme"
+          >
+            <View style={styles.settingIconBox}>
+              <Feather name="sun" size={15} color={THEME.colors.textSecondary} />
+            </View>
+            <View style={styles.settingText}>
+              <Text style={styles.settingTitle}>Classic</Text>
+              <Text style={styles.settingDesc}>Bright board, free for everyone.</Text>
+            </View>
+            {settings.themeName !== 'midnight' && (
+              <Feather name="check-circle" size={16} color={THEME.colors.primary} />
+            )}
+          </TouchableOpacity>
+          <View style={styles.divider} />
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => {
+                if (!midnightUnlocked) {
+                  // Paywall entry #3 (P7.2): locked theme row opens the sheet.
+                  setPremiumEntry('theme');
+                  setPremiumOpen(true);
+                  return;
+                }
+                onChange({ themeName: 'midnight' });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Midnight board theme, premium"
+            >
+            <View style={styles.settingIconBox}>
+              <Feather name="moon" size={15} color={THEME.colors.textSecondary} />
+            </View>
+            <View style={styles.settingText}>
+              <Text style={styles.settingTitle}>Midnight</Text>
+              <Text style={styles.settingDesc}>
+                {midnightUnlocked ? 'Deep-navy board for members.' : 'Premium exclusive.'}
+              </Text>
+            </View>
+            {settings.themeName === 'midnight' && midnightUnlocked ? (
+              <Feather name="check-circle" size={16} color={THEME.colors.primary} />
+            ) : (
+              !midnightUnlocked && (
+                <Feather name="lock" size={14} color={THEME.colors.textMuted} />
+              )
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Legal - native in-app reader (offline). Web version linked inside. */}

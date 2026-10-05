@@ -29,6 +29,8 @@ import {
 } from '../components/AchievementMedal';
 import { AchievementsModal } from '../components/AchievementsModal';
 import { GuestGate } from '../components/GuestGate';
+import { PremiumBadge } from '../components/PremiumBadge';
+import { isPremiumActive, usePremium } from '../monetization/premium';
 import { toast } from '../components/AppToast';
 import { NoConnectionSection } from '../components/NoConnection';
 import { actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
@@ -69,6 +71,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 }) => {
   const { identity } = useSession();
   const { isConnected } = useConnectivity();
+  // Own badge reads the live entitlement store (same source as every gate),
+  // not the fetched profile snapshot — it flips the moment a purchase lands.
+  const premiumState = usePremium();
+  const showOwnBadge = isPremiumActive(premiumState);
   const [profile, setProfile] = useState<UserMeDto | null>(null);
   const [ratingHistory, setRatingHistory] = useState<RatingHistoryPointDto[]>([]);
   const [achievements, setAchievements] = useState<AchievementsResponseDto | null>(null);
@@ -233,6 +239,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <View style={styles.identityInfo}>
                 <Text style={styles.profileName} numberOfLines={1}>
                   {profile?.displayName || profile?.username || 'Player'}
+                  {showOwnBadge && (
+                    <Text>
+                      {' '}<PremiumBadge />
+                    </Text>
+                  )}
                 </Text>
                 {!!profile?.username && (
                   <Text style={styles.handleText} numberOfLines={1}>

@@ -15,6 +15,8 @@ import { api, LeaderboardEntryDto } from '../network/apiClient';
 import { useSession } from '../network/session';
 import { useConnectivity } from '../network/useConnectivity';
 import { GuestGate } from '../components/GuestGate';
+import { PremiumBadge } from '../components/PremiumBadge';
+import { AdBanner } from '../components/AdBanner';
 import { NoConnectionSection } from '../components/NoConnection';
 import { kindOf, sectionKind, type ErrorKind } from '../network/errors';
 import { EmptyState } from '../components/StateViews';
@@ -444,6 +446,11 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
         <View style={styles.playerDetails}>
           <Text style={[styles.playerName, { color: tier.nameColor }]} numberOfLines={1}>
             {item.username}
+            {item.isPremium === true && (
+              <Text>
+                {' '}<PremiumBadge />
+              </Text>
+            )}
           </Text>
           <Text style={[styles.playerStats, { color: tier.statsColor }]}>
             <Text style={[styles.playerWins, { color: tier.winsColor }]}>{item.wins} W</Text>
@@ -523,15 +530,19 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
           }}
           ListFooterComponent={
             centered ? (
-              <TouchableOpacity
-                style={styles.backToTopBtn}
-                activeOpacity={0.7}
-                onPress={() => void fetchLeaderboard()}
-                accessibilityLabel="Back to top"
-                accessibilityRole="button"
-              >
-                <Text style={styles.backToTopText}>Back to top</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  style={styles.backToTopBtn}
+                  activeOpacity={0.7}
+                  onPress={() => void fetchLeaderboard()}
+                  accessibilityLabel="Back to top"
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.backToTopText}>Back to top</Text>
+                </TouchableOpacity>
+                {/* Ad slot (P6, O2): below the pager, never above a button. */}
+                <AdBanner placement="list" />
+              </>
             ) : (
               <View style={styles.footer}>
                 {total > 0 && (
@@ -554,6 +565,8 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
                     </TouchableOpacity>
                   )
                 )}
+                {/* Ad slot (P6, O2): below the pager, never above a button. */}
+                <AdBanner placement="list" />
               </View>
             )
           }

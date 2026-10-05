@@ -18,7 +18,13 @@ interface UseMatchmakingOptions {
 export function useMatchmaking({ onMatched }: UseMatchmakingOptions) {
   const [state, setState] = useState<MatchmakingState>('idle');
   const [searchSeconds, setSearchSeconds] = useState(0);
+  // ONLINE_HEALTH Phase D: searching with zero feedback is how dead sockets
+  // and empty queues both look. After two minutes the UI says so honestly
+  // (config/rating/table hint) while the search itself keeps running — 3P/4P
+  // tables legitimately wait, so this never auto-cancels.
+  const [takingLong, setTakingLong] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const longRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stateRef = useRef<MatchmakingState>('idle');
   const lastFind = useRef<{ mode: GameMode; clock: TimeControl; wallsEach: number } | null>(null);
   const wasDown = useRef(false);
@@ -27,6 +33,10 @@ export function useMatchmaking({ onMatched }: UseMatchmakingOptions) {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
+    }
+    if (longRef.current) {
+      clearTimeout(longRef.current);
+      longRef.current = null;
     }
   }, []);
 
@@ -38,11 +48,15 @@ export function useMatchmaking({ onMatched }: UseMatchmakingOptions) {
       stateRef.current = 'searching';
       setState('searching');
       setSearchSeconds(0);
+      setTakingLong(false);
       stopTimer();
 
       timerRef.current = setInterval(() => {
         setSearchSeconds((s) => s + 1);
       }, 1000);
+      longRef.current = setTimeout(() => {
+        if (stateRef.current === 'searching') setTakingLong(true);
+      }, 120000);
 
       socket.emit('matchmaking:find', {
         mode,
@@ -63,6 +77,7 @@ export function useMatchmaking({ onMatched }: UseMatchmakingOptions) {
     stateRef.current = 'idle';
     setState('idle');
     setSearchSeconds(0);
+    setTakingLong(false);
   }, [stopTimer]);
 
   const findMatch = startSearch;
@@ -76,6 +91,7 @@ export function useMatchmaking({ onMatched }: UseMatchmakingOptions) {
       wasDown.current = false;
       stateRef.current = 'matched';
       setState('matched');
+      setTakingLong(false);
       onMatched(payload.gameId, payload.opponents ?? []);
     };
 
@@ -104,6 +120,7 @@ export function useMatchmaking({ onMatched }: UseMatchmakingOptions) {
   return {
     state,
     searchSeconds,
+    takingLong,
     findMatch,
     cancelMatch,
   };

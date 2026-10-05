@@ -11,6 +11,7 @@ import { GameState, PlayerState } from '@duoorb/game-core';
 import { THEME, hexToRgba, playerColor } from '../theme';
 import { nameInitial } from '../displayName';
 import { ReactionDock } from './QuickReactions';
+import { PremiumBadge } from './PremiumBadge';
 import type { IncomingReaction } from '../network/useQuickReactions';
 
 function formatTimer(seconds?: number): string {
@@ -128,6 +129,11 @@ interface InGamePlayerChipProps {
    * are the only tappable parts of the card.
    */
   onPressIdentity?: () => void;
+  /**
+   * Premium member badge for this seat (P5.2). True-only — absent/false
+   * renders nothing, never an error or a placeholder.
+   */
+  isPremium?: boolean;
 }
 
 /** Avatar tint per ball color, matching the Stitch active-match design. */
@@ -172,6 +178,7 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
   reactions,
   onReactionDone,
   onPressIdentity,
+  isPremium = false,
 }) => {
   const ball = playerColor(player.index, player.color);
   const tint = avatarTint(ball);
@@ -221,6 +228,11 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
               numberOfLines={1}
             >
               {player.displayName}
+              {isPremium && (
+                <Text>
+                  {' '}<PremiumBadge />
+                </Text>
+              )}
             </Text>
             {rating !== undefined && !hideStats && (
               <View style={styles.ratingBadge}>
@@ -319,6 +331,11 @@ export const PlayerStrip: React.FC<{
    * without a per-player "is this tappable" map.
    */
   onPressPlayer?: (playerId: string) => void;
+  /**
+   * Premium member badge by seat id (P5.2). True-only entries render the
+   * crown; absent/false/old data renders nothing — never an error.
+   */
+  seatPremium?: Record<string, boolean>;
 }> = ({
   state,
   timers,
@@ -328,6 +345,7 @@ export const PlayerStrip: React.FC<{
   grid = false,
   hideWallsForPlayerId,
   seatStatus,
+  seatPremium,
   reactionsBySeat,
   onReactionDone,
   onPressPlayer,
@@ -383,6 +401,11 @@ export const PlayerStrip: React.FC<{
                   ellipsizeMode="tail"
                 >
                   {p.displayName}
+                  {seatPremium?.[p.id] === true && (
+                    <Text>
+                      {' '}<PremiumBadge />
+                    </Text>
+                  )}
                 </Text>
                 <View style={styles.compactSub}>
                   {seat ? (
@@ -484,6 +507,11 @@ export const PlayerStrip: React.FC<{
                   numberOfLines={1}
                 >
                   {p.displayName}
+                  {seatPremium?.[p.id] === true && (
+                    <Text>
+                      {' '}<PremiumBadge />
+                    </Text>
+                  )}
                 </Text>
                 <View style={styles.compactSub}>
                   {seat ? (
@@ -553,6 +581,7 @@ export const PlayerStrip: React.FC<{
             status={seatStatus?.[p.id] ?? null}
             reactions={reactionsBySeat?.[p.id]}
             onReactionDone={onReactionDone}
+            isPremium={seatPremium?.[p.id] === true}
             onPressIdentity={onPressPlayer ? () => onPressPlayer(p.id) : undefined}
           />
         );

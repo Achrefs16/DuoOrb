@@ -24,6 +24,7 @@ import {
 import { AchievementsModal } from '../components/AchievementsModal';
 import { RatingChart } from '../components/RatingChart';
 import { GuestGate } from '../components/GuestGate';
+import { PremiumBadge } from '../components/PremiumBadge';
 import { toast } from '../components/AppToast';
 import { NoConnectionSection } from '../components/NoConnection';
 import { actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
@@ -444,6 +445,11 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               <View style={styles.identityMeta}>
                 <Text style={styles.usernameText} numberOfLines={1}>
                   {profile?.displayName || profile?.username}
+                  {profile?.isPremium === true && (
+                    <Text>
+                      {' '}<PremiumBadge />
+                    </Text>
+                  )}
                 </Text>
                 {!!profile?.username && (
                   <Text style={styles.handleText} numberOfLines={1}>

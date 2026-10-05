@@ -19,6 +19,7 @@ import { NoConnectionSection } from '../components/NoConnection';
 import { kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
 import { HistorySkeleton } from '../components/Skeleton';
 import { MatchResultModal } from '../components/MatchResultModal';
+import { AdBanner } from '../components/AdBanner';
 import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
 
 interface HistoryScreenProps {
@@ -441,18 +442,22 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
             </View>
           }
           ListFooterComponent={
-            games.length > 0 && games.length < total ? (
-              <TouchableOpacity
-                style={[styles.loadMoreBtn, loadingMore && styles.loadMoreBtnBusy]}
-                activeOpacity={0.8}
-                disabled={loadingMore}
-                onPress={() => void loadMore()}
-              >
-                <Text style={styles.loadMoreText}>
-                  {loadingMore ? 'Loading…' : `Load more (${games.length}/${total})`}
-                </Text>
-              </TouchableOpacity>
-            ) : null
+            <>
+              {games.length > 0 && games.length < total ? (
+                <TouchableOpacity
+                  style={[styles.loadMoreBtn, loadingMore && styles.loadMoreBtnBusy]}
+                  activeOpacity={0.8}
+                  disabled={loadingMore}
+                  onPress={() => void loadMore()}
+                >
+                  <Text style={styles.loadMoreText}>
+                    {loadingMore ? 'Loading…' : `Load more (${games.length}/${total})`}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              {/* Ad slot (P6, O2): below the pager, never above a button. */}
+              <AdBanner placement="list" />
+            </>
           }
           />
       )}

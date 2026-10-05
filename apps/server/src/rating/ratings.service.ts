@@ -20,12 +20,18 @@ export class RatingsService {
 
   private toEntry(r: any, rank: number) {
     const winRate = r.gamesPlayed > 0 ? Number(((r.wins / r.gamesPlayed) * 100).toFixed(1)) : 0;
+    // Badge-effective premium (P5.2): same no-write rule as public profiles —
+    // report the effective value, let /me persist the flip.
+    const premiumExpiresAt = r.user.profile?.premiumExpiresAt ?? null;
     return {
       rank,
       userId: r.userId,
       username: r.user.profile?.username ?? `player_${r.userId.slice(0, 6)}`,
       displayName: r.user.profile?.displayName ?? 'Player',
       avatarUrl: r.user.profile?.avatarUrl,
+      isPremium:
+        (r.user.profile?.isPremium ?? false) &&
+        (!premiumExpiresAt || new Date(premiumExpiresAt).getTime() > Date.now()),
       rating: Math.round(r.rating),
       rd: Math.round(r.rd),
       gamesPlayed: r.gamesPlayed,

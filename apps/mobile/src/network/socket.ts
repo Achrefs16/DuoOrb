@@ -2,8 +2,10 @@ import { io, Socket } from 'socket.io-client';
 // Type-only: the protocol package contributes no runtime code here, and
 // importing it for values would pull a CommonJS build into the bundle.
 import type { ClientToServerEvents, ServerToClientEvents } from '@duoorb/protocol';
+import { useSyncExternalStore } from 'react';
 import { SERVER_URL } from './config';
 import { getIdentity, subscribeIdentity } from './auth';
+import { isTokenFresh } from './tokenFreshness';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
 
@@ -116,6 +118,17 @@ class SocketManager {
   private linkDown = false;
   private linkListeners = new Set<(down: boolean) => void>();
   /**
+   * Server-confirmed authentication (ONLINE_HEALTH Phase A): true only after
+   * the server emits session:authState{verified:true} for THIS transport.
+   * Transport `connected` without verified=true is the ghost state — the
+   * lobby must render it as offline-with-retry, never as healthy.
+   * Null = unknown (never handshaked, or transport rebuilt).
+   */
+  private verified: boolean | null = null;
+  private verifiedListeners = new Set<(verified: boolean | null) => void>();
+  /** Refresh in flight (reconnect race + explicit retry share it). */
+  private refreshInFlight: Promise<boolean> | null = null;
+  /**
    * Intents the queue silently discarded: cap overflow (oldest shifted out)
    * or TTL expiry (older than 30s at flush). Deliberate routing drops
    * (stale leaves, cross-game scope) are NOT reported — only genuine
@@ -142,9 +155,78 @@ class SocketManager {
       }
     }
   }
+  /** Server-confirmed auth for THIS transport (see field). Null = unknown. */
+  public isVerified(): boolean | null {
+    return this.verified;
+  }
+
+  /** Subscribe to verified changes. Fires immediately with current value. */
+  public subscribeVerified(fn: (verified: boolean | null) => void): () => void {
+    this.verifiedListeners.add(fn);
+    try {
+      fn(this.verified);
+    } catch {
+      // One bad listener must not break the rest.
+    }
+    return () => {
+      this.verifiedListeners.delete(fn);
+    };
+  }
+
+  private setVerified(verified: boolean | null): void {
+    if (this.verified === verified) return;
+    this.verified = verified;
+    for (const fn of this.verifiedListeners) {
+      try {
+        fn(this.verified);
+      } catch {
+        // One bad listener must not break the rest.
+      }
+    }
+  }
+
   /** Current OS link verdict (see above). */
   public isLinkDown(): boolean {
     return this.linkDown;
+  }
+
+  /**
+   * Refreshes the access credential when it is expired or dying, then reports
+   * whether play can continue. Guest path rotates via the shared single-flight
+   * refresh (apiClient); account path re-reads the live Supabase session
+   * (which auto-refreshes). Dynamic imports keep apiClient's socketManager
+   * import from becoming a module-cycle. Shared in-flight so a reconnect race
+   * and an explicit retry rotate exactly once.
+   */
+  public refreshCredential(): Promise<boolean> {
+    if (!this.refreshInFlight) {
+      this.refreshInFlight = (async () => {
+        try {
+          const identity = getIdentity();
+          if (!identity) return false;
+          if (isTokenFresh(identity.accessToken)) return true;
+          if (identity.isGuest) {
+            const { refreshSessionOnce } = await import('./apiClient');
+            return refreshSessionOnce();
+          }
+          try {
+            const { getSupabaseAuth } = await import('../lib/supabase');
+            const { data, error } = await getSupabaseAuth().getSession();
+            if (error || !data.session?.access_token) return false;
+            const { patchIdentity: patch } = await import('./auth');
+            patch({ accessToken: data.session.access_token });
+            return true;
+          } catch {
+            return false;
+          }
+        } catch {
+          return false;
+        } finally {
+          this.refreshInFlight = null;
+        }
+      })();
+    }
+    return this.refreshInFlight;
   }
 
   /** Subscribe to OS link verdict changes. Returns the unsubscribe. */
@@ -421,6 +503,9 @@ class SocketManager {
     this.raw.removeAllListeners();
     this.raw.disconnect();
     this.raw = null;
+    // A new transport has proven nothing yet: verified resets to unknown so
+    // the UI cannot display the previous session's health as this one's.
+    this.setVerified(null);
   }
 
   private buildRaw(userId: string, displayName: string, token: string): RawSocket {
@@ -450,6 +535,23 @@ class SocketManager {
       this.authDead = false;
       this.giveUpAt = null;
       this.flushQueue();
+      // NOTE: verified is NOT set here — only session:authState (below) may
+      // set it. A transport that handshook with an expired token connects
+      // fine and stays unverified; marking verified on connect is exactly
+      // the ghost-online bug.
+    });
+
+    // Server handshake verdict (ONLINE_HEALTH Phase A): the ONLY writer of
+    // verified. true = recognized identity, presence set server-side.
+    // false = connected stranger — re-auth and re-handshake, don't linger.
+    s.on('session:authState', (state: { verified?: unknown } | undefined) => {
+      if (state?.verified === true) {
+        this.lastReauthToken = null;
+        this.setVerified(true);
+        return;
+      }
+      this.setVerified(false);
+      void this.reauthAndReconnect();
     });
 
     // Superseded: this account connected elsewhere, which is now the single
@@ -496,7 +598,27 @@ class SocketManager {
       }
     });
 
-    s.io.on('reconnect_attempt', () => this.setStatus('reconnecting'));
+    s.io.on('reconnect_attempt', () => {
+      this.setStatus('reconnecting');
+      // Refresh-first reconnect (Phase A): socket.io fires the attempt
+      // immediately, so this only warms the NEXT handshake — the manager
+      // updates raw.auth in place, which v4 presents on subsequent attempts.
+      // With 15 attempts sharing backoff, a stale token converges to fresh
+      // within a few tries instead of handshaking dead 15 times.
+      void this.refreshCredential().then((ok) => {
+        if (!ok) return;
+        const identity = getIdentity();
+        if (identity && this.raw) {
+          try {
+            (this.raw as unknown as { auth: unknown }).auth = {
+              token: identity.accessToken,
+            };
+          } catch {
+            // Non-fatal: the next full rebuild picks the credential up.
+          }
+        }
+      });
+    });
     s.io.on('reconnect_failed', () => {
       console.warn('[socket] reconnect_failed: cooling down, transport stays down');
       this.giveUpAt = Date.now();
@@ -571,13 +693,84 @@ class SocketManager {
   }
 
   /**
-   * Explicit user retry (e.g. a "try again" affordance after a join error):
-   * drops any post-give-up cooldown and cranks the transport now, instead
-   * of waiting out RECONNECT_COOLDOWN_MS.
+   * Unverified-transport recovery (Phase A): the server just told us this
+   * connection handshook as a stranger. Refresh the credential; on success
+   * tear down and rebuild so the NEXT handshake presents it (updating auth
+   * on a live-but-unverified socket never re-verifies it). On failure the
+   * credential is dead: park in authDead with a visible disconnected state
+   * and let the user retry or re-sign-in — never linger as a ghost.
+   */
+  private reauthInFlight: Promise<void> | null = null;
+  /**
+   * Token the last reauth rebuilt with. If the server rejects the SAME token
+   * twice in a row (revoked server-side, wiped DB), rebuilding again is a
+   * loop — park instead. Cleared on any verified handshake.
+   */
+  private lastReauthToken: string | null = null;
+
+  private reauthAndReconnect(): void {
+    if (this.reauthInFlight) return;
+    this.reauthInFlight = (async () => {
+      const ok = await this.refreshCredential();
+      const token = getIdentity()?.accessToken ?? null;
+      if (ok && token && token !== this.lastReauthToken) {
+        // Rebuild (not merely re-auth): only a new handshake re-verifies.
+        this.lastReauthToken = token;
+        this.disposeRaw();
+        this.syncWithIdentity();
+        this.ensureConnected();
+      } else {
+        // Dead credential, or the same credential rejected twice: tear down
+        // the stranger-transport (the server ignores everything it sends)
+        // and park with a visible state + retry path instead of looping.
+        // disposeRaw resets verified to unknown; re-assert false so the UI
+        // keeps showing the expired-session state, not a loading shimmer.
+        this.lastReauthToken = null;
+        this.authDead = true;
+        this.disposeRaw();
+        this.setVerified(false);
+        this.setStatus('disconnected');
+        void import('../components/AppToast')
+          .then((m) =>
+            m.toast.show(
+              getIdentity()?.isGuest === false
+                ? 'Session expired, sign in again.'
+                : 'Session expired. Restart to play again.'
+            )
+          )
+          .catch(() => {});
+      }
+    })().finally(() => {
+      this.reauthInFlight = null;
+    });
+    void this.reauthInFlight;
+  }
+
+  /**
+   * Explicit user retry (e.g. the Home pill or a "try again" affordance):
+   * drops any post-give-up cooldown AND any dead-credential park, cranks the
+   * transport NOW with the current credential, and refreshes in parallel —
+   * whichever wins. A truly dead credential re-parks on the next failure
+   * (authState → reauth), so one explicit tap can never start a storm.
    */
   public retryNow(): void {
     this.giveUpAt = null;
+    this.authDead = false;
     this.ensureConnected();
+    void this.refreshCredential();
+  }
+
+  /**
+   * App-foreground revalidation (Phase C): refresh a dying credential, revive
+   * a dead transport, and let the screens' own polls converge on data. Called
+   * from the single App-level AppState listener — screens keep no socket
+   * timers of their own.
+   */
+  public foregroundRevalidate(): void {
+    void this.refreshCredential().finally(() => {
+      this.syncWithIdentity();
+      this.ensureConnected();
+    });
   }
 
   private ensureConnected(): void {
@@ -663,6 +856,7 @@ class SocketManager {
     }
     this.disposeRaw();
     this.boundTo = null;
+    this.lastReauthToken = null;
     // Explicit teardown drops queued intents with the session they belong to.
     this.emitQueue = [];
     // A fresh session starts with a clean slate: no stale give-up gating it.
@@ -672,3 +866,16 @@ class SocketManager {
 }
 
 export const socketManager = new SocketManager();
+
+/**
+ * Live verified flag for indicators. Screens must render verified (not
+ * transport-connected) as the health signal: connected + unverified is the
+ * ghost state and must look offline-with-retry, never healthy.
+ */
+export function useVerified(): boolean | null {
+  return useSyncExternalStore(
+    (fn) => socketManager.subscribeVerified(fn),
+    () => socketManager.isVerified(),
+    () => socketManager.isVerified()
+  );
+}

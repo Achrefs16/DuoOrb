@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { AIDifficulty, GameMode } from '@duoorb/game-core';
+import { AIDifficulty, GameMode, botById, botLadder } from '@duoorb/game-core';
 import { THEME } from '../theme';
+import { isPremiumActive, usePremium } from '../monetization/premium';
 import { runWhenOnline } from '../components/NoConnection';
 import { TIME_CONTROLS, TimeControl } from '../timeControls';
 import { resolveMode } from '../matchModes';
@@ -20,6 +21,8 @@ export interface MatchSetupPageSelection {
   vsType: 'ai' | 'local' | 'challenge' | 'online';
   clock: TimeControl;
   difficulty: AIDifficulty;
+  /** Premium personality id, or null for the generic difficulty bot (D5). */
+  botId: string | null;
   side: SideChoice;
   playerCount: PlayerCount;
   wallsEach: number;
@@ -31,6 +34,8 @@ interface MatchSetupScreenProps {
   initialClock?: TimeControl;
   initialDifficulty?: AIDifficulty;
   incrementEnabled?: boolean;
+  /** Locked-bot tap destination (P7 PremiumSheet; "coming soon" hold until then). */
+  onLockedBot?: () => void;
   onConfirm: (selection: MatchSetupPageSelection) => void;
   onBack: () => void;
 }
@@ -56,16 +61,30 @@ const ELO: Record<AIDifficulty, string> = {
   hard: '1800 ELO',
 };
 
+// TEMP-TEST ONLY — REMOVE BEFORE ANY RELEASE BUILD. Opens the premium bot
+// rows so personalities can be playtested without a sandbox subscription.
+const DEV_UNLOCK_BOTS = true;
+
 export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
   initialKind: vsType,
   challengeName,
   initialClock,
   initialDifficulty = 'normal',
+  onLockedBot,
   onConfirm,
   onBack,
 }) => {
   const [modeSel, setModeSel] = useState<SetupMode>('classic');
   const [difficulty, setDifficulty] = useState<AIDifficulty>(initialDifficulty);
+  // Premium personality (null = generic difficulty bot). Picking a difficulty
+  // always drops back to generic; picking a bot adopts its difficulty tier.
+  const [botId, setBotId] = useState<string | null>(null);
+  const premium = usePremium();
+  const selectedBot = botId ? botById(botId) : null;
+  const pickDifficulty = (d: AIDifficulty) => {
+    setDifficulty(d);
+    setBotId(null);
+  };
   const [side, setSide] = useState<SideChoice>('blue');
   const [playerCount, setPlayerCount] = useState<PlayerCount>(2);
   const [clock, setClock] = useState<TimeControl>(initialClock ?? TIME_CONTROLS[2]);
@@ -159,7 +178,9 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             <View style={styles.section}>
               <View style={styles.labelRow}>
                 <Text style={styles.sectionLabel}>AI Difficulty</Text>
-                <Text style={styles.sectionHint}>{ELO[difficulty]}</Text>
+                <Text style={styles.sectionHint}>
+                  {selectedBot ? `${selectedBot.elo} ELO` : ELO[difficulty]}
+                </Text>
               </View>
               <View style={styles.track}>
                 {(
@@ -172,13 +193,69 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                   <TouchableOpacity
                     key={d.id}
                     style={[styles.opt, difficulty === d.id && styles.optActive]}
-                    onPress={() => setDifficulty(d.id)}
+                    onPress={() => pickDifficulty(d.id)}
                   >
                     <Text style={[styles.optText, difficulty === d.id && styles.optTextActive]}>
                       {d.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+            </View>
+          )}
+
+          {/* Named opponent (MONETIZATION.md P4.2.1): premium personalities
+              below the generic track. Locked cards show a lock and route to
+              the paywall hold; premium members select directly. */}
+          {vsType === 'ai' && (
+            <View style={styles.section}>
+              <View style={styles.labelRow}>
+                <Text style={styles.sectionLabel}>Opponent</Text>
+                <Text style={styles.sectionHint}>
+                  {selectedBot ? selectedBot.name : 'Generic AI'}
+                </Text>
+              </View>
+              <View style={styles.botList}>
+                {botLadder().map((b) => {
+                  const locked =
+                    !DEV_UNLOCK_BOTS && b.premium && !isPremiumActive(premium);
+                  const selected = botId === b.id;
+                  return (
+                    <TouchableOpacity
+                      key={b.id}
+                      style={[styles.botRow, selected && styles.botRowActive]}
+                      onPress={() => {
+                        if (locked) {
+                          onLockedBot?.();
+                          return;
+                        }
+                        setBotId(b.id);
+                        setDifficulty(b.profile.difficulty);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${b.name}, ${b.title}, ${b.elo} ELO${locked ? ', locked' : ''}`}
+                    >
+                      <View style={[styles.botGlyph, { backgroundColor: b.color }]}>
+                        <Text style={styles.botGlyphText}>{b.avatarGlyph}</Text>
+                      </View>
+                      <View style={styles.botMeta}>
+                        <Text style={styles.botName}>
+                          {b.name} <Text style={styles.botElo}>· {b.elo}</Text>
+                        </Text>
+                        <Text style={styles.botTitle} numberOfLines={1}>
+                          {b.title}
+                        </Text>
+                      </View>
+                      {locked ? (
+                        <Feather name="lock" size={15} color={THEME.colors.textSecondaryStrong} />
+                      ) : (
+                        selected && (
+                          <Feather name="check-circle" size={17} color={THEME.colors.primary} />
+                        )
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           )}
@@ -291,6 +368,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                   vsType,
                   clock,
                   difficulty,
+                  botId,
                   side,
                   playerCount,
                   wallsEach: walls,
@@ -421,6 +499,58 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
+  },
+  botList: {
+    gap: 6,
+  },
+  botRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  botRowActive: {
+    backgroundColor: THEME.colors.backgroundCard,
+    borderColor: THEME.colors.primary,
+    ...THEME.shadows.card,
+  },
+  botGlyph: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  botGlyphText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  botMeta: {
+    flex: 1,
+    gap: 1,
+  },
+  botName: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.textOnMuted,
+  },
+  botElo: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 11,
+    fontWeight: '500',
+    color: THEME.colors.statusOffline,
+  },
+  botTitle: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 11,
+    color: THEME.colors.textSecondaryStrong,
   },
   hintBanner: {
     flexDirection: 'row',

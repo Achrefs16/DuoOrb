@@ -23,6 +23,7 @@ import {
 } from '../network/apiClient';
 import { useSession } from '../network/session';
 import { GuestGate } from '../components/GuestGate';
+import { PremiumBadge } from '../components/PremiumBadge';
 import { toast } from '../components/AppToast';
 import { NoConnectionSection, runWhenOnline } from '../components/NoConnection';
 import { NetworkError, actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
@@ -324,6 +325,11 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
             <View style={styles.nameRow}>
               <Text style={[styles.friendName, !isOnline && styles.friendNameCompact]} numberOfLines={1}>
                 {resolveName(friend)}
+                {friend.isPremium === true && (
+                  <Text>
+                    {' '}<PremiumBadge />
+                  </Text>
+                )}
               </Text>
               <Text style={[styles.friendRating, !isOnline && styles.friendRatingCompact]}>{friend.rating}</Text>
             </View>

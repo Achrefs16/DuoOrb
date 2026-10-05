@@ -13,6 +13,7 @@
     },
     "android": {
       "package": "com.asdigital.duoorb",
+      "versionCode": 2,
       "permissions": [],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
@@ -52,6 +53,12 @@
           "image": "./assets/Glossy Orbital Duo Logo.png",
           "imageWidth": 200,
           "resizeMode": "contain"
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-6057010656402010~3789437235"
         }
       ]
     ]

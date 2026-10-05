@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   AIDifficulty,
   AI_PROFILES,
+  botById,
   CellCoord,
   GameAction,
   GameMode,
@@ -45,6 +46,11 @@ import type { ReactionKind } from '../network/useQuickReactions';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
 import { useIdentity } from '../network/auth';
 import { socketManager } from '../network/socket';
+import { RewardSheet } from '../components/RewardSheet';
+import { PremiumSheet } from '../components/PremiumSheet';
+import { isPremiumActive, refreshPremium, usePremium } from '../monetization/premium';
+import { preloadRewarded, showRewarded } from '../monetization/ads';
+import { isAnalysisUnlocked, markAnalysisUnlocked } from '../monetization/analysisAccess';
 // Serializes a finished hard-AI win for the server upload (achievements).
 import { formatGame } from '@duoorb/game-core';
 
@@ -60,6 +66,8 @@ interface GameScreenProps {
    */
   initialOnlineSnapshot?: GameSyncDto | null;
   aiDifficulty?: AIDifficulty;
+  /** Premium personality id for AI games (null = generic difficulty bot). */
+  botId?: string | null;
   timeControl?: TimeControl;
   incrementEnabled?: boolean;
   premoveEnabled?: boolean;
@@ -69,7 +77,12 @@ interface GameScreenProps {
   onHome: () => void;
   onNewGame: () => void;
   onRematchAccepted?: (newGameId: string) => void;
-  onAnalyze: (initialState: GameState, history: any[], perspectiveIdx: number) => void;
+  onAnalyze: (
+    initialState: GameState,
+    history: any[],
+    perspectiveIdx: number,
+    access: { gameId: string; historyLength: number }
+  ) => void;
   /** Opens the shared player profile for a seat that has an account behind it. */
   onOpenPlayerProfile?: (player: { userId: string; username: string }) => void;
   wallsEach?: number;
@@ -86,14 +99,27 @@ function playerNamesFor(
   type: 'local' | 'ai' | 'online',
   aiDifficulty: AIDifficulty,
   humanIdx: number,
-  ownName: string
+  ownName: string,
+  /** Premium personality display name, or null for the generic bot. */
+  aiName: string | null
 ) {
   const n = playerCountForMode(mode);
   if (type === 'ai') {
-    if (mode === '2p') return humanIdx === 0 ? [ownName, `AI · ${aiDifficulty}`] : [`AI · ${aiDifficulty}`, ownName];
+    if (mode === '2p') {
+      const foe = aiName ?? `AI · ${aiDifficulty}`;
+      return humanIdx === 0 ? [ownName, foe] : [foe, ownName];
+    }
     // AI games: you lead, every other seat is an AI opponent.
     return Array.from({ length: n }, (_, i) =>
-      i === 0 ? ownName : i === 1 ? 'AI' : `AI ${i}`
+      i === 0
+        ? ownName
+        : aiName
+          ? i === 1
+            ? aiName
+            : `${aiName} ${i}`
+          : i === 1
+            ? 'AI'
+            : `AI ${i}`
     );
   }
   if (type === 'online') {
@@ -162,6 +188,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   onlineSource = 'quick',
   initialOnlineSnapshot = null,
   aiDifficulty = 'normal',
+  botId = null,
   timeControl = DEFAULT_TIME_CONTROL,
   incrementEnabled = true,
   premoveEnabled = true,
@@ -209,8 +236,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   // Every non-human seat in an AI game is AI-controlled
   const isAiSide = (idx: number) => type === 'ai' && idx !== humanIdx;
+  // Premium personality (MONETIZATION.md P4.2.2): its profile replaces
+  // AI_PROFILES[aiDifficulty] for every AI seat; null = generic bot (D5).
+  const personality = type === 'ai' ? botById(botId) : null;
   const [initialState, setInitialState] = useState<GameState>(() =>
-    createInitialState({ mode, playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You'), wallsEach })
+    createInitialState({ mode, playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You', personality?.name ?? null), wallsEach })
   );
 
   const [state, setState] = useState<GameState>(initialState);
@@ -281,6 +311,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
   const [showGameOver, setShowGameOver] = useState<boolean>(false);
+  // Rewarded-analysis gate (MONETIZATION.md P3.2): the GameOverModal Analyze
+  // row funnels through handleAnalyzePress below — premium/unlocked go
+  // straight to review, everyone else gets this sheet (one ad = this game).
+  const premiumState = usePremium();
+  const [rewardOpen, setRewardOpen] = useState(false);
+  const [rewardBusy, setRewardBusy] = useState(false);
+  const [rewardError, setRewardError] = useState<string | null>(null);
+  // Paywall entry routing (P7.2): this screen only ever sells from analysis.
+  const [premiumOpen, setPremiumOpen] = useState(false);
+  const [premiumSource, setPremiumSource] = useState('analysis');
   // Hard-AI victory reward, set only from a live server response. Null while
   // offline or when no badge was earned — the modal renders celebration UI
   // exclusively from this, so offline play can never show an error.
@@ -696,7 +736,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         try {
           const live = stateRef.current;
           if (cancelled || live.status !== 'IN_PROGRESS' || !isAiSide(live.currentPlayerIndex)) return;
-          const profile = AI_PROFILES[aiDifficulty];
+          const profile = personality?.profile ?? AI_PROFILES[aiDifficulty];
           // Unbounded deep search off the critical path: time slices yield
           // to the event loop (thinking indicator stays alive), depth is the
           // only ceiling, cancellation keeps the best completed ply.
@@ -799,6 +839,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (state.status === 'COMPLETED' && !showGameOver) {
       setShowGameOver(true);
       void playGameEndSound();
+      // Warm the rewarded unit while the user reads the result — the Analyze
+      // gate later shows instantly instead of loading then.
+      preloadRewarded('analysis');
       setFinishModal(null);
       setPremoveQueue([]);
       setPremoveSel(null);
@@ -824,7 +867,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       // Hard-AI victory reporting: upload the win for badges and analysis, or
       // queue it silently when offline. Celebration appears only from a live
       // server response — never an error, never while offline.
-      if (type === 'ai' && aiDifficulty === 'hard' && state.winnerId === state.players[humanIdx]?.id) {
+      if (type === 'ai' && aiDifficulty === 'hard' && !personality && state.winnerId === state.players[humanIdx]?.id) {
         const payload: SubmitAiWinBody = {
           clientWinId: `aiwin:${state.gameId}`,
           mode: state.mode,
@@ -1119,7 +1162,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setPremoveSel(null);
     const fresh = createInitialState({
       mode,
-      playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You'),
+      playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You', personality?.name ?? null),
       wallsEach,
     });
     setState(fresh);
@@ -1139,6 +1182,51 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // You always sit at the bottom on your own phone: the human side in AI
   // games, the first player otherwise. Nobody's clock ever swaps sides.
   const seatIdx = type === 'online' ? activeHumanIdx : type === 'ai' ? humanIdx : 0;
+
+  // Rewarded-analysis gate (MONETIZATION.md P3.2): the access key identifies
+  // THIS finished game — state.gameId is fresh per mount and per rematch, so
+  // every completed game gates separately while re-opens stay free (E13).
+  const openReview = useCallback(() => {
+    setRewardOpen(false);
+    setShowGameOver(false);
+    onAnalyze(initialState, state.history, seatIdx, {
+      gameId: state.gameId,
+      historyLength: state.history.length,
+    });
+  }, [initialState, state.history, state.gameId, seatIdx, onAnalyze]);
+
+  const handleAnalyzePress = useCallback(async () => {
+    setShowGameOver(false);
+    if (isPremiumActive(premiumState)) {
+      openReview();
+      return;
+    }
+    if (await isAnalysisUnlocked(state.gameId, state.history.length)) {
+      openReview();
+      return;
+    }
+    setRewardError(null);
+    setRewardOpen(true);
+  }, [premiumState, state.gameId, state.history.length, openReview]);
+
+  const handleWatchAd = useCallback(async () => {
+    setRewardBusy(true);
+    setRewardError(null);
+    const res = await showRewarded('analysis');
+    if (res.earned) {
+      try {
+        await markAnalysisUnlocked(state.gameId, state.history.length);
+        openReview();
+      } catch {
+        // E12: the unlock write failed — stay locked, say so, retry allowed.
+        setRewardError('store');
+      }
+    } else {
+      // E10/E11: early close, no fill, or SDK error — sheet stays, no dead end.
+      setRewardError(res.error ?? 'dismissed');
+    }
+    setRewardBusy(false);
+  }, [state.gameId, state.history.length, openReview]);
 
   // My seat + finished state (online): a FINISHED player leaves freely
   // with placement kept; only ACTIVE players resign/forfeit on departure.
@@ -1194,7 +1282,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (!Number.isFinite(myDist) || !Number.isFinite(aiDist)) return;
     if (!laughedRef.current && aiDist + 1 <= myDist && myDist > 2) {
       laughedRef.current = true;
-      reactions.preview('laugh');
+      // Personalities taunt with 'angry' (reads as a jab); the generic bot
+      // keeps its familiar laugh. Praise stays a clap either way.
+      reactions.preview(personality ? 'angry' : 'laugh');
     } else if (!clappedRef.current && myDist + 2 <= aiDist && aiDist > 2) {
       clappedRef.current = true;
       reactions.preview('clap');
@@ -1488,6 +1578,20 @@ const groupedReactions = useMemo(() => {
   return groupReactionsBySeat(reactions.incoming, userIdToSeat);
 }, [type, reactions.incoming, online.playerUserIds]);
 
+// Premium badges, keyed by seat (P5.2): the sync's frozen premium list mapped
+// through the same seat→account inversion. AI/local tables have no accounts
+// behind seats — no badges, by construction.
+const seatPremium = useMemo<Record<string, boolean>>(() => {
+  if (type !== 'online') return {};
+  const premium = new Set(online.premiumUserIds ?? []);
+  if (premium.size === 0) return {};
+  const map: Record<string, boolean> = {};
+  for (const [seatId, userId] of Object.entries(online.playerUserIds ?? {})) {
+    if (premium.has(userId)) map[seatId] = true;
+  }
+  return map;
+}, [type, online.playerUserIds, online.premiumUserIds]);
+
 // Seat miss: sync arrived but neither your id nor name matches a seat
 // (changed identity mid-flow). Never silently play as someone else — the
 // seat resolves as soon as the ids line up, and Back frees the screen
@@ -1608,6 +1712,11 @@ useEffect(() => {
   // 1v1 result modal names a single opponent; multiplayer has no one opponent.
   const opponentSeatId = !isMultiplayer ? topList[0]?.id ?? null : null;
   const opponentAccountForResult = opponentSeatId ? opponentAccount(opponentSeatId) : null;
+  // 1v1 subtitle badge (P5.2): the named opponent's frozen premium flag.
+  const opponentIsPremium =
+    type === 'online' &&
+    opponentAccountForResult != null &&
+    (online.premiumUserIds ?? []).includes(opponentAccountForResult.userId);
 
   // Board-relative drag position for the ghost preview, reduced to a
   // snapped-slot STRING key. The raw computation below is trivial (rect
@@ -1735,6 +1844,7 @@ state={topStripState}
             grid={splitActive}
             bonus={lastBonus}
             seatStatus={onlineSeatStatus}
+            seatPremium={seatPremium}
             reactionsBySeat={groupedReactions.bySeat}
             onReactionDone={reactions.dismiss}
             onPressPlayer={handleOpponentPress}
@@ -1813,6 +1923,7 @@ state={topStripState}
                 grid={splitActive}
                 hideWallsForPlayerId={splitActive ? seatPlayer?.id : undefined}
                 seatStatus={onlineSeatStatus}
+                seatPremium={seatPremium}
                 reactionsBySeat={groupedReactions.bySeat}
                 onReactionDone={reactions.dismiss}
                 onPressPlayer={splitActive ? handleBottomGridPress : undefined}
@@ -2074,7 +2185,7 @@ state={topStripState}
           isMultiplayer
             ? undefined
             : type === 'ai'
-            ? `AI - ${aiDifficulty.charAt(0).toUpperCase()}${aiDifficulty.slice(1)}`
+            ? personality?.name ?? `AI - ${aiDifficulty.charAt(0).toUpperCase()}${aiDifficulty.slice(1)}`
             : topList[0]?.displayName || 'Opponent'
         }
         isWinner={
@@ -2099,6 +2210,8 @@ state={topStripState}
         }}
         onReplay={enterReplay}
         opponentUserId={opponentAccountForResult?.userId ?? null}
+        opponentIsPremium={opponentIsPremium}
+        seatPremium={seatPremium}
         onViewOpponentProfile={
           opponentAccountForResult
             ? () => {
@@ -2107,15 +2220,37 @@ state={topStripState}
               }
             : undefined
         }
-        onAnalyze={() => {
-          setShowGameOver(false);
-          onAnalyze(initialState, state.history, seatIdx);
-        }}
+        onAnalyze={handleAnalyzePress}
         onHome={() => {
           setShowGameOver(false);
           onHome();
         }}
         onClose={() => setShowGameOver(false)}
+      />
+      <RewardSheet
+        visible={rewardOpen}
+        busy={rewardBusy}
+        error={rewardError}
+        onWatch={handleWatchAd}
+        onPremium={() => {
+          if (rewardBusy) return;
+          setRewardOpen(false);
+          setRewardError(null);
+          setPremiumSource('analysis');
+          setPremiumOpen(true);
+        }}
+        onClose={() => {
+          if (!rewardBusy) setRewardOpen(false);
+        }}
+      />
+      <PremiumSheet
+        visible={premiumOpen}
+        entry={premiumSource}
+        onClose={() => setPremiumOpen(false)}
+        onDone={() => {
+          setPremiumOpen(false);
+          void refreshPremium();
+        }}
       />
 
       {/* Rematch toast rendered as its own Modal so it floats above the

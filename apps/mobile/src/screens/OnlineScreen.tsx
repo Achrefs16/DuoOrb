@@ -197,6 +197,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
   const {
     state: mmState,
+    takingLong,
     findMatch,
     cancelMatch,
   } = useMatchmaking({
@@ -688,17 +689,29 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 </TouchableOpacity>
               </>
             ) : isSearching ? (
-              <TouchableOpacity
-                style={styles.cancelSearchBtn}
-                activeOpacity={0.8}
-                onPress={() => {
-                  cancelMatch();
-                  onBack();
-                }}
-              >
-                <Feather name="x" size={16} color={THEME.colors.onSurface} />
-                <Text style={styles.cancelSearchText}>Cancel Search</Text>
-              </TouchableOpacity>
+              <>
+                {/* ONLINE_HEALTH Phase D: two minutes with no match is honest
+                    information, not failure — rare clocks, wide rating gaps
+                    and half-full 3P/4P tables all wait legitimately. The
+                    search keeps running; this only explains the wait. */}
+                {takingLong && (
+                  <Text style={styles.searchSlowText}>
+                    Still searching — uncommon time controls and wide rating gaps
+                    take longer. You can wait or try a standard Rapid clock.
+                  </Text>
+                )}
+                <TouchableOpacity
+                  style={styles.cancelSearchBtn}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    cancelMatch();
+                    onBack();
+                  }}
+                >
+                  <Feather name="x" size={16} color={THEME.colors.onSurface} />
+                  <Text style={styles.cancelSearchText}>Cancel Search</Text>
+                </TouchableOpacity>
+              </>
             ) : !isMatched ? (
               <TouchableOpacity
                 style={styles.retrySearchBtn}
@@ -2040,6 +2053,14 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
     color: THEME.colors.onSurface,
+  },
+  searchSlowText: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    lineHeight: 17,
+    color: THEME.colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: 12,
   },
   startingRow: {
     width: '100%',

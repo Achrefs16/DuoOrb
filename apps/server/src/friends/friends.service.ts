@@ -26,15 +26,28 @@ export class FriendsService {
     return friendships.map((f) => {
       const friendUser = f.user1Id === userId ? f.user2 : f.user1;
       const r = friendUser.ratings[0];
+      const friendPremiumExpiresAt = friendUser.profile?.premiumExpiresAt ?? null;
+      // ONLINE_HEALTH C1: same 5-minute freshness rule as the Home count.
+      // A killed app whose disconnect never landed must read OFFLINE here
+      // too — otherwise friends shows ONLINE while the count excludes them.
+      const presenceFresh =
+        friendUser.profile?.updatedAt != null &&
+        Date.now() - new Date(friendUser.profile.updatedAt).getTime() <
+          5 * 60 * 1000;
       return {
         id: friendUser.id,
         username: friendUser.profile?.username ?? `player_${friendUser.id.slice(0, 6)}`,
         displayName: friendUser.profile?.displayName ?? `Player`,
         avatarUrl: friendUser.profile?.avatarUrl,
+        // Badge-effective premium (P5.2): no-write, same rule as elsewhere.
+        isPremium:
+          (friendUser.profile?.isPremium ?? false) &&
+          (!friendPremiumExpiresAt ||
+            new Date(friendPremiumExpiresAt).getTime() > Date.now()),
         rating: r?.rating ?? 1500,
         status: friendUser.profile?.isPlaying
           ? 'PLAYING'
-          : friendUser.profile?.isOnline
+          : friendUser.profile?.isOnline && presenceFresh
           ? 'ONLINE'
           : 'OFFLINE',
       };

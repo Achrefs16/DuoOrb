@@ -26,6 +26,14 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 
 const created: any[] = [];
 
+// ONLINE_HEALTH Phase A: refresh outcomes are scripted per test. Default
+// false (rotation fails) so tests must opt into success explicitly.
+let refreshResult = false;
+
+vi.mock('./apiClient', () => ({
+  refreshSessionOnce: async () => refreshResult,
+}));
+
 vi.mock('socket.io-client', () => ({
   io: (_url: string, opts: any) => {
     const listeners = new Map<string, Set<Function>>();
@@ -481,5 +489,97 @@ describe('reconnect core (F6)', () => {
     created[0].__fire('session:superseded');
     expect(created[0].connected).toBe(false);
     expect(socketMod.socketManager.getStatus()).toBe('disconnected');
+  });
+});
+
+/**
+ * ONLINE_HEALTH Phase A: verified tracking + re-auth recovery.
+ *
+ * The ghost-online bug: a transport that handshook with an expired token
+ * connects fine but stays server-unverified, so every mutating action fails
+ * while the UI looks healthy. The server now emits session:authState per
+ * handshake; these tests lock the client side of that contract.
+ */
+describe('verified transport state and re-auth recovery', () => {
+  const jwt = (expSec: number) => {
+    const b64 = (o: unknown) =>
+      Buffer.from(JSON.stringify(o), 'utf8')
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+    return `${b64({ alg: 'HS256' })}.${b64({ sub: 'u1', exp: expSec })}.sig`;
+  };
+  const futureJwt = () => jwt(Math.floor(Date.now() / 1000) + 3600);
+  const pastJwt = () => jwt(Math.floor(Date.now() / 1000) - 3600);
+
+  beforeEach(() => {
+    refreshResult = false;
+  });
+
+  it('starts unknown, tracks verified true, resets on rebuild', () => {
+    expect(socketMod.socketManager.isVerified()).toBeNull();
+    socketMod.socketManager.getSocket();
+    auth.setIdentity(identity('u_one', futureJwt()));
+    expect(socketMod.socketManager.isVerified()).toBeNull();
+
+    created[0].__fire('session:authState', { verified: true, userId: 'u_one' });
+    expect(socketMod.socketManager.isVerified()).toBe(true);
+
+    // Rebuild (new account) resets to unknown — never inherits health.
+    auth.setIdentity(identity('u_two', futureJwt()));
+    expect(socketMod.socketManager.isVerified()).toBeNull();
+  });
+
+  it('unverified handshake with dead credential parks visibly, no loop', async () => {
+    socketMod.socketManager.getSocket();
+    auth.setIdentity(identity('u_one', pastJwt()));
+    expect(created).toHaveLength(1);
+
+    // Server: connected transport, rejected identity.
+    created[0].__fire('session:authState', { verified: false, userId: 'u_one' });
+    expect(socketMod.socketManager.isVerified()).toBe(false);
+    // Refresh fails (refreshResult=false): parks instead of rebuilding.
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(created).toHaveLength(1);
+    expect(socketMod.socketManager.getStatus()).toBe('disconnected');
+  });
+
+  it('unverified handshake with a rotated credential rebuilds once', async () => {
+    refreshResult = true;
+    socketMod.socketManager.getSocket();
+    auth.setIdentity(identity('u_one', pastJwt()));
+    expect(created).toHaveLength(1);
+
+    created[0].__fire('session:authState', { verified: false, userId: 'u_one' });
+    // Rotation lands before the reauth microtask resumes: rebuild presents
+    // the NEW token exactly once.
+    auth.patchIdentity({ accessToken: futureJwt() });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(created).toHaveLength(2);
+
+    // Same credential rejected again: parks, never loops rebuilds.
+    created[1].__fire('session:authState', { verified: false, userId: 'u_one' });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(created).toHaveLength(2);
+    expect(socketMod.socketManager.getStatus()).toBe('disconnected');
+  });
+
+  it('explicit retry clears the park and cranks immediately', async () => {
+    socketMod.socketManager.getSocket();
+    auth.setIdentity(identity('u_one', pastJwt()));
+    created[0].__fire('session:authState', { verified: false, userId: 'u_one' });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(socketMod.socketManager.getStatus()).toBe('disconnected');
+
+    // Park tore the stranger-transport down, so retry builds fresh.
+    socketMod.socketManager.retryNow();
+    expect(created).toHaveLength(2);
+    expect(created[1].connected).toBe(true);
+    expect(socketMod.socketManager.getStatus()).toBe('connected');
   });
 });

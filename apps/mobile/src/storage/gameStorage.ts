@@ -54,6 +54,8 @@ export interface UserSettings {
   extendedQueue: boolean;
   /** Long 10s AI pause, for testing premoves. */
   testThink: boolean;
+  /** Board surface palette: 'light' free, 'midnight' premium (P5.1). */
+  themeName: 'light' | 'midnight';
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -67,6 +69,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   premoveEnabled: false,
   extendedQueue: true,
   testThink: false,
+  themeName: 'light',
 };
 
 // In-memory cache
@@ -211,6 +214,11 @@ export async function loadSettings(): Promise<UserSettings> {
       // Drop the retired haptics flag from older installs: no vibration code
       // ever read it, so keeping it would only preserve a dead key.
       delete (inMemorySettings as Partial<UserSettings> & { hapticsEnabled?: boolean }).hapticsEnabled;
+      // Whitelist the board theme (E23): an unknown value (downgrade, corrupt
+      // store) falls back to light instead of breaking the board renderer.
+      if (inMemorySettings.themeName !== 'midnight') {
+        inMemorySettings.themeName = 'light';
+      }
     }
   } catch (e) {
     console.error('Failed to load settings', e);

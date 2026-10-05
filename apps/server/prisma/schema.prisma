@@ -32,6 +32,7 @@ model User {
   aiWins            AiWin[]
   achievements      Achievement[]
   equippedBadges    EquippedBadge[]
+  subscriptionEvents SubscriptionEvent[]
 
   @@map("users")
 }
@@ -77,7 +78,15 @@ model Profile {
   bio         String?
   isOnline    Boolean  @default(false)
   isPlaying   Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  /// Premium entitlement (source of truth for the mobile usePremium hook).
+  /// Written ONLY by BillingService from verified RevenueCat webhooks or
+  /// manual grants — never from client input.
+  isPremium         Boolean   @default(false)
+  premiumExpiresAt  DateTime?
+  /// "revenuecat" | "grant" — where the current entitlement came from.
+  premiumSource     String?
+  premiumUpdatedAt  DateTime?
+  createdAt DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@map("profiles")
@@ -303,4 +312,25 @@ model EquippedBadge {
   @@unique([userId, slot])
   @@unique([userId, code])
   @@map("equipped_badges")
+}
+
+/// Raw RevenueCat webhook event log. Every delivery is stored by its
+/// RevenueCat event id BEFORE being applied, so duplicate/redelivered webhooks
+/// are idempotent no-ops and out-of-order deliveries can be ignored safely
+/// (only events newer than the stored premiumExpiresAt take effect).
+model SubscriptionEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// RevenueCat `event.id` — unique per delivery, enforced unique here.
+  rcEventId String   @unique
+  /// INITIAL_PURCHASE | RENEWAL | CANCELLATION | EXPIRATION | BILLING_ISSUE | PRODUCT_CHANGE
+  eventType String
+  productId String?
+  /// RevenueCat `expiration_at_ms`, null when the event carries none.
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("subscription_events")
 }

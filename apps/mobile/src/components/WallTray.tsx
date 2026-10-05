@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Orientation } from '@duoorb/game-core';
 import { THEME, hexToRgba } from '../theme';
+import { BoardPalette, useBoardPalette } from '../theme/boardTheme';
 
 interface WallTrayProps {
   /** Current player's ball color — both pieces share it. */
@@ -65,6 +66,9 @@ const WallPiece: React.FC<PieceProps> = ({
   cbRef.current = { onDragStart, onDragMove, onDragEnd };
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
+  // Same palette as the board (P5.1): the tray is board chrome, not menu UI.
+  const trayPalette = useBoardPalette();
+  const styles = useMemo(() => getTrayStyles(trayPalette), [trayPalette]);
 
   const responder = useMemo(
     () =>
@@ -141,6 +145,8 @@ export const WallTray: React.FC<WallTrayProps> = ({
   const { width: winWidth } = useWindowDimensions();
   const s = Math.max(0.8, Math.min(1, winWidth / 390));
   const inactive = disabled || count <= 0;
+  const trayPalette = useBoardPalette();
+  const styles = useMemo(() => getTrayStyles(trayPalette), [trayPalette]);
 
   const slotW = 100 * s;
   // Player-card height: avatar 36 + card padding 2×10 ≈ 56. The tray matches
@@ -191,12 +197,15 @@ export const WallTray: React.FC<WallTrayProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+// Tray styles parameterized by board palette (P5.1): layout/geometry stay
+// global, only the surface tokens follow the active board theme.
+const getTrayStyles = (p: BoardPalette) =>
+  StyleSheet.create({
   card: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: p.trayCard,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: p.trayHairline,
     padding: 8,
     ...THEME.shadows.card,
     width: '100%',
@@ -208,9 +217,9 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   pieceSlot: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: p.trayCard,
     borderWidth: 1,
-    borderColor: THEME.colors.boardBorder,
+    borderColor: p.boardBorder,
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
@@ -222,9 +231,9 @@ const styles = StyleSheet.create({
     opacity: 0.35,
   },
   countBox: {
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: p.trayPill,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderColor: p.trayHairline,
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
@@ -234,7 +243,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.extraBold,
     fontSize: 15,
     fontWeight: '800',
-    color: THEME.colors.inverseLabel,
+    color: p.trayCount,
     lineHeight: 18,
     fontVariant: ['tabular-nums'],
   },

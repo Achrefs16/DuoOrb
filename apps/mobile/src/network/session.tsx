@@ -30,6 +30,7 @@ import {
   ServerProfile,
 } from './sessionRestore';
 import { clearOnboarding } from '../storage/onboarding';
+import { clearPremium, hydratePremiumCache, ingestMe } from '../monetization/premium';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -122,6 +123,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     // the token argument is only used to assert the caller's intent.
     void accessToken;
     const me = await api.getMe();
+    // Premium sync rides the same response: boot, sign-in and refresh all
+    // update entitlement with zero extra requests (ingestMe never throws).
+    ingestMe(me);
     return { username: me.username, displayName: me.displayName };
   }, []);
 
@@ -140,6 +144,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   /* ---------------------------------------------------------------------- */
   useEffect(() => {
     let cancelled = false;
+
+    // Premium fast-path: cached entitlement paints instantly (offline-safe);
+    // fetchProfile's ingestMe() replaces it with server truth moments later.
+    void hydratePremiumCache();
 
     (async () => {
       try {
@@ -304,6 +312,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // new identity — never silently, never at boot.
       setSupabaseUser(null);
       clearIdentity();
+      clearPremium();
       setProfile(null);
       void clearOnboarding();
       setStatus('anonymous');
@@ -362,6 +371,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (isSupabaseConfigured) await getSupabaseAuth().signOut();
     } finally {
       clearIdentity();
+      clearPremium();
       socketManager.disconnect();
       setProfile(null);
       void clearOnboarding();

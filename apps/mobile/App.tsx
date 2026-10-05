@@ -22,6 +22,8 @@ import { LegalScreen } from './src/screens/LegalScreen';
 import type { LegalKind } from './src/legal-content';
 import { BottomNav, MainTab } from './src/components/BottomNav';
 import { AppToast } from './src/components/AppToast';
+import { PremiumSheet } from './src/components/PremiumSheet';
+import { refreshPremium } from './src/monetization/premium';
 import { NoConnectionSection, OfflineModal } from './src/components/NoConnection';
 import { ChallengeToast } from './src/components/ChallengeToast';
 import { OnlineJoinGate } from './src/components/OnlineJoinGate';
@@ -30,6 +32,9 @@ import { useRoomInvites } from './src/network/useRoomInvites';
 import { useChallenge } from './src/network/useChallenge';
 import { socketManager } from './src/network/socket';
 import { SavedGameRecord } from './src/storage/gameStorage';
+import { setBoardThemeName } from './src/theme/boardTheme';
+import { installRealAds } from './src/monetization/adsNative';
+import { ensureSessionRecorded } from './src/monetization/realAds';
 import {
   DEFAULT_SETTINGS,
   UserSettings,
@@ -88,6 +93,8 @@ interface ActiveGameConfig {
   onlineSource?: 'quick' | 'custom' | 'room';
   room?: RoomDto | null;
   aiDifficulty?: AIDifficulty;
+  /** Premium personality id for AI games (null = generic difficulty bot). */
+  botId?: string | null;
   timeControl?: TimeControl;
   sideChoice?: SideChoice;
   wallsEach?: number;
@@ -104,6 +111,8 @@ interface ReplayData {
   perspectiveIdx: number;
   /** Seat-id ratings when the entry point knows them (win/lose modal). */
   ratings?: Record<string, number>;
+  /** Analysis gate key for full reviews (win/lose modal only; null = bare). */
+  accessKey?: { gameId: string; historyLength: number } | null;
 }
 
 export default function App() {
@@ -156,6 +165,8 @@ export default function App() {
   // switches are not recorded — backing out of any main tab asks to exit.
   const stackRef = useRef<NavLoc[]>([]);
   const [exitAsk, setExitAsk] = useState(false);
+  // Paywall entry #2 (P7.2): locked bot taps open the sheet, not a toast.
+  const [premiumOpen, setPremiumOpen] = useState(false);
 
   /** Forward navigation: records where we came from, then moves. */
   const navigate = (tab: MainTab, sub: SubScreen) => {
@@ -238,13 +249,22 @@ export default function App() {
     loadSettings().then((s) => {
       setSettings(s);
       setSoundsMuted(!s.soundEnabled);
+      // Board palette follows settings (P5.1): render store syncs here so the
+      // board theme applies on first paint without an async read per render.
+      setBoardThemeName(s.themeName);
     });
+    // Ads runtime (P6): installs the real rewarded provider when the native
+    // SDK exists (dev build) — no-op on web/Expo Go — and counts this launch
+    // for the first-session banner gate.
+    installRealAds();
+    void ensureSessionRecorded();
   }, []);
 
   const updateSettings = (patch: Partial<UserSettings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
     void saveSettings(patch);
     if (patch.soundEnabled !== undefined) setSoundsMuted(!patch.soundEnabled);
+    if (patch.themeName !== undefined) setBoardThemeName(patch.themeName);
   };
 
   const handleStartGame = (config: ActiveGameConfig) => {
@@ -447,9 +467,10 @@ export default function App() {
     initialState: GameState,
     history: RecordedAction[],
     perspectiveIdx = 0,
+    access: { gameId: string; historyLength: number } | null = null,
     ratings?: Record<string, number>
   ) => {
-    setReplayData({ initialState, history, perspectiveIdx, ratings });
+    setReplayData({ initialState, history, perspectiveIdx, ratings, accessKey: access });
     setReviewBare(false);
     navigate(currentTab, 'REVIEW');
   };
@@ -532,7 +553,7 @@ export default function App() {
               key={
                 gameConfig.type === 'online'
                   ? `online-session-${matchSession}`
-                  : `local-${gameConfig.mode}-${gameConfig.type}-${gameConfig.aiDifficulty ?? 'none'}-${gameConfig.sideChoice ?? 'blue'}`
+                  : `local-${gameConfig.mode}-${gameConfig.type}-${gameConfig.aiDifficulty ?? 'none'}-${gameConfig.botId ?? 'generic'}-${gameConfig.sideChoice ?? 'blue'}`
               }
               mode={gameConfig.mode}
               type={gameConfig.type}
@@ -540,6 +561,7 @@ export default function App() {
               onlineSource={gameConfig.onlineSource}
               initialOnlineSnapshot={gameConfig.initialSync ?? null}
               aiDifficulty={gameConfig.aiDifficulty}
+              botId={gameConfig.botId ?? null}
               timeControl={gameConfig.timeControl}
               sideChoice={gameConfig.sideChoice}
               wallsEach={gameConfig.wallsEach}
@@ -561,6 +583,8 @@ export default function App() {
               challengeName={challengeTarget?.username}
               initialClock={DEFAULT_TIME_CONTROL}
               onBack={goBack}
+              // Paywall entry #2 (P7.2): locked bot taps open the sheet.
+              onLockedBot={() => setPremiumOpen(true)}
               onConfirm={(sel) => {
                 if (sel.vsType === 'challenge' && challengeTarget) {
                   challenge.sendChallenge(challengeTarget.id, challengeTarget.username, {
@@ -594,6 +618,7 @@ export default function App() {
                   mode: sel.mode,
                   type: sel.vsType,
                   aiDifficulty: sel.difficulty,
+                  botId: sel.botId ?? null,
                   timeControl: sel.clock,
                   sideChoice: sel.side,
                   wallsEach: sel.wallsEach,
@@ -601,6 +626,16 @@ export default function App() {
               }}
             />
           )}
+          {/* Paywall entry #2 mount (P7.2): Modal floats above SETUP. */}
+          <PremiumSheet
+            visible={premiumOpen}
+            entry="bots"
+            onClose={() => setPremiumOpen(false)}
+            onDone={() => {
+              setPremiumOpen(false);
+              void refreshPremium();
+            }}
+          />
 
           {subScreen === 'PLAYER_PROFILE' && selectedPlayer && (
             <PlayerProfileScreen
@@ -660,6 +695,7 @@ export default function App() {
               onBack={goBack}
               bare={reviewBare}
               ratings={replayData.ratings}
+              accessKey={replayData.accessKey ?? null}
             />
           )}
 
@@ -896,6 +932,62 @@ const SessionEffects: React.FC<{
       if (timer) clearTimeout(timer);
     };
   }, [userId, isGuest, isConnected, onFriendRequests, onOnlineCount]);
+
+  // Live presence count (ONLINE_HEALTH count upgrade): the server broadcasts
+  // presence:count on verified connect/disconnect, so the pill updates
+  // instantly instead of at the next 8s poll. The REST poll above stays as
+  // backup for missed broadcasts. Handler replay (manager-owned) survives
+  // transport rebuilds, so subscribe once per identity.
+  useEffect(() => {
+    if (!userId) return;
+    const socket = socketManager.getSocket();
+    const onCount = (payload: { count?: unknown }) => {
+      if (typeof payload?.count === 'number') onOnlineCount(payload.count);
+    };
+    socket.on('presence:count', onCount as never);
+    return () => {
+      socket.off('presence:count', onCount as never);
+    };
+  }, [userId, onOnlineCount]);
+
+  // Presence heartbeat (C1 companion): a verified, connected socket proves
+  // liveness every 60s so the server-side 5-minute freshness rule only ever
+  // demotes killed apps — never an idle lobby sitter. Server throttles at
+  // 45s; early ticks are dropped there, never queued here (fire-and-forget
+  // on a dead transport would just pile intents).
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const beat = () => {
+      if (cancelled) return;
+      try {
+        const socket = socketManager.getSocket();
+        if (socketManager.isVerified() === true && socket.connected) {
+          socket.emit('presence:ping');
+        }
+      } catch {
+        // Heartbeat is advisory — never crash the loop.
+      }
+      timer = setTimeout(beat, 60000);
+    };
+    timer = setTimeout(beat, 15000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [userId]);
+
+  // App-wide foreground revalidation (Phase C): every return from background
+  // refreshes a dying credential and revives a dead transport on EVERY
+  // screen — previously only the game screen did this, so lobbies rotted.
+  useEffect(() => {
+    if (!userId) return;
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') socketManager.foregroundRevalidate();
+    });
+    return () => sub.remove();
+  }, [userId]);
   return null;
 };
 

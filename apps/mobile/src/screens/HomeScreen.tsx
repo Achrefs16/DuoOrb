@@ -10,7 +10,9 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { THEME } from '../theme';
 import { runWhenOnline } from '../components/NoConnection';
+import { AdBanner } from '../components/AdBanner';
 import { useConnectivity } from '../network/useConnectivity';
+import { socketManager, useVerified } from '../network/socket';
 import { DEFAULT_TIME_CONTROL, TimeControl } from '../timeControls';
 import { OnlineMode } from './OnlineScreen';
 
@@ -34,6 +36,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 }) => {
   const navLock = useRef(0);
   const { isConnected } = useConnectivity();
+  // Verified (not transport) health (ONLINE_HEALTH Phase B): a connected but
+  // unverified socket is the ghost state — the pill says so and offers the
+  // retry instead of a healthy-looking count.
+  const verified = useVerified();
 
   const guarded = (fn: () => void) => () => {
     const now = Date.now();
@@ -77,32 +83,50 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Subtle Announcement / Tactical Banner */}
-        <View style={styles.adBanner}>
-          <Feather name="shield" size={14} color={THEME.colors.textMuted} />
-          <Text style={styles.adBannerText}>COMPETITIVE TURN-BASED GRID STRATEGY</Text>
-        </View>
+        {/* Ad slot (MONETIZATION.md P6, O1): reserved 56px for eligible free
+            users so the CTA below never shifts when the creative arrives.
+            Premium / first session / no fill renders nothing here. */}
+        <AdBanner placement="home" />
 
         {/* Lobby presence: who is online right now, above the play
-            button. A small indicator, nothing more — no tap target, since
-            strangers have no destination screen. */}
-        <View style={styles.presencePill} accessibilityLabel={isConnected === false ? 'Offline' : `${onlineCount ?? 0} players online`}>
+            button. Tappable when degraded — the ghost state (connected but
+            unverified) and dead transports both offer an explicit retry
+            instead of a healthy-looking number. */}
+        <TouchableOpacity
+          style={styles.presencePill}
+          activeOpacity={verified === false ? 0.7 : 1}
+          onPress={() => {
+            if (isConnected === false || verified === false) {
+              socketManager.retryNow();
+            }
+          }}
+          accessibilityLabel={
+            isConnected === false
+              ? 'Offline'
+              : verified === false
+              ? 'Connection issue. Tap to retry.'
+              : `${onlineCount ?? 0} players online`
+          }
+        >
           <View
             style={[
               styles.presenceDot,
-              (isConnected === false || (onlineCount ?? 0) === 0) && styles.presenceDotIdle,
+              (isConnected === false || verified === false || (onlineCount ?? 0) === 0) &&
+                styles.presenceDotIdle,
             ]}
           />
           <Text style={styles.presenceText}>
             {isConnected === false
               ? "You're offline"
+              : verified === false
+              ? 'Connection issue — tap to retry'
               : onlineCount === null
               ? 'Checking…'
               : onlineCount > 0
               ? `${onlineCount} player${onlineCount === 1 ? '' : 's'} online`
               : 'No players online yet'}
           </Text>
-        </View>
+        </TouchableOpacity>
 
         {/* Hero Quick Match Action — starts directly with defaults. Online
             only: offline taps get the dialog instead of a dead screen. */}

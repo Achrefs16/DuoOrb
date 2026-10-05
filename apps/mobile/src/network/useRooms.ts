@@ -18,35 +18,69 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
 
   const clearError = useCallback(() => setError(null), []);
 
-  const createRoom = useCallback(
-    (mode: GameMode, clock: TimeControl, wallsEach = 10): Promise<RoomDto | null> => {
+  /**
+   * ONLINE_HEALTH Phase B: ack watchdog for request/response emits. A dropped
+   * emit (dead socket) or a server that never answers previously hung
+   * `loading` forever — 20s of silence resolves the promise as a failure
+   * with an honest message instead.
+   */
+  const withAckTimeout = useCallback(
+    <T,>(work: (done: (value: T) => void) => void, onTimeout: () => T): Promise<T> => {
       return new Promise((resolve) => {
-        setLoading(true);
-        setError(null);
-        const socket = socketManager.getSocket();
-
-        socket.emit(
-          'room:create',
-          {
-            mode,
-            timeControlMinutes: clock.minutes,
-            incrementSeconds: clock.incrementSeconds ?? 0,
-            wallsEach,
-          },
-          (res) => {
-            setLoading(false);
-            if (res && res.success && res.room) {
-              setActiveRoom(res.room);
-              resolve(res.room);
-            } else {
-              setError(res?.error || 'Failed to create room.');
-              resolve(null);
-            }
+        let done = false;
+        const timer = setTimeout(() => {
+          if (!done) {
+            done = true;
+            resolve(onTimeout());
           }
-        );
+        }, 20000);
+        work((value) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve(value);
+        });
       });
     },
     []
+  );
+
+  const createRoom = useCallback(
+    (mode: GameMode, clock: TimeControl, wallsEach = 10): Promise<RoomDto | null> => {
+      setLoading(true);
+      setError(null);
+      const socket = socketManager.getSocket();
+
+      return withAckTimeout<RoomDto | null>(
+        (done) => {
+          socket.emit(
+            'room:create',
+            {
+              mode,
+              timeControlMinutes: clock.minutes,
+              incrementSeconds: clock.incrementSeconds ?? 0,
+              wallsEach,
+            },
+            (res) => {
+              setLoading(false);
+              if (res && res.success && res.room) {
+                setActiveRoom(res.room);
+                done(res.room);
+              } else {
+                setError(res?.error || 'Failed to create room.');
+                done(null);
+              }
+            }
+          );
+        },
+        () => {
+          setLoading(false);
+          setError('No answer from the server. Check your connection and try again.');
+          return null;
+        }
+      );
+    },
+    [withAckTimeout]
   );
 
   const inviteToRoom = useCallback(
@@ -83,23 +117,30 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
   );
 
   const joinRoom = useCallback((code: string): Promise<RoomDto | null> => {
-    return new Promise((resolve) => {
-      setLoading(true);
-      setError(null);
-      const socket = socketManager.getSocket();
+    setLoading(true);
+    setError(null);
+    const socket = socketManager.getSocket();
 
-      socket.emit('room:join', { code: code.trim().toUpperCase() }, (res) => {
+    return withAckTimeout<RoomDto | null>(
+      (done) => {
+        socket.emit('room:join', { code: code.trim().toUpperCase() }, (res) => {
+          setLoading(false);
+          if (res && res.success && res.room) {
+            setActiveRoom(res.room);
+            done(res.room);
+          } else {
+            setError(res?.error || 'Invalid or closed room code.');
+            done(null);
+          }
+        });
+      },
+      () => {
         setLoading(false);
-        if (res && res.success && res.room) {
-          setActiveRoom(res.room);
-          resolve(res.room);
-        } else {
-          setError(res?.error || 'Invalid or closed room code.');
-          resolve(null);
-        }
-      });
-    });
-  }, []);
+        setError('No answer from the server. Check your connection and try again.');
+        return null;
+      }
+    );
+  }, [withAckTimeout]);
 
   const setReady = useCallback(
     (isReady: boolean) => {

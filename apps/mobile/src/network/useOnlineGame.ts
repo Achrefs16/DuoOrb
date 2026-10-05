@@ -178,6 +178,14 @@ export function useOnlineGame({ gameId, initialSync, onGameEnded, onError }: Use
   const [playerUserIds, setPlayerUserIds] = useState<Record<string, string>>(
     () => initialSync?.playerUserIds ?? {}
   );
+  /**
+   * UserIds holding effective premium at game creation (P5.2 seat/GameOver
+   * badges). Frozen for the match — a present list (even empty) replaces the
+   * state; an absent list (old server) leaves prior state alone.
+   */
+  const [premiumUserIds, setPremiumUserIds] = useState<string[]>(
+    () => initialSync?.premiumUserIds ?? []
+  );
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('connecting');
   // OS link verdict, for honest copy ("You're offline" vs "Reconnecting…").
   const [linkDown, setLinkDown] = useState<boolean>(() => socketManager.isLinkDown());
@@ -906,6 +914,9 @@ setOpponentGrace({});
       // opponent's chips need a userId to open a profile, and this is the
       // only place it exists (a board seat id is not a user id).
       if (sync.playerUserIds) setPlayerUserIds(sync.playerUserIds);
+      // Premium seat flags ride the same syncs (P5.2). Same absent-tolerant
+      // rule: present replaces, absent (old server) keeps prior state.
+      if (sync.premiumUserIds !== undefined) setPremiumUserIds(sync.premiumUserIds);
 
       // Current turn's inactivity deadline, when one applies: a client that
       // attaches (or re-attaches) mid-turn missed the one-shot warning, so
@@ -1312,6 +1323,8 @@ return {
     myPlayerId,
     myPlayerIndex,
     playerUserIds,
+    /** UserIds premium at creation (P5.2 seat/GameOver badges, frozen). */
+    premiumUserIds,
 connStatus,
     /** OS link verdict: true while the OS reports no usable connection. */
     linkDown,

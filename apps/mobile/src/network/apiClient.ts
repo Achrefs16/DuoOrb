@@ -31,6 +31,9 @@ export interface UserMeDto {
   createdAt?: string | number;
   ratings?: Record<string, UserRatingDto>;
   badges?: ProfileBadgesDto;
+  /** Premium entitlement (server truth; absent on old servers = free tier). */
+  isPremium?: boolean;
+  premiumExpiresAt?: string | null;
 }
 
 export interface PublicProfileDto {
@@ -42,6 +45,8 @@ export interface PublicProfileDto {
   createdAt?: string | number;
   ratings?: Record<string, UserRatingDto>;
   badges?: ProfileBadgesDto;
+  /** Effective premium flag for the name badge (no expiry date publicly). */
+  isPremium?: boolean;
 }
 
 /** The raw `Profile` row that PATCH /me/profile resolves to. */
@@ -75,6 +80,8 @@ export interface FriendItemDto {
   displayName: string;
   rating: number;
   status: 'ONLINE' | 'PLAYING' | 'OFFLINE';
+  /** Badge-effective premium (absent on old servers = no badge). */
+  isPremium?: boolean;
 }
 
 export interface FriendRequestItemDto {
@@ -97,6 +104,8 @@ export interface LeaderboardEntryDto {
   wins: number;
   losses: number;
   winRate: number;
+  /** Badge-effective premium (absent on old servers = no badge). */
+  isPremium?: boolean;
 }
 
 /** One page of the universal board. */

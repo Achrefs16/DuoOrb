@@ -5,6 +5,8 @@ import { Feather } from '@expo/vector-icons';
 import { GameState } from '@duoorb/game-core';
 import type { GameEndedDto } from '@duoorb/protocol';
 import { THEME, playerColor } from '../theme';
+import { PremiumBadge } from './PremiumBadge';
+import { AdBanner } from './AdBanner';
 import { modeLabel } from '../matchModes';
 import { nameInitial } from '../displayName';
 
@@ -22,6 +24,8 @@ interface GameOverModalProps {
   /** Online matches are all rated server-side; AI/local never are. */
   isRanked?: boolean;
   opponentName?: string;
+  /** Frozen premium flag for the named 1v1 opponent (P5.2 subtitle badge). */
+  opponentIsPremium?: boolean;
   isWinner?: boolean;
   /**
    * The opponent's account, when the match was against a real player. Drives
@@ -31,6 +35,8 @@ interface GameOverModalProps {
   onViewOpponentProfile?: () => void;
   /** Your seat for multiplayer placement titles (online + AI). Local games omit it. */
   myPlayerId?: string | null;
+  /** Premium flags by seat id for the multiplayer order rows (P5.2, frozen). */
+  seatPremium?: Record<string, boolean>;
   onRematch: () => void;
   /** Only ranked quick/custom online games get a New Game action. */
   showNewGame?: boolean;
@@ -59,10 +65,12 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   endReason = null,
   isRanked = false,
   opponentName,
+  opponentIsPremium = false,
   isWinner,
   opponentUserId,
   onViewOpponentProfile,
   myPlayerId,
+  seatPremium,
   onRematch,
   showNewGame = false,
   onNewGame,
@@ -219,7 +227,16 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
             <Text style={styles.outcomeTitle}>{outcomeTitle}</Text>
 
-            {subtitle && <Text style={styles.opponentSubtitle}>{subtitle}</Text>}
+            {subtitle && (
+              <Text style={styles.opponentSubtitle}>
+                {subtitle}
+                {!isMultiplayer && opponentIsPremium && (
+                  <Text>
+                    {' '}<PremiumBadge />
+                  </Text>
+                )}
+              </Text>
+            )}
             <Text style={styles.metaLine}>{metaLine}</Text>
           </View>
 
@@ -249,6 +266,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                       <Text style={styles.rowName} numberOfLines={1}>
                         {p.displayName}
                         {isMe ? ' (You)' : ''}
+                        {seatPremium?.[p.id] === true && (
+                          <Text>
+                            {' '}<PremiumBadge />
+                          </Text>
+                        )}
                       </Text>
                     </View>
                     {(p.place ?? 99) === 1 && (
@@ -370,6 +392,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               <Text style={styles.lobbyLinkText}>Close Match</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Ad slot (P6, revised O3): horizontal banner pinned under every
+              button — visible on every result, never covering or moving one.
+              Premium / first session / no fill renders nothing here. */}
+          <AdBanner placement="modal" />
         </Animated.View>
       </SafeAreaView>
     </Modal>

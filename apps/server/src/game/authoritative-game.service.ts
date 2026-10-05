@@ -19,6 +19,7 @@ import {
 } from '../rating/glicko2.service.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { AiwinsService } from '../aiwins/aiwins.service.js';
+import { BillingService } from '../billing/billing.service.js';
 import { Logger } from '@nestjs/common';
 
 /**
@@ -66,6 +67,13 @@ export interface ActiveOnlineGame {
   mode: GameMode;
   playerUserIds: Record<string, string>; // playerId ('p1', 'p2') -> userId
   userPlayerIds: Record<string, string>; // userId -> playerId ('p1', 'p2')
+  /**
+   * UserIds holding effective premium at game creation (P5.2 seat/GameOver
+   * badges). FROZEN for the match: a mid-match subscription appears from the
+   * next game, so badges never pop in late and shift card layout. Optional
+   * so existing unit-test fixtures keep compiling.
+   */
+  premiumUserIds?: string[];
   ratings: Record<string, GlickoPlayer>;  // userId -> GlickoPlayer
   clocksMs: Record<string, number>;      // playerId -> remaining ms
   incrementSeconds: number;
@@ -398,6 +406,11 @@ export class AuthoritativeGameService {
      * failures are swallowed with a log line.
      */
     private readonly aiwins?: Pick<AiwinsService, 'evaluateOnlineGame'>,
+    /**
+     * Premium seat resolution (P5.2 badges). Same optional-for-tests pattern:
+     * absent → every seat renders without a badge, the match is unaffected.
+     */
+    private readonly billing?: Pick<BillingService, 'premiumUserIdsFor'>,
   ) {
     // Retry sweeper: transient DB blips must not strand moves. Every 15s,
     // re-drive any move still unconfirmed (upserts are idempotent).
@@ -430,6 +443,8 @@ export class AuthoritativeGameService {
     incrementSeconds?: number;
     wallsEach?: number;
     isRanked: boolean;
+    /** Pre-resolved by the gateway (async context) — sync createGame stays sync. */
+    premiumUserIds?: string[];
 onClockTick?: (gameId: string, clock: ClockStateDto) => void;
     onTimeout?: (gameId: string, ended: GameEndedDto, lastMove: RecordedAction) => void;
     onAfkWarning?: (gameId: string, payload: { playerId: string; afkEndsAt: number; secondsRemaining: number }) => void;
@@ -474,6 +489,7 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
       mode: params.mode,
       playerUserIds,
       userPlayerIds,
+      premiumUserIds: params.premiumUserIds ?? [],
       ratings,
       clocksMs,
       incrementSeconds: incrementSec,
@@ -788,6 +804,11 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
         mode,
         playerUserIds,
         userPlayerIds,
+        // Recovered matches resolve badges fresh (rare path, async fn):
+        // absent billing dep (unit tests) → no badges, match unaffected.
+        // premiumUserIdsFor never rejects (fail-closed []), so no catch here.
+        premiumUserIds:
+          (await this.billing?.premiumUserIdsFor(Object.values(userPlayerIds))) ?? [],
         ratings,
         clocksMs,
         incrementSeconds: row.incrementSeconds,
@@ -1843,6 +1864,8 @@ public async recoverInProgressGames(hooks: {
       clock: clockDto,
       missingActions: missing,
       playerUserIds: game.playerUserIds,
+      // Frozen at creation (P5.2): badges never pop in mid-match.
+      premiumUserIds: game.premiumUserIds ?? [],
       you: forUserId ? game.userPlayerIds[forUserId] ?? null : undefined,
       // Current turn's inactivity deadline, when one applies: a client that
       // attaches (or re-attaches) mid-turn missed the one-shot warning, so

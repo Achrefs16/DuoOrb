@@ -17,6 +17,7 @@ import type { ActionAck } from '@duoorb/protocol';
 import { GameAction, GameMode, RecordedAction } from '@duoorb/game-core';
 import { AuthoritativeGameService } from '../game/authoritative-game.service.js';
 import { AiwinsService } from '../aiwins/aiwins.service.js';
+import { BillingService } from '../billing/billing.service.js';
 import { MatchmakingService, type MatchmakingRequest } from '../matchmaking/matchmaking.service.js';
 import { GuestService } from '../guest/guest.service.js';
 import { resolveCorsOrigins } from '../config/cors.js';
@@ -59,6 +60,8 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   server!: Server;
 
   private gameService!: AuthoritativeGameService;
+  /** Premium seat resolution for P5.2 badges (wired in ctor, same manual pattern). */
+  private billing!: BillingService;
   private roomService = new RoomService();
   private challengeService = new ChallengeService();
   private matchmakingService = new MatchmakingService();
@@ -100,7 +103,9 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     private readonly prisma: PrismaService,
     private readonly guestService?: GuestService
   ) {
-    this.gameService = new AuthoritativeGameService(this.prisma, new AiwinsService(this.prisma));
+    const billing = new BillingService(this.prisma);
+    this.billing = billing;
+    this.gameService = new AuthoritativeGameService(this.prisma, new AiwinsService(this.prisma), billing);
   }
 
   /** Housekeeping must not outlive the module (tests, HMR, restarts). */
@@ -247,6 +252,11 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       this.userSocketMap.set(effectiveId, client.id);
       // Presence only for a real identity — never for an opaque handle.
       if (verified) this.setPresence(effectiveId, { isOnline: true });
+      // Handshake verdict (ONLINE_HEALTH Phase A): the transport connects
+      // even with an expired credential, so the client learns verified EXACTLY
+      // once per handshake here — never by inferring from `connected`.
+      client.emit('session:authState', { verified, userId: effectiveId });
+      if (verified) this.broadcastPresenceCount();
       // Cache the live rating for lobby display: enrichRoom falls back to
       // this when the member has no live socket, instead of a fictional
       // 1500 that conflates strangers with newcomers.
@@ -409,6 +419,29 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     }
   }
 
+  /** Last accepted presence heartbeat per user (throttle). */
+  private presencePingAt = new Map<string, number>();
+
+  /**
+   * Presence heartbeat (ONLINE_HEALTH C1): a verified socket proves it is
+   * still alive, so its profile `updatedAt` stays fresh and the 5-minute
+   * rule never demotes a live, idle lobby sitter — only killed apps and dead
+   * connections age out. Throttled to one accepted ping per 45s per user;
+   * early pings are dropped, never queued. Unverified callers are ignored.
+   */
+  @SubscribeMessage('presence:ping')
+  handlePresencePing(@ConnectedSocket() client: Socket) {
+    const user = this.getUser(client);
+    if (!user.verified) return;
+    const now = Date.now();
+    const last = this.presencePingAt.get(user.userId) ?? 0;
+    if (now - last < 45_000) return;
+    this.presencePingAt.set(user.userId, now);
+    // Re-assert (not resurrect): a verified socket implies isOnline already;
+    // the write's real payload is the fresh updatedAt timestamp.
+    this.setPresence(user.userId, { isOnline: true });
+  }
+
   handleDisconnect(client: Socket) {
     const userInfo = this.socketUserMap.get(client.id);
     if (!userInfo) return;
@@ -432,6 +465,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
 
     this.matchmakingService.removeFromQueue(userId);
     this.setPresence(userId, { isOnline: false, isPlaying: false });
+    this.broadcastPresenceCount();
 
     // Free WAITING lobby seats (host hands over, empty rooms disband with
     // their invites): without this a blipped lobby seat — crown included —
@@ -477,6 +511,9 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     if (this.userSocketMap.get(userId) === client.id) {
       this.userSocketMap.delete(userId);
     }
+    // Heartbeat bookkeeping leaves with the session: a reconnect starts its
+    // throttle fresh, and the map cannot grow without bound.
+    this.presencePingAt.delete(userId);
     this.logger.log(`Socket disconnected: ${client.id} (User: ${userId})`);
   }
 
@@ -1530,15 +1567,67 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   /**
    * Presence flip for a VERIFIED identity only. Callers must gate on
    * verified first (see handleConnection): presence must never manufacture
-   * identity rows, so this is update-only and logs failures instead of
-   * swallowing them.
+   * identity rows, so this is update-only.
+   *
+   * ONLINE_HEALTH C0: the affected-row count is verified and a zero-match
+   * retries once after 500ms (replica lag / racing signup). A persistent
+   * zero-match means the profile row is missing and is logged LOUDLY —
+   * that account plays fully functional but invisible (the exact
+   * "works while offline" report). Failures log instead of swallowing.
    */
-  private setPresence(userId: string, patch: { isOnline?: boolean; isPlaying?: boolean }): void {
+  private setPresence(
+    userId: string,
+    patch: { isOnline?: boolean; isPlaying?: boolean },
+    attempt = 0
+  ): void {
     if (!this.prisma.isConnected) return;
     this.prisma.profile
       .updateMany({ where: { userId }, data: patch })
+      .then((res) => {
+        if (res.count === 0 && attempt === 0) {
+          this.logger.warn(
+            `Presence update matched 0 rows for ${userId}, retrying once`
+          );
+          setTimeout(() => this.setPresence(userId, patch, 1), 500);
+        } else if (res.count === 0) {
+          this.logger.error(
+            `Presence update matched 0 rows for ${userId} twice — profile row missing? Account plays invisible.`
+          );
+        }
+      })
       .catch((err) => {
         this.logger.warn(`Presence update failed for ${userId}: ${err?.message}`);
+      });
+  }
+
+  /** Last broadcast count + timestamp: flapping connections must not spam. */
+  private lastPresenceCount: number | null = null;
+  private lastPresenceBroadcastAt = 0;
+
+  /**
+   * Live online count (ONLINE_HEALTH count upgrade): same freshness rule as
+   * GET /presence/online (isOnline + updatedAt within 5 minutes). Broadcast
+   * at most every 2s and only on change; clients keep the REST poll as
+   * backup for missed broadcasts. Failures are silent by design (the REST
+   * poll covers them) but logged.
+   */
+  private broadcastPresenceCount(): void {
+    if (!this.prisma.isConnected) return;
+    const now = Date.now();
+    if (now - this.lastPresenceBroadcastAt < 2000) return;
+    this.lastPresenceBroadcastAt = now;
+    this.prisma.profile
+      .count({
+        where: { isOnline: true, updatedAt: { gt: new Date(now - 5 * 60 * 1000) } },
+      })
+      .then((count) => {
+        if (count !== this.lastPresenceCount) {
+          this.lastPresenceCount = count;
+          this.server.emit('presence:count', { count });
+        }
+      })
+      .catch((err) => {
+        this.logger.warn(`Presence count broadcast failed: ${err?.message}`);
       });
   }
 
@@ -1646,6 +1735,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       gameId: args.gameId,
       mode: args.mode,
       users,
+      premiumUserIds: await this.billing.premiumUserIdsFor(args.seatUserIds),
       timeControlMinutes: args.timeControlMinutes,
       incrementSeconds: args.incrementSeconds,
       wallsEach: args.wallsEach,

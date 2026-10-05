@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './constants.js';
+export * from './personalities.js';
 export * from './zobrist.js';
 export * from './evaluation.js';
 export * from './tactics.js';

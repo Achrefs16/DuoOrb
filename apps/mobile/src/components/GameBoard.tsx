@@ -19,6 +19,7 @@ import {
   isLegalWallPlacement,
 } from '@duoorb/game-core';
 import { THEME, playerColor, wallColorForPlayer, wallPreviewColor } from '../theme';
+import { BoardPalette, useBoardPalette } from '../theme/boardTheme';
 
 interface GameBoardProps {
   state: GameState;
@@ -265,6 +266,10 @@ const GameBoardView: React.FC<GameBoardProps> = ({
     currentPlayer?.color
   );
   const hintColor = moveHintColor ?? currentBallColor;
+  // Premium board palette (midnight for members, light otherwise): memoized
+  // per palette so every `styles.*` below follows the active theme.
+  const boardPalette = useBoardPalette();
+  const styles = useMemo(() => getBoardStyles(boardPalette), [boardPalette]);
 
   const orbAnims = useOrbAnimations(state, CELL, GAP);
 
@@ -386,7 +391,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
       <View
         style={[
           styles.container,
-          { width: boardSize, height: boardSize, backgroundColor: THEME.colors.boardBackground },
+          { width: boardSize, height: boardSize, backgroundColor: boardPalette.boardBackground },
         ]}
       >
         {/* Cells */}
@@ -425,8 +430,8 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                           : goalTint ??
                             (isLegal && !hideDots
                               ? hexA(hintColor, 0.1)
-                              : THEME.colors.cell)),
-                      borderColor: THEME.colors.cellBorder,
+                              : boardPalette.cell)),
+                      borderColor: boardPalette.cellBorder,
                       borderWidth: 1,
                     },
                   ]}
@@ -777,7 +782,12 @@ function hexA(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-const styles = StyleSheet.create({
+// Board-surface styles parameterized by palette (MONETIZATION.md P5.1):
+// the component memoizes one sheet per palette, so switching themes never
+// rebuilds styles mid-render. Only board-surface tokens come from `p` —
+// identity colors (orbs, placed walls, crown) and geometry stay global.
+const getBoardStyles = (p: BoardPalette) =>
+  StyleSheet.create({
   outer: {
     width: '100%',
     alignItems: 'center',
@@ -785,7 +795,7 @@ const styles = StyleSheet.create({
   },
   container: {
     borderWidth: 1,
-    borderColor: THEME.colors.boardBorder,
+    borderColor: p.boardBorder,
     borderRadius: 8,
     position: 'relative',
     overflow: 'hidden',
@@ -887,6 +897,6 @@ const styles = StyleSheet.create({
     width: 3,
     height: 3,
     borderRadius: 2,
-    backgroundColor: THEME.colors.wallSlot,
+    backgroundColor: p.wallSlot,
   },
 });

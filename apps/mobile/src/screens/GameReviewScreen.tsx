@@ -28,6 +28,11 @@ import {
 } from '../audio/sounds';
 import { THEME, playerColor } from '../theme';
 import { assessmentColor, cleanName, ordinal } from '../analysisUi';
+import { showRewarded } from '../monetization/ads';
+import {
+  markAnalysisUnlocked,
+  useAnalysisAccess,
+} from '../monetization/analysisAccess';
 
 interface GameReviewScreenProps {
   initialState: GameState;
@@ -46,6 +51,13 @@ interface GameReviewScreenProps {
    * at all — never a placeholder.
    */
   ratings?: Record<string, number>;
+  /**
+   * Analysis gate key for full reviews (win/lose modal only). Bare replays
+   * pass null and never compute. The screen re-verifies access itself, so a
+   * premium expiry mid-review (E14) stops NEW computes without yanking an
+   * already-rendered review.
+   */
+  accessKey?: { gameId: string; historyLength: number } | null;
 }
 
 /**
@@ -93,6 +105,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   onBack,
   bare = false,
   ratings,
+  accessKey = null,
 }) => {
   // Full analysis, computed OFF the first paint. analyzeGame replays every
   // move with a search per move (seconds on a phone CPU), and it used to run
@@ -109,11 +122,45 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const touchedRef = useRef(false);
 
   const [review, setReview] = useState<GameReview | null>(null);
+  // Defense-in-depth access check (MONETIZATION.md P3.3): the GameScreen gate
+  // normally guarantees access before navigating here, but this hook
+  // re-verifies from live state — an expiry mid-review simply prevents a
+  // recompute, never yanks rendered content (E14).
+  const { access, recheck } = useAnalysisAccess(
+    accessKey?.gameId ?? null,
+    accessKey?.historyLength ?? history.length
+  );
+  const [unlockBusy, setUnlockBusy] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+
+  // In-review unlock (backstop for the GameScreen sheet): same one-ad-per-game
+  // rule, same cache. Runs only when the gate somehow opened this screen
+  // locked — normally the sheet completes the unlock before navigation.
+  const handleUnlockHere = async () => {
+    if (!accessKey || unlockBusy) return;
+    setUnlockBusy(true);
+    setUnlockError(null);
+    const res = await showRewarded('analysis');
+    if (res.earned) {
+      try {
+        await markAnalysisUnlocked(accessKey.gameId, accessKey.historyLength);
+        await recheck();
+      } catch {
+        setUnlockError('store');
+      }
+    } else {
+      setUnlockError(res.error ?? 'dismissed');
+    }
+    setUnlockBusy(false);
+  };
   useEffect(() => {
     // Bare replay never computes: it displays nothing from the analysis.
     // (Initial state is already null, and the App key remounts per game,
     // so there is nothing to reset here.)
     if (bare) return;
+    // Locked (and still-checking) full reviews never start the multi-second
+    // compute: the locked panel below offers the ad unlock instead.
+    if (access !== 'premium' && access !== 'unlocked') return;
     let cancelled = false;
     const key = reviewCacheKey(initialState.gameId, history.length);
     // One deferred task for both paths (even a cache hit goes through it):
@@ -142,7 +189,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
       cancelled = true;
       clearTimeout(t);
     };
-  }, [bare, initialState, history]);
+  }, [bare, initialState, history, access]);
 
   const [isPlaying, setIsPlaying] = useState(false);
   // Playback speed, cycled 1x -> 1.5x -> 2x -> 1x by a single button.
@@ -588,10 +635,51 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         {/* Analysis loading skeleton: the board and step controls above
             paint immediately; this holds the place of the gated sections
             while the deferred compute runs. */}
-        {!bare && !review && (
+        {!bare && !review && (access === 'checking' || access === 'premium' || access === 'unlocked') && (
         <View style={styles.graphCard}>
           <Text style={styles.graphTitle}>ANALYZING</Text>
           <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
+        </View>
+        )}
+
+        {/* Locked full review (MONETIZATION.md P3.3): board + step controls
+            above stay fully usable; this panel offers the one-ad unlock or the
+            way back. Rendered only when nothing was computed yet — an
+            expiry mid-review never yanks rendered content (E14). */}
+        {!bare && !review && access === 'locked' && (
+        <View style={styles.lockCard}>
+          <Feather name="lock" size={20} color={THEME.colors.primary} />
+          <Text style={styles.lockTitle}>Full analysis is locked</Text>
+          <Text style={styles.lockCopy}>
+            Watch a short video to unlock the engine review for this game.
+          </Text>
+          {accessKey && (
+          <TouchableOpacity
+            style={styles.lockButton}
+            onPress={handleUnlockHere}
+            disabled={unlockBusy}
+            accessibilityRole="button"
+            accessibilityLabel="Watch ad to unlock analysis"
+          >
+            {unlockBusy ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.lockButtonText}>Watch ad</Text>
+            )}
+          </TouchableOpacity>
+          )}
+          {unlockError && (
+            <Text style={styles.lockError}>
+              {unlockError === 'unavailable'
+                ? "Ads aren't available right now — check your connection and try again."
+                : unlockError === 'store'
+                  ? "Couldn't save the unlock — please try again."
+                  : 'No problem — the analysis stays locked for this game.'}
+            </Text>
+          )}
+          <TouchableOpacity onPress={onBack} disabled={unlockBusy}>
+            <Text style={styles.lockBack}>Back to match</Text>
+          </TouchableOpacity>
         </View>
         )}
       </ScrollView>
@@ -933,5 +1021,55 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: THEME.colors.textMuted,
     letterSpacing: 1,
+  },
+  // Locked-review panel (MONETIZATION.md P3.3): same card language as the
+  // graph/analysis cards, centered content, single ad action + way back.
+  lockCard: {
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderRadius: THEME.radius.lg,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    padding: 20,
+    gap: 8,
+    alignItems: 'center',
+    ...THEME.shadows.card,
+  },
+  lockTitle: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 16,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  lockCopy: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: THEME.colors.textSecondary,
+    textAlign: 'center',
+  },
+  lockButton: {
+    backgroundColor: THEME.colors.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    marginTop: 4,
+    minWidth: 160,
+    alignItems: 'center',
+  },
+  lockButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  lockError: {
+    fontSize: 12,
+    color: '#DC2626',
+    textAlign: 'center',
+  },
+  lockBack: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
+    marginTop: 4,
+    paddingVertical: 6,
   },
 });
