@@ -33,7 +33,7 @@ export const LEGAL_URLS = {
 };
 
 export const LEGAL_CONTACT_EMAIL =
-  process.env.EXPO_PUBLIC_LEGAL_CONTACT_EMAIL?.trim() || 'digitalas.support@gmail.com';
+  process.env.EXPO_PUBLIC_LEGAL_CONTACT_EMAIL?.trim() || 'support@duoorb.com';
 
 export async function openLegalUrl(url: string): Promise<void> {
   try {

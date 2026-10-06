@@ -393,9 +393,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Ad slot (P6, revised O3): horizontal banner pinned under every
-              button — visible on every result, never covering or moving one.
-              Premium / first session / no fill renders nothing here. */}
+          {/* Ad slot (P6, revised O3): inline adaptive banner sized to this
+              card, pinned under every button — visible on every result, never
+              covering or moving one. Premium / first session / no fill renders
+              nothing here. */}
           <AdBanner placement="modal" />
         </Animated.View>
       </SafeAreaView>

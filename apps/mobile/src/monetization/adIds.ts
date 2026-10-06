@@ -16,7 +16,7 @@ const PROD_UNITS = {
 
 // Google demo units (docs: "not associated with your AdMob account, so
 // there's no risk of invalid traffic"). Banner uses the ADAPTIVE demo ID to
-// match ANCHORED_ADAPTIVE_BANNER inventory (fixed-size IDs no-fill there).
+// match adaptive banner inventory (fixed-size IDs no-fill there).
 const DEMO_UNITS = {
   banner: 'ca-app-pub-3940256099942544/9214589741',
   rewarded: 'ca-app-pub-3940256099942544/5224354917',

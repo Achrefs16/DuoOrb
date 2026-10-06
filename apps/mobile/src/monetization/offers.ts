@@ -34,6 +34,15 @@ export interface OffersResult {
   plans: PremiumPlan[];
   /** False until the RevenueCat key + products exist (P0.5). */
   purchaseAvailable: boolean;
+  /**
+   * WHY purchases are unavailable (dev diagnostics only — the sheet shows
+   * it in __DEV__ so testing is never blind; production copy is unchanged).
+   * - 'no-key': EXPO_PUBLIC_REVENUECAT_ANDROID_KEY missing from this build.
+   * - 'no-products': offering `duoorb_premium` lacks $rc_monthly/$rc_annual.
+   * - 'store-error': key present but getOfferings threw (no native Purchases
+   *   module — e.g. Expo Go — no Play Store, or offline).
+   */
+  reason?: 'no-key' | 'no-products' | 'store-error';
 }
 
 const ENTITLEMENT_ID = 'premium';
@@ -131,8 +140,15 @@ export async function getPremiumPlans(): Promise<OffersResult> {
       ],
       purchaseAvailable: true,
     };
-  } catch {
-    return { plans: FALLBACK_PLANS, purchaseAvailable: false };
+  } catch (e) {
+    const code = (e as { code?: unknown } | null)?.code;
+    const reason =
+      code === 'not-configured'
+        ? ('no-key' as const)
+        : code === 'no-products'
+          ? ('no-products' as const)
+          : ('store-error' as const);
+    return { plans: FALLBACK_PLANS, purchaseAvailable: false, reason };
   }
 }
 

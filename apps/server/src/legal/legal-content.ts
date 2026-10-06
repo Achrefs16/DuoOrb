@@ -12,14 +12,14 @@
  */
 
 function contactEmail(): string {
-  return process.env.LEGAL_CONTACT_EMAIL?.trim() || 'digitalas.support@gmail.com';
+  return process.env.LEGAL_CONTACT_EMAIL?.trim() || 'support@duoorb.com';
 }
 
 function baseUrl(): string {
   return (
     process.env.PUBLIC_WEB_URL?.trim() ||
     process.env.PUBLIC_BASE_URL?.trim() ||
-    'https://duoorbapi.duckdns.org'
+    'https://api.duoorb.com'
   ).replace(/\/$/, '');
 }
 

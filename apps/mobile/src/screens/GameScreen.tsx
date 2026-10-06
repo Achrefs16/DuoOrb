@@ -1601,18 +1601,15 @@ const seatPremium = useMemo<Record<string, boolean>>(() => {
 // hang an indicator on until the resync lands.
 // (No effect here by design — see the hook's seat-miss pump.)
 
-// A server-rejected move is a sound AND a line, not a card status: the board
-// already rolled the move back, so the illegal-move click is the instant
-// feedback — but with sound off (a supported setting) that was nothing at
-// all. The computed message ("That move was not legal here.") already exists
-// and was discarded; it now also rides the toast bus.
+// A server-rejected move is sound-only: the board already rolled the move
+// back, so the illegal-move click is the instant feedback (this matches the
+// local illegal paths below, which never toast either).
 const lastActionErrorNonce = useRef<number | null>(null);
 useEffect(() => {
   if (type !== 'online' || !online.actionError) return;
   if (lastActionErrorNonce.current === online.actionError.nonce) return;
   lastActionErrorNonce.current = online.actionError.nonce;
   void playIllegalMoveSound();
-  if (online.actionError.message) toast.show(online.actionError.message);
 }, [type, online.actionError]);
 
 // Grace/AFK arming is soundless by default — yet the addressee is by

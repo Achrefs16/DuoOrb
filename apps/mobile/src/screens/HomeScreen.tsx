@@ -54,7 +54,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       <View style={styles.topHeader}>
         <View style={styles.brandGroup}>
           <Image
-            source={require('../../assets/logo.png')}
+            source={require('../../assets/Glossy Orbital Duo Logo.png')}
             style={styles.brandLogo}
             resizeMode="contain"
             accessibilityRole="image"

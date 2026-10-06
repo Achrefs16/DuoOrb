@@ -1,6 +1,6 @@
 # Play Console - Legal URLs Setup (DuoOrb by AS Digital)
 
-Package: `com.asdigital.duoorb` (Android + iOS). Developer name in Console: `AS Digital`. Support: `digitalas.support@gmail.com`.
+Package: `com.asdigital.duoorb` (Android + iOS). Developer name in Console: `AS Digital`. Support: `support@duoorb.com`.
 
 Source of truth: web = `apps/server/src/legal/legal-content.ts` served by
 `apps/server/src/legal/legal.controller.ts` (no login). In-app = `apps/mobile/src/legal-content.ts` rendered by `src/screens/LegalScreen.tsx` (offline, no browser needed).
@@ -9,24 +9,23 @@ Source of truth: web = `apps/server/src/legal/legal-content.ts` served by
 
 Default prod base (override via `PUBLIC_BASE_URL` / `PUBLIC_WEB_URL`):
 
-- Base: `https://duoorbapi.duckdns.org`
-- Privacy: `https://duoorbapi.duckdns.org/legal/privacy`
-- Terms: `https://duoorbapi.duckdns.org/legal/terms`
-- Delete (web, no reinstall needed): `https://duoorbapi.duckdns.org/legal/delete-account`
-- Index: `https://duoorbapi.duckdns.org/legal`
-- JSON (debug): `https://duoorbapi.duckdns.org/legal/urls`
+- API canonical: `https://api.duoorb.com` — app, socket, webhook, legal all live here.
+- Website (Play listing + AdMob): `https://duoorb.com` — same Nest backend answers during transition, so `/app-ads.txt` + `/legal/*` 200 on both hosts.
+- Base: `https://api.duoorb.com`
+- Privacy: `https://api.duoorb.com/legal/privacy`
+- Terms: `https://api.duoorb.com/legal/terms`
+- Delete (web, no reinstall needed): `https://api.duoorb.com/legal/delete-account`
+- Index: `https://api.duoorb.com/legal`
+- JSON (debug): `https://api.duoorb.com/legal/urls`
 
 Verify before submitting (must work in incognito, no login, HTTPS):
 
 ```bash
-curl -i https://duoorbapi.duckdns.org/legal/privacy | head -20
-curl -i https://duoorbapi.duckdns.org/legal/terms | head -20
-curl -i https://duoorbapi.duckdns.org/legal/delete-account | head -20
+curl -i https://api.duoorb.com/legal/privacy | head -20
+curl -i https://api.duoorb.com/legal/terms | head -20
+curl -i https://api.duoorb.com/legal/delete-account | head -20
+curl -i https://duoorb.com/app-ads.txt
 ```
-
-If you move docs to `https://duoorb.com`, set:
-- Server: `PUBLIC_BASE_URL=https://duoorb.com` (+ redeploy)
-- Mobile: `EXPO_PUBLIC_LEGAL_BASE_URL=https://duoorb.com` (next EAS build)
 
 ## 2. Where to paste in Play Console
 
@@ -35,7 +34,7 @@ If you move docs to `https://duoorb.com`, set:
    - `Does your app provide a way for users to request deletion?` = Yes
    - Deletion web link = `.../legal/delete-account`
    - In-app deletion path = `Profile tab > Settings (gear) > Danger Zone > Delete account & data (calls DELETE /api/me)`
-3. **Store listing > Contact** -> `digitalas.support@gmail.com` (or `LEGAL_CONTACT_EMAIL`).
+3. **Store listing > Contact** -> `support@duoorb.com` (or `LEGAL_CONTACT_EMAIL`). **Store listing > Website** -> `https://duoorb.com`.
 4. **App access** (if reviewer needs login): create a demo Google account + a guest with friends/history, document:
    - `Install > Continue as Guest works with no credentials. For full social test use demo@gmail.com / <password> (friends + history pre-filled).`
 5. **Content rating / Target audience**: DuoOrb is 13+, no chat, fixed emoji reactions only, no gambling/ads.
@@ -45,7 +44,7 @@ If you move docs to `https://duoorb.com`, set:
 - First launch: `Welcome > tick "I agree to Terms + Privacy" (checkbox gates both buttons) > tap Terms/Privacy opens native reader modally`. Acceptance stored as `@duoorb:legal-accept:v1` (version `2026-10-01`); no account is created until ticked, so acceptance always precedes the first username/bio/avatar (UGC rule).
 - Anytime: `BottomNav PROFILE or PLAY > gear > Settings > LEGAL > Privacy / Terms / Delete` opens `LegalScreen` natively (offline). Each screen has `Open web version` for the canonical https URL.
 - Delete: `Settings > DANGER ZONE > Delete account & data` double-confirm calls `DELETE /api/me`, then signs out.
-- Web fallback: `Settings > Legal > Delete` web button + `/legal/delete-account` explains the email request (`digitalas.support@gmail.com`, subject `Delete my DuoOrb account`, 30-day SLA).
+- Web fallback: `Settings > Legal > Delete` web button + `/legal/delete-account` explains the email request (`support@duoorb.com`, subject `Delete my DuoOrb account`, 30-day SLA).
 
 ## 4. What deletion does (for Data Safety answers)
 
@@ -61,14 +60,14 @@ Test:
 
 ```bash
 # as logged-in user
-curl -X DELETE https://duoorbapi.duckdns.org/api/me -H "Authorization: Bearer <token>"
+curl -X DELETE https://api.duoorb.com/api/me -H "Authorization: Bearer <token>"
 # expect {"deleted":true,"userId":"..."}
 ```
 
 ## 5. Env checklist
 
 - Server/prod: `PUBLIC_BASE_URL`, `LEGAL_CONTACT_EMAIL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (for Auth admin delete), `SUPABASE_JWKS_URL`, `DATABASE_URL`, `GUEST_TOKEN_SECRET`, `CORS_ORIGINS`
-- Mobile EAS prod: `EXPO_PUBLIC_SERVER_URL=https://duoorbapi.duckdns.org` (never localhost), `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, optional `EXPO_PUBLIC_LEGAL_BASE_URL`, `EXPO_PUBLIC_LEGAL_CONTACT_EMAIL`
+- Mobile EAS prod: `EXPO_PUBLIC_SERVER_URL=https://api.duoorb.com` (never localhost), `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, optional `EXPO_PUBLIC_LEGAL_BASE_URL`, `EXPO_PUBLIC_LEGAL_CONTACT_EMAIL`
 - Never put `SUPABASE_SECRET_KEY` in mobile (`EXPO_PUBLIC_*` is embedded in the bundle).
 
 ## 6. UGC moderation (for the Play UGC questionnaire)

@@ -40,14 +40,18 @@ services:
       # mint guests and logs an error — it never falls back to a default, so
       # a missing secret fails closed rather than shipping a known key.
       GUEST_TOKEN_SECRET: "${GUEST_TOKEN_SECRET:-}"
+      # Shared secret for RevenueCat webhooks (POST /api/billing/revenuecat).
+      # Compose does NOT auto-forward .env contents — without this explicit
+      # line the container never receives it and every webhook 401s.
+      REVENUECAT_WEBHOOK_SECRET: "${REVENUECAT_WEBHOOK_SECRET:-}"
       # Comma-separated browser origins allowed to call the API, e.g.
-      # https://duoorb.com,https://www.duoorb.com. Only affects the web build;
+      # https://api.duoorb.com,https://duoorb.com,https://www.duoorb.com. Only affects the web build;
       # native apps are not subject to CORS. Unset means local dev origins only.
       CORS_ORIGINS: "${CORS_ORIGINS:-}"
       # Canonical base URL rendered inside /legal/* pages + support inbox.
-      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-https://duoorbapi.duckdns.org}"
-      PUBLIC_WEB_URL: "${PUBLIC_WEB_URL:-${PUBLIC_BASE_URL:-https://duoorbapi.duckdns.org}}"
-      LEGAL_CONTACT_EMAIL: "${LEGAL_CONTACT_EMAIL:-digitalas.support@gmail.com}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-https://api.duoorb.com}"
+      PUBLIC_WEB_URL: "${PUBLIC_WEB_URL:-${PUBLIC_BASE_URL:-https://api.duoorb.com}}"
+      LEGAL_CONTACT_EMAIL: "${LEGAL_CONTACT_EMAIL:-support@duoorb.com}"
     depends_on:
       postgres:
         condition: service_healthy

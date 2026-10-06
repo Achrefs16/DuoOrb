@@ -40,6 +40,20 @@ const BULLETS = [
   'Premium crown on your name',
 ];
 
+/** Dev-only unavailability explainer (never rendered in production). */
+const DEV_REASON_COPY: Record<string, string> = {
+  'no-key':
+    'Dev: RevenueCat key missing in this build — check EXPO_PUBLIC_REVENUECAT_ANDROID_KEY and rebuild.',
+  'no-products':
+    'Dev: offering duoorb_premium has no $rc_monthly / $rc_annual packages.',
+  'store-error':
+    'Dev: store unreachable in this build — use a dev build on a Play-enabled device (not Expo Go).',
+};
+
+function isDevBuild(): boolean {
+  return typeof __DEV__ !== 'undefined' && __DEV__;
+}
+
 interface PremiumSheetProps {
   visible: boolean;
   /** Where the sheet opened from (analytics + copy context). */
@@ -58,6 +72,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
   const { identity, signInWithGoogle } = useSession();
   const [plans, setPlans] = useState<PremiumPlan[]>([]);
   const [canBuy, setCanBuy] = useState(false);
+  const [buyReason, setBuyReason] = useState<string | null>(null);
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [selected, setSelected] = useState<PlanId>('yearly');
   const [buying, setBuying] = useState(false);
@@ -78,6 +93,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
       if (cancelled) return;
       setPlans(res.plans);
       setCanBuy(res.purchaseAvailable);
+      setBuyReason(res.purchaseAvailable ? null : (res.reason ?? 'store-error'));
       if (res.plans.some((p) => p.id === 'yearly')) setSelected('yearly');
       else if (res.plans.length > 0) setSelected(res.plans[0].id);
       setError(null);
@@ -99,6 +115,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
   const handleClose = () => {
     setLoadingPlans(true);
     setError(null);
+    setBuyReason(null);
     setShowLink(false);
     setLinking(false);
     setLinkError(null);
@@ -264,6 +281,11 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
                   </Text>
                 )}
               </TouchableOpacity>
+              {isDevBuild() && !loadingPlans && !canBuy && buyReason && (
+                <Text style={styles.devHint}>
+                  {DEV_REASON_COPY[buyReason] ?? DEV_REASON_COPY['store-error']}
+                </Text>
+              )}
               {error && <Text style={styles.error}>{error}</Text>}
               <View style={styles.rowLinks}>
                 <TouchableOpacity onPress={handleRestore} disabled={restoring}>
@@ -418,6 +440,11 @@ const styles = StyleSheet.create({
   error: {
     fontSize: 13,
     color: '#DC2626',
+    textAlign: 'center',
+  },
+  devHint: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
     textAlign: 'center',
   },
   rowLinks: {

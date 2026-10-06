@@ -87,7 +87,7 @@ accounts. Purchase/restore flow forces Google-link first via the existing `Guest
       (client enforces tighter rules; this is the backstop). Enable test-device IDs for all dev devices.
 - [x] P0.3 Serve `app-ads.txt` via `AdsTxtController` (`ads-txt.controller.ts`, root path —
       NOT under `/legal/*`) with the AdMob publisher line. ✅ SHIPPED (build clean, 210/210).
-      REMAINING: deploy → confirm `https://duoorbapi.duckdns.org/app-ads.txt` returns the line as
+      REMAINING: deploy → confirm `https://api.duoorb.com/app-ads.txt` AND `https://duoorb.com/app-ads.txt` return the line as
       `text/plain` → wait ~24h → verify in AdMob console.
 - [ ] P0.4 Play Console → DuoOrb app → Subscriptions → create base plans:
   - `duoorb_premium_monthly` — $3.99, 1 month, auto-renew, 7-day free trial, grace period ON (3 days), account hold ON, restore ON.

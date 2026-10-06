@@ -126,7 +126,7 @@ Fix needed: `POST /api/reports {targetUserId, reason, evidence}` + Report button
 This is the biggest user-deletes-app bug:
 
 - `apps/mobile/.env:1-3` committed to git: `EXPO_PUBLIC_SERVER_URL=http://localhost:4000` + real Supabase anon key.
-- `.env.local` has prod `https://duoorbapi.duckdns.org` but `.gitignore` only ignores `.env*.local`, so EAS production build bakes **localhost**.
+- `.env.local` has prod `https://api.duoorb.com` but `.gitignore` only ignores `.env*.local`, so EAS production build bakes **localhost**.
 - `eas.json:17-19` `production:{autoIncrement:true}` has **no `env`**, `preview` only sets `NODE_ENV`.
 - `src/network/config.ts:3-5` fallback `10.0.2.2:4000 / localhost:4000`.
 - `src/lib/supabase.ts:8-9` reads env, `supabase.ts:23-25` throws if unconfigured.
@@ -234,7 +234,7 @@ Gaps: (a) No Apple Sign-In - if you ship iOS later with Google login, Apple Guid
 - [ ] Package `com.duoorb.mobile` reserved, Play App Signing on - NO, not yet built via EAS prod
 - [ ] AAB targeting API 36, versionCode bumped - NO, verify after EAS build, don't upload local APK
 - [ ] Edge-to-edge tested API 26 + 35/36 gesture/3-button - NO
-- [ ] `eas.json submit.production` filled (service account, track, releaseStatus) + `production.env EXPO_PUBLIC_SERVER_URL=https://duoorbapi.duckdns.org` - NO
+- [ ] `eas.json submit.production` filled (service account, track, releaseStatus) + `production.env EXPO_PUBLIC_SERVER_URL=https://api.duoorb.com` - NO
 - [ ] Pre-launch Report 0 crashes - NOT RUN
 
 ### Policy

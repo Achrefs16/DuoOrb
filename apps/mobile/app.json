@@ -5,7 +5,7 @@
     "scheme": "duoorb",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/Glossy Orbital Duo Logo.png",
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.asdigital.duoorb",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.asdigital.duoorb",
-      "versionCode": 2,
+      "versionCode": 5,
       "permissions": [],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
@@ -23,12 +23,12 @@
       ],
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/android-icon-foreground.png"
+          "foregroundImage": "./assets/Glossy Orbital Duo Logo.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/Glossy Orbital Duo Logo.png"
     },
     "extra": {
       "eas": {
@@ -58,7 +58,8 @@
       [
         "react-native-google-mobile-ads",
         {
-          "androidAppId": "ca-app-pub-6057010656402010~3789437235"
+          "androidAppId": "ca-app-pub-6057010656402010~3789437235",
+          "androidSdk": "classic"
         }
       ]
     ]

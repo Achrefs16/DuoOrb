@@ -12,11 +12,10 @@ interface DuoOrbLogoProps {
 }
 
 /**
- * The DuoOrb mark: a blue orb and a red orb inside a soft rounded tile.
+ * The DuoOrb mark: the glossy orbital duo.
  *
- * Uses the real brand asset rather than drawn circles — it carries the
- * gradients, highlights and orbit arcs that make the mark recognisable, and it
- * is the same file that ships as the app icon.
+ * Uses the real brand asset — it is the same file that ships as the app
+ * icon, splash image and top-bar logo.
  */
 export const DuoOrbLogo: React.FC<DuoOrbLogoProps> = ({ size = 96, inset = 0 }) => {
   const box = size * (1 - inset * 2);
@@ -24,7 +23,7 @@ export const DuoOrbLogo: React.FC<DuoOrbLogoProps> = ({ size = 96, inset = 0 }) 
   return (
     <View style={[styles.wrap, { width: size, height: size }]}>
       <Image
-        source={require('../../assets/duoorb-mark.png')}
+        source={require('../../assets/Glossy Orbital Duo Logo.png')}
         style={{ width: box, height: box }}
         resizeMode="contain"
         accessibilityRole="image"

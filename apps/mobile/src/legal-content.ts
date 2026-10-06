@@ -55,7 +55,7 @@ export const LEGAL_DOCS: Record<LegalKind, LegalDoc> = {
       },
       {
         heading: 'Your rights & deletion',
-        body: 'Edit name/handle/bio/avatar in Settings anytime. Delete anytime: Settings > Danger Zone > Delete account & data, or email digitalas.support@gmail.com with subject "Delete my DuoOrb account" (include @handle or account email). Done within 30 days. Full steps are in the Delete screen.',
+        body: 'Edit name/handle/bio/avatar in Settings anytime. Delete anytime: Settings > Danger Zone > Delete account & data, or email support@duoorb.com with subject "Delete my DuoOrb account" (include @handle or account email). Done within 30 days. Full steps are in the Delete screen.',
       },
       {
         heading: 'Children',
@@ -78,7 +78,7 @@ export const LEGAL_DOCS: Record<LegalKind, LegalDoc> = {
       },
       {
         heading: 'Reporting & blocking',
-        body: 'Use Block on profiles and Report where shown (profiles). Reports are reviewed and can lead to removal, warnings or bans. Urgent: digitalas.support@gmail.com with @handle, user ID and what happened. Match reactions are a fixed emoji set, ephemeral, never stored.',
+        body: 'Use Block on profiles and Report where shown (profiles). Reports are reviewed and can lead to removal, warnings or bans. Urgent: support@duoorb.com with @handle, user ID and what happened. Match reactions are a fixed emoji set, ephemeral, never stored.',
       },
       {
         heading: 'Fair play',
@@ -105,7 +105,7 @@ export const LEGAL_DOCS: Record<LegalKind, LegalDoc> = {
       },
       {
         heading: 'Web / email (no app needed)',
-        body: 'Email digitalas.support@gmail.com with subject "Delete my DuoOrb account". Include your account email OR your @handle + user ID (Profile > Settings shows both). We confirm and finish within 30 days. If law requires keeping something (fraud, security), we state exactly what and why.',
+        body: 'Email support@duoorb.com with subject "Delete my DuoOrb account". Include your account email OR your @handle + user ID (Profile > Settings shows both). We confirm and finish within 30 days. If law requires keeping something (fraud, security), we state exactly what and why.',
       },
       {
         heading: 'What remains',
