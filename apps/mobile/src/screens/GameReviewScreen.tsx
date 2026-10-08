@@ -140,9 +140,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   // controls (which need only one cheap rebuild) paint immediately, and the
   // analysis lands afterwards with skeletons in its place. Bare replay never
   // computes it at all: it displays nothing from it.
-  const [currentStep, setCurrentStep] = useState<number>(() =>
-    history.length > 0 ? 1 : 0
-  );
+  const [currentStep, setCurrentStep] = useState<number>(0);
   // True once the user scrubs or plays: arriving analysis must not yank the
   // board out from under them to the deciding moment.
   const touchedRef = useRef(false);
@@ -489,6 +487,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     return null;
   }, [review, currentStep]);
   const viewerWC = useMemo(() => {
+    if (currentStep === 0) return 0.5;
     if (!wcEntry) return 0.5;
     if (viewerId && wcEntry.perPlayer?.[viewerId] !== undefined) {
       return wcEntry.perPlayer[viewerId];
@@ -499,6 +498,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
       : 1 - wcEntry.winChance;
   }, [wcEntry, viewerId, review, currentStep]);
   const evalNum = useMemo(() => {
+    if (currentStep === 0) return 0;
     if (review?.evaluationHistory && review.evaluationHistory.length > 0) {
       const h = review.evaluationHistory;
       let found: { step: number; evaluation: number } | null = null;
@@ -527,12 +527,13 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
 
   const animWinChance = useRef(new Animated.Value(0.5)).current;
   useEffect(() => {
+    const target = currentStep === 0 ? 0.5 : Math.max(0.04, Math.min(0.96, viewerWC));
     Animated.timing(animWinChance, {
-      toValue: Math.max(0.04, Math.min(0.96, viewerWC)),
+      toValue: target,
       duration: 300,
       useNativeDriver: false,
     }).start();
-  }, [viewerWC, animWinChance]);
+  }, [viewerWC, currentStep, animWinChance]);
 
   const evalBarWidth = animWinChance.interpolate({
     inputRange: [0, 1],
@@ -567,25 +568,26 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     const total = history.length;
     const out: number[] = [];
     for (
-      let s = Math.max(1, currentStep - 1);
+      let s = Math.max(0, currentStep - 1);
       s <= Math.min(total, currentStep + 2) && out.length < 5;
       s++
     ) {
       out.push(s);
     }
-    while (out.length < Math.min(5, total) && out[0] > 1) {
+    while (out.length < Math.min(5, total + 1) && out[0] > 0) {
       out.unshift(out[0] - 1);
     }
     return out;
   }, [history.length, currentStep]);
   const stripLabel = (step: number): string => {
+    if (step === 0) return 'Start';
     const rec = history[step - 1];
     if (!rec) return `${step}`;
     const idx = initialState.players.findIndex((p) => p.id === rec.playerId);
     return shortMoveLabel(rec.action, idx < 0 ? 0 : initialState.players[idx].index);
   };
   const stripAssessment = (step: number) =>
-    review?.moveAnalyses[step - 1]?.assessment ?? null;
+    step === 0 ? null : review?.moveAnalyses[step - 1]?.assessment ?? null;
 
   const opponentPlayer = currentState.players[1] || currentState.players[0];
   const userPlayer = currentState.players[0];
@@ -1050,6 +1052,27 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               ) : null}
             </View>
           </View>
+        ) : review && currentStep === 0 ? (
+          <View style={styles.coachCard}>
+            <View style={[styles.coachAvatar, { backgroundColor: viewerColor }]}>
+              <Feather name="play" size={18} color="#FFFFFF" />
+            </View>
+            <View style={styles.coachMain}>
+              <View style={styles.verdictRow}>
+                <Text style={styles.verdictText}>
+                  {review.accuracies?.p1 != null
+                    ? `${review.accuracies.p1}% vs ${review.accuracies.p2 ?? 50}%`
+                    : t('review.matchReview')}
+                </Text>
+                <View style={styles.evalPill}>
+                  <Text style={styles.evalPillText}>0.0</Text>
+                </View>
+              </View>
+              <Text style={styles.coachText} numberOfLines={2}>
+                {review.summary?.keyLesson?.detail ?? 'Initial board position. Tap Next to review the match.'}
+              </Text>
+            </View>
+          </View>
         ) : (
           <View style={styles.coachCard}>
             <ActivityIndicator size="small" color={THEME.colors.primary} />
@@ -1090,7 +1113,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         <View style={styles.stripRow}>
           <TouchableOpacity
             style={styles.stripNav}
-            disabled={currentStep <= 1}
+            disabled={currentStep <= 0}
             onPress={() => goTo(currentStep - 1)}
             accessibilityRole="button"
             accessibilityLabel="Previous move"
@@ -1099,7 +1122,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               name="chevron-left"
               size={20}
               color={
-                currentStep <= 1
+                currentStep <= 0
                   ? THEME.colors.textMuted
                   : THEME.colors.textSecondary
               }
@@ -1121,7 +1144,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                     active && styles.stripChipTextActive,
                   ]}
                 >
-                  {s} · {stripLabel(s)}
+                  {s === 0 ? 'Start' : `${s} · ${stripLabel(s)}`}
                 </Text>
                 {bad && <View style={styles.stripBad} />}
               </TouchableOpacity>
@@ -1198,11 +1221,20 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.nextBtn, !nextMoment && styles.btnDisabled]}
-              disabled={!nextMoment}
-              onPress={() => nextMoment && goTo(nextMoment.moveNumber)}
+              style={[
+                styles.nextBtn,
+                currentStep >= history.length && styles.btnDisabled,
+              ]}
+              disabled={currentStep >= history.length}
+              onPress={() => {
+                if (nextMoment) {
+                  goTo(nextMoment.moveNumber);
+                } else if (currentStep < history.length) {
+                  goTo(currentStep + 1);
+                }
+              }}
               accessibilityRole="button"
-              accessibilityLabel="Next key moment"
+              accessibilityLabel="Next move or key moment"
             >
               <Text style={styles.nextBtnText}>{t('review.next')}</Text>
             </TouchableOpacity>
