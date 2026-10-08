@@ -26,7 +26,9 @@ describe('AnalysisService', () => {
     for (const act of movesToPlay) {
       const p = state.players[state.currentPlayerIndex];
       const res = applyAction(state, act, { actorId: p.id, timestamp: Date.now() });
-      expect(res.success).toBe(true);
+      if (!res.success) {
+        throw new Error('Action failed');
+      }
       state = res.state;
       history.push(res.state.lastMove);
     }
