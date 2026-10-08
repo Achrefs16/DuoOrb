@@ -518,11 +518,11 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   }, [review, currentStep]);
 
   const is2p = initialState.players.length === 2;
-  const opponentPlayer = is2p
+  const twoPlayerOpponent = is2p
     ? initialState.players.find((p) => p.id !== viewerId) || initialState.players[1]
     : undefined;
-  const opponentColor = opponentPlayer
-    ? playerColor(opponentPlayer.index, opponentPlayer.color)
+  const opponentColor = twoPlayerOpponent
+    ? playerColor(twoPlayerOpponent.index, twoPlayerOpponent.color)
     : THEME.colors.surfaceContainer;
 
   const animWinChance = useRef(new Animated.Value(0.5)).current;
