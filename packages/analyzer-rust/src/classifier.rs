@@ -9,34 +9,54 @@ pub fn win_chance_from_eval(eval: f64) -> f64 {
 }
 
 #[inline(always)]
-pub fn base_assessment(loss: f64, forced: bool, win_swing: f64) -> MoveAssessment {
+pub fn classify_mcts_move(
+    best_q: f64,
+    played_q: f64,
+    forced: bool,
+) -> (MoveAssessment, f64, f64) {
     if forced {
-        return MoveAssessment::Forced;
+        return (MoveAssessment::Forced, 0.0, 100.0);
     }
-    // Severe win chance drop forces at least Mistake or Blunder
-    if win_swing <= -0.20 || loss > 25.0 {
-        return MoveAssessment::Blunder;
+
+    let delta_q = (best_q - played_q).max(0.0);
+
+    // Converted loss units roughly scaled to Quoridor path steps (1 step ~ 10 loss)
+    let loss = delta_q * 40.0;
+
+    // Accuracy formula: 100% when loss is 0, smooth exponential decay
+    let accuracy = if delta_q <= 0.01 {
+        100.0
+    } else {
+        (100.0 * (-delta_q * 3.5).exp()).clamp(0.0, 100.0)
+    };
+
+    // WIN-RETENTION PROTECTION:
+    // If player is clearly winning (best_q >= 0.70) and played move preserves
+    // the winning state (played_q >= 0.65), it is NEVER an inaccuracy or blunder!
+    if best_q >= 0.70 && played_q >= 0.65 {
+        let assessment = if delta_q <= 0.03 {
+            MoveAssessment::Best
+        } else if delta_q <= 0.07 {
+            MoveAssessment::Excellent
+        } else {
+            MoveAssessment::Good
+        };
+        return (assessment, loss, accuracy.max(85.0));
     }
-    if loss <= 1.0 {
+
+    let assessment = if delta_q <= 0.03 {
         MoveAssessment::Best
-    } else if loss <= 3.0 {
+    } else if delta_q <= 0.07 {
         MoveAssessment::Excellent
-    } else if loss <= 6.0 {
+    } else if delta_q <= 0.15 {
         MoveAssessment::Good
-    } else if loss <= 14.0 {
+    } else if delta_q <= 0.28 {
         MoveAssessment::Inaccuracy
-    } else if loss <= 25.0 {
+    } else if delta_q <= 0.42 {
         MoveAssessment::Mistake
     } else {
         MoveAssessment::Blunder
-    }
-}
+    };
 
-#[inline(always)]
-pub fn move_accuracy(loss: f64, forced: bool) -> f64 {
-    if forced {
-        100.0
-    } else {
-        (100.0 * (-loss / ACCURACY_SCALE).exp()).clamp(0.0, 100.0)
-    }
+    (assessment, loss, accuracy)
 }

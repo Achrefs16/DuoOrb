@@ -6,7 +6,6 @@ import {
   GameState,
   MoveAnalysis,
   RecordedAction,
-  analyzeGame,
   applyAction,
   rebuildStateAtStep,
 } from '@duoorb/game-core';
@@ -250,7 +249,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         return;
       }
 
-      // Online-first: request high-speed server analysis powered by the native Rust engine
+      // Request deep MCTS analysis from the backend server (sole source of truth)
       try {
         const serverReview = await api.requestGameReview(initialState, history);
         if (cancelled) return;
@@ -259,15 +258,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           setReview(serverReview);
           return;
         }
-      } catch {
-        // Offline / network failure: gracefully fall back to local analysis
+      } catch (err) {
+        console.warn('Server analysis request failed:', err);
       }
-
-      if (cancelled) return;
-      const localReview = analyzeGame(initialState, history);
-      if (cancelled) return;
-      cacheReview(key, localReview);
-      setReview(localReview);
     }, 0);
     return () => {
       cancelled = true;

@@ -3,6 +3,7 @@
 pub mod board;
 pub mod classifier;
 pub mod evaluation;
+pub mod mcts;
 pub mod pathfinding;
 pub mod review;
 pub mod rules;

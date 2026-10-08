@@ -37,7 +37,7 @@ describe('AnalysisService', () => {
     expect(review.totalMoves).toBe(4);
     expect(review.moveAnalyses.length).toBe(4);
     expect(review.summary).toBeDefined();
-    expect(review.engineVersion).toBe('duoorb-rust-1.0');
+    expect(review.engineVersion).toBe('duoorb-rust-mcts-2.0');
   });
 
   it('serves cached review when present in database', async () => {
