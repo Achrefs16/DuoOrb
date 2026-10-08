@@ -193,14 +193,16 @@ function useOrbAnimations(state: GameState, cell: number, gap: number) {
 
   const posKey = state.players.map((p) => `${p.id}:${p.position.row},${p.position.col}`).join('|');
   const prevGeomRef = useRef<{ cell: number; gap: number } | null>(null);
+  const isInitialMount = useRef(true);
 
   useEffect(() => {
     const anims = animsRef.current;
     const prevGeom = prevGeomRef.current;
     const geomChanged =
       !prevGeom || prevGeom.cell !== cell || prevGeom.gap !== gap;
-    if (gameKeyRef.current !== state.gameId) {
-      // New game — snap without animation
+    if (isInitialMount.current || gameKeyRef.current !== state.gameId) {
+      isInitialMount.current = false;
+      // Initial mount or new game — snap without animation
       gameKeyRef.current = state.gameId;
       for (const p of state.players) {
         anims[p.id]?.x.setValue(cellLeft(p.position.col));

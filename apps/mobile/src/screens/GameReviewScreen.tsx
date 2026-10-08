@@ -517,6 +517,28 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     return null;
   }, [review, currentStep]);
 
+  const is2p = initialState.players.length === 2;
+  const opponentPlayer = is2p
+    ? initialState.players.find((p) => p.id !== viewerId) || initialState.players[1]
+    : undefined;
+  const opponentColor = opponentPlayer
+    ? playerColor(opponentPlayer.index, opponentPlayer.color)
+    : THEME.colors.surfaceContainer;
+
+  const animWinChance = useRef(new Animated.Value(0.5)).current;
+  useEffect(() => {
+    Animated.timing(animWinChance, {
+      toValue: Math.max(0.04, Math.min(0.96, viewerWC)),
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  }, [viewerWC, animWinChance]);
+
+  const evalBarWidth = animWinChance.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
+
   // Key moments for Next: deciding moments in move order; Next disables
   // past the last one (no wrap).
   const keyMoments = useMemo<{ moveNumber: number }[]>(() => {
@@ -960,12 +982,17 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           <Text style={styles.evalNum}>
             {evalNum == null ? '—' : formatEvalShort(evalNum)}
           </Text>
-          <View style={styles.evalTrack}>
-            <View
+          <View
+            style={[
+              styles.evalTrack,
+              is2p && { backgroundColor: opponentColor },
+            ]}
+          >
+            <Animated.View
               style={[
                 styles.evalFill,
                 {
-                  width: `${Math.max(0, Math.min(100, Math.round(viewerWC * 100)))}%`,
+                  width: evalBarWidth,
                   backgroundColor: viewerColor,
                 },
               ]}
