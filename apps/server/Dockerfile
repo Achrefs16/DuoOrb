@@ -1,5 +1,5 @@
 # Stage 1: Build native Rust analyzer
-FROM rust:1.85-alpine AS rust-builder
+FROM rust:alpine AS rust-builder
 WORKDIR /build/packages/analyzer-rust
 RUN apk add --no-cache musl-dev
 COPY packages/analyzer-rust/Cargo.* ./

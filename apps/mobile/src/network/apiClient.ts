@@ -833,7 +833,7 @@ export const api = {
     initialState: GameState,
     history: RecordedAction[]
   ): Promise<GameReview> {
-    return request<GameReview>('/api/analysis/review', {
+    return request<GameReview>('/analysis/review', {
       method: 'POST',
       body: JSON.stringify({ initialState, history }),
     });
@@ -843,7 +843,7 @@ export const api = {
    * Fetch cached match analysis from the server by gameId.
    */
   async getGameReview(gameId: string): Promise<GameReview> {
-    return request<GameReview>(`/api/analysis/${gameId}`, {
+    return request<GameReview>(`/analysis/${gameId}`, {
       method: 'GET',
     });
   },
