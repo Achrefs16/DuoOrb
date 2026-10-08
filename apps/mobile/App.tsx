@@ -21,6 +21,7 @@ import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
 import { LegalScreen } from './src/screens/LegalScreen';
 import type { LegalKind } from './src/legal-content';
 import { BottomNav, MainTab } from './src/components/BottomNav';
+import { requestAnalysisEntry } from './src/monetization/analysisAccess';
 import { AppToast } from './src/components/AppToast';
 import { PremiumSheet } from './src/components/PremiumSheet';
 import { NoConnectionSection, OfflineModal } from './src/components/NoConnection';
@@ -28,7 +29,7 @@ import { ChallengeToast } from './src/components/ChallengeToast';
 import { OnlineJoinGate } from './src/components/OnlineJoinGate';
 import { RoomInviteToast } from './src/components/RoomInviteToast';
 import * as SplashScreen from 'expo-splash-screen';
-import { refreshPremium } from './src/monetization/premium';
+import { isPremiumActive, refreshPremium, usePremium } from './src/monetization/premium';
 import { useRoomInvites } from './src/network/useRoomInvites';
 import { useChallenge } from './src/network/useChallenge';
 import { socketManager } from './src/network/socket';
@@ -95,6 +96,12 @@ interface ActiveGameConfig {
   type: 'local' | 'ai' | 'online';
   onlineGameId?: string;
   onlineSource?: 'quick' | 'custom' | 'room';
+  /**
+   * Friend-challenge origin: where the player was when the challenge game
+   * started (opponent profile, friends list, ...). Only set for games that
+   * entered through the challenge gate — closers use it to return there.
+   */
+  challengeOrigin?: { tab: MainTab; sub: SubScreen } | null;
   room?: RoomDto | null;
   aiDifficulty?: AIDifficulty;
   /** Premium personality id for AI games (null = generic difficulty bot). */
@@ -205,10 +212,69 @@ export default function App() {
     setSubScreen(sub);
   };
 
-  /** Back navigation: restores the previous location, or asks to exit. */
+  // Match origin dismissal (shared by the game and review closers): AI and
+  // local return to match setup, custom online to its setup page, room games
+  // to the room lobby, friend-challenge games to the challenge origin
+  // (opponent profile, friends list, ...), quick match to home.
+  // Dismissals pop (never push): the closed match must not stay in history,
+  // or Back walks straight back into the dead game.
+  const dismissMatchToOrigin = () => {
+    if (gameConfig.type === 'online') {
+      if (gameConfig.challengeOrigin) {
+        dismissTo(gameConfig.challengeOrigin.tab, gameConfig.challengeOrigin.sub);
+        return;
+      }
+      const clock = gameConfig.timeControl ?? DEFAULT_TIME_CONTROL;
+      if (gameConfig.onlineSource === 'room' && gameConfig.room) {
+        setOnlineEntry({
+          clock,
+          view: 'rooms',
+          inviteName: null,
+          autoMatch: null,
+          autoRoom: null,
+          initialRoom: gameConfig.room,
+        });
+        dismissTo(currentTab, 'ONLINE');
+        return;
+      }
+      if (gameConfig.onlineSource === 'custom') {
+        // Custom Online Match closes back to its configuration page.
+        setSetupKind('online');
+        setChallengeTarget(null);
+        dismissTo(currentTab, 'SETUP');
+        return;
+      }
+      // Quick Match closes to the home page.
+      dismissTo('PLAY', null);
+      return;
+    }
+    setSetupKind(gameConfig.type);
+    setChallengeTarget(null);
+    dismissTo(currentTab, 'SETUP');
+  };
+
+  /**
+   * Back navigation: restores the previous location, or asks to exit.
+   * Empty stack on a sub-screen (drained by dismiss cycles, e.g. rematch
+   * flows) falls back to a safe parent — the exit prompt only ever appears
+   * on the main tabs.
+   */
   const goBack = useCallback(() => {
     const stack = stackRef.current;
     if (stack.length === 0) {
+      if (subScreen === 'SETUP') {
+        if (setupKind === 'challenge') dismissTo('FRIENDS', null);
+        else dismissTo('PLAY', null);
+        return;
+      }
+      if (subScreen === 'GAME' || (subScreen === 'REVIEW' && !reviewBare)) {
+        dismissMatchToOrigin();
+        return;
+      }
+      if (subScreen !== null) {
+        dismissTo(currentTab, null);
+        return;
+      }
       setExitAsk(true);
       return;
     }
@@ -217,7 +283,33 @@ export default function App() {
     setExitAsk(false);
     setCurrentTab(prev.tab);
     setSubScreen(prev.sub);
-  }, []);
+  }, [subScreen, reviewBare, gameConfig, currentTab, setupKind]);
+
+  // Close Match: return to the surface that match came from —
+  // private room lobby, custom online setup page, or the home screen.
+  // Dismissals pop (never push): the closed match must not stay in
+  // history, or Back walks straight back into the dead game.
+  const handleCloseMatch = () => {
+    // Leaving the board frees decoded SFX (native mixer). Re-entry
+    // re-initializes transparently: GameScreen preloads on mount and notify
+    // toasts ensure-load on play.
+    releaseSounds();
+    dismissMatchToOrigin();
+  };
+
+  // Close Review: post-match reviews (win/lose modal path) must NEVER pop
+  // back to GAME — the finished screen unmounted when the review opened,
+  // so remounting GameScreen with the same config boots a brand-new match
+  // instead of the finished board. Dismiss to the match's origin surface
+  // (same map as closing the match itself). Bare history/profile replays
+  // keep normal stack-back — their parent screen is still underneath.
+  const handleCloseReview = useCallback(() => {
+    if (!reviewBare) {
+      dismissMatchToOrigin();
+      return;
+    }
+    goBack();
+  }, [reviewBare, gameConfig, currentTab, goBack]);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -225,11 +317,18 @@ export default function App() {
         BackHandler.exitApp();
         return true;
       }
+      // Post-match review takes the origin-dismissal path (same as its
+      // header back button) — the raw stack pop would remount the finished
+      // GAME screen and boot a brand-new match.
+      if (subScreen === 'REVIEW' && !reviewBare) {
+        handleCloseReview();
+        return true;
+      }
       goBack();
       return true;
     });
     return () => sub.remove();
-  }, [exitAsk, goBack]);
+  }, [exitAsk, goBack, subScreen, reviewBare, handleCloseReview]);
 
   useEffect(() => {
     const t = setTimeout(() => setSplashElapsed(true), SPLASH_MIN_MS);
@@ -339,12 +438,19 @@ export default function App() {
   // accepting never drops anyone onto a connecting page.
   const challenge = useChallenge({
     onGameStart: (gameId, mode, clock, initialSync) => {
+      // Capture where the challenge was accepted: the review/game closers
+      // return here (profile, friends list, ...). Accepted mid-match or
+      // mid-review has no valid return surface — fall back to friends.
+      const midGame = subScreen === 'GAME' || subScreen === 'REVIEW';
       handleStartGame({
         mode,
         type: 'online',
         onlineGameId: gameId,
         timeControl: clock,
         initialSync: initialSync ?? null,
+        challengeOrigin: midGame
+          ? { tab: 'FRIENDS', sub: null }
+          : { tab: currentTab, sub: subScreen },
       });
     },
   });
@@ -378,45 +484,6 @@ export default function App() {
     setSetupKind('challenge');
     setChallengeTarget(friend);
     navigate(currentTab, 'SETUP');
-  };
-
-  // Close Match: return to the surface that match came from —
-  // private room lobby, custom online setup page, or the home screen.
-  // Dismissals pop (never push): the closed match must not stay in
-  // history, or Back walks straight back into the dead game.
-  const handleCloseMatch = () => {
-    // Leaving the board frees decoded SFX (native mixer). Re-entry
-    // re-initializes transparently: GameScreen preloads on mount and notify
-    // toasts ensure-load on play.
-    releaseSounds();
-    if (gameConfig.type === 'online') {
-      const clock = gameConfig.timeControl ?? DEFAULT_TIME_CONTROL;
-      if (gameConfig.onlineSource === 'room' && gameConfig.room) {
-        setOnlineEntry({
-          clock,
-          view: 'rooms',
-          inviteName: null,
-          autoMatch: null,
-          autoRoom: null,
-          initialRoom: gameConfig.room,
-        });
-        dismissTo(currentTab, 'ONLINE');
-        return;
-      }
-      if (gameConfig.onlineSource === 'custom') {
-        // Custom Online Match closes back to its configuration page.
-        setSetupKind('online');
-        setChallengeTarget(null);
-        dismissTo(currentTab, 'SETUP');
-        return;
-      }
-      // Quick Match closes to the home page.
-      dismissTo('PLAY', null);
-      return;
-    }
-    setSetupKind(gameConfig.type);
-    setChallengeTarget(null);
-    dismissTo(currentTab, 'SETUP');
   };
 
   // New Game from the result modal: re-queue the same online match type
@@ -456,6 +523,7 @@ export default function App() {
       type: 'online',
       onlineGameId: newGameId,
       onlineSource: gameConfig.onlineSource,
+      challengeOrigin: gameConfig.challengeOrigin ?? null,
       wallsEach: gameConfig.wallsEach,
       timeControl: clock,
       initialSync: null,
@@ -554,6 +622,31 @@ export default function App() {
   // remounts into full mode (the App key includes the bare/full suffix).
   const handleUpgradeReviewToFull = () => {
     setReviewBare(false);
+  };
+
+  // Direct Analyse from History/Profile (no replay first): runs the single
+  // gate (premium unlimited, unlocked free, else the free daily), then opens
+  // full review. 'locked' still opens — the in-review lock panel offers the
+  // one-ad unlock in place, so there is never a dead end.
+  const premium = usePremium();
+  const handleAnalyzeGameFromHistory = async (savedGame: SavedGameRecord) => {
+    const accessKey = {
+      gameId: savedGame.id,
+      historyLength: savedGame.history.length,
+    };
+    setReplayData({
+      initialState: savedGame.initialState,
+      history: savedGame.history,
+      perspectiveIdx: 0,
+      accessKey,
+    });
+    setReviewBare(false);
+    navigate(currentTab, 'REVIEW');
+    await requestAnalysisEntry(
+      isPremiumActive(premium),
+      accessKey.gameId,
+      accessKey.historyLength
+    );
   };
 
   // Render-time chrome: these read the ACTIVE theme (post-setThemeName),
@@ -664,6 +757,7 @@ export default function App() {
                 <HistoryScreen
                   onBack={() => setCurrentTab('PLAY')}
                   onSelectGame={handleSelectGameFromHistory}
+                  onAnalyzeGame={handleAnalyzeGameFromHistory}
                   onQuickMatch={() => handleOpenOnline(DEFAULT_TIME_CONTROL, 'quick')}
                   onOpenPlayerProfile={handleOpenPlayerProfile}
                 />
@@ -777,6 +871,7 @@ export default function App() {
               onBack={goBack}
               onChallenge={(p) => handleOpenChallengeSetup({ id: p.id, username: p.username })}
               onSelectGame={handleSelectGameFromHistory}
+              onAnalyzeGame={handleAnalyzeGameFromHistory}
             />
           )}
 
@@ -825,7 +920,7 @@ export default function App() {
               initialState={replayData.initialState}
               history={replayData.history}
               perspectiveIdx={replayData.perspectiveIdx}
-              onBack={goBack}
+              onBack={handleCloseReview}
               bare={reviewBare}
               ratings={replayData.ratings}
               accessKey={replayData.accessKey ?? null}
@@ -1039,30 +1134,11 @@ const SessionEffects: React.FC<{
   const { isConnected } = useConnectivity();
   useEffect(() => {
     if (!userId) return;
-    // The badge must light up wherever you are, not only while the Friends
-    // tab is open. FriendsScreen polls on the same cadence when mounted;
-    // both writers publish the same number so they never fight. The lobby
-    // headcount rides the same tick for the Home presence pill.
-    //
-    // allSettled: one failing call never masks the other. Offline ticks are
-    // skipped outright; repeated failures back off 8s → 16s → 30s instead of
-    // spamming a dead server every 8 seconds.
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let delay = 8000;
-    const tick = async () => {
-      if (cancelled) return;
-      if (isConnected === false) {
-        timer = setTimeout(tick, 8000);
-        return;
-      }
-      // Backgrounded: radio + battery cost with nobody watching. Reschedule
-      // unread — foreground return is at most one cadence behind, same as
-      // the offline-skip path above.
-      if (AppState.currentState !== 'active') {
-        timer = setTimeout(tick, 8000);
-        return;
-      }
+
+    // Single reconciliation fetch on mount / reconnect / foreground
+    const syncState = async () => {
+      if (cancelled || isConnected === false) return;
       const [reqSettled, countSettled] = await Promise.allSettled([
         isGuest ? Promise.resolve([] as FriendRequestItemDto[]) : api.getFriendRequests(),
         api.getOnlineCount(),
@@ -1073,37 +1149,48 @@ const SessionEffects: React.FC<{
       }
       if (countSettled.status === 'fulfilled') {
         onOnlineCount(countSettled.value);
-        delay = 8000;
-      } else {
-        // Unknown, not zero: the pill shows Checking… instead of lying.
-        onOnlineCount(null);
-        delay = Math.min(delay * 2, 30000);
       }
-      timer = setTimeout(tick, delay);
     };
-    void tick();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [userId, isGuest, isConnected, onFriendRequests, onOnlineCount]);
 
-  // Live presence count (ONLINE_HEALTH count upgrade): the server broadcasts
-  // presence:count on verified connect/disconnect, so the pill updates
-  // instantly instead of at the next 8s poll. The REST poll above stays as
-  // backup for missed broadcasts. Handler replay (manager-owned) survives
-  // transport rebuilds, so subscribe once per identity.
-  useEffect(() => {
-    if (!userId) return;
+    void syncState();
+
+    // Event-driven real-time updates via WebSockets: zero polling
     const socket = socketManager.getSocket();
+
     const onCount = (payload: { count?: unknown }) => {
       if (typeof payload?.count === 'number') onOnlineCount(payload.count);
     };
-    socket.on('presence:count', onCount as never);
-    return () => {
-      socket.off('presence:count', onCount as never);
+
+    const onFriendEvent = () => {
+      if (!isGuest && !cancelled) {
+        api.getFriendRequests().then((reqs) => {
+          if (!cancelled) onFriendRequests(reqs.length);
+        }).catch(() => {});
+      }
     };
-  }, [userId, onOnlineCount]);
+
+    socket.on('presence:count', onCount as never);
+    socket.on('friend:request_received' as never, onFriendEvent as never);
+    socket.on('friend:request_resolved' as never, onFriendEvent as never);
+    socket.on('friend:removed' as never, onFriendEvent as never);
+    socket.on('connect', syncState as never);
+
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void syncState();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      socket.off('presence:count', onCount as never);
+      socket.off('friend:request_received' as never, onFriendEvent as never);
+      socket.off('friend:request_resolved' as never, onFriendEvent as never);
+      socket.off('friend:removed' as never, onFriendEvent as never);
+      socket.off('connect', syncState as never);
+      appStateSub.remove();
+    };
+  }, [userId, isGuest, isConnected, onFriendRequests, onOnlineCount]);
 
   // Presence heartbeat (C1 companion): a verified, connected socket proves
   // liveness every 60s so the server-side 5-minute freshness rule only ever

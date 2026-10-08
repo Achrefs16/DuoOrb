@@ -786,7 +786,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           ).map((option, index) => {
             const skin = BOARD_SKINS[option.id];
             const selected = (settings.boardSkinId ?? 'classic') === option.id;
-            // Dev builds preview every skin unlocked; release stays gated.
+            // Premium skins stay gated for everyone without a membership.
             const locked = skin.premiumOnly && !skinsUnlocked(isPremiumMember);
             return (
               <View key={option.id}>

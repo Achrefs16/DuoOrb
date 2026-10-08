@@ -224,7 +224,6 @@ export const ar: Dictionary = {
   'premium.title': 'DuoOrb بريميوم',
   'premium.bulletAds': 'بلا إعلانات في أي مكان',
   'premium.bulletAnalysis': 'تحليل مباريات غير محدود',
-  'premium.bulletBots': 'جميع الروبوتات الـ 6 الحصرية',
   'premium.bulletMidnight': 'تصميم لوحة الجوز',
   'premium.bulletCrown': 'تاج بريميوم بجانب اسمك',
   'premium.bestValue': 'أفضل قيمة',

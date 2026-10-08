@@ -217,6 +217,94 @@ class RealRewardedProvider implements AdProvider {
 }
 
 /**
+ * Win-only interstitial (result-modal exit). Singleton instance, one show at
+ * a time: a second call while showing resolves false instead of stacking.
+ * Returns true when an ad actually presented (CLOSED after show).
+ */
+let interstitialInflight: Promise<boolean> | null = null;
+
+export function showInterstitial(): Promise<boolean> {
+  if (interstitialInflight) return interstitialInflight;
+  interstitialInflight = runInterstitial().finally(() => {
+    interstitialInflight = null;
+  });
+  return interstitialInflight;
+}
+
+async function runInterstitial(): Promise<boolean> {
+  try {
+    const ready = await ensureAdsReady();
+    if (!ready) return false;
+    const sdk = loadSdk();
+    if (!sdk || typeof sdk.InterstitialAd === 'undefined') return false;
+    const ad = sdk.InterstitialAd.createForAdRequest(adUnitId('interstitial'));
+    const loaded = await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), LOAD_TIMEOUT_MS);
+      const unsubs: (() => void)[] = [];
+      const cleanup = () => {
+        clearTimeout(timer);
+        unsubs.forEach((u) => {
+          try {
+            u();
+          } catch {
+            // Listener teardown is best-effort.
+          }
+        });
+      };
+      try {
+        unsubs.push(
+          ad.addAdEventListener(sdk.AdEventType.LOADED, () => {
+            cleanup();
+            resolve(true);
+          })
+        );
+        unsubs.push(
+          ad.addAdEventListener(sdk.AdEventType.ERROR, () => {
+            cleanup();
+            resolve(false);
+          })
+        );
+      } catch {
+        cleanup();
+        resolve(false);
+        return;
+      }
+      try {
+        ad.load();
+      } catch {
+        cleanup();
+        resolve(false);
+      }
+    });
+    if (!loaded) return false;
+    const shown = await new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        try {
+          ad.destroy?.();
+        } catch {
+          // Teardown hygiene only.
+        }
+        resolve(ok);
+      };
+      try {
+        ad.addAdEventListener(sdk.AdEventType.CLOSED, () => finish(true));
+        ad.addAdEventListener(sdk.AdEventType.ERROR, () => finish(false));
+        void Promise.resolve(ad.show()).catch(() => finish(false));
+      } catch {
+        finish(false);
+      }
+    });
+    if (shown) track('interstitial_shown', { placement: 'result-exit' });
+    return shown;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Installs the real provider when the native SDK exists, once per launch.
  * Safe everywhere: returns false (leaving UnavailableProvider) on web,
  * Expo Go, iOS (no App ID yet), and init failure. Call from the App boot effect.

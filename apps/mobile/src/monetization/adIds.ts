@@ -12,6 +12,7 @@ export const ADMOB_APP_ID = 'ca-app-pub-6057010656402010~3789437235';
 const PROD_UNITS = {
   banner: 'ca-app-pub-6057010656402010/8570242197',
   rewarded: 'ca-app-pub-6057010656402010/6459084176',
+  interstitial: 'ca-app-pub-6057010656402010/9282446220',
 } as const;
 
 // Google demo units (docs: "not associated with your AdMob account, so
@@ -20,6 +21,7 @@ const PROD_UNITS = {
 const DEMO_UNITS = {
   banner: 'ca-app-pub-3940256099942544/9214589741',
   rewarded: 'ca-app-pub-3940256099942544/5224354917',
+  interstitial: 'ca-app-pub-3940256099942544/1033173712',
 } as const;
 
 export type AdUnitKind = keyof typeof PROD_UNITS;

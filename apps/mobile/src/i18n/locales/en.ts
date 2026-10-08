@@ -237,7 +237,6 @@ export const en = {
   'premium.title': 'DuoOrb Premium',
   'premium.bulletAds': 'No ads, anywhere',
   'premium.bulletAnalysis': 'Unlimited game analysis',
-  'premium.bulletBots': 'All 6 exclusive bots',
   'premium.bulletMidnight': 'Walnut board design',
   'premium.bulletCrown': 'Premium crown on your name',
   'premium.bestValue': 'Best value',

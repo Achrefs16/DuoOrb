@@ -224,7 +224,6 @@ export const id: Dictionary = {
   'premium.title': 'DuoOrb Premium',
   'premium.bulletAds': 'Tanpa iklan, di mana saja',
   'premium.bulletAnalysis': 'Analisis permainan tanpa batas',
-  'premium.bulletBots': 'Semua 6 bot eksklusif',
   'premium.bulletMidnight': 'Desain papan Kenari',
   'premium.bulletCrown': 'Mahkota premium di samping namamu',
   'premium.bestValue': 'Nilai terbaik',

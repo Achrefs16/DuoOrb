@@ -13,7 +13,7 @@ import { LegalModule } from './legal/legal.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { BillingModule } from './billing/billing.module.js';
 import { AnalysisModule } from './analysis/analysis.module.js';
-import { GameGateway } from './gateway/game.gateway.js';
+import { GatewayModule } from './gateway/gateway.module.js';
 
 @Module({
   imports: [
@@ -34,7 +34,8 @@ import { GameGateway } from './gateway/game.gateway.js';
     ReportsModule,
     BillingModule,
     AnalysisModule,
+    GatewayModule,
   ],
-  providers: [GameGateway, { provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

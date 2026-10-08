@@ -26,6 +26,8 @@ import { useTranslation } from '../i18n';
 interface HistoryScreenProps {
   onBack: () => void;
   onSelectGame: (game: SavedGameRecord) => void;
+  /** Jumps straight to full review (same gate as everywhere else). */
+  onAnalyzeGame: (game: SavedGameRecord) => void;
   onQuickMatch: () => void;
   /** Opens the shared player profile for a listed opponent. */
   onOpenPlayerProfile?: (player: { userId: string; username: string }) => void;
@@ -53,6 +55,7 @@ let historyCache: {
 export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   onBack,
   onSelectGame,
+  onAnalyzeGame,
   onQuickMatch,
   onOpenPlayerProfile,
 }) => {
@@ -206,10 +209,16 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
     }
   }, [fetchHistory, isGuest]);
 
-  const handleGameSelect = (gameItem: GameHistoryItemDto) => {
+  // Resolves a list row to a full record: device games open instantly,
+  // server games fetch the replay first. Shared by Replay and Analyse.
+  const resolveRecord = (
+    gameItem: GameHistoryItemDto,
+    done: (record: SavedGameRecord) => void
+  ) => {
     const localMatch = localGames.find((lg) => lg.id === gameItem.gameId);
     if (localMatch) {
-      onSelectGame(localMatch);
+      setSelected(null);
+      done(localMatch);
       return;
     }
 
@@ -240,12 +249,21 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
               timestamp: m.serverTimestamp,
             })),
           };
-          onSelectGame(record);
+          setSelected(null);
+          done(record);
         }
       })
       .catch(() => {
         toast.show(t('history.replayFailed'));
       });
+  };
+
+  const handleGameSelect = (gameItem: GameHistoryItemDto) => {
+    resolveRecord(gameItem, onSelectGame);
+  };
+
+  const handleGameAnalyze = (gameItem: GameHistoryItemDto) => {
+    resolveRecord(gameItem, onAnalyzeGame);
   };
 
   // Stats computation — lifetime summary from the server when present
@@ -484,6 +502,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
         match={selected}
         onClose={() => setSelected(null)}
         onReplay={handleGameSelect}
+        onAnalyze={handleGameAnalyze}
         onViewOpponentProfile={onOpenPlayerProfile}
       />
     </View>

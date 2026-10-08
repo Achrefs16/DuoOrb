@@ -224,7 +224,6 @@ export const tr: Dictionary = {
   'premium.title': 'DuoOrb Premium',
   'premium.bulletAds': 'Hiçbir yerde reklam yok',
   'premium.bulletAnalysis': 'Sınırsız oyun analizi',
-  'premium.bulletBots': 'Tüm 6 özel bot',
   'premium.bulletMidnight': 'Ceviz tahta tasarımı',
   'premium.bulletCrown': 'İsminde Premium tacı',
   'premium.bestValue': 'En iyi fiyat',

@@ -9,6 +9,7 @@ describe('ad unit ids', () => {
   it('uses demo units in dev', () => {
     expect(selectAdUnitId('banner', true)).toContain('3940256099942544');
     expect(selectAdUnitId('rewarded', true)).toContain('3940256099942544');
+    expect(selectAdUnitId('interstitial', true)).toContain('3940256099942544');
   });
 
   it('uses the real DuoOrb units in production', () => {
@@ -17,6 +18,9 @@ describe('ad unit ids', () => {
     );
     expect(selectAdUnitId('rewarded', false)).toBe(
       'ca-app-pub-6057010656402010/6459084176'
+    );
+    expect(selectAdUnitId('interstitial', false)).toBe(
+      'ca-app-pub-6057010656402010/9282446220'
     );
   });
 

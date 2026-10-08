@@ -220,15 +220,10 @@ export function parseBoardSkinId(raw: unknown): BoardSkinId {
 }
 
 /**
- * Test unlock: dev builds (Expo Go, dev client) render every skin without a
- * subscription so boards can be playtested. Release builds (`__DEV__` false)
- * stay premium-gated — no flag to remember to flip before release.
+ * Premium skins render for active subscribers only — no dev bypass.
  */
-const DEV_UNLOCK_SKINS =
-  typeof __DEV__ !== 'undefined' && __DEV__;
-
 export function skinsUnlocked(premiumActive: boolean): boolean {
-  return DEV_UNLOCK_SKINS || premiumActive;
+  return premiumActive;
 }
 
 export type BoardThemeName = 'light' | 'midnight';

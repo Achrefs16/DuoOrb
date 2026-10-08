@@ -18,3 +18,7 @@ export function installRealAds(): boolean {
 export function getBannerLib(): null {
   return null;
 }
+
+export function showInterstitial(): Promise<boolean> {
+  return Promise.resolve(false);
+}

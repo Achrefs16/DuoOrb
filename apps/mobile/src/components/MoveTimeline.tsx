@@ -54,6 +54,9 @@ function timelineColor(a: MoveAssessment): string {
     case 'MISTAKE':
     case 'BLUNDER':
       return assessmentColor(a);
+    default:
+      // Exhaustive over MoveAssessment — unreachable fallthrough.
+      return assessmentColor(a);
   }
 }
 

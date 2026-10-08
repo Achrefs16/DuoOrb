@@ -3,12 +3,19 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Optional,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
+import { GameGateway } from '../gateway/game.gateway.js';
 
 @Injectable()
 export class FriendsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() @Inject(forwardRef(() => GameGateway)) private readonly gateway?: GameGateway
+  ) {}
 
   async getFriends(userId: string) {
     if (!this.prisma.isConnected) return [];
@@ -147,13 +154,28 @@ export class FriendsService {
       throw new ConflictException('Friend request already sent.');
     }
 
-    return this.prisma.friendRequest.create({
+    const created = await this.prisma.friendRequest.create({
       data: {
         fromUserId,
         toUserId: targetUserId,
         status: 'PENDING',
       },
+      include: {
+        fromUser: {
+          include: { profile: true },
+        },
+      },
     });
+
+    this.gateway?.emitToUser(targetUserId, 'friend:request_received', {
+      id: created.id,
+      fromUserId,
+      fromUsername: created.fromUser.profile?.username ?? fromUserId,
+      fromDisplayName: created.fromUser.profile?.displayName ?? 'Player',
+      createdAt: created.createdAt,
+    });
+
+    return created;
   }
 
   async respondRequest(userId: string, requestId: string, accept: boolean) {
@@ -174,10 +196,21 @@ export class FriendsService {
     }
 
     if (!accept) {
-      return this.prisma.friendRequest.update({
+      const res = await this.prisma.friendRequest.update({
         where: { id: requestId },
         data: { status: 'REJECTED' },
       });
+      this.gateway?.emitToUser(req.fromUserId, 'friend:request_resolved', {
+        id: requestId,
+        accepted: false,
+        byUserId: userId,
+      });
+      this.gateway?.emitToUser(userId, 'friend:request_resolved', {
+        id: requestId,
+        accepted: false,
+        byUserId: userId,
+      });
+      return res;
     }
 
     // Accept: create friendship in canonical order
@@ -195,6 +228,17 @@ export class FriendsService {
       }),
     ]);
 
+    this.gateway?.emitToUser(req.fromUserId, 'friend:request_resolved', {
+      id: requestId,
+      accepted: true,
+      byUserId: userId,
+    });
+    this.gateway?.emitToUser(userId, 'friend:request_resolved', {
+      id: requestId,
+      accepted: true,
+      byUserId: userId,
+    });
+
     return { success: true };
   }
 
@@ -206,6 +250,9 @@ export class FriendsService {
     await this.prisma.friendship.deleteMany({
       where: { user1Id: u1, user2Id: u2 },
     });
+
+    this.gateway?.emitToUser(friendId, 'friend:removed', { friendId: userId });
+    this.gateway?.emitToUser(userId, 'friend:removed', { friendId });
 
     return { success: true };
   }

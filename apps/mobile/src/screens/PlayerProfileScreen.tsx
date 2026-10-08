@@ -23,6 +23,7 @@ import {
   type AchievementsResponseDto,
 } from '../network/apiClient';
 import { AchievementsModal } from '../components/AchievementsModal';
+import { MatchResultModal } from '../components/MatchResultModal';
 import { RatingChart } from '../components/RatingChart';
 import { GuestGate } from '../components/GuestGate';
 import { PremiumBadge } from '../components/PremiumBadge';
@@ -40,6 +41,8 @@ interface PlayerProfileScreenProps {
   onBack: () => void;
   onChallenge: (targetUser: { id: string; username: string }) => void;
   onSelectGame: (game: SavedGameRecord) => void;
+  /** Jumps straight to full review (same gate as everywhere else). */
+  onAnalyzeGame: (game: SavedGameRecord) => void;
   /**
    * Rendered as an overlay on top of a live match. Hides everything that
    * would navigate away (Challenge, replay entries): leaving the game
@@ -89,6 +92,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   onBack,
   onChallenge,
   onSelectGame,
+  onAnalyzeGame,
   inGame = false,
 }) => {
   const styles = useStyles(createStyles);
@@ -123,6 +127,9 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   const [showSafety, setShowSafety] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
+  // Match detail modal (shared with History): row taps land here for
+  // Replay / Analyse instead of opening the replay directly.
+  const [selectedMatch, setSelectedMatch] = useState<GameHistoryItemDto | null>(null);
   // The canonical identity, so "your" name in head-to-head comparisons is
   // never a value frozen at mount.
   const identity = useIdentity();
@@ -321,7 +328,10 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
     }
   };
 
-  const handleGameTap = (serverGame: GameHistoryItemDto) => {
+  const resolveRecord = (
+    serverGame: GameHistoryItemDto,
+    done: (record: SavedGameRecord) => void
+  ) => {
     api.getGameReplay(serverGame.gameId)
       .then((replay) => {
         if (replay) {
@@ -349,12 +359,21 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               timestamp: m.serverTimestamp,
             })),
           };
-          onSelectGame(record);
+          setSelectedMatch(null);
+          done(record);
         }
       })
       .catch(() => {
         toast.show("Couldn't open replay.");
       });
+  };
+
+  const handleGameTap = (serverGame: GameHistoryItemDto) => {
+    resolveRecord(serverGame, onSelectGame);
+  };
+
+  const handleGameAnalyze = (serverGame: GameHistoryItemDto) => {
+    resolveRecord(serverGame, onAnalyzeGame);
   };
 
   const rating1v1 = profile?.ratings?.CLASSIC_1V1?.rating ?? 1500;
@@ -810,7 +829,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                       key={match.gameId}
                       style={styles.matchItem}
                       activeOpacity={inGame ? 1 : 0.75}
-                      onPress={inGame ? undefined : () => handleGameTap(match)}
+                      onPress={inGame ? undefined : () => setSelectedMatch(match)}
                     >
                       <View style={styles.matchLeft}>
                         <View style={[styles.resultBadge, isWin ? styles.badgeWin : styles.badgeLoss]}>
@@ -906,6 +925,14 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
           </View>
         </>
       )}
+
+      {/* Match detail modal (shared with History): Replay / Analyse. */}
+      <MatchResultModal
+        match={inGame ? null : selectedMatch}
+        onClose={() => setSelectedMatch(null)}
+        onReplay={handleGameTap}
+        onAnalyze={handleGameAnalyze}
+      />
 
     </View>
   );

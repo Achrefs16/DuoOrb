@@ -11,12 +11,12 @@
 
 | # | Decision |
 |---|---|
-| D1 | **Premium = exactly 5 things**: (1) No ads · (2) Unlimited game analysis · (3) Exclusive bots · (4) Exclusive board theme · (5) Small premium badge next to names. Future cosmetics/themes can extend this list later. |
+| D1 | **Premium = exactly 4 things**: (1) No ads · (2) Unlimited game analysis · (3) Exclusive board theme · (4) Small premium badge next to names. Bots are FREE for everyone (policy change 2026-10-08). Future cosmetics/themes can extend this list later. |
 | D2 | **No lifetime purchase.** Products: monthly + yearly subscriptions only. |
 | D3 | **Pricing: $3.99/month, $24.99/year** (7-day free trial on both — trial converts best per 2026 benchmarks; required Play disclosures handled by template copy in P7). |
-| D4 | **Analysis is ONE type** (no fast/deep split). Free users unlock analysis **per game by watching one rewarded video ad** (advertiser-controlled length, typically 15–30s — never promise "30s" in UI copy; reward fires on completion event, not on a timer). Premium = unlimited, no ad. |
-| D5 | **Hard AI is FREE for everyone.** Difficulty Easy/Normal/Hard never gated. Only named bot *personalities* are premium (D1.3). |
-| D6 | **Nothing competitive is ever gated or sold.** No rating protection, no extra walls/time, no priority matchmaking, no ranked advantage from ads. Rewards = knowledge (analysis), solo-play flavor (bots/theme), cosmetics (badge). |
+| D4 | **Analysis is ONE type** (no fast/deep split). Free users get **1 full analysis per day**; further games unlock **per game by watching one rewarded video ad** (advertiser-controlled length, typically 15–30s — never promise "30s" in UI copy; reward fires on completion event, not on a timer). Premium = unlimited, no ad. |
+| D5 | **All bots are FREE for everyone** (policy change 2026-10-08). Difficulty Easy/Normal/Hard plus every named personality — never gated. |
+| D6 | **Nothing competitive is ever gated or sold.** No rating protection, no extra walls/time, no priority matchmaking, no ranked advantage from ads. Rewards = knowledge (analysis), cosmetics (theme/badge). |
 | D7 | **Ad placements are NOT final.** Owner disagrees on some slots. Every placement in this plan is built behind `ADS_CONFIG` + `AdsManager` so positions/frequency change by editing constants, not architecture. Final placement sign-off happens at P6 implementation time. |
 | D8 | Smallest correct changes per phase; verify (`tsc`, vitest, lint) after every phase; one commit per phase. |
 | D9 | **Promotional pricing: $2.99/mo and $19.99/yr are reserved as limited-time promo prices** (never the base price). Run as Play introductory offers 2–3×/year max (launch window, Black Friday/holiday, anniversary) so users don't learn to wait for sales. See P0.8 + E25. |
@@ -234,25 +234,34 @@ internal track flips `/me.isPremium=true` within ~60s of webhook; restore on sec
 
 ## 5. Game analysis gating + rewarded unlock (P3 — highest ROI, build right after P2)
 
-Single analysis type. No profiles split. No daily cap: **one rewarded view = one game unlocked.**
+Single analysis type. No profiles split. **Free: 1 full analysis per day; further
+games cost one rewarded view each. Premium: unlimited.** (D4)
 
 - [x] P3.1 New `src/monetization/analysisAccess.ts`: ✅ SHIPPED (2026-10-05).
   - `resolveAccess(premium, unlocked)` pure table + `useAnalysisAccess(gameId, len)` hook
     over `usePremium()` + unlock cache `@duoorb:rewarded-analysis:v1:{gameId}:{historyLength}`
     storing `{u:1,t}` with 30-day prune (E24).
+  - Free daily quota `@duoorb:free-analysis-day:v1:{YYYY-MM-DD}` (`FREE_ANALYSES_PER_DAY=1`).
+    `requestAnalysisEntry` is the single gate for every Analyze tap: premium →
+    unlimited, unlocked → free, else spend the daily when available
+    (unlock-first so a store failure never burns the quota, E12), else locked
+    → ad gate. Serialized against rapid double-taps. Re-verification never
+    spends (read-only).
   - `markAnalysisUnlocked(gameId, historyLength)` after earned reward; throws (no silent
     grant) if the store write fails (E12).
   - Online games use server `gameId`; AI/local use `state.gameId` (fresh per mount + rematch).
     History/Profile replays (`bare=true`) carry the same `accessKey` (`SavedGameRecord.id`)
-    and offer the one-ad upgrade to full review from the replay itself (P3.6).
-- [x] P3.6 History/Profile Analyze upgrade: ✅ SHIPPED (2026-10-08). Bare replays show an
-  Analyze button under the step controls: premium/dev/unlocked remount straight into full
-  mode (`App.handleUpgradeReviewToFull` flips `reviewBare`); locked opens the same
-  `RewardSheet` (one ad = that game, premium row attributed to `entry='analysis'`).
+    and offer the upgrade to full review from the replay itself (P3.6).
+- [x] P3.6 History/Profile direct Analyse: ✅ SHIPPED (2026-10-08). The match
+  detail modal (`MatchResultModal`, shared by History + player profiles) shows
+  Analyse beside Replay and jumps straight to full review through the same
+  gate — no replay-first detour. Bare replays keep their in-place Analyze
+  upgrade button (`App.handleUpgradeReviewToFull` flips `reviewBare`).
 - [x] P3.2 Analyze row → new press flow (gate lives in `GameScreen.handleAnalyzePress`, modal
-  untouched): ✅ SHIPPED. Premium/unlocked → straight to review; locked → `RewardSheet`
-  ("Watch a short video…", [Watch ad], "Not now"; premium link lands with P7 `PremiumSheet` —
-  no dead buttons). Reward → unlock → auto-continues. Errors render inline rows (E10/E11).
+  untouched): ✅ SHIPPED. Premium/unlocked/daily → straight to review; locked →
+  `RewardSheet` ("Watch a short video…", [Watch ad], "Not now"; premium link lands with P7
+  `PremiumSheet` — no dead buttons). Reward → unlock → auto-continues. Errors render
+  inline rows (E10/E11). Copy-moves button removed from the modal.
 - [x] P3.3 `GameReviewScreen` defense-in-depth: ✅ SHIPPED. `accessKey` prop + `useAnalysisAccess`
   re-verification; compute never starts unless `premium`/`unlocked`; locked panel with in-place
   ad unlock in the skeleton slot; rendered reviews never yanked (E14). No deep/fast split (D4).
@@ -269,9 +278,9 @@ Single analysis type. No profiles split. No daily cap: **one rewarded view = one
 | E10 | User closes ad early (no reward) | `earned=false` → stay on RewardSheet, no unlock, no error toast (not a failure) |
 | E11 | Ad SDK not loaded / airplane / AdMob error | Catch → inline "unavailable" row + premium alternative; never crash, never hang |
 | E12 | Reward earned but app killed before `markAnalysisUnlocked` | Accept loss (one ad view). Do NOT auto-unlock on next boot without proof — predictable beats clever |
-| E13 | Same game analyzed twice | Cache hit → no second ad. Rematch/new game = new id = new gate |
+| E13 | Same game analyzed twice | Unlock cache hit → no second ad, no second daily spent. Rematch/new game = new id = new gate |
 | E14 | Premium expires mid-session | `usePremium` refresh on foreground; next Analyze tap re-evaluates (never yank an open review) |
-| E15 | History/Profile replays | `bare=true` replay always free; Analyze button offers the same one-ad-per-game upgrade to full review (P3.6) |
+| E15 | History/Profile replays | `bare=true` replay always free; Analyse beside Replay jumps straight to full review through the same gate (P3.6) |
 | E16 | UI copy promises duration | Copy says "short video", never "30 seconds" — creative length is advertiser-controlled |
 
 **Verify P3:** free → Analyze → ad → reward → full review renders; early-close → no unlock;
@@ -285,10 +294,13 @@ airplane → graceful unavailable row; premium → direct; `tsc` + targeted vite
 
 ---
 
-## 6. Exclusive bots (P4)
+## 6. Bots are free for everyone (P4 — policy change 2026-10-08)
 
-Hard Easy/Normal/Hard stay free and generic (D5). Premium adds **named personalities**.
-Engine already supports arbitrary parameter sets (`AI_PROFILES` shape in
+POLICY CHANGE: all bot personalities are free. Premium is analysis + no-ads +
+board theme (+ badge) only — no gameplay or roster gating.
+
+Hard Easy/Normal/Hard stay free and generic (D5), and every named personality
+is now free too. Engine already supports arbitrary parameter sets (`AI_PROFILES` shape in
 `packages/game-core/src/ai/constants.ts`, `AIProfile{depth,randomness,weights,
 maxCandidateWalls,timeBudgetMs}`).
 
@@ -322,9 +334,9 @@ export type BotPersonality = {
 ### P4.2 — Selection UI (locked cards → paywall)
 
 - [x] P4.2.1 Opponent section in `MatchSetupScreen` (below difficulty track):
-  ✅ SHIPPED (2026-10-05). 6 personality rows (glyph + name + ELO + title, weakest-first);
-  locked cards show a lock and route to `onLockedBot` (P7 `PremiumSheet` hold: "coming soon"
-  toast, paywall entry #2 the moment P7 lands); premium members select directly. Selecting a
+  ✅ SHIPPED (2026-10-05). 6 personality rows (glyph + name + ELO + title, weakest-first).
+  POLICY CHANGE (2026-10-08): lock removed — every personality selects directly,
+  free for everyone. Selecting a
   bot adopts its difficulty tier; touching difficulty drops back to generic.
 - [x] P4.2.2 Flow-through: ✅ SHIPPED. `onConfirm += botId` → `gameConfig.botId` (in mount
   key, so bot switches remount cleanly) → `GameScreen botId` → `playerNamesFor` uses the
@@ -334,8 +346,8 @@ export type BotPersonality = {
   untouched AI/unrated path; hard-win upload additionally requires `!personality`, keeping
   the anti-spoof `sequenceHash` set tight.
 
-**Verify P4:** free user picks Easy/Normal/Hard unchanged; locked card → paywall; premium user
-picks Vex → plays vs named bot with custom weights + banter; rematch keeps personality;
+**Verify P4:** free user picks Easy/Normal/Hard unchanged; any user picks Vex →
+plays vs named bot with custom weights + banter; rematch keeps personality;
 `tsc` + roster unit test (ids unique, ELOs ascending, every premium entry has banter+profile).
 
 > P4 STATUS (2026-10-05): SHIPPED except the locked-tap destination (P7 `PremiumSheet`).

@@ -1,9 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
-  isAnalysisDevBypass,
+  FREE_ANALYSES_PER_DAY,
+  consumeFreeAnalysis,
+  freeDayKey,
+  getFreeAnalysesUsedToday,
   isAnalysisUnlocked,
   markAnalysisUnlocked,
   pruneAnalysisUnlocks,
+  requestAnalysisEntry,
   resolveAccess,
   unlockKey,
 } from './analysisAccess';
@@ -73,9 +77,29 @@ describe('analysis unlocks', () => {
     expect(resolveAccess(false, false)).toBe('locked');
   });
 
-  it('dev bypass is off outside dev builds (release gate untouched)', () => {
-    // Vitest never defines the RN __DEV__ global, which is exactly the
-    // release-like condition: no bypass, the ad/premium gate applies.
-    expect(isAnalysisDevBypass()).toBe(false);
+  it('grants one free analysis per day, then locks (D4)', async () => {
+    expect(FREE_ANALYSES_PER_DAY).toBe(1);
+    expect(await getFreeAnalysesUsedToday()).toBe(0);
+    // First game of the day: daily entry, unlock written.
+    expect(await requestAnalysisEntry(false, 'g1', 40)).toBe('daily');
+    expect(await isAnalysisUnlocked('g1', 40)).toBe(true);
+    expect(await getFreeAnalysesUsedToday()).toBe(1);
+    // Re-opening the same game stays free without spending again (E13).
+    expect(await requestAnalysisEntry(false, 'g1', 40)).toBe('unlocked');
+    expect(await getFreeAnalysesUsedToday()).toBe(1);
+    // Second game the same day: quota spent -> ad gate.
+    expect(await requestAnalysisEntry(false, 'g2', 40)).toBe('locked');
+    expect(await consumeFreeAnalysis()).toBe(false);
+  });
+
+  it('premium never touches the daily quota', async () => {
+    expect(await requestAnalysisEntry(true, 'g9', 10)).toBe('premium');
+    expect(await getFreeAnalysesUsedToday()).toBe(0);
+  });
+
+  it('day keys roll over by local calendar date', () => {
+    expect(freeDayKey(new Date(2026, 0, 5))).not.toBe(
+      freeDayKey(new Date(2026, 0, 6))
+    );
   });
 });

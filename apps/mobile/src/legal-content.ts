@@ -86,7 +86,7 @@ export const LEGAL_DOCS: Record<LegalKind, LegalDoc> = {
       },
       {
         heading: 'Premium subscriptions',
-        body: 'DuoOrb Premium ($3.99/month or $24.99/year, prices vary by country) removes all ads and unlocks unlimited game analysis, exclusive bots, the Walnut board design and the Premium badge. Both plans start with a 7-day free trial, then bill automatically each period until cancelled. Billing is handled entirely by Google Play: we never see payment details. Cancel anytime in Settings > Premium > Manage subscription (or Play Store > Payments & subscriptions); access continues until the end of the paid period. Refunds follow Google Play policy. Promotional prices, if offered, renew at the standard rate stated at purchase. Guests must save with Google before purchasing so Premium attaches to an account.',
+        body: 'DuoOrb Premium ($3.99/month or $24.99/year, prices vary by country) removes all ads and unlocks unlimited game analysis, the Walnut board design and the Premium badge. Both plans start with a 7-day free trial, then bill automatically each period until cancelled. Billing is handled entirely by Google Play: we never see payment details. Cancel anytime in Settings > Premium > Manage subscription (or Play Store > Payments & subscriptions); access continues until the end of the paid period. Refunds follow Google Play policy. Promotional prices, if offered, renew at the standard rate stated at purchase. Guests must save with Google before purchasing so Premium attaches to an account.',
       },
       {
         heading: 'Availability & termination',

@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
-import { GameState, BotPersonality, formatGame } from '@duoorb/game-core';
+import { GameState, BotPersonality } from '@duoorb/game-core';
 import type { GameEndedDto } from '@duoorb/protocol';
 import { THEME, playerColor, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
@@ -109,31 +108,6 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
       }).start();
     }
   }, [visible, pop]);
-
-  const [copiedMoves, setCopiedMoves] = useState(false);
-
-  const handleCopyMoves = async () => {
-    try {
-      const notation = formatGame(state);
-      const movesJson = JSON.stringify(
-        state.history.map((entry, index) => {
-          const player = state.players.find((p) => p.id === entry.playerId);
-          return {
-            ply: index,
-            player: player?.displayName ?? entry.playerId,
-            action: entry.action,
-          };
-        }),
-        null,
-        2
-      );
-      await Clipboard.setStringAsync(`${notation}\n\n// Raw History:\n${movesJson}`);
-      setCopiedMoves(true);
-      setTimeout(() => setCopiedMoves(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy moves:', err);
-    }
-  };
 
   // Titles: 1v1 keeps Win/Loss; multiplayer shows placement (yours when
   // known, otherwise the winner for local pass-and-play).
@@ -414,24 +388,6 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 <Text style={styles.utilityText}>{t('gameover.analyze')}</Text>
               </TouchableOpacity>
             </View>
-
-            {/* Copy Moves Button */}
-            <TouchableOpacity
-              style={[styles.copyMovesBtn, copiedMoves && styles.copyMovesBtnCopied]}
-              activeOpacity={0.7}
-              onPress={handleCopyMoves}
-              accessibilityRole="button"
-              accessibilityLabel={copiedMoves ? 'Moves copied to clipboard' : 'Copy game moves'}
-            >
-              <Feather
-                name={copiedMoves ? 'check' : 'copy'}
-                size={14}
-                color={copiedMoves ? THEME.colors.primary : THEME.colors.textSecondary}
-              />
-              <Text style={[styles.copyMovesText, copiedMoves && styles.copyMovesTextCopied]}>
-                {copiedMoves ? 'Moves Copied!' : 'Copy Moves'}
-              </Text>
-            </TouchableOpacity>
 
             {/* Opponent identity: the one place a finished online match can
                 hand the player off to the same profile screen everyone else
@@ -766,31 +722,6 @@ const createStyles = () => StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: THEME.colors.textSecondary,
-  },
-  copyMovesBtn: {
-    width: '100%',
-    height: 38,
-    backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderRadius: THEME.radius.md,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceContainer,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 6,
-  },
-  copyMovesBtnCopied: {
-    borderColor: THEME.colors.primary,
-  },
-  copyMovesText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 12,
-    fontWeight: '600',
-    color: THEME.colors.textSecondary,
-  },
-  copyMovesTextCopied: {
-    color: THEME.colors.primary,
   },
   lobbyLink: {
     alignSelf: 'center',

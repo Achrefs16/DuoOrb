@@ -5,7 +5,6 @@ import { AIDifficulty, GameMode, BotPersonality, botById, botLadder } from '@duo
 import { BotAvatar } from '../components/BotAvatar';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
-import { isPremiumActive, usePremium } from '../monetization/premium';
 import { runWhenOnline } from '../components/NoConnection';
 import { TIME_CONTROLS, TimeControl, getTimeControl } from '../timeControls';
 import { resolveMode } from '../matchModes';
@@ -64,10 +63,6 @@ const ELO: Record<AIDifficulty, string> = {
   hard: '1800 ELO',
 };
 
-// TEMP-TEST ONLY — REMOVE BEFORE ANY RELEASE BUILD. Opens the premium bot
-// rows so personalities can be playtested without a sandbox subscription.
-const DEV_UNLOCK_BOTS = true;
-
 export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
   initialKind: vsType,
   challengeName,
@@ -92,14 +87,14 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
         ? draft.difficulty
         : 'normal'
   );
-  // Premium personality (null = generic difficulty bot). Picking a difficulty
+  // Named personality (null = generic difficulty bot): picking a difficulty
   // always drops back to generic; picking a bot adopts its difficulty tier.
-  // A stored bot that no longer exists falls back to generic.
+  // All named personalities are free. A stored bot that no longer exists
+  // falls back to generic.
   const [botId, setBotId] = useState<string | null>(
     draft.botId && botById(draft.botId) ? draft.botId : null
   );
   const [previewBot, setPreviewBot] = useState<BotPersonality | null>(null);
-  const premium = usePremium();
   const selectedBot = botId ? botById(botId) : null;
   const pickDifficulty = (d: AIDifficulty) => {
     setDifficulty(d);
@@ -291,8 +286,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
 
                 {/* Real Human Bot Personas (Martin, Elena, Nelson, Sofia, Marcus, Viktor) */}
                 {botLadder().map((b) => {
-                  const locked =
-                    !DEV_UNLOCK_BOTS && b.premium && !isPremiumActive(premium);
+                  // All bots are free: no premium lock on personalities.
                   const selected = botId === b.id;
                   return (
                     <TouchableOpacity
@@ -306,15 +300,11 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                       ]}
                       activeOpacity={0.8}
                       onPress={() => {
-                        if (locked) {
-                          onLockedBot?.();
-                          return;
-                        }
                         setBotId(b.id);
                         setDifficulty(b.profile.difficulty);
                       }}
                       accessibilityRole="button"
-                      accessibilityLabel={`${b.name}, ${b.title}, ${b.elo} ELO${locked ? ', locked' : ''}`}
+                      accessibilityLabel={`${b.name}, ${b.title}, ${b.elo} ELO`}
                     >
                       <View style={styles.compactAvatarWrap}>
                         <BotAvatar
@@ -323,11 +313,6 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                           size={40}
                           showGlow={selected}
                         />
-                        {locked && (
-                          <View style={styles.compactLockBadge}>
-                            <Feather name="lock" size={9} color="#FFFFFF" />
-                          </View>
-                        )}
                         {selected && (
                           <View style={[styles.compactCheckBadge, { backgroundColor: b.color }]}>
                             <Feather name="check" size={8} color="#FFFFFF" />

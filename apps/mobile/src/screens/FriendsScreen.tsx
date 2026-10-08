@@ -28,7 +28,9 @@ import { toast } from '../components/AppToast';
 import { NoConnectionSection, runWhenOnline } from '../components/NoConnection';
 import { NetworkError, actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
 import { useConnectivity } from '../network/useConnectivity';
+import { socketManager } from '../network/socket';
 import { FriendsSkeleton } from '../components/Skeleton';
+import { AdBanner } from '../components/AdBanner';
 import { KeyboardShift } from '../components/KeyboardShift';
 import { sheetSlideStyle, useSheetSlide } from '../components/sheetAnimation';
 import { nameInitial, resolveName } from '../displayName';
@@ -122,21 +124,15 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
     }
   }, [loadSocialData, isGuest]);
 
-  // Live refresh: incoming requests and presence land within seconds,
-  // no browser refresh needed. Silent — no spinner flashes. Skipped while
-  // offline (nothing would answer) and backed off 8s → 16s → 30s on
-  // repeated failure. Never toasts: the banner already owns offline.
+  // Live push refresh: incoming requests, responses and friend updates arrive
+  // instantly over WebSockets (<50ms) — zero continuous polling!
   useEffect(() => {
     if (isGuest) return;
+    const socket = socketManager.getSocket();
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let delay = 8000;
-    const tick = async () => {
-      if (cancelled) return;
-      if (isConnected === false) {
-        timer = setTimeout(tick, 8000);
-        return;
-      }
+
+    const refresh = async () => {
+      if (cancelled || isConnected === false) return;
       try {
         const [friendsList, requestsList] = await Promise.all([
           api.getFriends(),
@@ -146,17 +142,20 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
         setFriends(friendsList);
         setRequests(requestsList);
         if (onRequestCountChange) onRequestCountChange(requestsList.length);
-        delay = 8000;
       } catch {
-        if (cancelled) return;
-        delay = Math.min(delay * 2, 30000);
+        // silent
       }
-      timer = setTimeout(tick, delay);
     };
-    timer = setTimeout(tick, 8000);
+
+    socket.on('friend:request_received' as never, refresh as never);
+    socket.on('friend:request_resolved' as never, refresh as never);
+    socket.on('friend:removed' as never, refresh as never);
+
     return () => {
       cancelled = true;
-      if (timer) clearTimeout(timer);
+      socket.off('friend:request_received' as never, refresh as never);
+      socket.off('friend:request_resolved' as never, refresh as never);
+      socket.off('friend:removed' as never, refresh as never);
     };
   }, [isGuest, isConnected, onRequestCountChange]);
 
@@ -528,6 +527,9 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                   </TouchableOpacity>
                 </View>
               )}
+
+              {/* Ad slot: bottom of the list, below all actions. */}
+              <AdBanner placement="list" />
 
             </View>
           )}

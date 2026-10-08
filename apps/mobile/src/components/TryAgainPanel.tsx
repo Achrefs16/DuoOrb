@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   GameState,
-  analyzeMove,
   getLegalMoves,
   type TryAgainData,
 } from '@duoorb/game-core';
@@ -58,11 +57,10 @@ export const TryAgainPanel: React.FC<TryAgainPanelProps> = ({
     if (!mover) return;
     if (!legalTargets.includes(`${cell.row},${cell.col}`)) return;
     const attempt = { type: 'MOVE' as const, to: cell };
-    const result = analyzeMove(frozen, attempt, 'fast');
-    if (!result) {
-      setFeedback({ text: t('tryAgain.notReachable'), good: false });
-      return;
-    }
+    // Engine migration note: single-move analysis moved server-side, so the
+    // old analyzeMove reachability check is gone. The illegal-cell guard
+    // above (legalTargets from getLegalMoves) already rejects unreachable
+    // taps — grading below is purely data-driven (best/acceptable lists).
     if (actionsEqual(attempt, data.bestAction)) {
       setFeedback({ text: t('tryAgain.bestMove'), good: true });
       setRevealed(false);

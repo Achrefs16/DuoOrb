@@ -18,8 +18,8 @@ import {
   UserMeDto,
   RatingHistoryPointDto,
 } from '../network/apiClient';
-import { flushAiWinQueue } from '../aiwins/aiWins';
 import { RatingChart } from '../components/RatingChart';
+import { AdBanner } from '../components/AdBanner';
 import {
   AchievementMedal,
   BadgeProgressBar,
@@ -112,10 +112,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       }
       if (me) {
         setProfile(me);
-        // Drain the offline hard-AI-win outbox first, so freshly synced
-        // badges and wins appear below. Silent by design — offline, the
-        // flush is a no-op and these sections simply stay hidden.
-        await flushAiWinQueue().catch(() => []);
         const [rSettled, aSettled] = await Promise.allSettled([
           api.getRatingHistory(me.id, 'CLASSIC_1V1', 20),
           api.getMyAchievements(),
@@ -381,6 +377,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <View style={styles.chartSection}>
             <RatingChart data={ratingHistory} currentRating={rating1v1} />
           </View>
+
+          {/* Ad slot: bottom of the page, below all actions. */}
+          <AdBanner placement="list" />
 
           {/* Recent matches live on the History tab — one home for match history,
             not two. The opponent/friend profile keeps its own RECENT

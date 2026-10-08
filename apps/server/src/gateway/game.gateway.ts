@@ -1927,4 +1927,17 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       }),
     };
   }
+
+  /**
+   * Pushes a real-time event to an online user's active socket.
+   */
+  emitToUser(userId: string, event: string, payload: unknown) {
+    if (!this.server) return;
+    const socketId = this.userSocketMap.get(userId);
+    if (socketId) {
+      this.server.to(socketId).emit(event, payload);
+    }
+  }
 }
+
+

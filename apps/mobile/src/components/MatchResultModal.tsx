@@ -12,6 +12,8 @@ interface MatchResultModalProps {
   match: GameHistoryItemDto | null;
   onClose: () => void;
   onReplay: (match: GameHistoryItemDto) => void;
+  /** Jumps straight to full review (same gate as everywhere else). */
+  onAnalyze: (match: GameHistoryItemDto) => void;
   /**
    * Opens the shared player profile for this match's opponent. Omitted when
    * the caller has no way to reach a profile (or the opponent has no account,
@@ -30,6 +32,7 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
   match,
   onClose,
   onReplay,
+  onAnalyze,
   onViewOpponentProfile,
 }) => {
   const styles = useStyles(createStyles);
@@ -110,8 +113,14 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
                 >
                   <Text style={styles.replayText}>{t('gameover.replay')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.doneBtn} onPress={onClose}>
-                  <Text style={styles.doneText}>{t('result.done')}</Text>
+                <TouchableOpacity
+                  style={styles.analyzeBtn}
+                  onPress={() => onAnalyze(match)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Analyze this game"
+                >
+                  <Feather name="activity" size={14} color={THEME.colors.onPrimary} />
+                  <Text style={styles.analyzeText}>{t('gameover.analyze')}</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -224,17 +233,20 @@ const createStyles = () => StyleSheet.create({
     fontWeight: '600',
     color: THEME.colors.onSurface,
   },
-  doneBtn: {
+  analyzeBtn: {
     width: '100%',
     paddingVertical: 12,
     borderRadius: THEME.radius.md,
     backgroundColor: THEME.colors.primary,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
-  doneText: {
-    fontFamily: THEME.fonts.bold,
+  analyzeText: {
+    fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     color: THEME.colors.onPrimary,
   },
 });

@@ -42,8 +42,10 @@ import { RewardSheet } from '../components/RewardSheet';
 import { showRewarded } from '../monetization/ads';
 import {
   markAnalysisUnlocked,
+  requestAnalysisEntry,
   useAnalysisAccess,
 } from '../monetization/analysisAccess';
+import { isPremiumActive, usePremium } from '../monetization/premium';
 import { api } from '../network/apiClient';
 import { useTranslation } from '../i18n';
 
@@ -161,6 +163,8 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const [rewardOpen, setRewardOpen] = useState(false);
   const [rewardBusy, setRewardBusy] = useState(false);
   const [rewardError, setRewardError] = useState<string | null>(null);
+  const premium = usePremium();
+  const upgradeBusyRef = useRef(false);
 
   // Chess-style full review controls (UI only — analysis data untouched).
   // showLine: engine-best overlay on the board (arrow for moves, ghost for
@@ -168,19 +172,27 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const [showLine, setShowLine] = useState(true);
   const [isolateBest, setIsolateBest] = useState(false);
 
-  // Bare replay Analyze tap: premium/unlocked (dev builds resolve unlocked
-  // via the bypass, so iteration never touches an ad) upgrade immediately;
-  // locked opens the sheet instead. Re-opening an upgraded game is free —
-  // the unlock key is per gameId:historyLength (E13).
-  const handleAnalyzeUpgrade = () => {
-    if (!accessKey || !onUpgradeToFull) return;
-    if (access === 'premium' || access === 'unlocked') {
+  // Bare replay Analyze tap: single gate (premium unlimited, unlocked
+  // free, else the free daily when available) — 'locked' opens the sheet
+  // instead. Re-opening an upgraded game is free — the unlock key is per
+  // gameId:historyLength (E13).
+  const handleAnalyzeUpgrade = async () => {
+    if (!accessKey || !onUpgradeToFull || upgradeBusyRef.current) return;
+    upgradeBusyRef.current = true;
+    try {
+      const entry = await requestAnalysisEntry(
+        isPremiumActive(premium),
+        accessKey.gameId,
+        accessKey.historyLength
+      );
+      if (entry === 'locked') {
+        setRewardError(null);
+        setRewardOpen(true);
+        return;
+      }
       onUpgradeToFull();
-      return;
-    }
-    if (access === 'locked') {
-      setRewardError(null);
-      setRewardOpen(true);
+    } finally {
+      upgradeBusyRef.current = false;
     }
   };
 
@@ -467,7 +479,11 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const viewerId = initialState.players[perspectiveIdx]?.id ?? null;
   const viewerIdx = initialState.players[perspectiveIdx]?.index ?? 0;
   const viewerColor = playerColor(viewerIdx, initialState.players[perspectiveIdx]?.color);
-  const wcEntry = useMemo(() => {
+  const wcEntry = useMemo((): {
+    step: number;
+    winChance: number;
+    perPlayer?: Record<string, number>;
+  } | null => {
     if (review?.winChanceHistory && review.winChanceHistory.length > 0) {
       const h = review.winChanceHistory;
       let found: { step: number; winChance: number; perPlayer?: Record<string, number> } | null = null;
@@ -913,7 +929,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           <WinGraph
             points={
               review.winChanceHistory?.map((w) => w.winChance) ??
-              review.moveAnalyses?.map((m) => m.winChance ?? (m as any).winChanceAfter ?? 0.5) ??
+              review.moveAnalyses?.map((m) => (m as any).winChance ?? (m as any).winChanceAfter ?? 0.5) ??
               []
             }
             current={currentStep}

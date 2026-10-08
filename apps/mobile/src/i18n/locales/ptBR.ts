@@ -224,7 +224,6 @@ export const ptBR: Dictionary = {
   'premium.title': 'DuoOrb Premium',
   'premium.bulletAds': 'Sem anúncios, em lugar nenhum',
   'premium.bulletAnalysis': 'Análise ilimitada de partidas',
-  'premium.bulletBots': 'Todos os 6 bots exclusivos',
   'premium.bulletMidnight': 'Tabuleiro Nogueira',
   'premium.bulletCrown': 'Coroa Premium no seu nome',
   'premium.bestValue': 'Melhor custo-benefício',

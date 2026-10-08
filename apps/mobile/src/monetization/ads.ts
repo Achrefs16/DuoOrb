@@ -61,12 +61,22 @@ export const MockDenyingProvider: AdProvider = {
 
 let provider: AdProvider = UnavailableProvider;
 
+/** Epoch ms of the last rewarded SHOW (earned or not): interstitials stand
+ * down for the gap window after any rewarded view — never two ads in a row.
+ */
+let lastRewardedAtMs: number | null = null;
+
+export function lastRewardedShownAt(): number | null {
+  return lastRewardedAtMs;
+}
+
 export function setAdProvider(next: AdProvider): void {
   provider = next;
 }
 
 export function __resetAdProviderForTests(): void {
   provider = UnavailableProvider;
+  lastRewardedAtMs = null;
 }
 
 /** Best-effort warm-up; safe to call before any show. Never throws. */
@@ -84,6 +94,7 @@ export function preloadRewarded(placement: string): void {
  * so callers can render the right row (E10/E11).
  */
 export async function showRewarded(placement: string): Promise<RewardedResult> {
+  lastRewardedAtMs = Date.now();
   try {
     const res = await provider.showRewarded(placement);
     if (res && res.earned === true) return { earned: true };

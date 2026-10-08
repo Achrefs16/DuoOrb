@@ -37,7 +37,6 @@ import { track } from '../monetization/analytics';
 const BULLETS = [
   'No ads, anywhere',
   'Unlimited game analysis',
-  'All 6 exclusive bots',
   'Walnut board design',
   'Premium crown on your name',
 ];
@@ -89,7 +88,6 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
   const bullets = [
     t('premium.bulletAds'),
     t('premium.bulletAnalysis'),
-    t('premium.bulletBots'),
     t('premium.bulletMidnight'),
     t('premium.bulletCrown'),
   ];

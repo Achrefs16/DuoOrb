@@ -26,6 +26,9 @@ export const AnalysisBadge: React.FC<{ assessment: MoveAssessment }> = ({
         return 'assessment.mistake';
       case 'BLUNDER':
         return 'assessment.blunder';
+      default:
+        // Exhaustive over MoveAssessment — unreachable; keeps t() typed.
+        return 'assessment.good';
     }
   })();
   const label = t(labelKey);

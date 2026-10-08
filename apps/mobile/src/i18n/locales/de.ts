@@ -224,7 +224,6 @@ export const de: Dictionary = {
   'premium.title': 'DuoOrb Premium',
   'premium.bulletAds': 'Komplett werbefrei',
   'premium.bulletAnalysis': 'Unbegrenzte Spielanalysen',
-  'premium.bulletBots': 'Alle 6 exklusiven Bots',
   'premium.bulletMidnight': 'Walnuss-Brettdesign',
   'premium.bulletCrown': 'Premium-Krone für deinen Namen',
   'premium.bestValue': 'Bestes Angebot',

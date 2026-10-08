@@ -34,10 +34,7 @@ import { SideChoice } from './MatchSetupScreen';
 import { WallTray } from '../components/WallTray';
 import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playNotifySound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
 import { toast } from '../components/AppToast';
-import { AchievementMedal } from '../components/AchievementMedal';
 import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
-import { AiWinReward, SubmitAiWinBody } from '../network/apiClient';
-import { flushAiWinQueue, reportHardAiWin } from '../aiwins/aiWins';
 import { THEME, playerColor, useStyles, wallPreviewColor } from '../theme';
 import { CLOCK_ENABLED, DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
@@ -54,9 +51,9 @@ import { useBotDialogue } from '../ai/useBotDialogue';
 import { BotSpeechBubble } from '../components/BotSpeechBubble';
 import { isPremiumActive, refreshPremium, usePremium } from '../monetization/premium';
 import { preloadRewarded, showRewarded } from '../monetization/ads';
-import { TEMP_ANALYSIS_ALWAYS_OPEN, isAnalysisDevBypass, isAnalysisUnlocked, markAnalysisUnlocked } from '../monetization/analysisAccess';
-// Serializes a finished hard-AI win for the server upload (achievements).
-import { formatGame } from '@duoorb/game-core';
+import { markAnalysisUnlocked, requestAnalysisEntry } from '../monetization/analysisAccess';
+import { showInterstitialIfDue } from '../monetization/interstitial';
+import { ensureSessionRecorded } from '../monetization/realAds';
 import { useTranslation } from '../i18n';
 
 interface GameScreenProps {
@@ -361,10 +358,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // Paywall entry routing (P7.2): this screen only ever sells from analysis.
   const [premiumOpen, setPremiumOpen] = useState(false);
   const [premiumSource, setPremiumSource] = useState('analysis');
-  // Hard-AI victory reward, set only from a live server response. Null while
-  // offline or when no badge was earned — the modal renders celebration UI
-  // exclusively from this, so offline play can never show an error.
-  const [aiReward, setAiReward] = useState<AiWinReward | null>(null);
+
   const [wallDrag, setWallDrag] = useState<WallDrag | null>(null);
   const wallDragRef = useRef<WallDrag | null>(null);
   // Coalesces touch-move floods (often 100+/sec) into one state commit per
@@ -908,34 +902,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         history: state.history,
       };
       saveGameToHistory(record);
-      setAiReward(null);
-      // Hard-AI victory reporting: upload the win for badges and analysis, or
-      // queue it silently when offline. Celebration appears only from a live
-      // server response — never an error, never while offline.
-      if (type === 'ai' && aiDifficulty === 'hard' && !personality && state.winnerId === state.players[humanIdx]?.id) {
-        const payload: SubmitAiWinBody = {
-          clientWinId: `aiwin:${state.gameId}`,
-          mode: state.mode,
-          aiDifficulty: 'hard',
-          playerSeat: humanIdx,
-          movesNotation: formatGame(state),
-          totalPlies: state.history.length,
-          durationSeconds: Math.floor((Date.now() - state.startedAt) / 1000),
-          playedAt: Date.now(),
-        };
-        void (async () => {
-          const live = await reportHardAiWin(payload);
-          const flushed = await flushAiWinQueue();
-          const show =
-            live && live.newAchievements.length > 0
-              ? live
-              : flushed.find((r) => r.newAchievements.length > 0) ?? null;
-          if (show) setAiReward(show);
-        })();
-      } else {
-        // Not a hard-AI win, but a good moment to drain the outbox quietly.
-        void flushAiWinQueue();
-      }
+
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.status]);
@@ -1247,26 +1214,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const handleAnalyzePress = useCallback(async () => {
     setShowGameOver(false);
-    // TEMP: review always opens while the analysis page is being iterated.
-    if (TEMP_ANALYSIS_ALWAYS_OPEN) {
-      openReview();
+    // Single gate: premium unlimited, already-unlocked free, else the free
+    // daily when available — 'locked' opens the one-ad sheet.
+    const entry = await requestAnalysisEntry(
+      isPremiumActive(premiumState),
+      state.gameId,
+      state.history.length
+    );
+    if (entry === 'locked') {
+      setRewardError(null);
+      setRewardOpen(true);
       return;
     }
-    // Dev builds skip the ad gate (iteration speed) — release still gates.
-    if (isAnalysisDevBypass()) {
-      openReview();
-      return;
-    }
-    if (isPremiumActive(premiumState)) {
-      openReview();
-      return;
-    }
-    if (await isAnalysisUnlocked(state.gameId, state.history.length)) {
-      openReview();
-      return;
-    }
-    setRewardError(null);
-    setRewardOpen(true);
+    openReview();
   }, [premiumState, state.gameId, state.history.length, openReview]);
 
   const handleWatchAd = useCallback(async () => {
@@ -1295,6 +1255,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const myAiFinished = type === 'ai' && myOrb?.status === 'FINISHED';
   const isCompleted = state.status === 'COMPLETED';
   const isMultiplayer = state.players.length > 2;
+  // Viewer victory (same definition the result modal shows): drives the
+  // win-only interstitial on result exit — losses never show one.
+  const userWon = state.winnerId
+    ? type === 'online'
+      ? state.winnerId === online.myPlayerId
+      : state.winnerId === state.players[humanIdx]?.id
+    : false;
   // Quick reactions: the dock is visible in live online matches AND in 2p
   // AI games; the sending tray is online-only. In AI games the USER sends
   // nothing — the engine taunts through the dock itself (see below), and its
@@ -1701,27 +1668,7 @@ useEffect(() => {
   toast.show(online.dropNotice.message);
 }, [type, online.dropNotice]);
 
-// A newly earned achievement is a toast with its medal + the notify sound —
-// never content inside the Win modal. Fires once per reward: aiReward
-// persists while the result is on screen, so the key guards the re-fire.
-// Deferred past the Win modal (a native modal renders above the app-level
-// toast): if the result is still up when the reward lands, the toast waits
-// for the dismiss and celebrates over the finished board instead.
-const lastRewardToastKey = useRef<string | null>(null);
-useEffect(() => {
-  const first = aiReward?.newAchievements?.[0];
-  if (!first || !aiReward) return;
-  const key = `${aiReward.win.id}:${first.code}`;
-  if (lastRewardToastKey.current === key) return;
-  if (showGameOver) return;
-  lastRewardToastKey.current = key;
-  void playNotifySound();
-  toast.show(
-    `New Achievement — ${first.name}`,
-    undefined,
-    <AchievementMedal icon={first.icon} tier={first.tier} size={30} />
-  );
-}, [aiReward, showGameOver]);
+
 
 // ratings at all and PlayerStrip hides the pills instead of showing fiction.
 
@@ -2314,13 +2261,7 @@ useEffect(() => {
             ? personality?.name ?? `AI - ${aiDifficulty.charAt(0).toUpperCase()}${aiDifficulty.slice(1)}`
             : topList[0]?.displayName || 'Opponent'
         }
-        isWinner={
-          state.winnerId
-            ? (type === 'online'
-                ? state.winnerId === online.myPlayerId
-                : state.winnerId === state.players[humanIdx]?.id)
-            : false
-        }
+        isWinner={userWon}
         myPlayerId={
           type === 'online'
             ? online.myPlayerId
@@ -2350,6 +2291,24 @@ useEffect(() => {
         onHome={() => {
           setShowGameOver(false);
           onHome();
+          // Win-only interstitial on result exit (never on open — rematch /
+          // replay / analyze stay uninterrupted). Fire-and-forget after
+          // navigation; every rule (win, caps, gaps, recency) lives inside.
+          const gameSec = Math.max(
+            0,
+            Math.floor((Date.now() - state.startedAt) / 1000)
+          );
+          const premiumNow = isPremiumActive(premiumState);
+          void ensureSessionRecorded()
+            .catch(() => 0)
+            .then((sessions) =>
+              showInterstitialIfDue({
+                isPremium: premiumNow,
+                sessions: typeof sessions === 'number' ? sessions : 0,
+                userWon,
+                gameSec,
+              })
+            );
         }}
         onClose={() => setShowGameOver(false)}
       />
@@ -2435,6 +2394,7 @@ useEffect(() => {
             onBack={() => setProfilePlayer(null)}
             onChallenge={() => {}}
             onSelectGame={() => {}}
+            onAnalyzeGame={() => {}}
             inGame
           />
         </View>

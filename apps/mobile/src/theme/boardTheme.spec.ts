@@ -85,11 +85,8 @@ describe('board theme', () => {
     expect(resolveBoardSkin('walnut', true, 'light')).toBe(WALNUT_SKIN);
     expect(resolveBoardSkin('walnut', true, 'midnight')).toBe(WALNUT_SKIN);
     // Free / lapsed: fall back to classic in the current appearance.
-    // (Dev builds bypass the gate via __DEV__; tests run without it.)
-    if (typeof __DEV__ === 'undefined' || !__DEV__) {
-      expect(resolveBoardSkin('walnut', false, 'light')).toBe(CLASSIC_LIGHT_SKIN);
-      expect(resolveBoardSkin('walnut', false, 'midnight')).toBe(CLASSIC_MIDNIGHT_SKIN);
-    }
+    expect(resolveBoardSkin('walnut', false, 'light')).toBe(CLASSIC_LIGHT_SKIN);
+    expect(resolveBoardSkin('walnut', false, 'midnight')).toBe(CLASSIC_MIDNIGHT_SKIN);
   });
 
   it('every skin carries the full palette surface', () => {

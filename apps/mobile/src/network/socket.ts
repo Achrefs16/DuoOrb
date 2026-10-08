@@ -521,7 +521,7 @@ class SocketManager {
       reconnectionAttempts: 15,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
     });
 
     // Replay every consumer handler onto the new transport.
