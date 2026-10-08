@@ -68,4 +68,19 @@ describe('AnalysisService', () => {
       where: { gameId: 'test-game' },
     });
   });
+
+  it('gracefully handles missing initialState (synthesizes state from history)', async () => {
+    const mockPrisma: any = {
+      isConnected: false,
+      gameAnalysis: {
+        findUnique: vi.fn(),
+        upsert: vi.fn(),
+      },
+    };
+    const service = new AnalysisService(mockPrisma);
+    const review = await service.reviewGame(undefined, []);
+    expect(review).toBeDefined();
+    expect(review.totalMoves).toBe(0);
+    expect(review.engineVersion).toBe('duoorb-rust-mcts-2.0');
+  });
 });

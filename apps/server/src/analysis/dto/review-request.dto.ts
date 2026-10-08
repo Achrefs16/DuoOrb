@@ -1,6 +1,8 @@
-import type { GameState, RecordedAction } from '@duoorb/game-core';
+import type { GameMode, GameState, RecordedAction } from '@duoorb/game-core';
 
 export class ReviewRequestDto {
-  initialState!: GameState;
-  history!: RecordedAction[];
+  initialState?: GameState;
+  history?: RecordedAction[];
+  gameId?: string;
+  mode?: GameMode;
 }

@@ -7,6 +7,7 @@ import {
   MoveAnalysis,
   RecordedAction,
   applyAction,
+  createInitialState,
   rebuildStateAtStep,
 } from '@duoorb/game-core';
 import { AnalysisBadge } from '../components/AnalysisBadge';
@@ -237,7 +238,8 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     // compute: the locked panel below offers the ad unlock instead.
     if (access !== 'premium' && access !== 'unlocked') return;
     let cancelled = false;
-    const key = reviewCacheKey(initialState.gameId, history.length);
+    const effectiveGameId = initialState?.gameId || accessKey?.gameId || `game-${Date.now()}`;
+    const key = reviewCacheKey(effectiveGameId, history.length);
     // One deferred task for both paths (even a cache hit goes through it):
     // setState never runs synchronously in this effect body, and the board
     // paints before any of this lands.
@@ -251,7 +253,14 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
 
       // Request deep MCTS analysis from the backend server (sole source of truth)
       try {
-        const serverReview = await api.requestGameReview(initialState, history);
+        const safeInitial =
+          initialState && Array.isArray(initialState.players) && initialState.players.length > 0
+            ? initialState
+            : createInitialState({
+                gameId: effectiveGameId,
+                mode: '2p',
+              });
+        const serverReview = await api.requestGameReview(safeInitial, history, effectiveGameId);
         if (cancelled) return;
         if (serverReview && Array.isArray(serverReview.moveAnalyses)) {
           cacheReview(key, serverReview);

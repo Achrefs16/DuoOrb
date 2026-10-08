@@ -831,11 +831,18 @@ export const api = {
    */
   async requestGameReview(
     initialState: GameState,
-    history: RecordedAction[]
+    history: RecordedAction[],
+    gameId?: string
   ): Promise<GameReview> {
+    const resolvedGameId = gameId || initialState?.gameId;
     return request<GameReview>('/analysis/review', {
       method: 'POST',
-      body: JSON.stringify({ initialState, history }),
+      body: JSON.stringify({
+        initialState,
+        history: history || [],
+        gameId: resolvedGameId,
+        mode: initialState?.mode,
+      }),
     });
   },
 

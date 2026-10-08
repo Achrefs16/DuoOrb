@@ -1,7 +1,13 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
 import { analyzeGameAsync } from '@duoorb/analyzer-rust';
-import type { GameReview, GameState, RecordedAction } from '@duoorb/game-core';
+import {
+  createInitialState,
+  type GameMode,
+  type GameReview,
+  type GameState,
+  type RecordedAction,
+} from '@duoorb/game-core';
 
 @Injectable()
 export class AnalysisService {
@@ -15,13 +21,22 @@ export class AnalysisService {
    * Caches results in PostgreSQL when the database is available.
    */
   async reviewGame(
-    initialState: GameState,
-    history: RecordedAction[]
+    initialState?: GameState,
+    history?: RecordedAction[],
+    providedGameId?: string,
+    providedMode?: GameMode
   ): Promise<GameReview> {
-    const gameId = initialState.gameId || `temp-${Date.now()}`;
+    let safeHistory: RecordedAction[] = Array.isArray(history) ? history : [];
+    let safeState: GameState | undefined = initialState;
+
+    let gameId =
+      providedGameId ||
+      safeState?.gameId ||
+      (safeHistory.length > 0 ? (safeHistory[0] as any)?.gameId : null) ||
+      `game-${Date.now()}`;
 
     // 1. Check database cache if connected
-    if (this.prisma.isConnected) {
+    if (this.prisma.isConnected && gameId) {
       try {
         const cached = await this.prisma.gameAnalysis.findUnique({
           where: { gameId },
@@ -35,13 +50,63 @@ export class AnalysisService {
       }
     }
 
-    // 2. Compute analysis asynchronously in Rust via NAPI worker thread
-    const startTime = performance.now();
-    const review = await analyzeGameAsync(initialState, history);
-    const durationMs = (performance.now() - startTime).toFixed(2);
-    this.logger.log(`Analyzed game ${gameId} (${history.length} moves) in ${durationMs}ms via Rust engine`);
+    // 2. If initial state or history is missing and we have a database connection,
+    // attempt to reconstruct the match from the online game history table
+    if (this.prisma.isConnected && gameId && (!safeState || safeHistory.length === 0)) {
+      try {
+        const dbGame = await this.prisma.game.findUnique({
+          where: { id: gameId },
+          include: {
+            players: {
+              include: { user: { include: { profile: true } } },
+            },
+            moves: {
+              orderBy: { sequence: 'asc' },
+            },
+          },
+        });
+        if (dbGame) {
+          if (!safeState) {
+            safeState = createInitialState({
+              gameId: dbGame.id,
+              mode: dbGame.mode as GameMode,
+              playerNames: dbGame.players.map(
+                (p) => p.user?.profile?.displayName || `Player ${p.playerIndex + 1}`
+              ),
+            });
+          }
+          if (safeHistory.length === 0 && dbGame.moves.length > 0) {
+            safeHistory = dbGame.moves.map((m) => ({
+              sequence: m.sequence,
+              playerId: `p${m.playerIndex + 1}`,
+              action: m.payload as any,
+              timestamp: Number(m.serverTimestamp),
+            }));
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`Failed fetching game history for ${gameId}: ${err.message}`);
+      }
+    }
 
-    // 3. Persist to database cache in background if connected
+    // 3. Synthesize initial state if still absent (e.g. from local/AI/old offline games)
+    if (!safeState || !Array.isArray(safeState.players) || safeState.players.length === 0) {
+      const playerIds = new Set(safeHistory.map((h) => h.playerId));
+      const mode: GameMode =
+        providedMode || (playerIds.size > 2 ? '4p' : '2p');
+      safeState = createInitialState({
+        gameId,
+        mode,
+      });
+    }
+
+    // 4. Compute analysis asynchronously in Rust via NAPI worker thread
+    const startTime = performance.now();
+    const review = await analyzeGameAsync(safeState, safeHistory);
+    const durationMs = (performance.now() - startTime).toFixed(2);
+    this.logger.log(`Analyzed game ${gameId} (${safeHistory.length} moves) in ${durationMs}ms via Rust engine`);
+
+    // 5. Persist to database cache in background if connected
     if (this.prisma.isConnected) {
       this.prisma.gameAnalysis
         .upsert({

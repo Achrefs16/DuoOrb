@@ -48,6 +48,7 @@ import { flushIdentityStorage, hydrateIdentity, useIdentity } from './src/networ
 import { hasCompletedOnboarding, markOnboardingComplete } from './src/storage/onboarding';
 import { isGeneratedUsername } from './src/usernamePolicy';
 import { ChooseUsernameScreen } from './src/screens/ChooseUsernameScreen';
+import { createInitialState } from '@duoorb/game-core';
 import type { SavedGameRecord } from './src/storage/gameStorage';
 import { THEME, setThemeName, useTheme } from './src/theme';
 import { DEFAULT_TIME_CONTROL, TimeControl } from './src/timeControls';
@@ -516,9 +517,16 @@ export default function App() {
   };
 
   const handleSelectGameFromHistory = (savedGame: SavedGameRecord) => {
+    const initialState =
+      savedGame.initialState ||
+      createInitialState({
+        gameId: savedGame.id,
+        mode: savedGame.mode || '2p',
+        playerNames: [savedGame.winnerName || 'Player 1', 'Player 2'],
+      });
     setReplayData({
-      initialState: savedGame.initialState,
-      history: savedGame.history,
+      initialState,
+      history: savedGame.history || [],
       perspectiveIdx: 0,
       // History/Profile replays open the bare match page (board, HUD cards,
       // step controls with speed) - no analysis panels. The key identifies

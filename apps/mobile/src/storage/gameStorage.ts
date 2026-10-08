@@ -1,4 +1,4 @@
-import { GameMode, GameState, RecordedAction } from '@duoorb/game-core';
+import { createInitialState, GameMode, GameState, RecordedAction } from '@duoorb/game-core';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { type LanguageCode, isLanguageCode } from '../i18n';
 
@@ -185,7 +185,17 @@ export async function loadGameHistory(): Promise<SavedGameRecord[]> {
   try {
     const raw = storage.getItem(STORAGE_KEY_HISTORY);
     if (raw) {
-      inMemoryHistory = JSON.parse(raw);
+      const parsed: any[] = JSON.parse(raw);
+      inMemoryHistory = (parsed || []).map((game: any) => {
+        if (!game.initialState) {
+          game.initialState = createInitialState({
+            gameId: game.id || `game-${game.date || Date.now()}`,
+            mode: game.mode || '2p',
+            playerNames: [game.winnerName || 'Player 1', 'Player 2'],
+          });
+        }
+        return game as SavedGameRecord;
+      });
       inMemoryHistory.sort((a, b) => b.date - a.date);
     }
   } catch (e) {
