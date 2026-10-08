@@ -1,7 +1,6 @@
 # Stage 1: Build native Rust analyzer
-FROM rust:alpine AS rust-builder
+FROM rust:bookworm AS rust-builder
 WORKDIR /build/packages/analyzer-rust
-RUN apk add --no-cache musl-dev
 COPY packages/analyzer-rust/Cargo.* ./
 COPY packages/analyzer-rust/build.rs ./
 COPY packages/analyzer-rust/src ./src
@@ -9,12 +8,12 @@ RUN cargo build --release
 RUN cp target/release/libduoorb_analyzer.so duoorb-analyzer.node
 
 # Stage 2: Node.js server runtime
-FROM node:22-alpine
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
-# Install openssl and libc compatibility for Prisma engine on Alpine
-RUN apk add --no-cache openssl libc6-compat
+# Install openssl for Prisma engine on Debian
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 # Copy workspace package manifests
 COPY package*.json ./
