@@ -6,7 +6,7 @@ use crate::classifier::classify_mcts_move;
 use crate::mcts::{position_seed, run_mcts_analysis};
 use crate::rules::{apply_action, get_legal_moves};
 use crate::types::{
-    GameReview, GameState, KeyLesson, MoveAnalysis, MoveAssessment,
+    GameAction, GameReview, GameState, KeyLesson, MoveAnalysis, MoveAssessment,
     RecordedAction, ReviewSummary,
 };
 
@@ -21,11 +21,55 @@ pub fn analyze_game_internal(
     states_before.push((current_state.clone(), current_board));
 
     for rec in &history {
+        // Match acting player if provided by the client history
+        let mover_idx = if !rec.player.is_empty() {
+            current_state
+                .players
+                .iter()
+                .position(|p| p.id == rec.player)
+                .unwrap_or(current_state.current_player_index)
+        } else {
+            current_state.current_player_index
+        };
+        current_state.current_player_index = mover_idx;
+
         if let Some(next_state) = apply_action(&current_state, &rec.action, &mut current_board) {
             current_state = next_state;
             states_before.push((current_state.clone(), current_board));
         } else {
-            break;
+            // Replay fallback: force apply recorded move so we never drop remaining plies
+            let mut fallback_state = current_state.clone();
+            match &rec.action {
+                GameAction::Move { to } => {
+                    if mover_idx < fallback_state.players.len() {
+                        fallback_state.players[mover_idx].position = *to;
+                    }
+                }
+                GameAction::PlaceWall { wall } => {
+                    current_board.place_wall(wall);
+                    fallback_state.walls.push(*wall);
+                    if mover_idx < fallback_state.players.len() && fallback_state.players[mover_idx].walls_remaining > 0 {
+                        fallback_state.players[mover_idx].walls_remaining -= 1;
+                    }
+                }
+                GameAction::Resign | GameAction::Timeout => {
+                    if mover_idx < fallback_state.players.len() {
+                        fallback_state.players[mover_idx].status = "FINISHED".to_string();
+                    }
+                }
+            }
+            let total_players = fallback_state.players.len();
+            if total_players > 0 {
+                let mut next_idx = (mover_idx + 1) % total_players;
+                let mut iterations = 0;
+                while fallback_state.players[next_idx].status == "FINISHED" && iterations < total_players {
+                    next_idx = (next_idx + 1) % total_players;
+                    iterations += 1;
+                }
+                fallback_state.current_player_index = next_idx;
+            }
+            current_state = fallback_state;
+            states_before.push((current_state.clone(), current_board));
         }
     }
 

@@ -21,9 +21,10 @@ export class AnalysisController {
   @Post('review')
   @HttpCode(HttpStatus.OK)
   async reviewGame(@Body() body: ReviewRequestDto) {
+    const history = body?.history ?? body?.moves;
     return this.analysisService.reviewGame(
       body?.initialState,
-      body?.history,
+      history,
       body?.gameId,
       body?.mode
     );
