@@ -28,6 +28,7 @@ import {
   AI_PROFILES,
   RankedAction,
   evaluateState,
+  getBestAction,
   rankActions,
 } from './ai.js';
 import type { AIProfile } from './ai.js';
@@ -60,9 +61,9 @@ export const ANALYSIS_CONFIG = {
   /** Eval units per e-fold in the win-chance logistic (see header). */
   winChanceScale: 20,
   /** Classification bounds on deterministic search-score loss. */
-  classBounds: { best: 0.5, excellent: 1.5, good: 3.0, inaccuracy: 6.0, mistake: 12.0 },
+  classBounds: { best: 1.0, excellent: 3.0, good: 6.0, inaccuracy: 14.0, mistake: 25.0 },
   /** Score window inside which alternatives count as equivalent/best. */
-  acceptableWindow: 0.5,
+  acceptableWindow: 1.0,
   /** Win-chance swing that forces at least MISTAKE. */
   criticalWinSwing: 0.2,
   /** Win-chance swing that marks a move critical. */
@@ -1156,9 +1157,6 @@ function analyzeSingleMove(input: SingleMoveInput): {
     }
   }
 
-  const actualRankedScore = ranked.find((r) => actionsEqual(r.action, action))?.score;
-  const evaluationLoss = bestAction && actualRankedScore !== undefined ? Math.max(0, bestScore - actualRankedScore) : 0;
-
   // Best-action after-state + evaluation (legacy-compatible semantics).
   let bestActionEvaluation = evaluationBefore;
   let afterBest: GameState | null = null;
@@ -1170,13 +1168,28 @@ function analyzeSingleMove(input: SingleMoveInput): {
     }
   }
 
+  let actualRankedScore = ranked.find((r) => actionsEqual(r.action, action))?.score;
+  if (actualRankedScore === undefined && afterState.status !== 'IN_PROGRESS') {
+    actualRankedScore = moverWonNow ? 10000 : -10000;
+  }
+  if (actualRankedScore === undefined) {
+    const evalAfter = evaluateState(afterState, moverId, aiProfile);
+    const evalGap = bestActionEvaluation - evalAfter;
+    actualRankedScore = bestScore - Math.max(0, evalGap);
+  }
+  let evaluationLoss = bestAction && actualRankedScore !== undefined ? Math.max(0, bestScore - actualRankedScore) : 0;
+  const engineBest = getBestAction(beforeState, { ...aiProfile, randomness: 0 });
+  if (engineBest !== null && actionsEqual(action, engineBest)) {
+    evaluationLoss = 0;
+    actualRankedScore = bestScore;
+  }
+
   const acceptableActions = ranked
     .filter((r) => bestScore - r.score <= ANALYSIS_CONFIG.acceptableWindow)
     .map((r) => r.action);
   const forced =
     ranked.length <= 1 ||
-    acceptableActions.length >= Math.max(1, ranked.length - 1) ||
-    actualRankedScore === undefined;
+    acceptableActions.length >= Math.max(1, ranked.length - 1);
 
   const missedDefense =
     oppCouldWinBefore && oppCanWinAfter && afterBest !== null && !oppCanWinNext(afterBest, moverId);
@@ -1215,14 +1228,23 @@ function analyzeSingleMove(input: SingleMoveInput): {
   };
 
   // Classification (context-aware, not raw thresholds alone).
+  const bestWin = afterBest ? winChanceFor(afterBest, moverId) : winBefore;
+  const winLoss = Math.max(0, bestWin - winAfter);
+
   let assessment = baseAssessment(evaluationLoss);
+  // Guard against false blunders: an ordinary 1-step or non-critical positional loss
+  // must not be labeled BLUNDER unless there is a severe win chance collapse (>= 0.28)
+  // or a missed win / missed defense.
+  if (assessment === 'BLUNDER' && winLoss < 0.28 && !missedWin && !missedDefense) {
+    assessment = 'MISTAKE';
+  }
   if (forced && evaluationLoss <= ANALYSIS_CONFIG.classBounds.good) {
     assessment = evaluationLoss <= ANALYSIS_CONFIG.classBounds.best ? 'BEST' : 'GOOD';
   }
   const inAcceptable = acceptableActions.some((a) => actionsEqual(a, action));
   if (inAcceptable) assessment = 'BEST';
   if (missedWin || missedDefense) assessment = worseThan(assessment, 'MISTAKE');
-  if (badReversal) assessment = worseThan(assessment, 'INACCURACY');
+  if (badReversal && after.raceAdvantage < 0) assessment = worseThan(assessment, 'INACCURACY');
   if (winSwing <= -ANALYSIS_CONFIG.criticalWinSwing) assessment = worseThan(assessment, 'MISTAKE');
 
   // Categories.
@@ -1554,6 +1576,114 @@ export function analyzeGame(
   // Deciding moments: importance = swing + reversal + critical + endgame weight.
   // States come from the canonical replay chain (step N lives between
   // states[N-1] and states[N]).
+  const moments: DecidingMoment[] = moveAnalyses.map((m) => ({
+    moveNumber: m.step,
+    playerId: m.playerId,
+    reason: (m.criticalReason ?? 'SWING') as DecidingMoment['reason'],
+    beforeWinChance: m.winChanceBefore,
+    afterWinChance: m.winChanceAfter,
+    evaluationSwing: m.evaluationAfter - m.evaluationBefore,
+    raceSwing: m.raceSwing,
+    importance:
+      Math.abs(m.winChanceSwing) * 100 +
+      (m.badReversal ? 25 : 0) +
+      (m.critical ? 15 : 0) +
+      (m.phase === 'ENDGAME' ? 5 : 0),
+    beforeState: states[m.step - 1] ?? currentState,
+    afterState: states[m.step] ?? currentState,
+  }));
+  moments.sort((a, b) => b.importance - a.importance);
+  const decidingMoments = moments.slice(0, 3);
+
+  const summary = buildSummary(moveAnalyses, decidingMoments[0]);
+
+  return {
+    totalMoves: history.length,
+    winnerId: currentState.winnerId,
+    moveAnalyses,
+    evaluationHistory,
+    engineVersion: ANALYSIS_ENGINE_VERSION,
+    analysisVersion: ANALYSIS_VERSION,
+    rulesetVersion: initialState.rulesetVersion,
+    profile: profileName,
+    winChanceHistory,
+    decidingMoments,
+    summary,
+  };
+}
+
+export async function analyzeGameAsync(
+  initialState: GameState,
+  history: RecordedAction[],
+  profileName: AnalysisProfileName = 'normal',
+  onProgress?: (progress: { currentStep: number; totalSteps: number }) => void,
+  shouldCancel?: () => boolean
+): Promise<GameReview> {
+  const profile = ANALYSIS_PROFILES[profileName];
+  const moveAnalyses: MoveAnalysis[] = [];
+  const evaluationHistory: { step: number; evaluation: number }[] = [
+    { step: 0, evaluation: evaluateState(initialState, initialState.players[0].id, AI_PROFILES.normal) },
+  ];
+  const winChanceHistory: GameReview['winChanceHistory'] = [
+    {
+      step: 0,
+      winChance: winChanceFor(initialState, initialState.players[0].id),
+      perPlayer: initialState.players.length > 2 ? multiWinChances(initialState) : undefined,
+    },
+  ];
+
+  let currentState = initialState;
+  let deepDivesUsed = 0;
+  const states: GameState[] = [initialState];
+  const initialWallsByPlayer: Record<string, number> = {};
+  for (const p of initialState.players) initialWallsByPlayer[p.id] = p.wallsRemaining;
+  const initialAvgWalls =
+    initialState.players.reduce((a, p) => a + p.wallsRemaining, 0) /
+    Math.max(1, initialState.players.length);
+
+  for (let step = 1; step <= history.length; step++) {
+    if (shouldCancel?.()) break;
+    const recorded = history[step - 1];
+    const mover = currentState.players[currentState.currentPlayerIndex];
+    const applied = applyAction(currentState, recorded.action, {
+      timestamp: recorded.timestamp,
+      clockRemainingMs: recorded.clockRemainingMs,
+    });
+    if (!applied.success) break;
+    const afterState = applied.state;
+
+    const allowDeep = deepDivesUsed < profile.maxDeepDives;
+    const { analysis, usedDeep } = analyzeSingleMove({
+      beforeState: currentState,
+      afterState,
+      action: recorded.action,
+      moverId: mover.id,
+      step,
+      profileName,
+      recentWallCount: countRecentWalls(currentState, mover.id, 6),
+      initialWalls: initialWallsByPlayer[mover.id] ?? 10,
+      initialAvgWalls: initialAvgWalls,
+      allowDeep,
+    });
+    if (usedDeep) deepDivesUsed += 1;
+    moveAnalyses.push(analysis);
+
+    const p1Eval = evaluateState(afterState, initialState.players[0].id, AI_PROFILES.normal);
+    evaluationHistory.push({ step, evaluation: p1Eval });
+    winChanceHistory.push({
+      step,
+      winChance: winChanceFor(afterState, initialState.players[0].id),
+      perPlayer: afterState.players.length > 2 ? multiWinChances(afterState) : undefined,
+    });
+
+    currentState = afterState;
+    states.push(afterState);
+
+    onProgress?.({ currentStep: step, totalSteps: history.length });
+    // Yield every move to keep host application UI buttery smooth
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+
   const moments: DecidingMoment[] = moveAnalyses.map((m) => ({
     moveNumber: m.step,
     playerId: m.playerId,

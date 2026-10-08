@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ANALYSIS_PROFILES,
   analyzeGame,
+  analyzeGameAsync,
   analyzeMove,
   analyzePosition,
   computePositionMetrics,
@@ -168,6 +169,27 @@ describe('Analysis engine: classification trust', () => {
     expect(analysis?.tryAgain?.bestAction).toBeDefined();
     expect(['MISTAKE', 'BLUNDER']).toContain(analysis?.assessment);
   });
+
+  it('does not label unranked bad moves as BEST or forced', () => {
+    const state = createInitialState({ mode: '2p' });
+    // p1 at (4,4), moving backwards away from goal to (5,4)
+    state.players[0].position = { row: 4, col: 4 };
+    state.players[1].position = { row: 4, col: 0 };
+    // Walking backwards away from the goal is not in candidate top moves
+    const backward = analyzeMove(state, { type: 'MOVE', to: { row: 5, col: 4 } }, 'fast');
+    expect(backward?.assessment).not.toBe('BEST');
+    expect(backward?.forced).toBe(false);
+    expect(backward?.evaluationLoss).toBeGreaterThan(0);
+  });
+
+  it('does not falsely classify a sound 1-step suboptimal move as a blunder', () => {
+    const state = createInitialState({ mode: '2p' });
+    state.players[0].position = { row: 6, col: 4 };
+    state.players[1].position = { row: 3, col: 0 };
+    // Stepping left to (6,3) instead of forward to (5,4) is an inaccuracy/good, not a blunder
+    const sideways = analyzeMove(state, { type: 'MOVE', to: { row: 6, col: 3 } }, 'fast');
+    expect(sideways?.assessment).not.toBe('BLUNDER');
+  });
 });
 
 describe('Analysis engine: full game', () => {
@@ -221,6 +243,27 @@ describe('Analysis engine: full game', () => {
     expect(acc).toBeLessThanOrEqual(100);
     expect(review.summary.confidence).toMatch(/low|medium|high/);
     expect(review.summary.keyLesson.title).toBeTruthy();
+  });
+
+  it('runs analyzeGameAsync with progressive progress updates', async () => {
+    const scripted = playMoves('2p', [
+      { row: 7, col: 4 },
+      { row: 1, col: 4 },
+      { row: 6, col: 4 },
+      { row: 2, col: 4 },
+    ]);
+    const progressSteps: number[] = [];
+    const review = await analyzeGameAsync(
+      createInitialState({ mode: '2p', gameId: 'async-1' }),
+      scripted.history,
+      'fast',
+      (p) => {
+        progressSteps.push(p.currentStep);
+      }
+    );
+    expect(review.totalMoves).toBe(4);
+    expect(review.moveAnalyses).toHaveLength(4);
+    expect(progressSteps).toEqual([1, 2, 3, 4]);
   });
 });
 

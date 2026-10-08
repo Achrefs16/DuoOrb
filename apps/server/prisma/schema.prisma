@@ -334,3 +334,18 @@ model SubscriptionEvent {
   @@index([userId, createdAt])
   @@map("subscription_events")
 }
+
+model GameAnalysis {
+  id              String   @id @default(uuid())
+  gameId          String   @unique
+  engineVersion   String
+  analysisVersion String
+  totalMoves      Int
+  winnerId        String?
+  reviewData      Json
+  createdAt       DateTime @default(now())
+
+  @@index([gameId])
+  @@map("game_analyses")
+}
+

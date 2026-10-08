@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, LayoutChangeEvent } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Text as SvgText } from 'react-native-svg';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 
 interface RatingPoint {
   ratingAfter: number;
@@ -15,6 +16,8 @@ interface RatingChartProps {
 }
 
 export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, showHeader = true }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const [containerWidth, setContainerWidth] = useState(320);
   const height = 110;
   const yLabelW = 34;
@@ -47,13 +50,14 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
   };
   // X axis: first / middle / Now (Stitch style).
   const xLabels = (() => {
-    if (points.length === 0) return ['Now'];
-    if (points.length === 1) return [monthFmt(points[0].timestamp) || 'Now'];
-    if (points.length === 2) return [monthFmt(points[0].timestamp), 'Now'];
+    const nowStr = t('profile.now');
+    if (points.length === 0) return [nowStr];
+    if (points.length === 1) return [monthFmt(points[0].timestamp) || nowStr];
+    if (points.length === 2) return [monthFmt(points[0].timestamp), nowStr];
     return [
       monthFmt(points[0].timestamp),
       monthFmt(points[Math.floor(points.length / 2)].timestamp),
-      'Now',
+      nowStr,
     ];
   })();
 
@@ -102,9 +106,9 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
       {showHeader && (
       <View style={styles.headerRow}>
         <View>
-          <Text style={styles.sectionLabel}>RATING HISTORY</Text>
+          <Text style={styles.sectionLabel}>{t('profile.ratingHistory')}</Text>
           <Text style={styles.recentSummary}>
-            Last {ratings.length} games ·{' '}
+            {t('profile.latestGames', { count: ratings.length })} ·{' '}
             <Text
               style={{
                 fontFamily: THEME.fonts.bold,
@@ -117,7 +121,7 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
           </Text>
         </View>
         <View style={styles.highestBadge}>
-          <Text style={styles.highestLabel}>Peak</Text>
+          <Text style={styles.highestLabel}>{t('profile.peak')}</Text>
           <Text style={styles.highestValue}>{highestVal}</Text>
         </View>
       </View>
@@ -189,7 +193,7 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
             <SvgText
               x={coords[0].x + 2}
               y={coords[0].y - 4}
-              fill={THEME.colors.slate[950]}
+              fill={THEME.colors.onSurface}
               fontSize={10}
               fontWeight="600"
               fontFamily={THEME.fonts.semiBold}
@@ -226,7 +230,7 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   card: {
     backgroundColor: THEME.colors.backgroundCard,
     borderRadius: THEME.radius.lg,

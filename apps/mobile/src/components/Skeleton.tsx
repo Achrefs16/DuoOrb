@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Animated, StyleSheet, View, type ViewStyle } from 'react-native';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 
 /**
  * Page skeletons: shimmer placeholders shown while a full page loads,
@@ -46,7 +46,9 @@ const Block: React.FC<BlockProps & { opacity: Animated.AnimatedInterpolation<num
   circle = false,
   style,
   opacity,
-}) => (
+}) => {
+  const styles = useStyles(createStyles);
+  return (
   <Animated.View
     style={[
       styles.block,
@@ -59,14 +61,17 @@ const Block: React.FC<BlockProps & { opacity: Animated.AnimatedInterpolation<num
       style,
     ]}
   />
-);
+  );
+};
 
 const Row: React.FC<{
   opacity: Animated.AnimatedInterpolation<number>;
   avatarSize?: number;
   lines?: [`${number}%`, `${number}%`];
   action?: boolean;
-}> = ({ opacity, avatarSize = 40, lines = ['72%', '46%'], action = false }) => (
+}> = ({ opacity, avatarSize = 40, lines = ['72%', '46%'], action = false }) => {
+  const pageStyles = useStyles(createPageStyles);
+  return (
   <View style={pageStyles.row}>
     <Block opacity={opacity} height={avatarSize} width={avatarSize} circle />
     <View style={pageStyles.rowLines}>
@@ -75,15 +80,20 @@ const Row: React.FC<{
     </View>
     {action && <Block opacity={opacity} height={30} width={64} radius={8} />}
   </View>
-);
+  );
+};
 
 const SectionLabel: React.FC<{ opacity: Animated.AnimatedInterpolation<number>; width?: `${number}%` }> = ({
   opacity,
   width = '38%',
-}) => <Block opacity={opacity} height={12} width={width} radius={4} style={pageStyles.sectionLabel} />;
+}) => {
+  const pageStyles = useStyles(createPageStyles);
+  return <Block opacity={opacity} height={12} width={width} radius={4} style={pageStyles.sectionLabel} />;
+};
 
 export const FriendsSkeleton: React.FC = () => {
   const opacity = usePulse();
+  const pageStyles = useStyles(createPageStyles);
   return (
     <View style={pageStyles.list}>
       <SectionLabel opacity={opacity} />
@@ -99,6 +109,7 @@ export const FriendsSkeleton: React.FC = () => {
 
 export const HistorySkeleton: React.FC = () => {
   const opacity = usePulse();
+  const pageStyles = useStyles(createPageStyles);
   return (
     <View style={pageStyles.list}>
       <View style={pageStyles.card}>
@@ -126,6 +137,7 @@ export const HistorySkeleton: React.FC = () => {
 
 export const ProfileSkeleton: React.FC = () => {
   const opacity = usePulse();
+  const pageStyles = useStyles(createPageStyles);
   return (
     <View style={pageStyles.list}>
       <View style={pageStyles.card}>
@@ -155,6 +167,7 @@ export const ProfileSkeleton: React.FC = () => {
 
 export const PlayerProfileSkeleton: React.FC = () => {
   const opacity = usePulse();
+  const pageStyles = useStyles(createPageStyles);
   return (
     <View style={pageStyles.list}>
       <View style={pageStyles.card}>
@@ -189,13 +202,13 @@ export const PlayerProfileSkeleton: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   block: {
     backgroundColor: THEME.colors.surfaceHairline,
   },
 });
 
-const pageStyles = StyleSheet.create({
+const createPageStyles = () => StyleSheet.create({
   list: {
     paddingHorizontal: 16,
     paddingTop: 16,

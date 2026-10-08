@@ -6,15 +6,19 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { THEME } from '../theme';
+import Svg, { Circle, Path } from 'react-native-svg';
+import { THEME, useStyles } from '../theme';
 import { runWhenOnline } from '../components/NoConnection';
 import { AdBanner } from '../components/AdBanner';
+import { toast } from '../components/AppToast';
 import { useConnectivity } from '../network/useConnectivity';
 import { socketManager, useVerified } from '../network/socket';
 import { DEFAULT_TIME_CONTROL, TimeControl } from '../timeControls';
 import { OnlineMode } from './OnlineScreen';
+import { useTranslation } from '../i18n';
 
 interface HomeScreenProps {
   onOpenOnline: (clock: TimeControl, view: OnlineMode) => void;
@@ -34,12 +38,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpenSettings,
   onlineCount,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const navLock = useRef(0);
   const { isConnected } = useConnectivity();
   // Verified (not transport) health (ONLINE_HEALTH Phase B): a connected but
   // unverified socket is the ghost state — the pill says so and offers the
   // retry instead of a healthy-looking count.
   const verified = useVerified();
+
+  // Responsive scale: EVERY visual size on this screen derives from viewport
+  // width (phones ~360-430). Tablets clamp: layout already caps at 480 wide,
+  // and the factor clamps so nothing inflates past large-phone proportions.
+  // Squares stay square at any size via aspectRatio; this moves everything
+  // else (type, icons, paddings, gaps, heights) together.
+  const { width: winWidth } = useWindowDimensions();
+  const rs = (n: number) =>
+    Math.round(n * Math.min(1.12, Math.max(0.86, winWidth / 375)));
 
   const guarded = (fn: () => void) => () => {
     const now = Date.now();
@@ -54,33 +69,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       <View style={styles.topHeader}>
         <View style={styles.brandGroup}>
           <Image
-            source={require('../../assets/Glossy Orbital Duo Logo.png')}
-            style={styles.brandLogo}
+            source={require('../../assets/logo-512.webp')}
+            style={[styles.brandLogo, { width: rs(30), height: rs(30) }]}
             resizeMode="contain"
             accessibilityRole="image"
             accessibilityLabel="DuoOrb"
           />
           <View style={styles.brandTitles}>
-            <Text style={styles.brandTitle}>DuoOrb</Text>
-            <Text style={styles.brandSubtitle}>TACTICAL GRID</Text>
+            <Text style={[styles.brandTitle, { fontSize: rs(17) }]}>DuoOrb</Text>
+            <Text style={[styles.brandSubtitle, { fontSize: rs(9) }]}>{t('home.tagline')}</Text>
           </View>
         </View>
 
         <View style={styles.headerRightActions}>
           <TouchableOpacity
-            style={styles.headerIconButton}
+            style={[styles.headerIconButton, { width: rs(36), height: rs(36) }]}
             activeOpacity={0.7}
             onPress={onOpenSettings}
-            accessibilityLabel="Settings"
+            accessibilityLabel={t('home.settingsA11y')}
           >
-            <Feather name="settings" size={18} color={THEME.colors.textSecondary} />
+            <Feather name="settings" size={rs(18)} color={THEME.colors.textSecondary} />
           </TouchableOpacity>
         </View>
       </View>
 
       <ScrollView
         style={styles.scrollArea}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingHorizontal: rs(16), gap: rs(12) }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Ad slot (MONETIZATION.md P6, O1): reserved 56px for eligible free
@@ -93,7 +108,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             unverified) and dead transports both offer an explicit retry
             instead of a healthy-looking number. */}
         <TouchableOpacity
-          style={styles.presencePill}
+          style={[styles.presencePill, { paddingHorizontal: rs(12), paddingVertical: rs(7) }]}
           activeOpacity={verified === false ? 0.7 : 1}
           onPress={() => {
             if (isConnected === false || verified === false) {
@@ -102,227 +117,159 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           }}
           accessibilityLabel={
             isConnected === false
-              ? 'Offline'
+              ? t('home.offlineA11y')
               : verified === false
-              ? 'Connection issue. Tap to retry.'
-              : `${onlineCount ?? 0} players online`
+              ? t('home.connIssueA11y')
+              : onlineCount === 1
+              ? t('home.playersOnlineOne', { count: 1 })
+              : t('home.playersOnlineMany', { count: onlineCount ?? 0 })
           }
         >
           <View
             style={[
               styles.presenceDot,
+              { width: rs(8), height: rs(8), borderRadius: rs(4) },
               (isConnected === false || verified === false || (onlineCount ?? 0) === 0) &&
                 styles.presenceDotIdle,
             ]}
           />
-          <Text style={styles.presenceText}>
+          <Text style={[styles.presenceText, { fontSize: rs(12) }]}>
             {isConnected === false
-              ? "You're offline"
+              ? t('home.offline')
               : verified === false
-              ? 'Connection issue — tap to retry'
+              ? t('home.connIssue')
               : onlineCount === null
-              ? 'Checking…'
-              : onlineCount > 0
-              ? `${onlineCount} player${onlineCount === 1 ? '' : 's'} online`
-              : 'No players online yet'}
+              ? t('home.checking')
+              : onlineCount === 1
+              ? t('home.playersOnlineOne', { count: 1 })
+              : onlineCount > 1
+              ? t('home.playersOnlineMany', { count: onlineCount })
+              : t('home.noPlayers')}
           </Text>
         </TouchableOpacity>
 
-        {/* Hero Quick Match Action — starts directly with defaults. Online
-            only: offline taps get the dialog instead of a dead screen. */}
-        <View style={styles.heroSection}>
+        {/* Hero card: framed Quick Match action. Online only: offline taps
+            get the dialog instead of a dead screen. */}
+        <View style={[styles.heroCard, { minHeight: rs(148) }]}>
+          <Text style={[styles.heroTitle, { fontSize: rs(20) }]}>{t('home.quickMatch')}</Text>
+          <Text style={[styles.heroDesc, { fontSize: rs(12) }]}>{t('home.quickMatchDesc')}</Text>
           <TouchableOpacity
-            style={styles.quickMatchButton}
+            style={[styles.quickMatchButton, { height: rs(52) }]}
             activeOpacity={0.88}
             onPress={guarded(() => runWhenOnline(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'quick')))}
           >
-            <Feather name="play" size={20} color="#0F172A" />
-            <Text style={styles.quickMatchText}>Quick Match</Text>
+            <Feather name="play" size={rs(20)} color={THEME.colors.primary} />
+            <Text style={[styles.quickMatchText, { fontSize: rs(16) }]}>{t('home.play')}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Mode Cards List */}
-        <View style={styles.modeCardsList}>
-          {/* Custom Online Match Card */}
-          <TouchableOpacity
-            style={styles.modeCard}
-            activeOpacity={0.75}
-            onPress={guarded(() => runWhenOnline(() => onOpenCustomOnline()))}
-          >
-            <View style={styles.modeCardLeft}>
-              <View style={styles.modeIconCircle}>
-                <Feather name="settings" size={20} color={THEME.colors.textPrimary} />
-              </View>
-              <View style={styles.modeTextContainer}>
-                <Text style={styles.modeCardTitle}>Custom Online Match</Text>
-                <Text style={styles.modeCardDesc}>Classic, Rush, Race with custom rules</Text>
-              </View>
-            </View>
-            <View style={styles.modeCardRight}>
-              <View style={styles.badgePill}>
-                <Text style={styles.badgeText}>CUSTOM</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
-            </View>
-          </TouchableOpacity>
-
-          {/* Vs AI Card */}
-          <TouchableOpacity
-            style={styles.modeCard}
-            activeOpacity={0.75}
-            onPress={guarded(() => onOpenSetup('ai'))}
-          >
-            <View style={styles.modeCardLeft}>
-              <View style={styles.modeIconCircle}>
-                <Feather name="cpu" size={20} color={THEME.colors.textPrimary} />
-              </View>
-              <View style={styles.modeTextContainer}>
-                <Text style={styles.modeCardTitle}>Vs AI</Text>
-                <Text style={styles.modeCardDesc}>1v1, Race, Rush Center</Text>
-              </View>
-            </View>
-            <View style={styles.modeCardRight}>
-              <View style={styles.badgePill}>
-                <Text style={styles.badgeText}>SOLO</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
-            </View>
-          </TouchableOpacity>
-
-          {/* Local Pass & Play Card */}
-          <TouchableOpacity
-            style={styles.modeCard}
-            activeOpacity={0.75}
-            onPress={guarded(() => onOpenSetup('local'))}
-          >
-            <View style={styles.modeCardLeft}>
-              <View style={styles.modeIconCircle}>
-                <Feather name="smartphone" size={20} color={THEME.colors.textPrimary} />
-              </View>
-              <View style={styles.modeTextContainer}>
-                <Text style={styles.modeCardTitle}>Local</Text>
-                <Text style={styles.modeCardDesc}>Pass & play on one device</Text>
-              </View>
-            </View>
-            <View style={styles.modeCardRight}>
-              <View style={styles.badgePill}>
-                <Text style={styles.badgeText}>PASS & PLAY</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
-            </View>
-          </TouchableOpacity>
-
-          {/* Private Rooms Card */}
-          <TouchableOpacity
-            style={styles.modeCard}
-            activeOpacity={0.75}
-            onPress={guarded(() => runWhenOnline(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'rooms')))}
-          >
-            <View style={styles.modeCardLeft}>
-              <View style={styles.modeIconCircle}>
-                <Feather name="unlock" size={20} color={THEME.colors.textPrimary} />
-              </View>
-              <View style={styles.modeTextContainer}>
-                <Text style={styles.modeCardTitle}>Private Rooms</Text>
-                <Text style={styles.modeCardDesc}>Create or join custom lobby</Text>
-              </View>
-            </View>
-            <View style={styles.modeCardRight}>
-              <View style={styles.badgePill}>
-                <Text style={styles.badgeText}>WITH FRIENDS</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
-            </View>
-          </TouchableOpacity>
+        {/* Modes section header */}
+        <View style={styles.sectionRow}>
+          <Text style={[styles.sectionTitle, { fontSize: rs(11) }]}>{t('home.modes')}</Text>
         </View>
 
-        {/* Objectives & Rules Section */}
-        <View style={styles.rulesSection}>
-          <View style={styles.rulesSectionHeader}>
-            <View style={styles.rulesHeaderTitleRow}>
-              <Feather name="book" size={16} color={THEME.colors.primary} />
-              <Text style={styles.rulesSectionTitle}>Objectives & Rules</Text>
-            </View>
-            <Text style={styles.rulesSectionSub}>Swipe for modes</Text>
+        {/* Mode Grid (2x2) */}
+        <View style={styles.modeGrid}>
+          <View style={styles.modeGridRow}>
+            {/* Custom Online Match Tile */}
+            <TouchableOpacity
+              style={[styles.modeCard, { paddingVertical: rs(14), paddingHorizontal: rs(14) }]}
+              activeOpacity={0.75}
+              onPress={guarded(() => runWhenOnline(() => onOpenCustomOnline()))}
+            >
+              <View style={[styles.modeIconCircle, { width: rs(32), height: rs(32) }]}>
+                <Feather name="settings" size={rs(15)} color={THEME.colors.textPrimary} />
+              </View>
+              <Text style={[styles.modeCardTitle, { fontSize: rs(14) }]}>{t('home.customMatch')}</Text>
+              <Text style={[styles.modeCardDesc, { fontSize: rs(11) }]} numberOfLines={2}>{t('home.customMatchDesc')}</Text>
+            </TouchableOpacity>
+
+            {/* Vs AI Tile */}
+            <TouchableOpacity
+              style={[styles.modeCard, { paddingVertical: rs(14), paddingHorizontal: rs(14) }]}
+              activeOpacity={0.75}
+              onPress={guarded(() => onOpenSetup('ai'))}
+            >
+              <View style={[styles.modeIconCircle, { width: rs(32), height: rs(32) }]}>
+                <Feather name="cpu" size={rs(15)} color={THEME.colors.textPrimary} />
+              </View>
+              <Text style={[styles.modeCardTitle, { fontSize: rs(14) }]}>{t('home.vsAi')}</Text>
+              <Text style={[styles.modeCardDesc, { fontSize: rs(11) }]} numberOfLines={2}>{t('home.vsAiDesc')}</Text>
+            </TouchableOpacity>
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.rulesCarousel}
-          >
-            {/* Mode 1: Classic (9×9) */}
-            <View style={styles.ruleCard}>
-              <View style={styles.ruleMiniIcon}>
-                <View style={[styles.microOrb, { backgroundColor: THEME.colors.primary }]} />
-                <View style={styles.microWallBar} />
-                <View style={[styles.microOrb, { backgroundColor: THEME.colors.secondary }]} />
+          <View style={styles.modeGridRow}>
+            {/* Local Pass & Play Tile */}
+            <TouchableOpacity
+              style={[styles.modeCard, { paddingVertical: rs(14), paddingHorizontal: rs(14) }]}
+              activeOpacity={0.75}
+              onPress={guarded(() => onOpenSetup('local'))}
+            >
+              <View style={[styles.modeIconCircle, { width: rs(32), height: rs(32) }]}>
+                <Feather name="smartphone" size={rs(15)} color={THEME.colors.textPrimary} />
               </View>
-              <View style={styles.ruleCardInfo}>
-                <View style={styles.ruleCardTitleRow}>
-                  <Text style={styles.ruleCardTitle}>Classic (9×9)</Text>
-                  <View style={styles.ruleTag}>
-                    <Text style={styles.ruleTagText}>STANDARD</Text>
-                  </View>
-                </View>
-                <Text style={styles.ruleCardDesc} numberOfLines={3}>
-                  Reach the opposing baseline to win. Place tactile barriers each turn to impede movement. Complete enclosure is forbidden.
-                </Text>
-              </View>
-            </View>
+              <Text style={[styles.modeCardTitle, { fontSize: rs(14) }]}>{t('home.local')}</Text>
+              <Text style={[styles.modeCardDesc, { fontSize: rs(11) }]} numberOfLines={2}>{t('home.localDesc')}</Text>
+            </TouchableOpacity>
 
-            {/* Mode 2: Race Mode */}
-            <View style={styles.ruleCard}>
-              <View style={styles.ruleMiniIcon}>
-                <View style={styles.microRow}>
-                  <View style={[styles.microOrb, { backgroundColor: THEME.colors.primary }]} />
-                  <Feather name="zap" size={12} color={THEME.colors.primary} />
-                </View>
-                <Feather name="clock" size={14} color={THEME.colors.textMuted} />
-                <View style={[styles.microOrb, { backgroundColor: THEME.colors.secondary }]} />
+            {/* Private Rooms Tile */}
+            <TouchableOpacity
+              style={[styles.modeCard, { paddingVertical: rs(14), paddingHorizontal: rs(14) }]}
+              activeOpacity={0.75}
+              onPress={guarded(() => runWhenOnline(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'rooms')))}
+            >
+              <View style={[styles.modeIconCircle, { width: rs(32), height: rs(32) }]}>
+                <Feather name="unlock" size={rs(15)} color={THEME.colors.textPrimary} />
               </View>
-              <View style={styles.ruleCardInfo}>
-                <View style={styles.ruleCardTitleRow}>
-                  <Text style={styles.ruleCardTitle}>Race Mode</Text>
-                  <View style={styles.ruleTag}>
-                    <Text style={styles.ruleTagText}>SPEED</Text>
-                  </View>
-                </View>
-                <Text style={styles.ruleCardDesc} numberOfLines={3}>
-                  First orb to navigate the maze and cross the opposing baseline wins. Limited wall pool and blitz turn timers test pathfinding speed.
-                </Text>
-              </View>
-            </View>
-
-            {/* Mode 3: Rush Center */}
-            <View style={styles.ruleCard}>
-              <View style={styles.ruleMiniIcon}>
-                <View style={[styles.microOrb, { backgroundColor: THEME.colors.primary }]} />
-                <View style={styles.nexusTargetBox}>
-                  <View style={styles.nexusInnerDot} />
-                </View>
-                <View style={[styles.microOrb, { backgroundColor: THEME.colors.secondary }]} />
-              </View>
-              <View style={styles.ruleCardInfo}>
-                <View style={styles.ruleCardTitleRow}>
-                  <Text style={styles.ruleCardTitle}>Rush Center</Text>
-                  <View style={styles.ruleTag}>
-                    <Text style={styles.ruleTagText}>NEXUS</Text>
-                  </View>
-                </View>
-                <Text style={styles.ruleCardDesc} numberOfLines={3}>
-                  Be the first to secure the center 3x3 nexus zone and hold position, or advance past barriers into the opponent's core territory.
-                </Text>
-              </View>
-            </View>
-          </ScrollView>
+              <Text style={[styles.modeCardTitle, { fontSize: rs(14) }]}>{t('home.rooms')}</Text>
+              <Text style={[styles.modeCardDesc, { fontSize: rs(11) }]} numberOfLines={2}>{t('home.roomsDesc')}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Journey teaser */}
+        <View style={styles.journeyCard}>
+          <View style={styles.journeyThumb}>
+            <Svg width={34} height={34} viewBox="0 0 48 48">
+              <Path
+                d="M8 40 C 18 36 10 26 22 22 S 38 18 40 8"
+                fill="none"
+                stroke={THEME.colors.textMuted}
+                strokeWidth={2.5}
+                strokeLinecap="round"
+                strokeDasharray="0.5 6"
+              />
+              <Circle cx={8} cy={40} r={3.5} fill="none" stroke={THEME.colors.textMuted} strokeWidth={2} />
+              <Circle cx={40} cy={8} r={4.5} fill={THEME.colors.primary} />
+            </Svg>
+            <View style={styles.journeyLock}>
+              <Feather name="lock" size={10} color={THEME.colors.textMuted} />
+            </View>
+          </View>
+          <View style={styles.journeyMeta}>
+            <Text style={styles.journeyTitle}>{t('home.journey')}</Text>
+            <Text style={styles.journeyDesc} numberOfLines={2}>
+              {t('home.journeyDesc')}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.journeyButton}
+            activeOpacity={0.75}
+            onPress={() => toast.show(t('home.journeySoon'))}
+            accessibilityRole="button"
+            accessibilityLabel={t('home.journeyA11y')}
+          >
+            <Text style={styles.journeyButtonText}>{t('home.start')}</Text>
+            <Feather name="arrow-right" size={14} color={THEME.colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
       </ScrollView>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -385,7 +332,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 28,
+    paddingBottom: 120, // Clears the floating nav overlay.
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',
@@ -411,32 +358,41 @@ const styles = StyleSheet.create({
     color: THEME.colors.textMuted,
     letterSpacing: 0.8,
   },
-  heroSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  heroCard: {
     width: '100%',
+    gap: 8,
+    backgroundColor: THEME.colors.primary,
+    borderRadius: 16,
+    padding: 14,
+  },
+  heroTitle: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'left',
+  },
+  heroDesc: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 12,
+    color: '#FFFFFF',
+    textAlign: 'left',
   },
   quickMatchButton: {
-    flex: 1,
+    width: '100%',
     height: 52,
-    // Lime brand fill. The label MUST stay dark ink: white on this lime
-    // measures 1.31:1 (invisible); #0F172A measures 13.67:1.
-    backgroundColor: '#76FF03',
-    borderRadius: THEME.radius.lg,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#76FF03',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 3,
+    gap: 14,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   quickMatchText: {
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.inverseLabel,
+    color: THEME.colors.primary,
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
@@ -467,190 +423,131 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: THEME.colors.textSecondary,
   },
-  modeCardsList: {
-    width: '100%',
-    gap: 8,
-  },
-  modeCard: {
-    width: '100%',
-    backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderRadius: THEME.radius.lg,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceContainer,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    ...THEME.shadows.card,
-  },
-  modeCardLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  modeIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: THEME.radius.lg,
-    backgroundColor: THEME.colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modeTextContainer: {
-    flex: 1,
-  },
-  modeCardTitle: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 15,
-    fontWeight: '700',
-    color: THEME.colors.onSurface,
-  },
-  modeCardDesc: {
-    fontFamily: THEME.fonts.medium,
-    fontSize: 12,
-    color: THEME.colors.onSurfaceVariant,
-    marginTop: 2,
-    fontWeight: '400',
-  },
-  modeCardRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  badgePill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: THEME.radius.sm,
-    backgroundColor: THEME.colors.surfaceContainerLow,
-  },
-  badgeText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 10,
-    fontWeight: '700',
-    color: THEME.colors.textSecondary,
-    letterSpacing: 0.5,
-  },
-  rulesSection: {
-    marginTop: 4,
-    gap: 8,
-  },
-  rulesSectionHeader: {
+  sectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 2,
+    marginBottom: -6,
   },
-  rulesHeaderTitleRow: {
+  sectionTitle: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
+    letterSpacing: 1,
+  },
+  modeGrid: {
+    width: '100%',
+    gap: 8,
+  },
+  modeGridRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
-  rulesSectionTitle: {
+  modeCard: {
+    flex: 1,
+    aspectRatio: 1.25,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    gap: 12,
+    ...THEME.shadows.card,
+  },
+  modeIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: THEME.colors.surfaceContainerLow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: -8,
+  },
+  modeCardTitle: {
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
     color: THEME.colors.onSurface,
+    // Absorbs the square's leftover space here, so the gap lives between
+    // the icon and the text — not pooled under it — on every tile.
+    marginTop: 'auto',
   },
-  rulesSectionSub: {
-    fontFamily: THEME.fonts.semiBold,
+  modeCardDesc: {
+    fontFamily: THEME.fonts.medium,
     fontSize: 11,
     color: THEME.colors.onSurfaceVariant,
-    fontWeight: '500',
-    textTransform: 'uppercase',
+    fontWeight: '400',
+    marginTop: -4,
   },
-  rulesCarousel: {
-    gap: 10,
-    paddingVertical: 4,
-  },
-  ruleCard: {
-    width: 280,
+  journeyCard: {
+    width: '100%',
     backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderRadius: THEME.radius.lg,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: THEME.colors.surfaceContainer,
     padding: 12,
     flexDirection: 'row',
-    gap: 12,
     alignItems: 'center',
+    gap: 12,
     ...THEME.shadows.card,
   },
-  ruleMiniIcon: {
+  journeyThumb: {
     width: 52,
     height: 52,
-    borderRadius: 8,
+    borderRadius: 12,
     backgroundColor: THEME.colors.surfaceContainerLow,
     borderWidth: 1,
-    borderColor: THEME.colors.surfaceContainerHigh,
-    padding: 6,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  microOrb: {
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-  },
-  microWallBar: {
-    width: 20,
-    height: 3,
-    backgroundColor: 'rgba(67, 70, 85, 0.4)',
-    borderRadius: 1.5,
-  },
-  microRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  nexusTargetBox: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: THEME.colors.primary,
-    backgroundColor: THEME.colors.primaryLight,
+    borderColor: THEME.colors.surfaceContainer,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  nexusInnerDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: THEME.colors.primary,
-  },
-  ruleCardInfo: {
-    flex: 1,
-    gap: 3,
-  },
-  ruleCardTitleRow: {
-    flexDirection: 'row',
+  journeyLock: {
+    position: 'absolute',
+    right: -5,
+    bottom: -5,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: THEME.colors.outlineVariant,
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
-  ruleCardTitle: {
+  journeyMeta: {
+    flex: 1,
+    gap: 1,
+  },
+  journeyTitle: {
     fontFamily: THEME.fonts.bold,
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: '700',
     color: THEME.colors.onSurface,
   },
-  ruleTag: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    backgroundColor: THEME.colors.surfaceContainerHigh,
-  },
-  ruleTagText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 9,
-    fontWeight: '700',
-    color: THEME.colors.primary,
-  },
-  ruleCardDesc: {
+  journeyDesc: {
     fontFamily: THEME.fonts.regular,
     fontSize: 11,
     color: THEME.colors.onSurfaceVariant,
     lineHeight: 15,
+  },
+  journeyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: THEME.colors.outlineVariant,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+  },
+  journeyButtonText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.textPrimary,
   },
 });

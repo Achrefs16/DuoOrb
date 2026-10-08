@@ -2,7 +2,8 @@ import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ChallengeDto } from '@duoorb/protocol';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { modeLabel } from '../matchModes';
 import { OutgoingChallenge } from '../network/useChallenge';
 import {
@@ -40,6 +41,8 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
   onCancelWaiting,
   onCancelJoining,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   if (!incoming && !outgoing && !notice && !joining) return null;
 
   return (
@@ -57,11 +60,11 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
               <ActivityIndicator size="small" color={THEME.colors.primary} />
               <View style={styles.meta}>
                 <Text style={styles.title} numberOfLines={1}>
-                  Joining match…
+                  {t('challengeToast.joining')}
                 </Text>
-                <Text style={styles.sub}>Getting the board ready</Text>
+                <Text style={styles.sub}>{t('challengeToast.gettingReady')}</Text>
               </View>
-              <ToastDecline label="Cancel" onPress={onCancelJoining} />
+              <ToastDecline label={t('report.cancel')} onPress={onCancelJoining} />
             </View>
           </ToastCard>
         </ToastAnimatedCard>
@@ -85,7 +88,7 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
                 <Text style={styles.title} numberOfLines={1}>
                   {incoming.fromDisplayName}
                 </Text>
-                <Text style={styles.sub}>wants to play you</Text>
+                <Text style={styles.sub}>{t('challengeToast.wantsToPlay')}</Text>
               </View>
               <View style={styles.swords}>
                 <MaterialCommunityIcons name="sword-cross" size={20} color={THEME.colors.primary} />
@@ -103,18 +106,20 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
               </View>
               <View style={styles.pill}>
                 <Text style={styles.pillText}>
-                  {incoming.wallsEach >= 99 ? '∞ walls' : `${incoming.wallsEach} walls`}
+                  {incoming.wallsEach >= 99
+                    ? t('challengeToast.infiniteWalls')
+                    : t('challengeToast.wallsCount', { count: incoming.wallsEach })}
                 </Text>
               </View>
             </View>
             <View style={styles.btnRow}>
               <ToastAccept
-                label="Accept"
+                label={t('challengeToast.accept')}
                 onPress={onAccept}
                 flex
                 icon={<Feather name="check" size={15} color={THEME.colors.onPrimary} />}
               />
-              <ToastDecline label="Decline" onPress={onDecline} />
+              <ToastDecline label={t('challengeToast.decline')} onPress={onDecline} />
             </View>
           </ToastCard>
         </ToastAnimatedCard>
@@ -132,7 +137,7 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
               <ActivityIndicator size="small" color={THEME.colors.primary} />
               <View style={styles.meta}>
                 <Text style={styles.title} numberOfLines={1}>
-                  Waiting for {outgoing.toName}…
+                  {t('challengeToast.waitingFor', { name: outgoing.toName })}
                 </Text>
                 <Text style={styles.sub}>
                   {modeLabel(outgoing.challenge.mode)} ·{' '}
@@ -142,7 +147,7 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
                   )}
                 </Text>
               </View>
-              <ToastDecline label="Cancel" onPress={onCancelWaiting} />
+              <ToastDecline label={t('report.cancel')} onPress={onCancelWaiting} />
             </View>
           </ToastCard>
         </ToastAnimatedCard>
@@ -154,7 +159,7 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   card: { maxWidth: 380, gap: 10 },
   topRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   avatar: {

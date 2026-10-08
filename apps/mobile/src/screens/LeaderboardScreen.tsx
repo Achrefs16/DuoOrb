@@ -8,9 +8,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import { api, LeaderboardEntryDto } from '../network/apiClient';
 import { useSession } from '../network/session';
 import { useConnectivity } from '../network/useConnectivity';
@@ -20,6 +20,7 @@ import { AdBanner } from '../components/AdBanner';
 import { NoConnectionSection } from '../components/NoConnection';
 import { kindOf, sectionKind, type ErrorKind } from '../network/errors';
 import { EmptyState } from '../components/StateViews';
+import { useTranslation } from '../i18n';
 
 interface LeaderboardScreenProps {
   onSelectPlayer: (player: { userId: string; username: string }) => void;
@@ -28,177 +29,73 @@ interface LeaderboardScreenProps {
 
 const PAGE_SIZE = 50;
 
-type BoardTier = 'gold' | 'silver' | 'bronze' | 'top10' | 'top50' | 'top100' | 'plain';
+/** Medal finishes: glossy gradient medallions, white number, subtle depth. */
+const MEDALS: Record<number, { stops: [string, string] }> = {
+  1: { stops: ['#FFD972', '#E8A415'] },
+  2: { stops: ['#E8EDF2', '#9AA3AE'] },
+  3: { stops: ['#E8A15C', '#A8641F'] },
+};
 
-/** Rank determines the tier — never the player. Same range, same card. */
-function tierOfRank(rank: number): BoardTier {
-  if (rank === 1) return 'gold';
-  if (rank === 2) return 'silver';
-  if (rank === 3) return 'bronze';
-  if (rank <= 10) return 'top10';
-  if (rank <= 50) return 'top50';
-  if (rank <= 100) return 'top100';
-  return 'plain';
-}
-
-interface TierStyle {
-  /** Card gradient stops (diagonal). Null = flat `card`. */
-  gradient: string[] | null;
-  card: string;
-  border: string;
-  borderWidth: number;
-  /** Left accent bar stops (vertical). Single stop = solid. Null = none. */
-  accent: string[] | null;
-  rankColor: string;
-  /** Medal icon above the number, medal tiers only. */
-  rankIcon?: 'workspace-premium' | 'military-tech';
-  rankIconColor: string;
-  /** Avatar ring gradient stops + padding (the ring width). */
-  ring: string[];
-  ringWidth: number;
-  nameColor: string;
-  winsColor: string;
-  statsColor: string;
-  dotColor: string;
-  ratingColor: string;
-  ratingSize: number;
-  shadow: boolean;
-}
-
-/**
- * The six card styles, progressively more neutral as the rank drops.
- * Same range, same card — the rank only picks the tier.
- */
-const TIER_STYLE: Record<BoardTier, TierStyle> = {
-  gold: {
-    gradient: ['#FFFBEB', '#FEF3C7', '#FDE68A', '#F59E0B', '#D97706'],
-    card: '#FFFBEB',
-    border: '#F59E0B',
-    borderWidth: 1.5,
-    accent: ['#FDE68A', '#B45309'],
-    rankColor: '#78350F',
-    rankIcon: 'workspace-premium',
-    rankIconColor: '#B45309',
-    ring: ['#FFFFFF', '#D97706'],
-    ringWidth: 2,
-    nameColor: '#451A24',
-    winsColor: '#451A24',
-    statsColor: '#78350F',
-    dotColor: '#B45309',
-    ratingColor: '#451A24',
-    ratingSize: 18,
-    shadow: true,
-  },
-  silver: {
-    gradient: ['#FFFFFF', '#F1F5F9', '#E2E8F0', '#F8FAFC', '#CBD5E1'],
-    card: '#F1F5F9',
-    border: '#94A3B8',
-    borderWidth: 1.5,
-    accent: ['#FFFFFF', '#64748B'],
-    rankColor: '#1E293B',
-    rankIcon: 'military-tech',
-    rankIconColor: '#475569',
-    ring: ['#FFFFFF', '#64748B'],
-    ringWidth: 2,
-    nameColor: '#0F172A',
-    winsColor: '#1E293B',
-    statsColor: '#475569',
-    dotColor: '#64748B',
-    ratingColor: '#0F172A',
-    ratingSize: 18,
-    shadow: true,
-  },
-  bronze: {
-    gradient: ['#FFF7F2', '#FAE8DF', '#F2D4C2', '#DFB598', '#C99372'],
-    card: '#FFF7F2',
-    border: '#BA805E',
-    borderWidth: 1.5,
-    accent: ['#FFEADB', '#8A4E28'],
-    rankColor: '#5C2B0C',
-    rankIcon: 'military-tech',
-    rankIconColor: '#8A4823',
-    ring: ['#FFFFFF', '#A56138'],
-    ringWidth: 2,
-    nameColor: '#4A2108',
-    winsColor: '#4A2108',
-    statsColor: '#6E3210',
-    dotColor: '#9C5832',
-    ratingColor: '#4A2108',
-    ratingSize: 18,
-    shadow: true,
-  },
-  top10: {
-    gradient: null,
-    card: '#FFFFFF',
-    border: '#E2E5EC',
-    borderWidth: 1,
-    accent: ['#5B67D8', '#5B67D8'],
-    rankColor: '#343946',
-    rankIconColor: '#343946',
-    ring: ['#DDE1E8', '#DDE1E8'],
-    ringWidth: 1,
-    nameColor: '#171A24',
-    winsColor: '#171A24',
-    statsColor: '#747987',
-    dotColor: '#CBD0DB',
-    ratingColor: '#171A24',
-    ratingSize: 14,
-    shadow: true,
-  },
-  top50: {
-    gradient: null,
-    card: '#FFFFFF',
-    border: '#E3E6ED',
-    borderWidth: 1,
-    accent: ['#4FAE7B', '#4FAE7B'],
-    rankColor: '#343946',
-    rankIconColor: '#343946',
-    ring: ['#DDE1E8', '#DDE1E8'],
-    ringWidth: 1,
-    nameColor: '#171A24',
-    winsColor: '#171A24',
-    statsColor: '#747987',
-    dotColor: '#CBD0DB',
-    ratingColor: '#171A24',
-    ratingSize: 14,
-    shadow: false,
-  },
-  top100: {
-    gradient: null,
-    card: '#FFFFFF',
-    border: '#E5E7EC',
-    borderWidth: 1,
-    accent: ['#8B93A3', '#8B93A3'],
-    rankColor: '#4A5060',
-    rankIconColor: '#4A5060',
-    ring: ['#E0E3E8', '#E0E3E8'],
-    ringWidth: 1,
-    nameColor: '#171A24',
-    winsColor: '#171A24',
-    statsColor: '#7A808C',
-    dotColor: '#CBD0DB',
-    ratingColor: '#171A24',
-    ratingSize: 14,
-    shadow: false,
-  },
-  plain: {
-    gradient: null,
-    card: '#FFFFFF',
-    border: '#E5E7EC',
-    borderWidth: 1,
-    accent: null,
-    rankColor: '#4A5060',
-    rankIconColor: '#4A5060',
-    ring: ['#E0E3E8', '#E0E3E8'],
-    ringWidth: 1,
-    nameColor: '#171A24',
-    winsColor: '#171A24',
-    statsColor: '#7A808C',
-    dotColor: '#CBD0DB',
-    ratingColor: '#171A24',
-    ratingSize: 14,
-    shadow: false,
-  },
+const PodiumSpot: React.FC<{
+  entry: LeaderboardEntryDto;
+  avatarSize: number;
+  barHeight: number;
+  isMe: boolean;
+  onPress: () => void;
+}> = ({ entry, avatarSize, barHeight, isMe, onPress }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
+  const medal = MEDALS[entry.rank] ?? null;
+  const name = entry.displayName || entry.username;
+  return (
+    <TouchableOpacity style={styles.spot} activeOpacity={0.8} onPress={onPress}>
+      <View style={{ width: avatarSize, height: avatarSize }}>
+        <View
+          style={[
+            styles.podiumAvatar,
+            {
+              width: avatarSize,
+              height: avatarSize,
+              borderRadius: avatarSize / 2,
+            },
+          ]}
+        >
+          <Text style={[styles.podiumInitial, { fontSize: Math.round(avatarSize * 0.36) }]}>
+            {(name.charAt(0) || '?').toUpperCase()}
+          </Text>
+        </View>
+        {medal && (
+          <LinearGradient
+            colors={medal.stops}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.medalBadge}
+          >
+            <Text style={styles.medalNum}>{entry.rank}</Text>
+          </LinearGradient>
+        )}
+      </View>
+      <Text style={styles.spotName} numberOfLines={1}>
+        {name}
+      </Text>
+      {isMe && (
+        <View style={styles.youPill}>
+          <Text style={styles.youPillText}>{t('leaderboard.you')}</Text>
+        </View>
+      )}
+      <View style={styles.scorePill}>
+        <Text style={styles.scorePillText}>
+          {Math.round(entry.rating).toLocaleString('en-US')}
+        </Text>
+      </View>
+      <LinearGradient
+        colors={[THEME.colors.surfaceContainerHigh, THEME.colors.background]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={[styles.bar, { height: barHeight }]}
+      />
+    </TouchableOpacity>
+  );
 };
 
 /**
@@ -211,6 +108,8 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
   onSelectPlayer,
   onQuickMatch,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<LeaderboardEntryDto[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -273,8 +172,8 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
   }, [loadingMore, centered, offset, total]);
 
   useEffect(() => {
-    // Instant restore, silent refresh: header, mode pills and lock banner
-    // render on the first frame either way.
+    // Instant restore, silent refresh: header and board render on the
+    // first frame either way.
     if (leaderboardCache) {
       setEntries(leaderboardCache.entries);
       setTotal(leaderboardCache.total);
@@ -296,7 +195,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
         listRef.current?.scrollToIndex({ index, viewPosition: 0.2, animated: true });
       } catch {
         try {
-          listRef.current?.scrollToOffset({ offset: Math.max(0, index * 64), animated: false });
+          listRef.current?.scrollToOffset({ offset: Math.max(0, index * 72), animated: false });
         } catch {
           // List not laid out yet; the row is still in the data.
         }
@@ -325,151 +224,104 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
       setMyWindowOffset(res.windowOffset ?? 0);
       setCentered(true);
     } catch {
-      setRankError('Could not load your rank. Try again.');
+      setRankError(t('leaderboard.rankError'));
     }
-  }, [isGuest]);
+  }, [isGuest, t]);
 
-  const renderItem = ({ item, index }: { item: LeaderboardEntryDto; index: number }) => {
-    const tierKey = tierOfRank(item.rank);
-    const tier = TIER_STYLE[tierKey];
-    // Medals keep their gradient + ring medallion; the flatter geometry
-    // (smaller radius, square-ish avatar) applies to every tier.
-    const medal = tier.gradient !== null;
-    // Connected list: consecutive same-tier rows (never medals) share one
-    // continuous card — no gap, shared side borders, hairlines between,
-    // rounded only at the group's outer corners.
-    const groupable = !medal;
-    const prevSame =
-      groupable && index > 0 && tierOfRank(entries[index - 1].rank) === tierKey;
-    const nextSame =
-      groupable &&
-      index < entries.length - 1 &&
-      tierOfRank(entries[index + 1].rank) === tierKey;
-    // The viewer's own row keeps its YOU pill inside the tier card — the
-    // card itself never changes for it.
-    const isMe = centered && item.userId === myUserId;
+  // Podium owns ranks 1-3 on the top of the board only — never inside a
+  // centered My Rank window, which renders every row in its window.
+  const showPodium = !centered && entries.length >= 3 && entries[0].rank === 1;
+  const rows = showPodium ? entries.slice(3) : entries;
 
+  const renderPodium = () => {
+    if (!showPodium) return null;
+    const [first, second, third] = entries;
+    const openPlayer = (entry: LeaderboardEntryDto) => () =>
+      onSelectPlayer({ userId: entry.userId, username: entry.username });
+    return (
+      <View style={styles.podiumWrap}>
+        <View style={styles.podiumRow}>
+          <PodiumSpot
+            entry={second}
+            avatarSize={68}
+            barHeight={76}
+            isMe={second.userId === myUserId}
+            onPress={openPlayer(second)}
+          />
+          <PodiumSpot
+            entry={first}
+            avatarSize={86}
+            barHeight={116}
+            isMe={first.userId === myUserId}
+            onPress={openPlayer(first)}
+          />
+          <PodiumSpot
+            entry={third}
+            avatarSize={68}
+            barHeight={58}
+            isMe={third.userId === myUserId}
+            onPress={openPlayer(third)}
+          />
+        </View>
+      </View>
+    );
+  };
+
+  const renderRow = ({ item }: { item: LeaderboardEntryDto }) => {
+    const isMe = myUserId != null && item.userId === myUserId;
+    const medal = MEDALS[item.rank] ?? null;
+    const name = item.displayName || item.username;
     return (
       <TouchableOpacity
-        style={[
-          styles.card,
-          {
-            backgroundColor: tier.gradient ? undefined : tier.card,
-            borderColor: tier.border,
-            borderWidth: tier.borderWidth,
-            borderRadius: 8,
-          },
-          // A touching row below hides this one's bottom shadow; the group
-          // keeps the top shadow of its first row and the full shadow of
-          // its last instead of a dark seam between every row.
-          tier.shadow && !nextSame && THEME.shadows.card,
-          groupable && {
-            // Absorb the list gap so same-tier rows touch; outer corners
-            // round only at the group's ends.
-            marginTop: prevSame ? -8 : 0,
-            borderWidth: 0,
-            borderLeftWidth: 1,
-            borderRightWidth: 1,
-            borderColor: tier.border,
-            borderTopWidth: prevSame ? 0 : 1,
-            borderTopLeftRadius: prevSame ? 0 : 8,
-            borderTopRightRadius: prevSame ? 0 : 8,
-            borderBottomWidth: 1,
-            borderBottomColor: nextSame ? THEME.colors.surfaceMuted : tier.border,
-            borderBottomLeftRadius: nextSame ? 0 : 8,
-            borderBottomRightRadius: nextSame ? 0 : 8,
-          },
-        ]}
+        style={styles.row}
         activeOpacity={0.7}
         onPress={() => onSelectPlayer({ userId: item.userId, username: item.username })}
       >
-        {tier.gradient && (
+        {medal ? (
           <LinearGradient
-            colors={tier.gradient as [string, string, ...string[]]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.cardGradient}
-          />
-        )}
-        {tier.accent && (
-          <LinearGradient
-            colors={tier.accent as [string, string, ...string[]]}
+            colors={medal.stops}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
-            style={[
-              styles.accent,
-              {
-                // One continuous line per connected group: segments meet
-                // exactly at the row joints, rounded only at the group's
-                // ends. Inset by the border so it never pokes past the edge.
-                // Medal cards are standalone, so theirs is always complete.
-                left: 1,
-                width: medal ? 6 : 4,
-                top: prevSame ? 0 : 1,
-                bottom: nextSame ? 0 : 1,
-                borderTopLeftRadius: prevSame ? 0 : 7,
-                borderBottomLeftRadius: nextSame ? 0 : 7,
-              },
-            ]}
-          />
-        )}
-
-        <View style={styles.rankCluster}>
-          {tier.rankIcon && (
-            <MaterialIcons name={tier.rankIcon} size={18} color={tier.rankIconColor} />
-          )}
-          <Text style={[styles.rankNum, { color: tier.rankColor }]}>{item.rank}</Text>
-        </View>
-
-        <LinearGradient
-          colors={tier.ring as [string, string, ...string[]]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[
-            styles.avatarRing,
-            { padding: tier.ringWidth, borderRadius: 6 },
-          ]}
-        >
-          <View
-            style={[
-              styles.avatarInner,
-              { backgroundColor: '#F4F5F7', borderRadius: 4 },
-            ]}
+            style={styles.rankBadge}
           >
-            <View style={styles.avatarGloss} />
-            <Text style={[styles.avatarInitial, { color: tier.nameColor }]}>
-              {(item.username.charAt(0) || '?').toUpperCase()}
-            </Text>
-          </View>
-        </LinearGradient>
-
-        <View style={styles.playerDetails}>
-          <Text style={[styles.playerName, { color: tier.nameColor }]} numberOfLines={1}>
-            {item.username}
-            {item.isPremium === true && (
-              <Text>
-                {' '}<PremiumBadge />
-              </Text>
-            )}
-          </Text>
-          <Text style={[styles.playerStats, { color: tier.statsColor }]}>
-            <Text style={[styles.playerWins, { color: tier.winsColor }]}>{item.wins} W</Text>
-            <Text style={{ color: tier.dotColor }}> • </Text>
-            <Text>{item.winRate}% Win Rate</Text>
-          </Text>
-        </View>
-
-        {isMe ? (
-          <View style={styles.youPill}>
-            <Text style={styles.youPillText}>YOU</Text>
-          </View>
+            <Text style={[styles.rankNum, styles.rankNumMedal]}>{item.rank}</Text>
+          </LinearGradient>
         ) : (
-          <Text
-            style={[styles.ratingValue, { color: tier.ratingColor, fontSize: tier.ratingSize }]}
-          >
+          <View style={styles.rankBadge}>
+            <Text style={styles.rankNum}>{item.rank}</Text>
+          </View>
+        )}
+        <View style={styles.avatar}>
+          <Text style={styles.avatarInitial}>
+            {(name.charAt(0) || '?').toUpperCase()}
+          </Text>
+        </View>
+        <View style={styles.rowMeta}>
+          <View style={styles.rowNameLine}>
+            <Text style={styles.rowName} numberOfLines={1}>
+              {name}
+              {item.isPremium === true && (
+                <Text>
+                  {' '}<PremiumBadge />
+                </Text>
+              )}
+            </Text>
+            {isMe && (
+              <View style={styles.youPill}>
+                <Text style={styles.youPillText}>{t('leaderboard.you')}</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.rowSub}>
+            {t('leaderboard.matchesStats', { games: item.gamesPlayed, winRate: item.winRate })}
+          </Text>
+        </View>
+        <View style={styles.scoreBlock}>
+          <Text style={styles.score}>
             {Math.round(item.rating).toLocaleString('en-US')}
           </Text>
-        )}
+          <Text style={styles.pts}>{t('leaderboard.pts')}</Text>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -477,15 +329,15 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Leaderboard</Text>
+        <Text style={styles.title}>{t('leaderboard.title')}</Text>
         <TouchableOpacity
           style={styles.myRankBtn}
           activeOpacity={0.7}
           onPress={() => void handleMyRank()}
-          accessibilityLabel="My rank"
+          accessibilityLabel={t('leaderboard.myRank')}
           accessibilityRole="button"
         >
-          <Text style={styles.myRankBtnText}>My Rank</Text>
+          <Text style={styles.myRankBtnText}>{t('leaderboard.myRank')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -498,8 +350,8 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
       {loading && entries.length === 0 ? (
         // No placeholder rows on this page: the leaderboard is a numbered
         // table, so fake rank rows read as real (and wrong) standings.
-        // The header and pills render immediately and the cached window
-        // lands a beat later.
+        // The header renders immediately and the cached window lands a
+        // beat later.
         null
       ) : loadError ? (
         <NoConnectionSection
@@ -509,22 +361,24 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
       ) : entries.length === 0 ? (
         <View style={styles.emptyWrap}>
           <EmptyState
-            title="NO RANKINGS YET"
-            description="Play ranked matches to qualify for the global leaderboard."
+            title={t('leaderboard.noRankingsTitle')}
+            description={t('leaderboard.noRankingsDesc')}
           />
         </View>
       ) : (
         <FlatList
           ref={listRef}
-          data={entries}
+          data={rows}
           keyExtractor={(item) => item.userId}
-          renderItem={renderItem}
+          renderItem={renderRow}
+          windowSize={11}
+          ListHeaderComponent={renderPodium}
           contentContainerStyle={styles.listContent}
           onEndReached={() => void loadMore()}
           onEndReachedThreshold={0.5}
           onScrollToIndexFailed={(info) => {
             listRef.current?.scrollToOffset({
-              offset: Math.max(0, info.index * 64),
+              offset: Math.max(0, info.index * 72),
               animated: false,
             });
           }}
@@ -535,10 +389,10 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
                   style={styles.backToTopBtn}
                   activeOpacity={0.7}
                   onPress={() => void fetchLeaderboard()}
-                  accessibilityLabel="Back to top"
+                  accessibilityLabel={t('leaderboard.backToTop')}
                   accessibilityRole="button"
                 >
-                  <Text style={styles.backToTopText}>Back to top</Text>
+                  <Text style={styles.backToTopText}>{t('leaderboard.backToTop')}</Text>
                 </TouchableOpacity>
                 {/* Ad slot (P6, O2): below the pager, never above a button. */}
                 <AdBanner placement="list" />
@@ -547,7 +401,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
               <View style={styles.footer}>
                 {total > 0 && (
                   <Text style={styles.footerCount}>
-                    Showing {entries.length} of {total}
+                    {t('leaderboard.showingCount', { count: entries.length, total })}
                   </Text>
                 )}
                 {loadingMore ? (
@@ -558,10 +412,10 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
                       style={styles.loadMoreBtn}
                       activeOpacity={0.7}
                       onPress={() => void loadMore()}
-                      accessibilityLabel="Load more"
+                      accessibilityLabel={t('leaderboard.loadMore')}
                       accessibilityRole="button"
                     >
-                      <Text style={styles.loadMoreText}>Load more</Text>
+                      <Text style={styles.loadMoreText}>{t('leaderboard.loadMore')}</Text>
                     </TouchableOpacity>
                   )
                 )}
@@ -585,9 +439,9 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
         <View style={styles.overlay}>
           <View style={styles.overlayCard}>
             <GuestGate
-              title="Your rank needs saving"
-              message="Link Google to appear on leaderboard + save rank."
-              secondaryLabel="Not now"
+              title={t('leaderboard.guestRankTitle')}
+              message={t('leaderboard.guestRankDesc')}
+              secondaryLabel={t('premium.notNow')}
               onSecondary={() => setShowGuestCard(false)}
               mini
             />
@@ -622,9 +476,9 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
                 color={THEME.colors.assessmentInaccuracy}
               />
             </View>
-            <Text style={styles.notRankedTitle}>NOT RANKED YET</Text>
+            <Text style={styles.notRankedTitle}>{t('leaderboard.notRankedTitle')}</Text>
             <Text style={styles.notRankedSub}>
-              Play a ranked match to earn your spot on the board.
+              {t('leaderboard.notRankedDesc')}
             </Text>
             <TouchableOpacity
               style={styles.notRankedPlayBtn}
@@ -633,16 +487,16 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
                 setNotRanked(false);
                 onQuickMatch();
               }}
-              accessibilityLabel="Play a ranked match"
+              accessibilityLabel={t('leaderboard.playRanked')}
             >
-              <Text style={styles.notRankedPlayText}>Play Ranked</Text>
+              <Text style={styles.notRankedPlayText}>{t('leaderboard.playRanked')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => setNotRanked(false)}
-              accessibilityLabel="Back to leaderboard"
+              accessibilityLabel={t('leaderboard.backToLeaderboard')}
             >
-              <Text style={styles.notRankedBackText}>Back to leaderboard</Text>
+              <Text style={styles.notRankedBackText}>{t('leaderboard.backToLeaderboard')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -651,7 +505,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -672,49 +526,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: THEME.colors.onSurface,
   },
-  // Card overlays (guest link, not-ranked): dim + centered card, same
-  // language as the resign/result modals. The board underneath never moves.
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
+  myRankBtn: {
+    paddingVertical: 4,
   },
-  overlayCard: {
-    maxWidth: 340,
-    width: '100%',
-    alignItems: 'center',
+  myRankBtnText: {
+    fontFamily: THEME.fonts.semiBold,
+    color: THEME.colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
   },
-  // Not-ranked card: white card on the dim, with its own close.
-  notRankedCard: {
-    maxWidth: 340,
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
-    padding: 24,
-    ...THEME.shadows.modal,
-  },
-  notRankedClose: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Empty board: centered in the available space, like the not-ranked view.
-  emptyWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 48,
-  },
-  // Rank hint (unranked / failed lookup): informational, never an error.
+  // Rank lookup failure: small inline banner, the board stays.
   rankNote: {
     marginHorizontal: 20,
     marginBottom: 12,
@@ -732,179 +553,200 @@ const styles = StyleSheet.create({
     color: THEME.colors.textSecondary,
     textAlign: 'center',
   },
-  notRankedIconCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+  // Empty board: centered in the available space, like the not-ranked view.
+  emptyWrap: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: THEME.colors.warningLight,
-    borderWidth: 1,
-    borderColor: THEME.colors.warningBorder,
-    marginBottom: 16,
+    paddingBottom: 48,
   },
-  notRankedTitle: {
+  // Podium: 2nd left, 1st raised center, 3rd right. Columns bottom-align
+  // so every bar starts on the same baseline.
+  podiumWrap: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  podiumRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  spot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  podiumAvatar: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.backgroundCard,
+    borderWidth: 2.5,
+    borderColor: THEME.colors.surfaceHairline,
+    overflow: 'hidden',
+  },
+  podiumInitial: {
     fontFamily: THEME.fonts.extraBold,
-    fontSize: 14,
     fontWeight: '800',
     color: THEME.colors.textPrimary,
-    letterSpacing: 1.5,
-    marginBottom: 6,
   },
-  notRankedSub: {
-    fontFamily: THEME.fonts.regular,
+  // Medal finish: glossy gradient medallion, cut out from the page behind.
+  medalBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: THEME.colors.background,
+  },
+  medalNum: {
+    fontFamily: THEME.fonts.extraBold,
     fontSize: 13,
-    color: THEME.colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 19,
-    maxWidth: 260,
-    marginBottom: 20,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
-  notRankedPlayBtn: {
-    backgroundColor: THEME.colors.primary,
-    paddingHorizontal: 28,
-    paddingVertical: 12,
-    borderRadius: THEME.radius.md,
-    marginBottom: 14,
-    ...THEME.shadows.card,
-  },
-  notRankedPlayText: {
+  spotName: {
+    marginTop: 8,
     fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
     fontSize: 14,
     fontWeight: '700',
+    color: THEME.colors.textPrimary,
+    textAlign: 'center',
+    maxWidth: '100%',
   },
-  notRankedBackText: {
-    fontFamily: THEME.fonts.semiBold,
-    color: THEME.colors.primary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  myRankBtn: {
+  scorePill: {
+    marginTop: 6,
+    marginBottom: 10,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+    borderRadius: THEME.radius.full,
+    paddingHorizontal: 12,
     paddingVertical: 4,
   },
-  myRankBtnText: {
-    fontFamily: THEME.fonts.semiBold,
-    color: THEME.colors.primary,
+  scorePillText: {
+    fontFamily: THEME.fonts.bold,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+    fontVariant: ['tabular-nums'],
   },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 32,
-    gap: 8,
-    maxWidth: 460,
+  bar: {
     width: '100%',
-    alignSelf: 'center',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
-  // Tier card shell: gradient (medals) or flat fill, border and shadow
-  // come from the tier inline. Radius is a flat 12 per the tier spec.
-  card: {
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: 1,
+  // Rank rows: medal badge, avatar, name + sessions, rating + pts.
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.colors.dividerSoft,
   },
-  // Card gradient fill, rounded to match so no clipping wrapper (which
-  // would eat the shadow) is needed.
-  cardGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    borderRadius: 8,
+  rankBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.backgroundCard,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
   },
-  // Tier accent hugging the card's left edge. Geometry (inset, width,
-  // radii) is set inline per tier so the bar always matches its card and
-  // can never poke past the edge; absolute (not clipped) so shadows stay.
-  accent: {
-    position: 'absolute',
+  rankNum: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+    fontVariant: ['tabular-nums'],
   },
+  rankNumMedal: {
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  avatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.backgroundCard,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+  },
+  avatarInitial: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 18,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+  },
+  rowMeta: {
+    flex: 1,
+    gap: 2,
+  },
+  rowNameLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rowName: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 15,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+    flexShrink: 1,
+  },
+  // Viewer marker: primary in both modes.
   youPill: {
     borderRadius: THEME.radius.full,
     backgroundColor: THEME.colors.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
   youPillText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
     color: THEME.colors.onPrimary,
   },
-  rankCluster: {
-    width: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 1,
-  },
-  rankNum: {
-    fontFamily: THEME.fonts.extraBold,
-    fontSize: 18,
-    fontWeight: '800',
-    lineHeight: 20,
-    fontVariant: ['tabular-nums'],
-  },
-  // 40px medallion: gradient ring outside, tinted face inside. Square
-  // with softly rounded corners on every tier.
-  avatarRing: {
-    width: 40,
-    height: 40,
-  },
-  avatarInner: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  // Gloss highlight for depth on the tinted face.
-  avatarGloss: {
-    position: 'absolute',
-    top: 3,
-    left: 7,
-    width: 10,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.45)',
-  },
-  avatarInitial: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  playerDetails: {
-    flex: 1,
-  },
-  playerName: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 14,
-    fontWeight: '700',
-    flexShrink: 1,
-  },
-  playerStats: {
-    fontFamily: THEME.fonts.medium,
+  rowSub: {
+    fontFamily: THEME.fonts.regular,
     fontSize: 12,
-    marginTop: 2,
+    color: THEME.colors.textMuted,
   },
-  playerWins: {
-    fontFamily: THEME.fonts.semiBold,
-    fontWeight: '600',
+  scoreBlock: {
+    alignItems: 'flex-end',
   },
-  ratingWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  ratingValue: {
+  score: {
     fontFamily: THEME.fonts.extraBold,
+    fontSize: 16,
     fontWeight: '800',
+    color: THEME.colors.textPrimary,
     fontVariant: ['tabular-nums'],
+  },
+  pts: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 10,
+    color: THEME.colors.textMuted,
+  },
+  listContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 120, // Clears the floating nav overlay.
+    maxWidth: 460,
+    width: '100%',
+    alignSelf: 'center',
   },
   footer: {
     alignItems: 'center',
@@ -944,6 +786,85 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: THEME.colors.primary,
   },
+  // Card overlays (guest link, not-ranked): dim + centered card, same
+  // language as the resign/result modals. The board underneath never moves.
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  overlayCard: {
+    maxWidth: 340,
+    width: '100%',
+    alignItems: 'center',
+  },
+  // Not-ranked card: themed card on the dim, with its own close.
+  notRankedCard: {
+    maxWidth: 340,
+    width: '100%',
+    alignItems: 'center',
+    backgroundColor: THEME.colors.backgroundCard,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+    padding: 24,
+    ...THEME.shadows.modal,
+  },
+  notRankedClose: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notRankedIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.surfaceMuted,
+    marginBottom: 12,
+  },
+  notRankedTitle: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  notRankedSub: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 13,
+    color: THEME.colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 19,
+    maxWidth: 260,
+    marginBottom: 20,
+  },
+  notRankedPlayBtn: {
+    backgroundColor: THEME.colors.primary,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    borderRadius: THEME.radius.md,
+    marginBottom: 14,
+    ...THEME.shadows.card,
+  },
+  notRankedPlayText: {
+    fontFamily: THEME.fonts.bold,
+    color: THEME.colors.onPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  notRankedBackText: {
+    fontFamily: THEME.fonts.semiBold,
+    color: THEME.colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });
-
-

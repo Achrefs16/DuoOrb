@@ -26,13 +26,26 @@ import {
   playOwnMoveSound,
   playWallSound,
 } from '../audio/sounds';
-import { THEME, playerColor } from '../theme';
-import { assessmentColor, cleanName, ordinal } from '../analysisUi';
+import { THEME, playerColor, useStyles, useTheme } from '../theme';
+import {
+  ENGINE_TEAL,
+  assessmentBadgeColor,
+  assessmentColor,
+  assessmentGlyph,
+  assessmentVerdictKey,
+  cleanName,
+  formatEvalShort,
+  ordinal,
+  shortMoveLabel,
+} from '../analysisUi';
+import { RewardSheet } from '../components/RewardSheet';
 import { showRewarded } from '../monetization/ads';
 import {
   markAnalysisUnlocked,
   useAnalysisAccess,
 } from '../monetization/analysisAccess';
+import { api } from '../network/apiClient';
+import { useTranslation } from '../i18n';
 
 interface GameReviewScreenProps {
   initialState: GameState;
@@ -58,6 +71,14 @@ interface GameReviewScreenProps {
    * already-rendered review.
    */
   accessKey?: { gameId: string; historyLength: number } | null;
+  /**
+   * Bare -> full upgrade (History/Profile Analyze path). The screen runs the
+   * same premium / one-ad gate as the win/lose modal, then calls this so the
+   * App remounts into full mode. Absent (or no accessKey): no upgrade offered.
+   */
+  onUpgradeToFull?: () => void;
+  /** Paywall entry for the upgrade sheet's premium row. */
+  onOpenPremium?: () => void;
 }
 
 /**
@@ -106,7 +127,12 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   bare = false,
   ratings,
   accessKey = null,
+  onUpgradeToFull,
+  onOpenPremium,
 }) => {
+  const styles = useStyles(createStyles);
+  const theme = useTheme();
+  const { t } = useTranslation();
   // Full analysis, computed OFF the first paint. analyzeGame replays every
   // move with a search per move (seconds on a phone CPU), and it used to run
   // inside a useMemo during render — freezing the app from the Analyze tap
@@ -132,6 +158,56 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   );
   const [unlockBusy, setUnlockBusy] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
+  // Bare -> full upgrade sheet (History/Profile Analyze path): same
+  // one-ad-per-game rule as the GameScreen gate, same RewardSheet copy.
+  const [rewardOpen, setRewardOpen] = useState(false);
+  const [rewardBusy, setRewardBusy] = useState(false);
+  const [rewardError, setRewardError] = useState<string | null>(null);
+
+  // Chess-style full review controls (UI only — analysis data untouched).
+  // showLine: engine-best overlay on the board (arrow for moves, ghost for
+  // walls). isolateBest (Best button): hides the played move, best only.
+  const [showLine, setShowLine] = useState(true);
+  const [isolateBest, setIsolateBest] = useState(false);
+
+  // Bare replay Analyze tap: premium/unlocked (dev builds resolve unlocked
+  // via the bypass, so iteration never touches an ad) upgrade immediately;
+  // locked opens the sheet instead. Re-opening an upgraded game is free —
+  // the unlock key is per gameId:historyLength (E13).
+  const handleAnalyzeUpgrade = () => {
+    if (!accessKey || !onUpgradeToFull) return;
+    if (access === 'premium' || access === 'unlocked') {
+      onUpgradeToFull();
+      return;
+    }
+    if (access === 'locked') {
+      setRewardError(null);
+      setRewardOpen(true);
+    }
+  };
+
+  const handleWatchUpgradeAd = async () => {
+    if (!accessKey || rewardBusy) return;
+    setRewardBusy(true);
+    setRewardError(null);
+    const res = await showRewarded('analysis');
+    if (res.earned) {
+      try {
+        await markAnalysisUnlocked(accessKey.gameId, accessKey.historyLength);
+        setRewardOpen(false);
+        // Full mode re-verifies access itself (P3.3), so a failed write
+        // could never strand the user on an unlocked-looking review.
+        onUpgradeToFull?.();
+      } catch {
+        // E12: the unlock write failed — stay locked, say so, retry allowed.
+        setRewardError('store');
+      }
+    } else {
+      // E10/E11: early close, no fill, or SDK error — sheet stays, no dead end.
+      setRewardError(res.error ?? 'dismissed');
+    }
+    setRewardBusy(false);
+  };
 
   // In-review unlock (backstop for the GameScreen sheet): same one-ad-per-game
   // rule, same cache. Runs only when the gate somehow opened this screen
@@ -166,24 +242,32 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     // One deferred task for both paths (even a cache hit goes through it):
     // setState never runs synchronously in this effect body, and the board
     // paints before any of this lands.
-    const t = setTimeout(() => {
+    const t = setTimeout(async () => {
       if (cancelled) return;
       const cached = REVIEW_CACHE.get(key);
-      const next =
-        cached ??
-        (() => {
-          const computed = analyzeGame(initialState, history);
-          cacheReview(key, computed);
-          return computed;
-        })();
-      if (cancelled) return;
-      setReview(next);
-      if (!touchedRef.current) {
-        const dm = next.decidingMoments[0];
-        if (history.length > 0 && dm && dm.importance >= 25) {
-          setCurrentStep(Math.max(1, Math.min(history.length, dm.moveNumber)));
-        }
+      if (cached) {
+        if (!cancelled) setReview(cached);
+        return;
       }
+
+      // Online-first: request high-speed server analysis powered by the native Rust engine
+      try {
+        const serverReview = await api.requestGameReview(initialState, history);
+        if (cancelled) return;
+        if (serverReview && Array.isArray(serverReview.moveAnalyses)) {
+          cacheReview(key, serverReview);
+          setReview(serverReview);
+          return;
+        }
+      } catch {
+        // Offline / network failure: gracefully fall back to local analysis
+      }
+
+      if (cancelled) return;
+      const localReview = analyzeGame(initialState, history);
+      if (cancelled) return;
+      cacheReview(key, localReview);
+      setReview(localReview);
     }, 0);
     return () => {
       cancelled = true;
@@ -309,6 +393,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     // Bare replay shows the plain board: no assessment-colored lines.
     if (bare || !currentAnalysis) return null;
     const pa = currentAnalysis.playedAction;
+    const solid =
+      currentAnalysis.assessment === 'MISTAKE' ||
+      currentAnalysis.assessment === 'BLUNDER';
     if (pa.type === 'MOVE') {
       const origin = preMoveState.players.find(
         (p) => p.id === currentAnalysis.playerId
@@ -317,30 +404,128 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         from: origin,
         to: pa.to,
         color: markColor,
+        solid,
       };
     }
     if (pa.type === 'PLACE_WALL') {
       return {
         wall: pa.wall,
         color: markColor,
+        solid,
       };
     }
     return null;
   }, [bare, currentAnalysis, markColor, preMoveState]);
 
   const altMark = useMemo(() => {
-    // Bare replay: no engine-best squares either.
+    // Bare replay: no engine-best squares either. Best piece moves render
+    // as the review arrow now — the ghost/hollow stays walls-only.
     if (bare) return null;
     if (!showAlt || !currentAnalysis?.bestAction) return null;
     const ba = currentAnalysis.bestAction;
-    if (ba.type === 'MOVE') {
-      return { to: ba.to, color: THEME.colors.chartStroke };
-    }
+    if (ba.type === 'MOVE') return null;
     if (ba.type === 'PLACE_WALL') {
       return { wall: ba.wall, color: THEME.colors.chartStroke };
     }
     return null;
-  }, [bare, showAlt, currentAnalysis]);
+  }, [bare, showAlt, currentAnalysis, theme]);
+
+  // Classification badge (?? / ? / ?! / !) pinned on the destination.
+  const badgeMark = useMemo(() => {
+    if (bare || !currentAnalysis) return null;
+    const glyph = assessmentGlyph(currentAnalysis.assessment);
+    if (!glyph) return null;
+    const pa = currentAnalysis.playedAction;
+    const cell =
+      pa.type === 'MOVE'
+        ? pa.to
+        : pa.type === 'PLACE_WALL'
+          ? { row: pa.wall.row, col: pa.wall.col }
+          : null;
+    if (!cell) return null;
+    return { cell, glyph, color: assessmentBadgeColor(currentAnalysis.assessment) };
+  }, [bare, currentAnalysis]);
+
+  // Best-move arrow: mover's origin -> engine destination (piece moves).
+  const bestArrow = useMemo(() => {
+    if (bare || !showLine || !currentAnalysis?.bestAction) return null;
+    const ba = currentAnalysis.bestAction;
+    if (ba.type !== 'MOVE') return null;
+    const origin = preMoveState.players.find(
+      (p) => p.id === currentAnalysis.playerId
+    )?.position;
+    if (!origin) return null;
+    if (origin.row === ba.to.row && origin.col === ba.to.col) return null;
+    return { from: origin, to: ba.to, color: ENGINE_TEAL };
+  }, [bare, showLine, currentAnalysis, preMoveState]);
+
+  // Eval bar inputs: viewer's win chance + eval at the current step.
+  // Histories are per-step; entries at/below the step win, latest fallback.
+  const viewerId = initialState.players[perspectiveIdx]?.id ?? null;
+  const viewerIdx = initialState.players[perspectiveIdx]?.index ?? 0;
+  const viewerColor = playerColor(viewerIdx, initialState.players[perspectiveIdx]?.color);
+  const wcEntry = useMemo(() => {
+    const h = review?.winChanceHistory ?? [];
+    let found: { step: number; winChance: number; perPlayer?: Record<string, number> } | null = null;
+    for (const e of h) {
+      if (e.step <= currentStep) found = e;
+      else break;
+    }
+    return found ?? h[h.length - 1] ?? null;
+  }, [review, currentStep]);
+  const viewerWC = useMemo(() => {
+    if (!wcEntry) return 0.5;
+    if (viewerId && wcEntry.perPlayer?.[viewerId] !== undefined) {
+      return wcEntry.perPlayer[viewerId];
+    }
+    const moverId = review?.moveAnalyses[currentStep - 1]?.playerId ?? null;
+    return moverId != null && moverId === viewerId
+      ? wcEntry.winChance
+      : 1 - wcEntry.winChance;
+  }, [wcEntry, viewerId, review, currentStep]);
+  const evalNum = useMemo(() => {
+    const h = review?.evaluationHistory ?? [];
+    let found: { step: number; evaluation: number } | null = null;
+    for (const e of h) {
+      if (e.step <= currentStep) found = e;
+      else break;
+    }
+    return (found ?? h[h.length - 1] ?? null)?.evaluation ?? null;
+  }, [review, currentStep]);
+
+  // Key moments for Next: deciding moments in move order; Next disables
+  // past the last one (no wrap).
+  const keyMoments = useMemo(() => {
+    return [...(review?.decidingMoments ?? [])].sort(
+      (a, b) => a.moveNumber - b.moveNumber
+    );
+  }, [review]);
+  const nextMoment = keyMoments.find((m) => m.moveNumber > currentStep) ?? null;
+
+  // Move strip window: around the current step, clamped, padded backwards.
+  const stripSteps = useMemo(() => {
+    const total = history.length;
+    const out: number[] = [];
+    for (
+      let s = Math.max(1, currentStep - 1);
+      s <= Math.min(total, currentStep + 2) && out.length < 5;
+      s++
+    ) {
+      out.push(s);
+    }
+    while (out.length < Math.min(5, total) && out[0] > 1) {
+      out.unshift(out[0] - 1);
+    }
+    return out;
+  }, [history.length, currentStep]);
+  const stripLabel = (step: number): string => {
+    const rec = history[step - 1];
+    if (!rec) return `${step}`;
+    const idx = initialState.players.findIndex((p) => p.id === rec.playerId);
+    return shortMoveLabel(rec.action, idx < 0 ? 0 : initialState.players[idx].index);
+  };
+  const stripAssessment = (step: number) =>
+    review?.moveAnalyses[step - 1]?.assessment ?? null;
 
   const opponentPlayer = currentState.players[1] || currentState.players[0];
   const userPlayer = currentState.players[0];
@@ -352,10 +537,15 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         <TouchableOpacity style={styles.backBtn} onPress={onBack}>
           <Feather name="arrow-left" size={20} color={THEME.colors.textSecondary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{bare ? 'Match Replay' : 'Match Review'}</Text>
+        <Text style={styles.headerTitle}>{bare ? t('review.matchReplay') : t('review.matchReview')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
+      {/* Bare replays scroll the classic layout. Full reviews use the fixed
+          chess-style column — except locked ones, which keep the scroll
+          layout that owns the unlock panel (matters once the temp
+          always-open flag flips back). */}
+      {(bare || (!review && access === 'locked')) ? (
       <ScrollView
         style={styles.scrollArea}
         contentContainerStyle={styles.content}
@@ -366,9 +556,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         <View style={styles.summaryBadgeRow}>
           <View style={styles.resultPill}>
             <View style={styles.resultDot} />
-            <Text style={styles.resultPillText}>Victory · +16</Text>
+            <Text style={styles.resultPillText}>{t('result.victory')} · +16</Text>
           </View>
-          <Text style={styles.modeSummaryText}>Classic · 3+0</Text>
+          <Text style={styles.modeSummaryText}>{t('setup.classic')} · 3+0</Text>
         </View>
         )}
 
@@ -388,7 +578,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                     <Text style={styles.ratingText}>{ratings[opponentPlayer.id]}</Text>
                   )}
                   <View style={styles.wallCountTag}>
-                    <Text style={styles.wallCountText}>{opponentPlayer.wallsRemaining} walls</Text>
+                    <Text style={styles.wallCountText}>
+                      {t('review.wallsCount', { count: opponentPlayer.wallsRemaining })}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -437,13 +629,15 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 </Text>
               </View>
               <View style={styles.hudMeta}>
-                <Text style={styles.hudName}>{userPlayer.displayName} (You)</Text>
+                <Text style={styles.hudName}>{userPlayer.displayName} {t('gameover.you')}</Text>
                 <View style={styles.hudTagRow}>
                   {ratings?.[userPlayer.id] !== undefined && (
                     <Text style={styles.ratingText}>{ratings[userPlayer.id]}</Text>
                   )}
                   <View style={styles.wallCountTag}>
-                    <Text style={styles.wallCountText}>{userPlayer.wallsRemaining} walls</Text>
+                    <Text style={styles.wallCountText}>
+                      {t('review.wallsCount', { count: userPlayer.wallsRemaining })}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -460,7 +654,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           {/* Move Counter */}
           <View style={styles.moveCounterRow}>
             <Text style={styles.moveCounterText}>
-              Move <Text style={styles.moveCounterHighlight}>{currentStep}</Text> / {history.length}
+              {t('review.moveCounter', { current: currentStep, total: history.length })}
             </Text>
           </View>
 
@@ -496,7 +690,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               style={styles.playPauseBtn}
               onPress={() => setIsPlaying(!isPlaying)}
             >
-              <Feather name={isPlaying ? 'pause' : 'play'} size={20} color={THEME.colors.onPrimary} />
+              <Feather name={isPlaying ? 'pause' : 'play'} size={20} color={THEME.colors.inverseOnSurface} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -567,6 +761,32 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           )}
         </View>
 
+        {/* Bare -> full upgrade (History/Profile Analyze path): same gate as
+            the win/lose modal — premium/dev/unlocked go straight to review,
+            locked gets the one-ad sheet. Dev builds never see the sheet. */}
+        {bare && accessKey && onUpgradeToFull && (
+        <TouchableOpacity
+          style={[styles.upgradeBtn, access === 'checking' && styles.btnDisabled]}
+          onPress={handleAnalyzeUpgrade}
+          disabled={access === 'checking'}
+          accessibilityRole="button"
+          accessibilityLabel="Analyze this game"
+        >
+          {access === 'checking' ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Feather
+                name={access === 'locked' ? 'lock' : 'bar-chart-2'}
+                size={16}
+                color="#FFFFFF"
+              />
+              <Text style={styles.upgradeBtnText}>{t('gameover.analyze')}</Text>
+            </>
+          )}
+        </TouchableOpacity>
+        )}
+
         {/* Engine Analysis Panels (review only) */}
         {!bare && currentAnalysis && (
           <View style={styles.analysisCard}>
@@ -575,7 +795,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               {showAlt && currentAnalysis.bestAction && (
                 <View style={styles.bestMovePill}>
                   <Text style={styles.bestMoveText}>
-                    Engine: {currentAnalysis.bestAction.type === 'MOVE' ? 'Move Orb' : 'Place Wall'}
+                    {currentAnalysis.bestAction.type === 'MOVE' ? t('review.engineMove') : t('review.engineWall')}
                   </Text>
                 </View>
               )}
@@ -599,14 +819,14 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                     setTryOpen(true);
                   }}
                 >
-                  <Text style={styles.actionPillText}>Try again</Text>
+                  <Text style={styles.actionPillText}>{t('review.tryAgain')}</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity
                 style={styles.actionPillBtn}
                 onPress={() => setDetailsOpen((v) => !v)}
               >
-                <Text style={styles.actionPillText}>{detailsOpen ? 'Hide details' : 'Details'}</Text>
+                <Text style={styles.actionPillText}>{detailsOpen ? t('review.hideDetails') : t('review.details')}</Text>
               </TouchableOpacity>
             </View>
 
@@ -623,7 +843,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         {/* Win Probability Graph (review only, once computed) */}
         {!bare && review && (
         <View style={styles.graphCard}>
-          <Text style={styles.graphTitle}>WIN PROBABILITY</Text>
+          <Text style={styles.graphTitle}>{t('review.winProbability')}</Text>
           <WinGraph
             points={review.winChanceHistory.map((w) => w.winChance)}
             current={currentStep}
@@ -637,7 +857,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             while the deferred compute runs. */}
         {!bare && !review && (access === 'checking' || access === 'premium' || access === 'unlocked') && (
         <View style={styles.graphCard}>
-          <Text style={styles.graphTitle}>ANALYZING</Text>
+          <Text style={styles.graphTitle}>{t('review.analyzing')}</Text>
           <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
         </View>
         )}
@@ -649,9 +869,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         {!bare && !review && access === 'locked' && (
         <View style={styles.lockCard}>
           <Feather name="lock" size={20} color={THEME.colors.primary} />
-          <Text style={styles.lockTitle}>Full analysis is locked</Text>
+          <Text style={styles.lockTitle}>{t('review.lockedTitle')}</Text>
           <Text style={styles.lockCopy}>
-            Watch a short video to unlock the engine review for this game.
+            {t('review.lockedSub')}
           </Text>
           {accessKey && (
           <TouchableOpacity
@@ -664,7 +884,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             {unlockBusy ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={styles.lockButtonText}>Watch ad</Text>
+              <Text style={styles.lockButtonText}>{t('review.watchAd')}</Text>
             )}
           </TouchableOpacity>
           )}
@@ -678,16 +898,253 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             </Text>
           )}
           <TouchableOpacity onPress={onBack} disabled={unlockBusy}>
-            <Text style={styles.lockBack}>Back to match</Text>
+            <Text style={styles.lockBack}>{t('review.backToMatch')}</Text>
           </TouchableOpacity>
         </View>
         )}
       </ScrollView>
+      ) : (
+      <View style={styles.fullBody}>
+        {/* Eval bar: who's winning, by how much, exact number — always on. */}
+        <View style={styles.evalBarRow}>
+          <Text style={styles.evalNum}>
+            {evalNum == null ? '—' : formatEvalShort(evalNum)}
+          </Text>
+          <View style={styles.evalTrack}>
+            <View
+              style={[
+                styles.evalFill,
+                {
+                  width: `${Math.max(0, Math.min(100, Math.round(viewerWC * 100)))}%`,
+                  backgroundColor: viewerColor,
+                },
+              ]}
+            />
+          </View>
+        </View>
+
+        {/* Coach: one verdict + one sentence. */}
+        {currentAnalysis ? (
+          <View style={styles.coachCard}>
+            <View style={[styles.coachAvatar, { backgroundColor: moverColor }]}>
+              <Text style={styles.coachAvatarText}>
+                {(moverName.charAt(0) || '•').toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.coachMain}>
+              <View style={styles.verdictRow}>
+                {assessmentGlyph(currentAnalysis.assessment) !== '' && (
+                  <View
+                    style={[
+                      styles.glyphBadge,
+                      {
+                        backgroundColor: assessmentBadgeColor(
+                          currentAnalysis.assessment
+                        ),
+                      },
+                    ]}
+                  >
+                    <Text style={styles.glyphText}>
+                      {assessmentGlyph(currentAnalysis.assessment)}
+                    </Text>
+                  </View>
+                )}
+                <Text style={styles.verdictText}>
+                  {t('review.verdictIsA', {
+                    label: shortMoveLabel(
+                      currentAnalysis.playedAction,
+                      mover?.index ?? 0
+                    ),
+                    verdict: t(assessmentVerdictKey(currentAnalysis.assessment)),
+                  })}
+                </Text>
+                <View style={styles.evalPill}>
+                  <Text style={styles.evalPillText}>
+                    {formatEvalShort(currentAnalysis.evaluationAfter)}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.coachText} numberOfLines={3}>
+                {currentAnalysis.explanation}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.coachCard}>
+            <ActivityIndicator size="small" color={THEME.colors.primary} />
+            <Text style={styles.coachText}>{t('review.analyzing')}</Text>
+          </View>
+        )}
+
+        {/* Board viewport (swipe steps like the replay bar). */}
+        <View {...swipe.panHandlers} style={styles.fullBoardWrap}>
+          <Animated.View
+            style={{
+              transform: [
+                {
+                  rotate: flip.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '180deg'],
+                  }),
+                },
+              ],
+            }}
+          >
+            <GameBoard
+              state={currentState}
+              legalMoves={[]}
+              previewWall={null}
+              selectedCell={null}
+              interactive={false}
+              moveMark={isolateBest ? null : moveMark}
+              altMark={showLine ? altMark : null}
+              badgeMark={isolateBest ? null : badgeMark}
+              bestArrow={showLine ? bestArrow : null}
+              flipAnim={flip}
+            />
+          </Animated.View>
+        </View>
+
+        {/* Move strip navigator. */}
+        <View style={styles.stripRow}>
+          <TouchableOpacity
+            style={styles.stripNav}
+            disabled={currentStep <= 1}
+            onPress={() => goTo(currentStep - 1)}
+            accessibilityRole="button"
+            accessibilityLabel="Previous move"
+          >
+            <Feather
+              name="chevron-left"
+              size={20}
+              color={
+                currentStep <= 1
+                  ? THEME.colors.textMuted
+                  : THEME.colors.textSecondary
+              }
+            />
+          </TouchableOpacity>
+          {stripSteps.map((s) => {
+            const a = stripAssessment(s);
+            const bad = a === 'MISTAKE' || a === 'BLUNDER';
+            const active = s === currentStep;
+            return (
+              <TouchableOpacity
+                key={s}
+                style={[styles.stripChip, active && styles.stripChipActive]}
+                onPress={() => goTo(s)}
+              >
+                <Text
+                  style={[
+                    styles.stripChipText,
+                    active && styles.stripChipTextActive,
+                  ]}
+                >
+                  {s} · {stripLabel(s)}
+                </Text>
+                {bad && <View style={styles.stripBad} />}
+              </TouchableOpacity>
+            );
+          })}
+          <TouchableOpacity
+            style={styles.stripNav}
+            disabled={currentStep >= history.length}
+            onPress={() => goTo(currentStep + 1)}
+            accessibilityRole="button"
+            accessibilityLabel="Next move"
+          >
+            <Feather
+              name="chevron-right"
+              size={20}
+              color={
+                currentStep >= history.length
+                  ? THEME.colors.textMuted
+                  : THEME.colors.textSecondary
+              }
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Action bar: Show / Best / Next. */}
+        <View style={styles.actionBar}>
+            <TouchableOpacity
+              style={[styles.actionBtn, showLine && styles.actionBtnActive]}
+              onPress={() => setShowLine((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel="Show engine line"
+            >
+              <Feather
+                name="eye"
+                size={18}
+                color={
+                  showLine ? THEME.colors.primary : THEME.colors.textSecondary
+                }
+              />
+              <Text
+                style={[
+                  styles.actionLabel,
+                  showLine && { color: THEME.colors.primary },
+                ]}
+              >
+                {t('review.show')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionBtn, isolateBest && styles.actionBtnActive]}
+              onPress={() => {
+                setIsolateBest((v) => !v);
+                setShowLine(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Isolate best move"
+            >
+              <Feather
+                name="star"
+                size={18}
+                color={
+                  isolateBest
+                    ? THEME.colors.primary
+                    : THEME.colors.textSecondary
+                }
+              />
+              <Text
+                style={[
+                  styles.actionLabel,
+                  isolateBest && { color: THEME.colors.primary },
+                ]}
+              >
+                {t('review.best')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.nextBtn, !nextMoment && styles.btnDisabled]}
+              disabled={!nextMoment}
+              onPress={() => nextMoment && goTo(nextMoment.moveNumber)}
+              accessibilityRole="button"
+              accessibilityLabel="Next key moment"
+            >
+              <Text style={styles.nextBtnText}>{t('review.next')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      {/* Upgrade sheet for the bare Analyze path (History/Profile). */}
+      <RewardSheet
+        visible={rewardOpen}
+        busy={rewardBusy}
+        error={rewardError}
+        onWatch={handleWatchUpgradeAd}
+        onPremium={() => {
+          setRewardOpen(false);
+          onOpenPremium?.();
+        }}
+        onClose={() => setRewardOpen(false)}
+      />
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -1062,7 +1519,7 @@ const styles = StyleSheet.create({
   },
   lockError: {
     fontSize: 12,
-    color: '#DC2626',
+    color: THEME.colors.danger,
     textAlign: 'center',
   },
   lockBack: {
@@ -1071,5 +1528,227 @@ const styles = StyleSheet.create({
     color: THEME.colors.textSecondary,
     marginTop: 4,
     paddingVertical: 6,
+  },
+  // Chess-style full review: fixed column, board takes the free space.
+  fullBody: {
+    flex: 1,
+    gap: 8,
+    paddingBottom: 4,
+  },
+  // Eval bar: number + viewer-share track.
+  evalBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  evalNum: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+    minWidth: 44,
+  },
+  evalTrack: {
+    flex: 1,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: THEME.colors.surfaceContainer,
+    overflow: 'hidden',
+  },
+  evalFill: {
+    height: 10,
+    borderRadius: 5,
+  },
+  // Coach card: avatar disc + verdict row + one-sentence explanation.
+  coachCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderRadius: THEME.radius.lg,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    padding: 12,
+    ...THEME.shadows.card,
+  },
+  coachAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coachAvatarText: {
+    color: '#FFFFFF',
+    fontFamily: THEME.fonts.bold,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  coachMain: {
+    flex: 1,
+    gap: 4,
+  },
+  verdictRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  glyphBadge: {
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 5,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  glyphText: {
+    color: '#FFFFFF',
+    fontFamily: THEME.fonts.bold,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  verdictText: {
+    flex: 1,
+    fontFamily: THEME.fonts.bold,
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  evalPill: {
+    backgroundColor: THEME.colors.textPrimary,
+    borderRadius: 6,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+  },
+  evalPillText: {
+    color: THEME.colors.inverseOnSurface,
+    fontFamily: THEME.fonts.bold,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  coachText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: THEME.colors.textSecondary,
+  },
+  // Board takes all free space between coach and strip.
+  fullBoardWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Move strip navigator.
+  stripRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  stripNav: {
+    width: 32,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stripChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: THEME.radius.md,
+    backgroundColor: 'transparent',
+  },
+  stripChipActive: {
+    backgroundColor: THEME.colors.surfaceContainer,
+  },
+  stripChipText: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.colors.textSecondary,
+  },
+  stripChipTextActive: {
+    fontFamily: THEME.fonts.bold,
+    color: THEME.colors.textPrimary,
+    fontWeight: '800',
+  },
+  stripBad: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: THEME.colors.danger,
+  },
+  // Bottom action bar: Show / Best / Retry + Next CTA.
+  actionBar: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 4,
+  },
+  actionBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingVertical: 8,
+    borderRadius: THEME.radius.md,
+  },
+  actionBtnActive: {
+    backgroundColor: THEME.colors.surfaceContainer,
+  },
+  actionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
+  },
+  nextBtn: {
+    flex: 1.4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.primary,
+    borderRadius: THEME.radius.md,
+    paddingVertical: 12,
+  },
+  nextBtnText: {
+    color: '#FFFFFF',
+    fontFamily: THEME.fonts.bold,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  ghostAction: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: THEME.radius.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.boardBorder,
+    backgroundColor: THEME.colors.backgroundCard,
+  },
+  ghostActionText: {
+    fontFamily: THEME.fonts.bold,
+    color: THEME.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  // Bare -> full upgrade button (History/Profile Analyze path): primary
+  // CTA under the step controls, same language as the win/lose modal row.
+  upgradeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: THEME.colors.primary,
+    borderRadius: THEME.radius.lg,
+    paddingVertical: 13,
+    marginTop: 4,
+  },
+  upgradeBtnText: {
+    color: '#FFFFFF',
+    fontFamily: THEME.fonts.bold,
+    fontSize: 15,
+    fontWeight: '800',
   },
 });

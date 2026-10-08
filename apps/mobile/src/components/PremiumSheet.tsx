@@ -8,7 +8,9 @@ import {
   View,
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { THEME } from '../theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { useSession } from '../network/session';
 import { GoogleGLogo } from './GoogleGLogo';
 import { PREMIUM_GOLD } from './PremiumBadge';
@@ -36,7 +38,7 @@ const BULLETS = [
   'No ads, anywhere',
   'Unlimited game analysis',
   'All 6 exclusive bots',
-  'Midnight board theme',
+  'Walnut board design',
   'Premium crown on your name',
 ];
 
@@ -69,6 +71,8 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
   onClose,
   onDone,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const { identity, signInWithGoogle } = useSession();
   const [plans, setPlans] = useState<PremiumPlan[]>([]);
   const [canBuy, setCanBuy] = useState(false);
@@ -81,6 +85,14 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
   const [linkError, setLinkError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showLink, setShowLink] = useState(false);
+
+  const bullets = [
+    t('premium.bulletAds'),
+    t('premium.bulletAnalysis'),
+    t('premium.bulletBots'),
+    t('premium.bulletMidnight'),
+    t('premium.bulletCrown'),
+  ];
 
   useEffect(() => {
     if (!visible) return;
@@ -174,15 +186,25 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.backdrop}>
         <View style={styles.card}>
-          <View style={styles.titleRow}>
-            <MaterialCommunityIcons name="crown" size={22} color={PREMIUM_GOLD} />
-            <Text style={styles.title}>DuoOrb Premium</Text>
-          </View>
+          <LinearGradient
+            colors={['#F7DE9B', '#D9A62E']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.hero}
+          >
+            <View style={styles.heroHandle} />
+            <View style={styles.heroCrownTile}>
+              <MaterialCommunityIcons name="crown" size={26} color={PREMIUM_GOLD} />
+            </View>
+            <Text style={styles.heroTitle}>{t('premium.title')}</Text>
+          </LinearGradient>
 
           <View style={styles.bullets}>
-            {BULLETS.map((b) => (
+            {bullets.map((b) => (
               <View key={b} style={styles.bulletRow}>
-                <Feather name="check" size={14} color={THEME.colors.primary} />
+                <View style={styles.bulletCheck}>
+                  <Feather name="check" size={12} color="#FFFFFF" />
+                </View>
                 <Text style={styles.bullet}>{b}</Text>
               </View>
             ))}
@@ -203,7 +225,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
                   <View style={styles.planMeta}>
                     <Text style={styles.planTitle}>
                       {p.title}
-                      {p.featured ? ' · Best value' : ''}
+                      {p.featured ? ` · ${t('premium.bestValue')}` : ''}
                     </Text>
                     <Text style={styles.planPrice}>{p.priceLine}</Text>
                     {p.trialLine ? (
@@ -215,7 +237,9 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
                       styles.radio,
                       selected === p.id && styles.radioActive,
                     ]}
-                  />
+                  >
+                    {selected === p.id && <View style={styles.radioDot} />}
+                  </View>
                 </TouchableOpacity>
               ))}
             </View>
@@ -227,38 +251,37 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
           {activePlan && (
             <Text style={styles.disclosure}>
               {activePlan.trialLine
-                ? `${activePlan.trialLine}. Renews automatically until cancelled. `
-                : `${activePlan.priceLine}, renews automatically until cancelled. `}
-              Cancel anytime in Settings. DuoOrb works fully without Premium.
+                ? `${activePlan.trialLine}. ${t('premium.disclosureRenews')} `
+                : `${activePlan.priceLine}, ${t('premium.disclosureRenews')} `}
+              {t('premium.disclosure')}
             </Text>
           )}
 
           {showLink && !linked ? (
             <View style={styles.linkCard}>
-              <Text style={styles.linkTitle}>Keep Premium on every device</Text>
+              <Text style={styles.linkTitle}>{t('premium.keepOnAllDevices')}</Text>
               <Text style={styles.linkCopy}>
-                Save with Google first — purchases attach to your account, and
-                guests lose them on reinstall.
+                {t('premium.guestLossWarning')}
               </Text>
               <TouchableOpacity
                 style={styles.linkButton}
                 onPress={handleLink}
                 disabled={linking}
                 accessibilityRole="button"
-                accessibilityLabel="Save with Google"
+                accessibilityLabel={t('premium.saveGoogle')}
               >
                 {linking ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <>
                     <GoogleGLogo size={16} />
-                    <Text style={styles.linkButtonText}>Save with Google</Text>
+                    <Text style={styles.linkButtonText}>{t('premium.saveGoogle')}</Text>
                   </>
                 )}
               </TouchableOpacity>
               {linkError && <Text style={styles.error}>{linkError}</Text>}
                 <TouchableOpacity onPress={() => setShowLink(false)} disabled={linking}>
-                  <Text style={styles.later}>Back</Text>
+                  <Text style={styles.later}>{t('common.back')}</Text>
                 </TouchableOpacity>
             </View>
           ) : (
@@ -271,13 +294,13 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
                 onPress={handleBuy}
                 disabled={buying || !activePlan}
                 accessibilityRole="button"
-                accessibilityLabel={canBuy ? 'Subscribe to Premium' : 'Premium coming soon'}
+                accessibilityLabel={canBuy ? t('premium.continue') : t('premium.availableSoon')}
               >
                 {buying ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <Text style={styles.buyText}>
-                    {canBuy ? 'Continue' : 'Available soon'}
+                    {canBuy ? t('premium.continue') : t('premium.availableSoon')}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -290,11 +313,11 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
               <View style={styles.rowLinks}>
                 <TouchableOpacity onPress={handleRestore} disabled={restoring}>
                   <Text style={styles.link}>
-                    {restoring ? 'Restoring…' : 'Restore purchase'}
+                    {restoring ? t('premium.restoring') : t('premium.restorePurchase')}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handleClose} disabled={buying || restoring}>
-                  <Text style={styles.later}>Not now</Text>
+                  <Text style={styles.later}>{t('premium.notNow')}</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -305,89 +328,150 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
     justifyContent: 'flex-end',
   },
   card: {
-    backgroundColor: THEME.colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingTop: 12,
     paddingBottom: 32,
-    gap: 12,
+    gap: 14,
   },
-  titleRow: {
-    flexDirection: 'row',
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: THEME.colors.surfaceHairline,
+    alignSelf: 'center',
+    marginBottom: 4,
+  },
+  // Gold hero band: dark crown tile + dark ink, same language as the
+  // Settings premium card.
+  hero: {
+    marginHorizontal: -24,
+    marginTop: -12,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 14,
+    paddingBottom: 18,
+    paddingHorizontal: 24,
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
-  title: {
-    fontSize: 20,
+  heroHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#3A2A00',
+    opacity: 0.35,
+    marginBottom: 6,
+  },
+  heroCrownTile: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#3A2A00',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 22,
     fontWeight: '800',
-    color: THEME.colors.textPrimary,
+    color: '#3A2A00',
+  },
+  heroSub: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 13,
+    color: '#3A2A00',
+    opacity: 0.8,
   },
   bullets: {
-    gap: 6,
+    gap: 8,
   },
   bulletRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
+  },
+  bulletCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: THEME.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   bullet: {
+    fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
-    color: THEME.colors.textSecondary,
+    fontWeight: '600',
+    color: THEME.colors.textPrimary,
   },
   plans: {
-    gap: 8,
+    gap: 10,
   },
   planRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: THEME.colors.surfaceHairline,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: 16,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
   },
   planRowActive: {
     borderColor: THEME.colors.primary,
-    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderWidth: 2,
+    backgroundColor: THEME.colors.surfacePrimaryTint,
   },
   planMeta: {
     flex: 1,
-    gap: 1,
+    gap: 2,
   },
   planTitle: {
-    fontSize: 14,
+    fontFamily: THEME.fonts.bold,
+    fontSize: 15,
     fontWeight: '800',
     color: THEME.colors.textPrimary,
   },
   planPrice: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontFamily: THEME.fonts.bold,
+    fontSize: 15,
+    fontWeight: '800',
     color: THEME.colors.primary,
   },
   planTrial: {
+    fontFamily: THEME.fonts.regular,
     fontSize: 12,
     color: THEME.colors.textSecondary,
   },
   radio: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     borderWidth: 2,
     borderColor: THEME.colors.surfaceHairline,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   radioActive: {
     borderColor: THEME.colors.primary,
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: THEME.colors.primary,
   },
   disclosure: {
+    fontFamily: THEME.fonts.regular,
     fontSize: 11,
     lineHeight: 15,
     color: THEME.colors.textMuted,
@@ -397,11 +481,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   linkTitle: {
+    fontFamily: THEME.fonts.bold,
     fontSize: 15,
     fontWeight: '800',
     color: THEME.colors.textPrimary,
   },
   linkCopy: {
+    fontFamily: THEME.fonts.regular,
     fontSize: 13,
     lineHeight: 18,
     color: THEME.colors.textSecondary,
@@ -419,30 +505,34 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   linkButtonText: {
+    fontFamily: THEME.fonts.bold,
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
   },
   buyButton: {
     backgroundColor: THEME.colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 16,
+    paddingVertical: 16,
     alignItems: 'center',
   },
   buyButtonBusy: {
     opacity: 0.75,
   },
   buyText: {
+    fontFamily: THEME.fonts.bold,
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '800',
   },
   error: {
+    fontFamily: THEME.fonts.medium,
     fontSize: 13,
-    color: '#DC2626',
+    color: THEME.colors.danger,
     textAlign: 'center',
   },
   devHint: {
+    fontFamily: THEME.fonts.regular,
     fontSize: 11,
     color: THEME.colors.textMuted,
     textAlign: 'center',
@@ -453,12 +543,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   link: {
+    fontFamily: THEME.fonts.bold,
     fontSize: 13,
     fontWeight: '700',
     color: THEME.colors.primary,
     paddingVertical: 6,
   },
   later: {
+    fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
     color: THEME.colors.textSecondary,

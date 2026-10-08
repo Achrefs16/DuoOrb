@@ -8,7 +8,7 @@ import {
   type BoardStructure,
   type RouteProfile,
 } from '../ai-structure.js';
-import { isGoalCell } from '../pathfinding.js';
+import { isGoalCell, getShortestDistance } from '../pathfinding.js';
 import { isLegalWallPlacement } from '../walls.js';
 import {
   PLACEMENT_STEP,
@@ -190,6 +190,10 @@ export function repetitionPenalty(
   const player = state.players.find((p) => p.id === playerId);
   if (!player) return 0;
   if (isGoalCell(to, player.goalDirection, state.mode)) return 0;
+
+  const curDist = getShortestDistance(player.position, player.goalDirection, state.walls, state.mode);
+  const nextDist = getShortestDistance(to, player.goalDirection, state.walls, state.mode);
+  if (nextDist < curDist) return 0;
 
   const recent: CellCoord[] = [];
   for (let i = state.history.length - 1; i >= 0 && recent.length < 6; i--) {

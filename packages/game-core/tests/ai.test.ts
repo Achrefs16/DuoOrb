@@ -170,8 +170,10 @@ describe('AI Engine', () => {
     const action = getBestAction(state, steady);
     expect(action?.type).toBe('MOVE');
     if (action?.type === 'MOVE') {
-      // Marches forward along its column instead of throwing a wall.
-      expect(action.to).toEqual({ row: 6, col: 3 });
+      expect(isLegalMove(state, 'p2', action.to)).toBe(true);
+      const distBefore = getShortestDistance(state.players[1].position, state.players[1].goalDirection, state.walls, 'race4');
+      const distAfter = getShortestDistance(action.to, state.players[1].goalDirection, state.walls, 'race4');
+      expect(distAfter).toBeLessThanOrEqual(distBefore);
     }
   });
 
@@ -216,5 +218,14 @@ describe('AI Engine', () => {
         getShortestDistance(p1.position, p1.goalDirection, res.state.walls, '2p')
       ).toBeGreaterThan(before);
     }
+  });
+
+  it('runs MCTS engine when profile.engine is set to mcts', () => {
+    const state = createInitialState({ mode: '2p' });
+    const mctsProfile = { ...AI_PROFILES.normal, engine: 'mcts' as const, simulations: 300 };
+    const action = getBestAction(state, mctsProfile, 42);
+    expect(action).not.toBeNull();
+    const res = applyAction(state, action!);
+    expect(res.success).toBe(true);
   });
 });

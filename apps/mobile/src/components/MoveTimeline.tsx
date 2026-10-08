@@ -1,7 +1,7 @@
 import React from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import type { MoveAssessment } from '@duoorb/game-core';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import { assessmentColor } from '../analysisUi';
 
 interface MoveTimelineProps {
@@ -16,6 +16,7 @@ export const MoveTimeline: React.FC<MoveTimelineProps> = ({
   current,
   onSelect,
 }) => {
+  const styles = useStyles(createStyles);
   if (assessments.length === 0) return null;
   return (
     <ScrollView
@@ -56,7 +57,7 @@ function timelineColor(a: MoveAssessment): string {
   }
 }
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',

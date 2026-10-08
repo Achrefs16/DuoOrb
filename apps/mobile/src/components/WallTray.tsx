@@ -8,8 +8,8 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Orientation } from '@duoorb/game-core';
-import { THEME, hexToRgba } from '../theme';
-import { BoardPalette, useBoardPalette } from '../theme/boardTheme';
+import { THEME, hexToRgba, useTheme } from '../theme';
+import { BoardSkin, useBoardPalette } from '../theme/boardTheme';
 
 interface WallTrayProps {
   /** Current player's ball color — both pieces share it. */
@@ -67,8 +67,21 @@ const WallPiece: React.FC<PieceProps> = ({
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
   // Same palette as the board (P5.1): the tray is board chrome, not menu UI.
+  const theme = useTheme();
   const trayPalette = useBoardPalette();
-  const styles = useMemo(() => getTrayStyles(trayPalette), [trayPalette]);
+  const styles = useMemo(() => getTrayStyles(trayPalette), [trayPalette, theme]);
+  // Walnut inventory is stained wood like the fences, not player-colored.
+  const barColor =
+    trayPalette.wallStyle === 'neutral' && trayPalette.neutralWall
+      ? trayPalette.neutralWall
+      : color;
+  const flatBar = trayPalette.wallStyle !== 'glow';
+  // Sharp rectangles on walnut like the placed fences; classic and glacier
+  // keep their capsule pieces.
+  const barRadius =
+    trayPalette.wallRadius === 'capsule' || trayPalette.id === 'classic'
+      ? Math.min(barW, barH) / 2
+      : trayPalette.wallRadius;
 
   const responder = useMemo(
     () =>
@@ -112,15 +125,17 @@ const WallPiece: React.FC<PieceProps> = ({
           {
             width: barW,
             height: barH,
-            borderRadius: Math.min(barW, barH) / 2,
+            borderRadius: barRadius,
           },
           held
-            ? { backgroundColor: hexToRgba(color, 0.16), elevation: 0 }
-            : {
-                ...THEME.shadows.wall,
-                backgroundColor: color,
-                shadowColor: color,
-              },
+            ? { backgroundColor: hexToRgba(barColor, 0.16), elevation: 0 }
+            : flatBar
+              ? { backgroundColor: barColor, elevation: 0, shadowOpacity: 0 }
+              : {
+                  ...THEME.shadows.wall,
+                  backgroundColor: barColor,
+                  shadowColor: barColor,
+                },
         ]}
       />
     </View>
@@ -145,8 +160,9 @@ export const WallTray: React.FC<WallTrayProps> = ({
   const { width: winWidth } = useWindowDimensions();
   const s = Math.max(0.8, Math.min(1, winWidth / 390));
   const inactive = disabled || count <= 0;
+  const theme = useTheme();
   const trayPalette = useBoardPalette();
-  const styles = useMemo(() => getTrayStyles(trayPalette), [trayPalette]);
+  const styles = useMemo(() => getTrayStyles(trayPalette), [trayPalette, theme]);
 
   const slotW = 100 * s;
   // Player-card height: avatar 36 + card padding 2×10 ≈ 56. The tray matches
@@ -197,13 +213,13 @@ export const WallTray: React.FC<WallTrayProps> = ({
   );
 };
 
-// Tray styles parameterized by board palette (P5.1): layout/geometry stay
-// global, only the surface tokens follow the active board theme.
-const getTrayStyles = (p: BoardPalette) =>
+// Tray styles parameterized by board skin: layout/geometry stay global,
+// surface + silhouette tokens follow the active skin.
+const getTrayStyles = (p: BoardSkin) =>
   StyleSheet.create({
   card: {
     backgroundColor: p.trayCard,
-    borderRadius: 8,
+    borderRadius: p.trayRadius ?? 8,
     borderWidth: 1,
     borderColor: p.trayHairline,
     padding: 8,
@@ -220,7 +236,7 @@ const getTrayStyles = (p: BoardPalette) =>
     backgroundColor: p.trayCard,
     borderWidth: 1,
     borderColor: p.boardBorder,
-    borderRadius: 4,
+    borderRadius: p.traySlotRadius ?? 4,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,

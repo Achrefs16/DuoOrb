@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { THEME, playerColor } from '../theme';
+import { THEME, playerColor, useStyles } from '../theme';
 
 interface PlayerAvatarOrbProps {
   size?: number;
@@ -13,6 +13,7 @@ export const PlayerAvatarOrb: React.FC<PlayerAvatarOrbProps> = ({
   color = THEME.colors.player1,
   initial,
 }) => {
+  const styles = useStyles(createStyles);
   return (
     <View
       style={[
@@ -52,6 +53,7 @@ interface StatusDotProps {
 }
 
 export const StatusDot: React.FC<StatusDotProps> = ({ status, size = 8 }) => {
+  const styles = useStyles(createStyles);
   const color =
     status === 'ONLINE'
       ? THEME.colors.statusOnline
@@ -80,6 +82,7 @@ interface OutcomeBadgeProps {
 }
 
 export const OutcomeBadge: React.FC<OutcomeBadgeProps> = ({ outcome, size = 'md' }) => {
+  const styles = useStyles(createStyles);
   const isWin = outcome === 'WIN';
   const isLoss = outcome === 'LOSS';
 
@@ -119,6 +122,7 @@ export const PlayerIdentityChip: React.FC<PlayerIdentityChipProps> = ({
   size = 'md',
   showRating = true,
 }) => {
+  const styles = useStyles(createStyles);
   const orbSize = size === 'sm' ? 22 : size === 'lg' ? 44 : 32;
 
   return (
@@ -148,7 +152,7 @@ export const PlayerIdentityChip: React.FC<PlayerIdentityChipProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   orbContainer: {
     justifyContent: 'center',
     alignItems: 'center',

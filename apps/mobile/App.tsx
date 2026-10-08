@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, BackHandler, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, BackHandler, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import type { TextStyle, ViewStyle } from 'react-native';
 import { NavigationBar } from 'expo-navigation-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AIDifficulty, GameMode, GameState, RecordedAction } from '@duoorb/game-core';
@@ -12,7 +13,6 @@ import { SideChoice } from './src/screens/MatchSetupScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
-import * as SplashScreen from 'expo-splash-screen';
 import { OnboardingFlow } from './src/screens/OnboardingFlow';
 import { FriendsScreen } from './src/screens/FriendsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
@@ -23,35 +23,38 @@ import type { LegalKind } from './src/legal-content';
 import { BottomNav, MainTab } from './src/components/BottomNav';
 import { AppToast } from './src/components/AppToast';
 import { PremiumSheet } from './src/components/PremiumSheet';
-import { refreshPremium } from './src/monetization/premium';
 import { NoConnectionSection, OfflineModal } from './src/components/NoConnection';
 import { ChallengeToast } from './src/components/ChallengeToast';
 import { OnlineJoinGate } from './src/components/OnlineJoinGate';
 import { RoomInviteToast } from './src/components/RoomInviteToast';
+import * as SplashScreen from 'expo-splash-screen';
+import { refreshPremium } from './src/monetization/premium';
 import { useRoomInvites } from './src/network/useRoomInvites';
 import { useChallenge } from './src/network/useChallenge';
 import { socketManager } from './src/network/socket';
-import { SavedGameRecord } from './src/storage/gameStorage';
-import { setBoardThemeName } from './src/theme/boardTheme';
+import { setBoardSkinId, setBoardThemeName } from './src/theme/boardTheme';
 import { installRealAds } from './src/monetization/adsNative';
 import { ensureSessionRecorded } from './src/monetization/realAds';
 import {
   DEFAULT_SETTINGS,
   UserSettings,
+  hydrateMatchSetupDrafts,
   loadSettings,
   saveSettings,
 } from './src/storage/gameStorage';
-import { setSoundsMuted } from './src/audio/sounds';
+import { releaseSounds, setSoundsMuted } from './src/audio/sounds';
 import { SessionProvider, useSession } from './src/network/session';
 import { flushIdentityStorage, hydrateIdentity, useIdentity } from './src/network/auth';
 import { hasCompletedOnboarding, markOnboardingComplete } from './src/storage/onboarding';
 import { isGeneratedUsername } from './src/usernamePolicy';
 import { ChooseUsernameScreen } from './src/screens/ChooseUsernameScreen';
-import { THEME } from './src/theme';
+import type { SavedGameRecord } from './src/storage/gameStorage';
+import { THEME, setThemeName, useTheme } from './src/theme';
 import { DEFAULT_TIME_CONTROL, TimeControl } from './src/timeControls';
 import { api, type FriendRequestItemDto } from './src/network/apiClient';
 import { useConnectivity } from './src/network/useConnectivity';
 import { sectionKind } from './src/network/errors';
+import { hydrateLanguage, setLanguage, useTranslation } from './src/i18n';
 
 import {
   useFonts,
@@ -116,12 +119,18 @@ interface ReplayData {
 }
 
 export default function App() {
+  const { t } = useTranslation();
   const [fontsLoaded] = useFonts({
     Manrope_400Regular,
     Manrope_500Medium,
     Manrope_600SemiBold,
     Manrope_700Bold,
     Manrope_800ExtraBold,
+    'Tajarib-Regular': require('./assets/fonts/Tajarib-Regular.otf'),
+    'Tajarib-Medium': require('./assets/fonts/Tajarib-Medium.otf'),
+    'Tajarib-Bold': require('./assets/fonts/Tajarib-Bold.otf'),
+    'Tajarib-Black': require('./assets/fonts/Tajarib-Black.otf'),
+    'Tajarib-Light': require('./assets/fonts/Tajarib-Light.otf'),
   });
 
   const [currentTab, setCurrentTab] = useState<MainTab>('PLAY');
@@ -157,6 +166,9 @@ export default function App() {
     autoRoom: null,
   });
   const [settings, setSettings] = useState<UserSettings>({ ...DEFAULT_SETTINGS });
+  // Themed UI paints only after the persisted mode is applied, so first
+  // paint already carries the right theme (no light-then-dark flash).
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [identityReady, setIdentityReady] = useState(false);
   // Boot state: the native splash covers font loading and identity
   // hydration, so there is never a blank frame.
@@ -167,6 +179,9 @@ export default function App() {
   const [exitAsk, setExitAsk] = useState(false);
   // Paywall entry #2 (P7.2): locked bot taps open the sheet, not a toast.
   const [premiumOpen, setPremiumOpen] = useState(false);
+  // Paywall attribution: which surface opened the sheet ('bots' default,
+  // 'analysis' for the review upgrade path).
+  const [premiumEntry, setPremiumEntry] = useState('bots');
 
   /** Forward navigation: records where we came from, then moves. */
   const navigate = (tab: MainTab, sub: SubScreen) => {
@@ -228,7 +243,7 @@ export default function App() {
   // the minimum display time are all satisfied. The main tree (gates, tabs)
   // renders underneath from the first frame, so there is never a blank flash
   // and the logo appears exactly once.
-  const booted = fontsLoaded && identityReady && splashElapsed;
+  const booted = (Platform.OS === 'web' || fontsLoaded) && identityReady && splashElapsed;
   useEffect(() => {
     if (booted) {
       void SplashScreen.hideAsync().catch(() => {});
@@ -246,12 +261,22 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Setup-screen drafts hydrate alongside settings so last-used picks
+    // are in the sync cache before any setup screen can mount.
+    void hydrateMatchSetupDrafts();
     loadSettings().then((s) => {
       setSettings(s);
       setSoundsMuted(!s.soundEnabled);
-      // Board palette follows settings (P5.1): render store syncs here so the
-      // board theme applies on first paint without an async read per render.
-      setBoardThemeName(s.themeName);
+      // Appearance applies on first paint: the persisted mode selects the
+      // active theme BEFORE any lazy screen module evaluates its styles.
+      setThemeName(s.darkMode ? 'dark' : 'light');
+      setSettingsLoaded(true);
+      // Board follows the mode (single toggle): dark carries Midnight,
+      // free for everyone. The persisted skin id selects premium boards;
+      // the render gate keeps those premium-only.
+      setBoardThemeName(s.darkMode ? 'midnight' : 'light');
+      setBoardSkinId(s.boardSkinId);
+      void hydrateLanguage();
     });
     // Ads runtime (P6): installs the real rewarded provider when the native
     // SDK exists (dev build) — no-op on web/Expo Go — and counts this launch
@@ -265,6 +290,17 @@ export default function App() {
     void saveSettings(patch);
     if (patch.soundEnabled !== undefined) setSoundsMuted(!patch.soundEnabled);
     if (patch.themeName !== undefined) setBoardThemeName(patch.themeName);
+    if (patch.boardSkinId !== undefined) setBoardSkinId(patch.boardSkinId);
+    if (patch.language !== undefined) void setLanguage(patch.language);
+    // Instant: live styles + subscribers pick the new theme up on this
+    // render pass — no reload. One toggle drives both: dark mode carries
+    // the Midnight board, free for everyone.
+    if (patch.darkMode !== undefined) {
+      setThemeName(patch.darkMode ? 'dark' : 'light');
+      const boardName = patch.darkMode ? 'midnight' : 'light';
+      void saveSettings({ themeName: boardName });
+      setBoardThemeName(boardName);
+    }
   };
 
   const handleStartGame = (config: ActiveGameConfig) => {
@@ -348,6 +384,10 @@ export default function App() {
   // Dismissals pop (never push): the closed match must not stay in
   // history, or Back walks straight back into the dead game.
   const handleCloseMatch = () => {
+    // Leaving the board frees decoded SFX (native mixer). Re-entry
+    // re-initializes transparently: GameScreen preloads on mount and notify
+    // toasts ensure-load on play.
+    releaseSounds();
     if (gameConfig.type === 'online') {
       const clock = gameConfig.timeControl ?? DEFAULT_TIME_CONTROL;
       if (gameConfig.onlineSource === 'room' && gameConfig.room) {
@@ -480,6 +520,14 @@ export default function App() {
       initialState: savedGame.initialState,
       history: savedGame.history,
       perspectiveIdx: 0,
+      // History/Profile replays open the bare match page (board, HUD cards,
+      // step controls with speed) - no analysis panels. The key identifies
+      // THIS finished game, so the bare page can offer the same one-ad
+      // upgrade to full review that the win/lose modal gate uses.
+      accessKey: {
+        gameId: savedGame.id,
+        historyLength: savedGame.history.length,
+      },
     });
     // History/Profile replays open the bare match page (board, HUD cards,
     // step controls with speed) - no analysis panels.
@@ -487,20 +535,89 @@ export default function App() {
     navigate(currentTab, 'REVIEW');
   };
 
+  // Bare replay -> full review upgrade (History/Profile Analyze path): the
+  // GameReviewScreen gate already wrote the unlock, so flipping the flag
+  // remounts into full mode (the App key includes the bare/full suffix).
+  const handleUpgradeReviewToFull = () => {
+    setReviewBare(false);
+  };
+
+  // Render-time chrome: these read the ACTIVE theme (post-setThemeName),
+  // unlike the module-level StyleSheet below which bakes light values.
+  // Memoized on the theme identity: parent re-renders (timers, toasts,
+  // polling) reuse the same object instead of rebuilding it each pass.
+  const theme = useTheme();
+  const chrome: {
+    root: ViewStyle;
+    content: ViewStyle;
+    exitCard: ViewStyle;
+    exitTitle: TextStyle;
+    exitSub: TextStyle;
+    exitStay: ViewStyle;
+    exitStayText: TextStyle;
+    exitQuit: ViewStyle;
+    exitQuitText: TextStyle;
+  } = useMemo(
+    () => ({
+    root: { flex: 1, backgroundColor: THEME.colors.background },
+    content: { flex: 1, backgroundColor: THEME.colors.background },
+    exitCard: {
+      width: '100%',
+      maxWidth: 320,
+      backgroundColor: THEME.colors.backgroundCard,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: THEME.colors.surfaceHairline,
+      padding: 20,
+      alignItems: 'center' as const,
+      ...THEME.shadows.modal,
+    },
+    exitTitle: { fontFamily: THEME.fonts.bold, fontSize: 17, color: THEME.colors.inverseLabel },
+    exitSub: {
+      fontFamily: THEME.fonts.medium,
+      fontSize: 13,
+      color: THEME.colors.textSecondaryStrong,
+      marginTop: 6,
+      textAlign: 'center' as const,
+    },
+    exitStay: {
+      flex: 1,
+      borderRadius: 10,
+      backgroundColor: THEME.colors.surfaceMuted,
+      paddingVertical: 12,
+      alignItems: 'center' as const,
+    },
+    exitStayText: { fontFamily: THEME.fonts.semiBold, fontSize: 14, color: THEME.colors.textOnMuted },
+    exitQuit: {
+      flex: 1,
+      borderRadius: 10,
+      backgroundColor: THEME.colors.danger,
+      paddingVertical: 12,
+      alignItems: 'center' as const,
+    },
+    exitQuitText: { fontFamily: THEME.fonts.bold, fontSize: 14, color: THEME.colors.onPrimary },
+    }),
+    // Factory reads the module THEME, which flips identity exactly on a
+    // mode toggle — same contract as useStyles in theme.ts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [theme]
+  );
+
   // One SessionProvider for the whole app. It owns the identity lifecycle:
   // `status === 'ready'` means a canonical identity is installed and `/me` has
   // been read, and only then may the authenticated UI mount. The native
   // splash covers this whole phase (see above), so no JS splash is needed.
   return (
     <SafeAreaProvider>
-    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+    <SafeAreaView style={chrome.root} edges={['top', 'bottom']}>
       <SystemChrome />
       <SessionProvider>
+        {settingsLoaded ? (
         <SessionGate>
           {/* Authenticated-only side effects: nothing here runs before a
               canonical identity exists. */}
           <SessionEffects onFriendRequests={setFriendRequestsCount} onOnlineCount={setOnlineCount} />
-        <View style={styles.content}>
+        <View style={chrome.content}>
           {/* Main Tab Screens (when no subscreen is active) */}
           {subScreen === null && (
             <View style={styles.tabContent}>
@@ -581,10 +698,12 @@ export default function App() {
             <MatchSetupScreen
               initialKind={setupKind}
               challengeName={challengeTarget?.username}
-              initialClock={DEFAULT_TIME_CONTROL}
               onBack={goBack}
               // Paywall entry #2 (P7.2): locked bot taps open the sheet.
-              onLockedBot={() => setPremiumOpen(true)}
+              onLockedBot={() => {
+                setPremiumEntry('bots');
+                setPremiumOpen(true);
+              }}
               onConfirm={(sel) => {
                 if (sel.vsType === 'challenge' && challengeTarget) {
                   challenge.sendChallenge(challengeTarget.id, challengeTarget.username, {
@@ -629,7 +748,7 @@ export default function App() {
           {/* Paywall entry #2 mount (P7.2): Modal floats above SETUP. */}
           <PremiumSheet
             visible={premiumOpen}
-            entry="bots"
+            entry={premiumEntry}
             onClose={() => setPremiumOpen(false)}
             onDone={() => {
               setPremiumOpen(false);
@@ -696,6 +815,11 @@ export default function App() {
               bare={reviewBare}
               ratings={replayData.ratings}
               accessKey={replayData.accessKey ?? null}
+              onUpgradeToFull={handleUpgradeReviewToFull}
+              onOpenPremium={() => {
+                setPremiumEntry('analysis');
+                setPremiumOpen(true);
+              }}
             />
           )}
 
@@ -734,7 +858,7 @@ export default function App() {
                 gameId={challenge.joining.gameId}
                 onSynced={(sync) => challenge.confirmJoining(sync)}
                 onFailed={() =>
-                  challenge.cancelJoining('Could not join that match. Go back and try again.')
+                  challenge.cancelJoining(t('app.joinFailed'))
                 }
               />
             )}
@@ -746,23 +870,23 @@ export default function App() {
             />
             {exitAsk && (
               <View style={styles.exitOverlay}>
-                <View style={styles.exitCard}>
-                  <Text style={styles.exitTitle}>Exit DuoOrb?</Text>
-                  <Text style={styles.exitSub}>Press back again to close the app.</Text>
+                <View style={chrome.exitCard}>
+                  <Text style={chrome.exitTitle}>{t('exit.title')}</Text>
+                  <Text style={chrome.exitSub}>{t('exit.subtitle')}</Text>
                   <View style={styles.exitRow}>
                     <TouchableOpacity
-                      style={styles.exitStay}
+                      style={chrome.exitStay}
                       onPress={() => setExitAsk(false)}
-                      accessibilityLabel="Stay in DuoOrb"
+                      accessibilityLabel={t('exit.stayA11y')}
                     >
-                      <Text style={styles.exitStayText}>Stay</Text>
+                      <Text style={chrome.exitStayText}>{t('exit.stay')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.exitQuit}
+                      style={chrome.exitQuit}
                       onPress={() => BackHandler.exitApp()}
-                      accessibilityLabel="Exit DuoOrb"
+                      accessibilityLabel={t('exit.exitA11y')}
                     >
-                      <Text style={styles.exitQuitText}>Exit</Text>
+                      <Text style={chrome.exitQuitText}>{t('exit.exit')}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -771,6 +895,9 @@ export default function App() {
           </View>
         </View>
         </SessionGate>
+        ) : (
+        <View style={styles.bootBlank} />
+        )}
       </SessionProvider>
       <AppToast />
       <OfflineModal />
@@ -793,12 +920,19 @@ export default function App() {
  * the expo-navigation-bar config plugin sets this same style natively so
  * even the cold-start frame agrees.
  */
-const SystemChrome: React.FC = () => (
-  <>
-    <NavigationBar style="light" />
-    <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.background} />
-  </>
-);
+const SystemChrome: React.FC = () => {
+  // Re-render with the tree so bar colors track an instant mode toggle.
+  useTheme();
+  return (
+    <>
+      <NavigationBar style={THEME.mode === 'dark' ? 'dark' : 'light'} />
+      <StatusBar
+        barStyle={THEME.mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={THEME.colors.background}
+      />
+    </>
+  );
+};
 
 /**
  * The single mount gate.
@@ -908,6 +1042,13 @@ const SessionEffects: React.FC<{
         timer = setTimeout(tick, 8000);
         return;
       }
+      // Backgrounded: radio + battery cost with nobody watching. Reschedule
+      // unread — foreground return is at most one cadence behind, same as
+      // the offline-skip path above.
+      if (AppState.currentState !== 'active') {
+        timer = setTimeout(tick, 8000);
+        return;
+      }
       const [reqSettled, countSettled] = await Promise.allSettled([
         isGuest ? Promise.resolve([] as FriendRequestItemDto[]) : api.getFriendRequests(),
         api.getOnlineCount(),
@@ -961,13 +1102,18 @@ const SessionEffects: React.FC<{
     let timer: ReturnType<typeof setTimeout> | null = null;
     const beat = () => {
       if (cancelled) return;
-      try {
-        const socket = socketManager.getSocket();
-        if (socketManager.isVerified() === true && socket.connected) {
-          socket.emit('presence:ping');
+      // Foreground-only: a backgrounded app SHOULD age out of the
+      // server-side freshness window — foregroundRevalidate below revives it
+      // on return. Pinging from background just burns radio.
+      if (AppState.currentState === 'active') {
+        try {
+          const socket = socketManager.getSocket();
+          if (socketManager.isVerified() === true && socket.connected) {
+            socket.emit('presence:ping');
+          }
+        } catch {
+          // Heartbeat is advisory — never crash the loop.
         }
-      } catch {
-        // Heartbeat is advisory — never crash the loop.
       }
       timer = setTimeout(beat, 60000);
     };
@@ -992,22 +1138,16 @@ const SessionEffects: React.FC<{
 };
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: THEME.colors.background,
-  },
   // Static boot frame: same background, no logo, no animation. Covers the
   // restoring/flag-loading windows without ever replaying the splash.
+  // Deliberately light-baked: it renders before settings (and the theme)
+  // resolve, under the native splash.
   bootBlank: {
     flex: 1,
     backgroundColor: THEME.colors.background,
   },
   bootErrorWrap: {
     justifyContent: 'center',
-  },
-  content: {
-    flex: 1,
-    backgroundColor: THEME.colors.background,
   },
   tabContent: {
     flex: 1,
@@ -1032,57 +1172,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
-  exitCard: {
-    width: '100%',
-    maxWidth: 320,
-    backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
-    padding: 20,
-    alignItems: 'center',
-    ...THEME.shadows.modal,
-  },
-  exitTitle: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 17,
-    color: THEME.colors.inverseLabel,
-  },
-  exitSub: {
-    fontFamily: THEME.fonts.medium,
-    fontSize: 13,
-    color: THEME.colors.textSecondaryStrong,
-    marginTop: 6,
-    textAlign: 'center',
-  },
   exitRow: {
     flexDirection: 'row',
     gap: 10,
     marginTop: 16,
     width: '100%',
-  },
-  exitStay: {
-    flex: 1,
-    borderRadius: 10,
-    backgroundColor: THEME.colors.surfaceMuted,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  exitStayText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 14,
-    color: THEME.colors.textOnMuted,
-  },
-  exitQuit: {
-    flex: 1,
-    borderRadius: 10,
-    backgroundColor: THEME.colors.danger,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  exitQuitText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 14,
-    color: THEME.colors.onPrimary,
   },
 });

@@ -98,6 +98,7 @@ export function rankActions(
   const racing = own.distance < minOpponentDist;
   const iMoveFirst = state.players[state.currentPlayerIndex]?.id === playerId ? 1 : -1;
   const plyMarginRoot = 2 * (minOpponentDist - own.distance) + iMoveFirst;
+  const wasFirst = own.distance < minOpponentDist || (own.distance === minOpponentDist && iMoveFirst > 0);
   const rivalPressure = rivalPressureOnMe(state, playerId);
   const focus = 1 - profile.randomness;
   const tuning = { ...DEFAULT_WALL_TUNING, ...(opts.tuning ?? {}) };
@@ -232,39 +233,24 @@ export function rankActions(
     } else if (candidate.action.type === 'PLACE_WALL' && candidate.wall) {
       const insight = candidate.wall;
       const baseScore = score;
-      const emergency = minOpponentDist <= 1;
-      // A brick of my own attack blueprint has bought its tempo even when its
-      // immediate delay is zero: the funnel it anchors is the payoff.
-      const isAttackBrick =
-        candidate.attackSlot === true && opts.attack !== undefined && opts.attack !== null;
-      const denies = insight.delay > 0 || isAttackBrick;
+      const emergency =
+        minOpponentDist <= 1 &&
+        (!state.mode.startsWith('race') || state.players.length === 2 || own.distance <= minOpponentDist + 1);
+      const raceBehind =
+        (state.mode.startsWith('race') || state.mode.startsWith('center') || state.players.length > 2) &&
+        minOpponentDist > 1 &&
+        own.distance > minOpponentDist;
+      const denies = insight.delay > 1 && !wasFirst;
       if (hasProgressMove && !(tuning.denialIsTempo && denies)) score -= perStep;
 
       const delay = insight.delay;
-      const wasFirst = own.distance < minOpponentDist;
-      const delayReachesFlip = plyMarginRoot >= -2 * delay - 1;
-      // This brick's own funnel damage (not the shared best): credit and
-      // affordability follow what THIS wall builds.
-      let brickDamage = 0;
-      if (
-        isAttackBrick &&
-        opts.attack !== null &&
-        opts.attack !== undefined
-      ) {
-        const at = opts.attack.slots.indexOf(packSlot(insight.slot));
-        brickDamage =
-          at >= 0 && at < opts.attack.memberDamage.length
-            ? opts.attack.memberDamage[at] ?? opts.attack.damage
-            : opts.attack.damage;
-      }
-      // A funnel brick is affordable when completing the funnel flips a race
-      // I am not already winning: the spend changes the result, which is the
-      // same test the immediate-delay bricks pass through delayReachesFlip.
-      const attackFlips =
-        isAttackBrick &&
-        plyMarginRoot < 2 &&
-        plyMarginRoot + 2 * brickDamage >= 2;
-      affordable = wasFirst || delayReachesFlip || emergency || prevention > 0 || attackFlips;
+      const delayReachesFlip = !wasFirst && delay >= 2 && own.distance <= minOpponentDist + delay - 1;
+      affordable =
+        !raceBehind &&
+        ((wasFirst && minOpponentDist <= 1) ||
+          delayReachesFlip ||
+          emergency ||
+          (prevention > 0 && !hasProgressMove));
 
       // Fresh-danger gate (see declaration above): behind with a seal
       // closing, and this wall leaves their re-read danger undiminished.
@@ -274,13 +260,13 @@ export function rankActions(
         seal !== null &&
         seal.damage >= 2 &&
         plyMarginRoot < 0 &&
-        (isAttackBrick || prevention > 0)
+        prevention > 0
       ) {
         stripped = freshDangerUnreduced(entry.after, seal.damage);
       }
       if (delay > 0) {
-        const pressuring = rivalPressure >= RIVAL_PRESSURE_STEPS;
-        const flips = !wasFirst && own.distance < minOpponentDist + delay;
+        const pressuring = !wasFirst && rivalPressure >= RIVAL_PRESSURE_STEPS;
+        const flips = delayReachesFlip;
         if (emergency) {
           score += Math.min(perStep * 3, delay * perStep) * 2.5 * focus;
         } else if (pressuring) {
@@ -295,18 +281,9 @@ export function rankActions(
       let structure = insight.structure * STRUCTURE_SHARE;
       const cap = perStep * ROOT_STRUCTURE_CAP_SHARE;
       if (structure > cap) structure = cap;
-      if (racing && delay === 0 && !isAttackBrick) structure = 0;
+      if ((racing && delay === 0) || (wasFirst && !emergency)) structure = 0;
       if (!affordable) structure = 0;
       score += structure;
-
-      // Offensive funnel credit: this brick earns a share of ITS OWN best
-      // funnel's combined damage, capped. Flows into wallCredit below, so it
-      // survives the exchange re-rank exactly like the defensive credits do.
-      // Stripped with the other speculation when the fresh danger is
-      // undiminished.
-      if (isAttackBrick && !stripped) {
-        score += Math.min(perStep * ATTACK_CREDIT_CAP, brickDamage * perStep * ATTACK_SHARE) * focus;
-      }
 
       const plan = opts.strategic;
       let suppressCredit = 0;
@@ -406,9 +383,9 @@ export function rankActions(
       if (entry.winsNow || entry.progress) bestProgress = Math.max(bestProgress, entry.score);
     }
     if (Number.isFinite(bestProgress)) {
-      const ceiling = bestProgress - TIE_EPSILON;
+      const ceiling = bestProgress - 0.1;
       for (const entry of reRanked) {
-        if (entry.affordable) continue;
+        if (entry.affordable && !(wasFirst && minOpponentDist > 1)) continue;
         if (entry.score > ceiling) entry.score = ceiling;
       }
     }

@@ -7,6 +7,7 @@ import {
 } from './auth';
 import { socketManager } from './socket';
 import { ApiError, NetworkError } from './errors';
+import type { GameReview, GameState, RecordedAction } from '@duoorb/game-core';
 
 // ApiError lives in ./errors (single taxonomy); re-exported here so existing
 // `import { ApiError } from '../network/apiClient'` call sites keep working.
@@ -824,4 +825,27 @@ export const api = {
       recentMatches: headToHeadMatches,
     };
   },
+
+  /**
+   * Request high-performance match analysis from the server's native Rust engine.
+   */
+  async requestGameReview(
+    initialState: GameState,
+    history: RecordedAction[]
+  ): Promise<GameReview> {
+    return request<GameReview>('/api/analysis/review', {
+      method: 'POST',
+      body: JSON.stringify({ initialState, history }),
+    });
+  },
+
+  /**
+   * Fetch cached match analysis from the server by gameId.
+   */
+  async getGameReview(gameId: string): Promise<GameReview> {
+    return request<GameReview>(`/api/analysis/${gameId}`, {
+      method: 'GET',
+    });
+  },
 };
+

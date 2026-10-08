@@ -15,7 +15,7 @@ import {
   type BoardStructure,
   type RouteProfile,
 } from '../ai-structure.js';
-import { planDamageAfter, planSuppression, type AttackBlueprint, type SealForecast, type StrategicRead } from '../ai-threat.js';
+import { planSuppression, type AttackBlueprint, type SealForecast, type StrategicRead } from '../ai-threat.js';
 import { applyAction } from '../ruleset.js';
 import { getLegalMoves } from '../movement.js';
 import { isLegalWallPlacement } from '../walls.js';
@@ -277,9 +277,9 @@ export function collectWallSlotIdeas(
       }
     }
 
-    // 3. The route itself.
+    // 3. The route itself (entire path to cover full-board detours and funnels)
     const cells = route.nearCells;
-    for (let c = 0; c < cells.length && c < ROUTE_BAND_CELLS; c++) {
+    for (let c = 0; c < cells.length; c++) {
       const reason =
         contestedCells.atLeast(packCell(cells[c]), 2)
           ? SLOT_ROUTE | SLOT_CONTESTED
@@ -289,27 +289,9 @@ export function collectWallSlotIdeas(
     }
   }
 
-  // 4. Chain extensions that reach a rival.
-  const rivals = rivalScratch;
-  rivals.clear();
-  for (const rival of state.players) {
-    if (rival.id === playerId || rival.status !== 'ACTIVE') continue;
-    const route = routeOf(state, board, rival);
-    if (route.hasGoalAccess) rivals.add(route.nearCells);
-  }
-  if (rivals.size > 0 && own.hasGoalAccess) {
-    let extensions = 0;
-    for (const chain of board.field.chains) {
-      if (chain.slots.length === 0 || extensions >= CHAIN_EXTENSION_CELLS) continue;
-      const anchor = chain.slots[0];
-      const n = packedSlotsTouchingCell(anchor.row, anchor.col, scratch);
-      for (let i = 0; i < n && extensions < CHAIN_EXTENSION_CELLS; i++) {
-        if (!board.field.chainTouch.has(packedName(scratch[i]))) continue;
-        if (!rivals.nearPacked(scratch[i], CONTEST_DISTANCE)) continue;
-        addPacked(scratch[i], SLOT_CHAIN);
-        extensions++;
-      }
-    }
+  // 4. Chain extensions that build structures or funnels.
+  for (const ext of board.field.extensions) {
+    addPacked(packSlot(ext), SLOT_CHAIN);
   }
 
   // 5. This player's own route.
@@ -345,72 +327,6 @@ export function collectWallSlotIdeas(
       }
     }
   }
-
-  // 6b. My own attack blueprint: bricks of the funnel I am building.
-  // No urgency gate — this is my plan, not a reaction to theirs.
-  if (attack) {
-    for (const packed of attack.slots) {
-      addPacked(packed, SLOT_MY_PLAN);
-    }
-  }
-
-  // 6c. Seal-breakers: when the rival is closing a forecasted seal on me,
-  // scan the whole lattice for walls that break it. The usual sources only
-  // see route-adjacent slots, but a sacrifice wall far from both pawns can
-  // collapse the forecast to zero (it re-routes me out of the sealed lane or
-  // steals a plan slot). Measured with one projected BFS per free slot, no
-  // state application: the probe loop below still filters legality and the
-  // ranking re-measures exactly. Top three only, so one forecast cannot flood
-  // the pool; skipped entirely when no seal exists.
-  if (seal && seal.damage > 0 && own.hasGoalAccess) {
-    const me = state.players.find((p) => p.id === playerId);
-    if (me && me.status === 'ACTIVE') {
-      const start = cellToIndex(me.position);
-      const sealWalls = seal.slots.map(unpackSlot);
-      const scored: { packed: number; prevention: number }[] = [];
-      for (let row = 0; row < 8; row++) {
-        for (let col = 0; col < 8; col++) {
-          for (let o = 0; o < 2; o++) {
-            const packed = row * 16 + col * 2 + o;
-            if (pool.reasonAt(packed) !== 0) continue;
-            if (slotConflictsPacked(index, packed)) continue;
-            const slot = unpackSlot(packed);
-            // A wall that seals me outright is illegal on its own: skip.
-            const alone = projectedGoalField(index, board.mode, me.goalDirection, [slot]);
-            if (alone[start] < 0) continue;
-            const field = projectedGoalField(index, board.mode, me.goalDirection, [slot, ...sealWalls]);
-            const d = field[start];
-            let still: number;
-            if (d < 0) {
-              // Candidate plus the full hypothetical seals me — but the seal
-              // never lands at once (one wall per turn), so price the worst
-              // single instead of reporting zero. Mirrors planDamageAfter's
-              // sealed fallback exactly, so generation agrees with scoring.
-              let worst = 0;
-              for (const w of sealWalls) {
-                const single = projectedGoalField(index, board.mode, me.goalDirection, [slot, w]);
-                const d1 = single[start];
-                if (d1 >= 0) worst = Math.max(worst, d1 - own.distance);
-              }
-              still = Math.max(0, worst);
-            } else {
-              still = Math.max(0, d - own.distance);
-            }
-            const prevention = seal.damage - still;
-            if (prevention > 0) scored.push({ packed, prevention });
-          }
-        }
-      }
-      scored.sort((a, b) => (b.prevention !== a.prevention ? b.prevention - a.prevention : a.packed - b.packed));
-      // Only plan-killers earn the keep guarantee: one-step noise is left to
-      // the normal pool ordering, so junk cannot displace real candidates.
-      const killers = scored.filter((s) => s.prevention >= 2).slice(0, 3);
-      for (const killer of killers) {
-        addPacked(killer.packed, SLOT_SEALBREAK);
-      }
-    }
-  }
-
   const ideas: WallSlotIdea[] = [];
   return pool.drain(ideas);
 }
@@ -518,32 +434,15 @@ export function buildRootCandidates(
         (contested ? perStep * 0.25 : 0)) *
       focus;
 
-    // Blueprint membership and its funnel credit, estimated here so the keep
-    // cut below orders walls the way the ranking will score them. Without
-    // this the keep (which only sees delay+structure) systematically kills
-    // funnel bricks whose whole value is the credit applied later — the
-    // ranking can only choose among survivors. Same formula as the ranking's
-    // credit, so the two stages agree instead of fighting.
-    const attackIdx =
-      attack !== null ? attack.slots.indexOf(ideas[i].packed) : -1;
-    const attackSlot = attackIdx >= 0;
-    const attackRankBump =
-      attackSlot && attack !== null
-        ? Math.min(
-            perStep * ATTACK_CREDIT_CAP,
-            (attack.memberDamage[attackIdx] ?? attack.damage) * perStep * ATTACK_SHARE
-          ) * focus
-        : 0;
-
     walls.push({
       action: { type: 'PLACE_WALL', wall: slot },
       onPath: false,
       wall: { slot, delay, selfCost, narrowAdv, forkDeny, extendsChain, turnsChain, bridgesChains, shapesSelf, contested, structure, planSuppression: 0 },
-      rank: delay * perStep + structure - selfCost * perStep + attackRankBump,
+      rank: delay * perStep + structure - selfCost * perStep,
       order: wallOrder(slot),
       planSlot: (ideas[i].reason & SLOT_RIVAL_PLAN) !== 0,
-      attackSlot: attackSlot,
-      sealbreak: (ideas[i].reason & SLOT_SEALBREAK) !== 0,
+      attackSlot: false,
+      sealbreak: false,
     });
     wallNextStates.set(wallOrder(slot), next);
   }
@@ -562,21 +461,9 @@ export function buildRootCandidates(
   const planKept = walls.filter((c) => c.planSlot && !keptOrders.has(c.order)).slice(0, profile.maxCandidateWalls);
   for (const c of planKept) keptOrders.add(c.order);
 
-  // Attack bricks kept before rank: the funnel's next walls must survive to
-  // be scored, even when their immediate delay is smaller than a goal-line
-  // block's. Mirrors the defensive plan guarantee above.
-  const attackKept = walls.filter((c) => c.attackSlot && !keptOrders.has(c.order)).slice(0, 3);
-  for (const c of attackKept) keptOrders.add(c.order);
-
-  // Seal-breakers kept before rank: a wall that collapses the rival's
-  // forecasted seal is never cut for a small immediate number. Same shape as
-  // the attack guarantee, same reason.
-  const sealKept = walls.filter((c) => c.sealbreak && !keptOrders.has(c.order)).slice(0, 3);
-  for (const c of sealKept) keptOrders.add(c.order);
-
   const remainingQuota = Math.max(0, profile.maxCandidateWalls - keptOrders.size);
   const restKept = walls.filter((c) => !keptOrders.has(c.order)).slice(0, remainingQuota);
-  const kept = maxDenialKept.concat(planKept).concat(attackKept).concat(sealKept).concat(restKept).sort(compareCandidates);
+  const kept = maxDenialKept.concat(planKept).concat(restKept).sort(compareCandidates);
 
   if (strategic && strategic.urgent && !strategic.raceDecided && me.wallsRemaining > 0) {
     for (const candidate of kept) {

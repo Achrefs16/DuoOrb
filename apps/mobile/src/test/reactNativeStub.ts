@@ -29,4 +29,10 @@ export const StyleSheet = {
   flatten: <T,>(style: T): T => style,
 };
 
-export default { Platform, AppState, StyleSheet };
+export const I18nManager = {
+  isRTL: false,
+  allowRTL: () => {},
+  forceRTL: () => {},
+};
+
+export default { Platform, AppState, StyleSheet, I18nManager };

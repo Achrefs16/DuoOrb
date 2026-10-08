@@ -8,7 +8,8 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { useSession } from '../network/session';
 import { useConnectivity } from '../network/useConnectivity';
 import {
@@ -69,6 +70,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onOpenSettings,
   onOpenPlayerProfile,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t, language } = useTranslation();
   const { identity } = useSession();
   const { isConnected } = useConnectivity();
   // Own badge reads the live entitlement store (same source as every gate),
@@ -83,6 +86,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [showAchievements, setShowAchievements] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
+
+  const formatJoined = (value?: string | number): string | null => {
+    if (!value) return null;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    const dateStr = d.toLocaleString(language === 'ar' ? 'ar-EG' : 'en-US', { month: 'long', year: 'numeric' });
+    return t('profile.joined', { date: dateStr });
+  };
 
   const fetchProfileData = useCallback(async (silent = false) => {
     // Silent = background refresh with data on screen: never flash a
@@ -158,7 +169,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const gamesPlayed = profile?.ratings?.CLASSIC_1V1?.gamesPlayed ?? (wins + losses);
   const winRate =
     gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 100) : 0;
-  const joinedLine = formatJoinedAt(profile?.createdAt);
+  const joinedLine = formatJoined(profile?.createdAt);
 
   const initial = (profile?.displayName || profile?.username || 'K').charAt(0).toUpperCase();
 
@@ -197,16 +208,26 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     }
   };
 
+  const metalLabel = (tier?: string) => {
+    switch (tier?.toLowerCase()) {
+      case 'bronze': return t('achievements.bronze');
+      case 'silver': return t('achievements.silver');
+      case 'gold': return t('achievements.gold');
+      case 'diamond': return t('achievements.diamond');
+      default: return tier ?? '';
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Profile</Text>
+        <Text style={styles.title}>{t('profile.title')}</Text>
         <TouchableOpacity
           style={styles.settingsIconBtn}
           activeOpacity={0.7}
           onPress={onOpenSettings}
-          accessibilityLabel="Settings"
+          accessibilityLabel={t('settings.title')}
         >
           <Feather name="settings" size={18} color={THEME.colors.textSecondary} />
         </TouchableOpacity>
@@ -252,7 +273,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 )}
                 {identity?.isGuest === true && (
                   <View style={styles.guestPill}>
-                    <Text style={styles.guestPillText}>UNSAVED GUEST</Text>
+                    <Text style={styles.guestPillText}>{t('profile.unsavedGuest')}</Text>
                   </View>
                 )}
                 {joinedLine && (
@@ -268,17 +289,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <View style={styles.statRibbon}>
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>{Math.round(rating1v1)}</Text>
-                <Text style={styles.statLabel}>RATING</Text>
+                <Text style={styles.statLabel}>{t('profile.rating')}</Text>
               </View>
 
               <View style={styles.statCard}>
                 <Text style={[styles.statNumber, { color: THEME.colors.primary }]}>{winRate}%</Text>
-                <Text style={styles.statLabel}>WIN RATE</Text>
+                <Text style={styles.statLabel}>{t('profile.winRate')}</Text>
               </View>
 
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>{gamesPlayed}</Text>
-                <Text style={styles.statLabelSub}>{wins}W · {losses}L</Text>
+                <Text style={styles.statLabelSub}>{t('profile.record', { wins, losses })}</Text>
               </View>
             </View>
           </View>
@@ -288,8 +309,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           {identity?.isGuest === true && (
             <View style={styles.gateWrap}>
               <GuestGate
-                title="Keep every match"
-                message="Link Google to save rating, friends, history & head-to-head."
+                title={t('profile.keepEveryMatch')}
+                message={t('profile.keepEveryMatchDesc')}
                 mini
               />
             </View>
@@ -302,9 +323,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           {achievements && (
             <View style={styles.recentSection}>
               <View style={styles.recentHeaderRow}>
-                <Text style={styles.sectionHeading}>ACHIEVEMENTS</Text>
+                <Text style={styles.sectionHeading}>{t('profile.achievements')}</Text>
                 <Text style={styles.sectionSub}>
-                  {achievements.catalog.filter((c) => c.earned).length}/{achievements.catalog.length} earned
+                  {t('profile.earnedCount', {
+                    earned: achievements.catalog.filter((c) => c.earned).length,
+                    total: achievements.catalog.length,
+                  })}
                 </Text>
               </View>
 
@@ -331,7 +355,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                       ) : (
                         <>
                           <View style={styles.showcaseEmpty} />
-                          <Text style={styles.showcaseEmptyText}>Slot {slot + 1}</Text>
+                          <Text style={styles.showcaseEmptyText}>{t('profile.slot', { n: slot + 1 })}</Text>
                         </>
                       )}
                     </TouchableOpacity>
@@ -343,11 +367,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 style={styles.viewAllBtn}
                 activeOpacity={0.8}
                 onPress={() => setShowAchievements(true)}
-                accessibilityLabel="View all achievements"
+                accessibilityLabel={t('profile.viewAllAchievements')}
                 accessibilityRole="button"
               >
                 <Feather name="grid" size={15} color={THEME.colors.textPrimary} />
-                <Text style={styles.viewAllText}>View All Achievements</Text>
+                <Text style={styles.viewAllText}>{t('profile.viewAllAchievements')}</Text>
                 <Feather name="chevron-right" size={16} color={THEME.colors.textPrimary} />
               </TouchableOpacity>
             </View>
@@ -407,7 +431,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                     },
                   ]}
                 >
-                  {detailBadge.earned ? METALS[tierOf(detailBadge.tier)].label : 'LOCKED'} ·{' '}
+                  {detailBadge.earned ? metalLabel(detailBadge.tier) : 'LOCKED'} ·{' '}
                   {CATEGORY_META[categoryOf(detailBadge.category)].title}
                 </Text>
               </View>
@@ -424,13 +448,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             )}
             <Text style={styles.detailMeta}>
               {detailEarnedAt
-                ? `Earned ${new Date(detailEarnedAt).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}`
-                : 'Locked — earn it first'}
-              {` · owned by ${detailOwners} player${detailOwners === 1 ? '' : 's'}`}
+                ? t('achievements.earnedBadge', {
+                    date: new Date(detailEarnedAt).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    }),
+                  })
+                : 'Locked'}
+              {` · ${detailOwners === 1 ? t('achievements.ownedBySingle') : t('achievements.ownedBy', { count: detailOwners })}`}
             </Text>
             {detailBadge?.earned && (
               <TouchableOpacity
@@ -444,7 +470,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <Text
                   style={[styles.detailEquipText, detailEquipped && styles.detailEquipTextActive]}
                 >
-                  {detailEquipped ? 'Equipped ✓' : 'Equip badge'}
+                  {detailEquipped ? `${t('achievements.equipped')} ✓` : t('achievements.equip')}
                 </Text>
               </TouchableOpacity>
             )}
@@ -452,9 +478,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               style={styles.detailCloseBtn}
               activeOpacity={0.7}
               onPress={() => setDetailCode(null)}
-              accessibilityLabel="Close badge details"
+              accessibilityLabel={t('report.done')}
             >
-              <Text style={styles.detailCloseText}>Close</Text>
+              <Text style={styles.detailCloseText}>{t('report.done')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -463,10 +489,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.drawBg,
+    backgroundColor: THEME.colors.background,
   },
   header: {
     height: 64,
@@ -499,7 +525,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 28,
+    paddingBottom: 120, // Clears the floating nav overlay.
     maxWidth: 448,
     width: '100%',
     alignSelf: 'center',

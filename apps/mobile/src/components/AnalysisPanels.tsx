@@ -1,8 +1,9 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { MoveAnalysis } from '@duoorb/game-core';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import { ordinal } from '../analysisUi';
+import { useTranslation } from '../i18n';
 
 /** Tiny before → after rows. Numbers do the talking, not prose. */
 export const ImpactRows: React.FC<{
@@ -11,6 +12,8 @@ export const ImpactRows: React.FC<{
   threatName: string | null;
   multi: boolean;
 }> = ({ analysis, moverName, threatName, multi }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const { before, after } = analysis;
   const wallsChanged = before.ownWalls !== after.ownWalls;
   return (
@@ -41,7 +44,7 @@ export const ImpactRows: React.FC<{
       )}
       {wallsChanged && (
         <View style={styles.impactRow}>
-          <Text style={styles.impactName}>Walls</Text>
+          <Text style={styles.impactName}>{t('analysis.walls')}</Text>
           <Text style={styles.impactNums}>
             {before.ownWalls} <Text style={styles.arrow}>→</Text> {after.ownWalls}
           </Text>
@@ -53,6 +56,7 @@ export const ImpactRows: React.FC<{
 
 /** Mini interactive demonstration: numbered principal variation lines. */
 export const ShowWhy: React.FC<{ lines: string[] }> = ({ lines }) => {
+  const styles = useStyles(createStyles);
   if (lines.length === 0) return null;
   return (
     <View style={styles.why}>
@@ -68,18 +72,20 @@ export const ShowWhy: React.FC<{ lines: string[] }> = ({ lines }) => {
 
 /** Expert rows, hidden behind Details. Raw engine data lives here only. */
 export const DetailsRows: React.FC<{ analysis: MoveAnalysis }> = ({ analysis }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const rows: Array<[string, string]> = [
-    ['Evaluation', formatEval(analysis.evaluationAfter)],
-    ['Win chance', `${Math.round(analysis.winChanceAfter * 100)}%`],
-    ['Your route', `${analysis.after.ownDistance}`],
-    ['Rival route', `${analysis.after.closestThreatDistance}`],
+    [t('analysis.evaluation'), formatEval(analysis.evaluationAfter)],
+    [t('analysis.winChance'), `${Math.round(analysis.winChanceAfter * 100)}%`],
+    [t('analysis.yourRoute'), `${analysis.after.ownDistance}`],
+    [t('analysis.rivalRoute'), `${analysis.after.closestThreatDistance}`],
   ];
   if (analysis.wallImpact) {
     const s = analysis.wallImpact.efficiencyScore;
-    rows.push(['Wall efficiency', s >= 60 ? 'High' : s >= 35 ? 'Medium' : 'Low']);
+    rows.push([t('analysis.wallEfficiency'), s >= 60 ? t('analysis.high') : s >= 35 ? t('analysis.medium') : t('analysis.low')]);
   }
-  rows.push(['Mobility', `${analysis.after.ownMobility}`]);
-  rows.push(['Depth', `${analysis.depthReached}`]);
+  rows.push([t('analysis.mobility'), `${analysis.after.ownMobility}`]);
+  rows.push([t('analysis.depth'), `${analysis.depthReached}`]);
   return (
     <View style={styles.details}>
       {rows.map(([label, value]) => (
@@ -120,40 +126,42 @@ export const SummaryBlock: React.FC<{
   onJumpMoment,
   onHome,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   return (
     <View style={styles.summary}>
-      <Text style={styles.summaryKicker}>Game review</Text>
+      <Text style={styles.summaryKicker}>{t('analysis.gameReview')}</Text>
       <Text style={styles.accuracy}>{Math.round(accuracyValue)}%</Text>
-      <Text style={styles.accuracyLabel}>Accuracy</Text>
+      <Text style={styles.accuracyLabel}>{t('analysis.accuracy')}</Text>
       <Text style={styles.counts}>
-        {good} good · {inaccuracies} inaccuracies · {mistakes} mistakes · {blunders} blunders
+        {t('analysis.counts', { good, inaccuracies, mistakes, blunders })}
       </Text>
 
       {momentMove !== null && (
         <View style={styles.momentBlock}>
-          <Text style={styles.momentKicker}>Deciding moment</Text>
-          <Text style={styles.momentMove}>Move {momentMove}</Text>
+          <Text style={styles.momentKicker}>{t('analysis.decidingMoment')}</Text>
+          <Text style={styles.momentMove}>{t('analysis.moveNumber', { n: momentMove })}</Text>
         </View>
       )}
 
-      <Text style={styles.lessonLabel}>Key lesson</Text>
+      <Text style={styles.lessonLabel}>{t('analysis.keyLesson')}</Text>
       <Text style={styles.lesson}>{lesson}</Text>
 
       <View style={styles.summaryButtons}>
         {momentMove !== null && (
           <TouchableOpacity style={styles.primaryButton} onPress={onJumpMoment}>
-            <Text style={styles.primaryButtonText}>Review moment</Text>
+            <Text style={styles.primaryButtonText}>{t('analysis.reviewMoment')}</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity style={styles.secondaryButton} onPress={onHome}>
-          <Text style={styles.secondaryButtonText}>Home</Text>
+          <Text style={styles.secondaryButtonText}>{t('analysis.home')}</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   impact: {
     alignSelf: 'stretch',
     gap: 2,

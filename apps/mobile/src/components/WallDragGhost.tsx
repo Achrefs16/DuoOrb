@@ -2,6 +2,7 @@ import React, { createContext, memo, useContext } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { WallCoord } from '@duoorb/game-core';
 import { wallRect } from './GameBoard';
+import { useBoardSkin } from '../theme/boardTheme';
 
 /**
  * Drag-ghost state, kept OUT of GameBoard's props on purpose.
@@ -49,8 +50,12 @@ interface DragGhostProps {
  */
 export const WallDragGhost = memo(function WallDragGhost({ cell, gap }: DragGhostProps) {
   const { slot, legal, color } = useContext(WallDragGhostContext);
+  const skin = useBoardSkin();
   if (!slot) return null;
   const rect = wallRect(slot, cell, gap);
+  // Held preview wears the skin like a placed wall: neutral fences preview
+  // as wood, so tray → drag → placed never changes design mid-gesture.
+  const neutral = skin.wallStyle === 'neutral' && skin.neutralWall;
   return (
     <View
       pointerEvents="none"
@@ -61,7 +66,15 @@ export const WallDragGhost = memo(function WallDragGhost({ cell, gap }: DragGhos
           left: rect.left,
           width: rect.width,
           height: rect.height,
-          backgroundColor: legal ? color : 'rgba(220, 38, 38, 0.45)',
+          backgroundColor: !legal
+            ? 'rgba(220, 38, 38, 0.45)'
+            : neutral
+              ? neutral
+              : color,
+          borderRadius:
+            skin.wallRadius === 'capsule'
+              ? Math.min(rect.width, rect.height) / 2
+              : skin.wallRadius,
         },
       ]}
     />

@@ -1,16 +1,34 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { MoveAssessment } from '@duoorb/game-core';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import { assessmentColor } from '../analysisUi';
+import { useTranslation } from '../i18n';
 
 /** Small classification pill: colored dot + label. No emoji, no giant cards. */
 export const AnalysisBadge: React.FC<{ assessment: MoveAssessment }> = ({
   assessment,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const color = assessmentColor(assessment);
-  const label =
-    assessment.charAt(0) + assessment.slice(1).toLowerCase();
+  const labelKey = (() => {
+    switch (assessment) {
+      case 'BEST':
+        return 'assessment.best';
+      case 'EXCELLENT':
+        return 'assessment.excellent';
+      case 'GOOD':
+        return 'assessment.good';
+      case 'INACCURACY':
+        return 'assessment.inaccuracy';
+      case 'MISTAKE':
+        return 'assessment.mistake';
+      case 'BLUNDER':
+        return 'assessment.blunder';
+    }
+  })();
+  const label = t(labelKey);
   return (
     <View style={styles.badge}>
       <View style={[styles.dot, { backgroundColor: color }]} />
@@ -19,7 +37,7 @@ export const AnalysisBadge: React.FC<{ assessment: MoveAssessment }> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   badge: {
     flexDirection: 'row',
     alignItems: 'center',

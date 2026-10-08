@@ -1,0 +1,14 @@
+C:\Users\achra\Documents\DuoOrb\packages\analyzer-rust\target\release\deps\serde-d1d71c575d3c9428.d: C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:\Users\achra\Documents\DuoOrb\packages\analyzer-rust\target\release\build\serde-64458c9d95d76d5f\out/private.rs
+
+C:\Users\achra\Documents\DuoOrb\packages\analyzer-rust\target\release\deps\libserde-d1d71c575d3c9428.rlib: C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:\Users\achra\Documents\DuoOrb\packages\analyzer-rust\target\release\build\serde-64458c9d95d76d5f\out/private.rs
+
+C:\Users\achra\Documents\DuoOrb\packages\analyzer-rust\target\release\deps\libserde-d1d71c575d3c9428.rmeta: C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:\Users\achra\Documents\DuoOrb\packages\analyzer-rust\target\release\build\serde-64458c9d95d76d5f\out/private.rs
+
+C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs:
+C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs:
+C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs:
+C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs:
+C:\Users\achra\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs:
+C:\Users\achra\Documents\DuoOrb\packages\analyzer-rust\target\release\build\serde-64458c9d95d76d5f\out/private.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\achra\\Documents\\DuoOrb\\packages\\analyzer-rust\\target\\release\\build\\serde-64458c9d95d76d5f\\out

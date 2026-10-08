@@ -1,0 +1,17 @@
+{
+  "name": "@duoorb/analyzer-rust",
+  "version": "1.0.0",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "binaryName": "duoorb-analyzer",
+    "triples": {
+      "default": true
+    }
+  },
+  "scripts": {
+    "build": "cargo build --release && node scripts/copy-binary.js",
+    "build:debug": "cargo build && node scripts/copy-binary.js",
+    "test": "node tests/binding.test.js"
+  }
+}

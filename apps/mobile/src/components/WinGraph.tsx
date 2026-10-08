@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Circle, Line, Polyline, Svg } from 'react-native-svg';
-import { THEME } from '../theme';
+import { THEME, useTheme } from '../theme';
 
 interface WinGraphProps {
   /** Win chance 0..1 per step, including step 0. */
@@ -18,6 +18,7 @@ export const WinGraph: React.FC<WinGraphProps> = ({
   current,
   moments = [],
 }) => {
+  useTheme();
   const W = 300;
   const H = 56;
   const PAD = 4;

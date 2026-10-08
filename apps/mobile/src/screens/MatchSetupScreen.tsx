@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { AIDifficulty, GameMode, botById, botLadder } from '@duoorb/game-core';
-import { THEME } from '../theme';
+import { AIDifficulty, GameMode, BotPersonality, botById, botLadder } from '@duoorb/game-core';
+import { BotAvatar } from '../components/BotAvatar';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { isPremiumActive, usePremium } from '../monetization/premium';
 import { runWhenOnline } from '../components/NoConnection';
-import { TIME_CONTROLS, TimeControl } from '../timeControls';
+import { TIME_CONTROLS, TimeControl, getTimeControl } from '../timeControls';
 import { resolveMode } from '../matchModes';
+import { getMatchSetupDraft, saveMatchSetupDraft } from '../storage/gameStorage';
 
 /** Which side the human plays in a classic AI game. */
 export type SideChoice = 'blue' | 'red' | 'random';
@@ -74,27 +77,76 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
   onConfirm,
   onBack,
 }) => {
-  const [modeSel, setModeSel] = useState<SetupMode>('classic');
-  const [difficulty, setDifficulty] = useState<AIDifficulty>(initialDifficulty);
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
+  // Last-used picks, per entry kind: everything stays chosen until changed.
+  // Explicit entry props (quick actions) win over the stored draft.
+  const draft = getMatchSetupDraft(vsType);
+  const [modeSel, setModeSel] = useState<SetupMode>(
+    draft.mode === 'center' || draft.mode === 'race' ? draft.mode : 'classic'
+  );
+  const [difficulty, setDifficulty] = useState<AIDifficulty>(
+    initialDifficulty !== 'normal'
+      ? initialDifficulty
+      : draft.difficulty === 'easy' || draft.difficulty === 'hard'
+        ? draft.difficulty
+        : 'normal'
+  );
   // Premium personality (null = generic difficulty bot). Picking a difficulty
   // always drops back to generic; picking a bot adopts its difficulty tier.
-  const [botId, setBotId] = useState<string | null>(null);
+  // A stored bot that no longer exists falls back to generic.
+  const [botId, setBotId] = useState<string | null>(
+    draft.botId && botById(draft.botId) ? draft.botId : null
+  );
+  const [previewBot, setPreviewBot] = useState<BotPersonality | null>(null);
   const premium = usePremium();
   const selectedBot = botId ? botById(botId) : null;
   const pickDifficulty = (d: AIDifficulty) => {
     setDifficulty(d);
     setBotId(null);
   };
-  const [side, setSide] = useState<SideChoice>('blue');
-  const [playerCount, setPlayerCount] = useState<PlayerCount>(2);
-  const [clock, setClock] = useState<TimeControl>(initialClock ?? TIME_CONTROLS[2]);
-  const [walls, setWalls] = useState<WallsChoice>(10);
+  const [side, setSide] = useState<SideChoice>(
+    draft.side === 'red' || draft.side === 'random' ? draft.side : 'blue'
+  );
+  const [playerCount, setPlayerCount] = useState<PlayerCount>(
+    draft.playerCount === 3 || draft.playerCount === 4 ? draft.playerCount : 2
+  );
+  const [clock, setClock] = useState<TimeControl>(
+    initialClock ?? getTimeControl(draft.clockId)
+  );
+  const [walls, setWalls] = useState<WallsChoice>(
+    draft.wallsEach === 15 || draft.wallsEach === 99 ? draft.wallsEach : 10
+  );
+
+  // Remember every change under this entry kind.
+  useEffect(() => {
+    saveMatchSetupDraft(vsType, {
+      mode: modeSel,
+      playerCount,
+      difficulty,
+      botId,
+      side,
+      wallsEach: walls,
+      clockId: clock.id,
+    });
+  }, [vsType, modeSel, playerCount, difficulty, botId, side, walls, clock]);
 
   const resolvedMode: GameMode = resolveMode(
     modeSel === 'race' ? 'race' : modeSel === 'center' ? 'center' : 'classic',
     playerCount
   );
-  const desc = MODE_DESC[modeSel];
+
+  const getRulesDesc = (mode: SetupMode) => {
+    switch (mode) {
+      case 'classic':
+        return { title: t('setup.classicTitle'), body: t('setup.classicDesc') };
+      case 'center':
+        return { title: t('setup.centerTitle'), body: t('setup.centerDesc') };
+      case 'race':
+        return { title: t('setup.raceTitle'), body: t('setup.raceDesc') };
+    }
+  };
+  const desc = getRulesDesc(modeSel);
 
   return (
     <View style={styles.screen}>
@@ -106,14 +158,14 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityLabel="Go back"
           >
-            <Feather name="chevron-left" size={24} color={THEME.colors.slate[700]} />
+            <Feather name="chevron-left" size={24} color={THEME.colors.onSurface} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
             {vsType === 'challenge'
-              ? `Challenge ${challengeName ?? ''}`.trim()
+              ? t('setup.challengeTitle', { name: challengeName ?? '' })
               : vsType === 'online'
-              ? 'Custom Online Match'
-              : 'Match Setup'}
+              ? t('setup.customOnline')
+              : t('setup.title')}
           </Text>
         </View>
         <View style={{ width: 24 }} />
@@ -128,13 +180,13 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
         <View style={styles.card}>
           {/* Mode */}
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Mode</Text>
+            <Text style={styles.sectionLabel}>{t('setup.mode')}</Text>
             <View style={styles.track}>
               {(
                 [
-                  { id: 'classic', label: 'Classic' },
-                  { id: 'center', label: 'Center Rush' },
-                  { id: 'race', label: 'Race' },
+                  { id: 'classic', label: t('setup.classic') },
+                  { id: 'center', label: t('setup.centerRush') },
+                  { id: 'race', label: t('setup.race') },
                 ] as const
               ).map((m) => (
                 <TouchableOpacity
@@ -154,8 +206,8 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
           {modeSel !== 'classic' && (
             <View style={styles.section}>
               <View style={styles.labelRow}>
-                <Text style={styles.sectionLabel}>Players</Text>
-                <Text style={styles.sectionHint}>Free for all</Text>
+                <Text style={styles.sectionLabel}>{t('setup.players')}</Text>
+                <Text style={styles.sectionHint}>{t('setup.freeForAll')}</Text>
               </View>
               <View style={styles.track}>
                 {([2, 3, 4] as PlayerCount[]).map((n) => (
@@ -165,7 +217,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                     onPress={() => setPlayerCount(n)}
                   >
                     <Text style={[styles.optText, playerCount === n && styles.optTextActive]}>
-                      {n} Players
+                      {t('setup.playerCount', { count: n })}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -173,49 +225,71 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             </View>
           )}
 
-          {/* AI difficulty */}
+          {/* Compact Chess.com-style Bot Selector */}
           {vsType === 'ai' && (
             <View style={styles.section}>
               <View style={styles.labelRow}>
-                <Text style={styles.sectionLabel}>AI Difficulty</Text>
-                <Text style={styles.sectionHint}>
-                  {selectedBot ? `${selectedBot.elo} ELO` : ELO[difficulty]}
-                </Text>
-              </View>
-              <View style={styles.track}>
-                {(
-                  [
-                    { id: 'easy', label: 'Easy' },
-                    { id: 'normal', label: 'Normal' },
-                    { id: 'hard', label: 'Hard' },
-                  ] as const
-                ).map((d) => (
+                <Text style={styles.sectionLabel}>{t('setup.opponent')}</Text>
+                {selectedBot ? (
                   <TouchableOpacity
-                    key={d.id}
-                    style={[styles.opt, difficulty === d.id && styles.optActive]}
-                    onPress={() => pickDifficulty(d.id)}
+                    style={styles.selectedBotBadge}
+                    onPress={() => setPreviewBot(selectedBot)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={[styles.optText, difficulty === d.id && styles.optTextActive]}>
-                      {d.label}
+                    <Text style={[styles.selectedBotBadgeText, { color: selectedBot.color }]}>
+                      {selectedBot.name} · {selectedBot.elo} ELO
                     </Text>
+                    <Feather name="info" size={12} color={selectedBot.color} />
                   </TouchableOpacity>
-                ))}
+                ) : (
+                  <Text style={styles.sectionHint}>
+                    {t('setup.genericAi')} · {ELO[difficulty]}
+                  </Text>
+                )}
               </View>
-            </View>
-          )}
 
-          {/* Named opponent (MONETIZATION.md P4.2.1): premium personalities
-              below the generic track. Locked cards show a lock and route to
-              the paywall hold; premium members select directly. */}
-          {vsType === 'ai' && (
-            <View style={styles.section}>
-              <View style={styles.labelRow}>
-                <Text style={styles.sectionLabel}>Opponent</Text>
-                <Text style={styles.sectionHint}>
-                  {selectedBot ? selectedBot.name : 'Generic AI'}
-                </Text>
-              </View>
-              <View style={styles.botList}>
+              {/* Compact Bot Horizontal Scroll */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.compactBotScroll}
+              >
+                {/* Standard Engine Option */}
+                <TouchableOpacity
+                  style={[
+                    styles.compactBotCard,
+                    !botId && styles.compactBotCardActiveStandard,
+                  ]}
+                  activeOpacity={0.8}
+                  onPress={() => setBotId(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Standard Engine"
+                >
+                  <View
+                    style={[
+                      styles.compactEngineIconWrap,
+                      !botId && styles.compactEngineIconWrapActive,
+                    ]}
+                  >
+                    <Feather
+                      name="cpu"
+                      size={20}
+                      color={!botId ? THEME.colors.primary : THEME.colors.textMuted}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.compactBotName,
+                      !botId && { color: THEME.colors.primary, fontWeight: '700' },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Engine
+                  </Text>
+                  <Text style={styles.compactBotElo}>AI</Text>
+                </TouchableOpacity>
+
+                {/* Real Human Bot Personas (Martin, Elena, Nelson, Sofia, Marcus, Viktor) */}
                 {botLadder().map((b) => {
                   const locked =
                     !DEV_UNLOCK_BOTS && b.premium && !isPremiumActive(premium);
@@ -223,7 +297,14 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                   return (
                     <TouchableOpacity
                       key={b.id}
-                      style={[styles.botRow, selected && styles.botRowActive]}
+                      style={[
+                        styles.compactBotCard,
+                        selected && [
+                          styles.compactBotCardActive,
+                          { borderColor: b.color },
+                        ],
+                      ]}
+                      activeOpacity={0.8}
                       onPress={() => {
                         if (locked) {
                           onLockedBot?.();
@@ -235,35 +316,88 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                       accessibilityRole="button"
                       accessibilityLabel={`${b.name}, ${b.title}, ${b.elo} ELO${locked ? ', locked' : ''}`}
                     >
-                      <View style={[styles.botGlyph, { backgroundColor: b.color }]}>
-                        <Text style={styles.botGlyphText}>{b.avatarGlyph}</Text>
+                      <View style={styles.compactAvatarWrap}>
+                        <BotAvatar
+                          avatarKey={b.avatarKey}
+                          color={b.color}
+                          size={40}
+                          showGlow={selected}
+                        />
+                        {locked && (
+                          <View style={styles.compactLockBadge}>
+                            <Feather name="lock" size={9} color="#FFFFFF" />
+                          </View>
+                        )}
+                        {selected && (
+                          <View style={[styles.compactCheckBadge, { backgroundColor: b.color }]}>
+                            <Feather name="check" size={8} color="#FFFFFF" />
+                          </View>
+                        )}
                       </View>
-                      <View style={styles.botMeta}>
-                        <Text style={styles.botName}>
-                          {b.name} <Text style={styles.botElo}>· {b.elo}</Text>
-                        </Text>
-                        <Text style={styles.botTitle} numberOfLines={1}>
-                          {b.title}
-                        </Text>
-                      </View>
-                      {locked ? (
-                        <Feather name="lock" size={15} color={THEME.colors.textSecondaryStrong} />
-                      ) : (
-                        selected && (
-                          <Feather name="check-circle" size={17} color={THEME.colors.primary} />
-                        )
-                      )}
+
+                      <Text
+                        style={[
+                          styles.compactBotName,
+                          selected && { color: b.color, fontWeight: '700' },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {b.name}
+                      </Text>
+                      <Text style={styles.compactBotElo}>{b.elo}</Text>
                     </TouchableOpacity>
                   );
                 })}
-              </View>
+              </ScrollView>
+
+              {/* When Standard Engine selected: compact difficulty chips */}
+              {!botId && (
+                <View style={styles.track}>
+                  {(
+                    [
+                      { id: 'easy', label: t('setup.easy') },
+                      { id: 'normal', label: t('setup.normal') },
+                      { id: 'hard', label: t('setup.hard') },
+                    ] as const
+                  ).map((d) => (
+                    <TouchableOpacity
+                      key={d.id}
+                      style={[styles.opt, difficulty === d.id && styles.optActive]}
+                      onPress={() => pickDifficulty(d.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.optText,
+                          difficulty === d.id && styles.optTextActive,
+                        ]}
+                      >
+                        {d.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* When named bot selected: slim one-line style quote with tap to preview */}
+              {selectedBot && (
+                <TouchableOpacity
+                  style={styles.compactBotQuoteRow}
+                  activeOpacity={0.8}
+                  onPress={() => setPreviewBot(selectedBot)}
+                >
+                  <Text style={styles.compactBotQuoteText} numberOfLines={1}>
+                    "{selectedBot.style}"
+                  </Text>
+                  <Feather name="chevron-right" size={13} color={THEME.colors.textMuted} />
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
           {/* Your side */}
           {vsType === 'ai' && modeSel === 'classic' && (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>Your Side</Text>
+              <Text style={styles.sectionLabel}>{t('setup.yourSide')}</Text>
               <View style={styles.track}>
                 <TouchableOpacity
                   style={[styles.opt, side === 'blue' && styles.optActive]}
@@ -272,7 +406,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                   <View style={styles.sideRow}>
                     <View style={[styles.sideDot, { backgroundColor: THEME.colors.primary }]} />
                     <Text style={[styles.optText, side === 'blue' && styles.optTextActive]}>
-                      Blue
+                      {t('setup.blue')}
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -283,7 +417,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                   <View style={styles.sideRow}>
                     <View style={[styles.sideDot, { backgroundColor: THEME.colors.playerPink }]} />
                     <Text style={[styles.optText, side === 'red' && styles.optTextActive]}>
-                      Red
+                      {t('setup.red')}
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -298,7 +432,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                       color={side === 'random' ? THEME.colors.primary : THEME.colors.textSecondaryStrong}
                     />
                     <Text style={[styles.optText, side === 'random' && styles.optTextActive]}>
-                      Random
+                      {t('setup.random')}
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -308,7 +442,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
 
           {/* Time control */}
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Time Control</Text>
+            <Text style={styles.sectionLabel}>{t('setup.timeControl')}</Text>
             <View style={styles.track}>
               {TIME_CONTROLS.slice(0, 3).map((tc) => (
                 <TouchableOpacity
@@ -326,13 +460,13 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
 
           {/* Walls */}
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Walls</Text>
+            <Text style={styles.sectionLabel}>{t('setup.walls')}</Text>
             <View style={styles.track}>
               {(
                 [
-                  { id: 10, label: '10 Walls' },
-                  { id: 15, label: '15 Walls' },
-                  { id: 99, label: 'Unlimited ∞' },
+                  { id: 10, label: t('setup.walls10') },
+                  { id: 15, label: t('setup.walls15') },
+                  { id: 99, label: t('setup.wallsUnlimited') },
                 ] as const
               ).map((w) => (
                 <TouchableOpacity
@@ -381,24 +515,95 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             <MaterialCommunityIcons name="play" size={20} color={THEME.colors.onPrimary} />
             <Text style={styles.ctaText}>
               {vsType === 'ai'
-                ? 'Play vs AI'
+                ? t('setup.playAi')
                 : vsType === 'challenge'
-                ? 'Send Challenge'
+                ? t('setup.sendChallenge')
                 : vsType === 'online'
-                ? 'Find Custom Match'
-                : 'Play Local'}
+                ? t('setup.findCustom')
+                : t('setup.playLocal')}
             </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Chess.com-style Bot Challenge Sheet / Modal */}
+      {previewBot && (
+        <Modal
+          visible={!!previewBot}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPreviewBot(null)}
+        >
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setPreviewBot(null)}
+          >
+            <Pressable
+              style={styles.modalCard}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setPreviewBot(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Feather name="x" size={20} color={THEME.colors.textMuted} />
+              </TouchableOpacity>
+
+              <View style={styles.modalHeader}>
+                <BotAvatar
+                  avatarKey={previewBot.avatarKey}
+                  color={previewBot.color}
+                  size="xl"
+                  showGlow
+                />
+                <Text style={styles.modalBotName}>{previewBot.name}</Text>
+                <View style={styles.modalBadgeRow}>
+                  <View style={[styles.modalBadge, { backgroundColor: previewBot.color }]}>
+                    <Text style={styles.modalBadgeText}>{previewBot.elo} ELO</Text>
+                  </View>
+                  <Text style={styles.modalBotTitle}>{previewBot.title}</Text>
+                </View>
+              </View>
+
+              {/* Bot Catchphrase Quote */}
+              <View style={[styles.quoteCard, { borderLeftColor: previewBot.color }]}>
+                <Text style={styles.quoteText}>"{previewBot.quote}"</Text>
+              </View>
+
+              {/* Character Bio & Playstyle */}
+              <View style={styles.bioBlock}>
+                <Text style={styles.bioTitle}>Playstyle & Strategy</Text>
+                <Text style={styles.bioText}>{previewBot.bio}</Text>
+              </View>
+
+              {/* Challenge CTA Button */}
+              <TouchableOpacity
+                style={[styles.modalCta, { backgroundColor: previewBot.color }]}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setBotId(previewBot.id);
+                  setDifficulty(previewBot.profile.difficulty);
+                  setPreviewBot(null);
+                }}
+              >
+                <Feather name="zap" size={18} color="#FFFFFF" />
+                <Text style={styles.modalCtaText}>
+                  {botId === previewBot.id ? 'Selected' : `Challenge ${previewBot.name}`}
+                </Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: THEME.colors.drawBg,
+    backgroundColor: THEME.colors.background,
   },
   header: {
     backgroundColor: THEME.colors.backgroundCard,
@@ -500,62 +705,236 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
-  botList: {
-    gap: 6,
-  },
-  botRow: {
+  selectedBotBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 4,
     backgroundColor: THEME.colors.surfaceMuted,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
-  botRowActive: {
+  selectedBotBadgeText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  compactBotScroll: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  compactBotCard: {
+    width: 68,
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    borderRadius: 12,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    gap: 3,
+  },
+  compactBotCardActive: {
     backgroundColor: THEME.colors.backgroundCard,
-    borderColor: THEME.colors.primary,
     ...THEME.shadows.card,
   },
-  botGlyph: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
+  compactBotCardActiveStandard: {
+    backgroundColor: THEME.colors.backgroundCard,
+    borderColor: THEME.colors.primary,
+    borderWidth: 1.5,
+    ...THEME.shadows.card,
+  },
+  compactEngineIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: THEME.colors.surfaceMuted,
     justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
   },
-  botGlyphText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
+  compactEngineIconWrapActive: {
+    backgroundColor: 'rgba(108, 111, 253, 0.12)',
+    borderColor: THEME.colors.primary,
   },
-  botMeta: {
+  compactAvatarWrap: {
+    position: 'relative',
+  },
+  compactLockBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  compactCheckBadge: {
+    position: 'absolute',
+    bottom: -3,
+    right: -3,
+    borderRadius: 7,
+    width: 14,
+    height: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+  },
+  compactBotName: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 11,
+    fontWeight: '600',
+    color: THEME.colors.textOnMuted,
+    textAlign: 'center',
+  },
+  compactBotElo: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 10,
+    fontWeight: '500',
+    color: THEME.colors.textSecondaryStrong,
+    textAlign: 'center',
+  },
+  compactBotQuoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 4,
+  },
+  compactBotQuoteText: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 11,
+    fontStyle: 'italic',
+    color: THEME.colors.textSecondaryStrong,
     flex: 1,
-    gap: 1,
+    marginRight: 6,
   },
-  botName: {
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+    padding: 20,
+    alignItems: 'center',
+    gap: 14,
+    ...THEME.shadows.modal,
+  },
+  modalCloseBtn: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    zIndex: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: THEME.colors.surfaceMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalHeader: {
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  modalBotName: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 22,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  modalBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modalBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  modalBadgeText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  modalBotTitle: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 13,
     fontWeight: '600',
-    color: THEME.colors.textOnMuted,
-  },
-  botElo: {
-    fontFamily: THEME.fonts.medium,
-    fontSize: 11,
-    fontWeight: '500',
-    color: THEME.colors.statusOffline,
-  },
-  botTitle: {
-    fontFamily: THEME.fonts.regular,
-    fontSize: 11,
     color: THEME.colors.textSecondaryStrong,
+  },
+  quoteCard: {
+    width: '100%',
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderLeftWidth: 3.5,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  quoteText: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 12,
+    fontStyle: 'italic',
+    lineHeight: 18,
+    color: THEME.colors.textPrimary,
+  },
+  bioBlock: {
+    width: '100%',
+    gap: 4,
+  },
+  bioTitle: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    color: THEME.colors.textSecondaryStrong,
+    letterSpacing: 0.5,
+  },
+  bioText: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    color: THEME.colors.textSecondary,
+  },
+  modalCta: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 12,
+    marginTop: 4,
+    ...THEME.shadows.card,
+  },
+  modalCtaText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   hintBanner: {
     flexDirection: 'row',
     gap: 10,
-    backgroundColor: 'rgba(239, 246, 255, 0.7)',
+    backgroundColor: THEME.mode === 'dark' ? 'rgba(108, 111, 253, 0.16)' : 'rgba(239, 246, 255, 0.7)',
     borderWidth: 1,
     borderColor: THEME.colors.surfacePrimaryTintBorder,
     borderRadius: 12,
@@ -569,12 +948,12 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 12,
     fontWeight: '700',
-    color: THEME.colors.chartInk,
+    color: THEME.mode === 'dark' ? '#C7C9FF' : THEME.colors.chartInk,
   },
   hintText: {
     fontFamily: THEME.fonts.regular,
     fontSize: 11,
-    color: 'rgba(30, 64, 175, 0.8)',
+    color: THEME.mode === 'dark' ? 'rgba(199, 201, 255, 0.9)' : 'rgba(30, 64, 175, 0.8)',
     lineHeight: 16,
     marginTop: 2,
   },

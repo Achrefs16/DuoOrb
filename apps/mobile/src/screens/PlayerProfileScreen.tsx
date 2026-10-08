@@ -10,7 +10,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { createInitialState } from '@duoorb/game-core';
-import { THEME, playerColor } from '../theme';
+import { THEME, playerColor, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { useIdentity } from '../network/auth';
 import { useConnectivity } from '../network/useConnectivity';
 import {
@@ -90,6 +91,17 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   onSelectGame,
   inGame = false,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t, language } = useTranslation();
+
+  const formatJoined = (value?: string | number): string | null => {
+    if (!value) return null;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    const dateStr = d.toLocaleString(language === 'ar' ? 'ar-EG' : 'en-US', { month: 'long', year: 'numeric' });
+    return t('profile.joined', { date: dateStr });
+  };
+
   const [profile, setProfile] = useState<PublicProfileDto | null>(null);
   const [ratingHistory, setRatingHistory] = useState<RatingHistoryPointDto[]>([]);
   const [headToHead, setHeadToHead] = useState<HeadToHeadStats | null>(null);
@@ -379,7 +391,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
         <TouchableOpacity style={styles.backBtn} onPress={onBack}>
           <Feather name="arrow-left" size={20} color={THEME.colors.textSecondary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Player Profile</Text>
+        <Text style={styles.title}>{t('profile.playerTitle')}</Text>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => setShowSafety((v) => !v)}
@@ -395,10 +407,10 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
         <SafeAreaView style={styles.removeOverlay} edges={['top', 'bottom']}>
           <View style={styles.removeCard}>
             <Text style={styles.removeTitle}>
-              Remove {profile?.displayName || profile?.username || 'friend'}?
+              {t('profile.removeFriendTitle', { name: profile?.displayName || profile?.username || 'friend' })}
             </Text>
             <Text style={styles.removeDesc}>
-              You will no longer see each other in your friends lists.
+              {t('profile.removeFriendDesc')}
             </Text>
             <View style={styles.removeActions}>
               <TouchableOpacity
@@ -407,14 +419,14 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 onPress={() => void handleRemoveFriend()}
               >
                 <Text style={styles.removeConfirmText}>
-                  {removing ? 'Removing…' : 'Remove friend'}
+                  {removing ? t('profile.removing') : t('profile.removeFriend')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.removeCancel}
                 onPress={() => setShowRemove(false)}
               >
-                <Text style={styles.removeCancelText}>Cancel</Text>
+                <Text style={styles.removeCancelText}>{t('profile.cancel')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -456,10 +468,10 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                     @{profile.username}
                   </Text>
                 )}
-                {formatJoinedAt(profile?.createdAt) && (
+                {formatJoined(profile?.createdAt) && (
                   <View style={styles.joinedRow}>
                     <Feather name="calendar" size={14} color={THEME.colors.textSecondaryStrong} />
-                    <Text style={styles.joinedText}>{formatJoinedAt(profile?.createdAt)}</Text>
+                    <Text style={styles.joinedText}>{formatJoined(profile?.createdAt)}</Text>
                   </View>
                 )}
               </View>
@@ -469,15 +481,15 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
             <View style={styles.statBoxes}>
               <View style={styles.statBox}>
                 <Text style={styles.statBoxNumber}>{Math.round(rating1v1)}</Text>
-                <Text style={styles.statBoxLabel}>Rating</Text>
+                <Text style={styles.statBoxLabel}>{t('profile.rating')}</Text>
               </View>
               <View style={styles.statBox}>
                 <Text style={[styles.statBoxNumber, { color: THEME.colors.primary }]}>{winRate}%</Text>
-                <Text style={styles.statBoxLabel}>Win Rate</Text>
+                <Text style={styles.statBoxLabel}>{t('profile.winRate')}</Text>
               </View>
               <View style={styles.statBox}>
                 <Text style={styles.statBoxNumber}>{gamesPlayed}</Text>
-                <Text style={styles.statBoxSub}>{wins}W · {losses}L</Text>
+                <Text style={styles.statBoxSub}>{t('profile.record', { wins, losses })}</Text>
               </View>
             </View>
 
@@ -492,7 +504,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 onPress={() => onChallenge({ id: profile!.id, username: profile!.username })}
               >
                 <MaterialCommunityIcons name="sword-cross" size={20} color={THEME.colors.onPrimary} />
-                <Text style={styles.challengeBtnText}>Challenge</Text>
+                <Text style={styles.challengeBtnText}>{t('profile.challenge')}</Text>
               </TouchableOpacity>
               )}
 
@@ -540,14 +552,14 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                   {blocked
                     ? blockBusy
                       ? '…'
-                      : 'Unblock'
+                      : t('profile.unblock')
                     : viewerIsGuest
-                    ? 'Add Friend'
+                    ? t('profile.addFriend')
                     : isFriend
-                    ? 'Friends'
+                    ? t('profile.friends')
                     : friendRequestSent
-                    ? 'Sent'
-                    : 'Add Friend'}
+                    ? t('profile.sent')
+                    : t('profile.addFriend')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -556,7 +568,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               menu below), not inline buttons. The main actions above stay
               visually dominant. */}
             {blocked && (
-              <Text style={styles.blockedNote}>Blocked — you will not match or see requests from this player.</Text>
+              <Text style={styles.blockedNote}>{t('profile.blockedNote')}</Text>
             )}
           </View>
 
@@ -580,9 +592,9 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
             <View style={styles.signInOverlay}>
               <View style={styles.signInCard}>
                 <GuestGate
-                  title="Save your account to add friends"
-                  message="Sign in to keep your friends, rating, and game history across devices."
-                  secondaryLabel="Not now"
+                  title={t('profile.saveToFriendsTitle')}
+                  message={t('profile.saveToFriendsMessage')}
+                  secondaryLabel={t('profile.notNow')}
                   onSecondary={() => setShowSignIn(false)}
                   mini
                 />
@@ -596,8 +608,8 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
           {!!profile?.badges && (
             <View style={styles.achSection}>
               <View style={styles.achHeaderRow}>
-                <Text style={styles.sectionHeading}>ACHIEVEMENTS</Text>
-                <Text style={styles.achCount}>{equippedBadges.length} equipped</Text>
+                <Text style={styles.sectionHeading}>{t('profile.achievements')}</Text>
+                <Text style={styles.achCount}>{t('profile.equippedCount', { count: equippedBadges.length })}</Text>
               </View>
               <View style={styles.showcaseRow}>
                 {[0, 1, 2].map((slot) => {
@@ -621,7 +633,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                       ) : (
                         <>
                           <View style={styles.showcaseEmpty} />
-                          <Text style={styles.showcaseEmptyText}>Slot {slot + 1}</Text>
+                          <Text style={styles.showcaseEmptyText}>{t('profile.slot', { n: slot + 1 })}</Text>
                         </>
                       )}
                     </TouchableOpacity>
@@ -643,11 +655,11 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                   style={styles.viewAllBtn}
                   activeOpacity={0.8}
                   onPress={() => setShowAchievements(true)}
-                  accessibilityLabel="View all achievements"
+                  accessibilityLabel={t('profile.viewAllAchievements')}
                   accessibilityRole="button"
                 >
                   <Feather name="grid" size={15} color={THEME.colors.textPrimary} />
-                  <Text style={styles.viewAllText}>View All Achievements</Text>
+                  <Text style={styles.viewAllText}>{t('profile.viewAllAchievements')}</Text>
                   <Feather name="chevron-right" size={16} color={THEME.colors.textPrimary} />
                 </TouchableOpacity>
               )}
@@ -667,8 +679,8 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               unless this is the in-match overlay, where sign-in is hidden. */}
           {showLinkLock && (
             <GuestGate
-              title="Head-to-head needs saving"
-              message="Link Google to save rating, friends, history & head-to-head."
+              title={t('profile.keepEveryMatch')}
+              message={t('profile.keepEveryMatchDesc')}
               mini
             />
           )}
@@ -676,11 +688,11 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
           <View style={styles.h2hCard}>
             <View style={styles.h2hTitleRow}>
               <View>
-                <Text style={styles.h2hTitle}>Head-to-Head</Text>
-                <Text style={styles.h2hSub}>Matches against You</Text>
+                <Text style={styles.h2hTitle}>{t('profile.headToHead')}</Text>
+                <Text style={styles.h2hSub}>{t('profile.matchesAgainstYou')}</Text>
               </View>
               <View style={styles.recordPill}>
-                <Text style={styles.recordLabel}>Record: </Text>
+                <Text style={styles.recordLabel}>{t('profile.recordLabel')}</Text>
                 <Text style={styles.recordValue}>
                   {headToHead?.myWins ?? 0}W - {headToHead?.theirWins ?? 0}L
                 </Text>
@@ -693,7 +705,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                   {headToHead?.theirWins ?? 0}
                 </Text>
                 <Text style={styles.h2hSideLabel}>
-                  {(profile?.displayName || profile?.username || 'Them').split(' ')[0]} Won
+                  {t('profile.theyWon', { name: (profile?.displayName || profile?.username || 'Them').split(' ')[0] })}
                 </Text>
               </View>
 
@@ -701,14 +713,14 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 <Text style={[styles.h2hScore, { color: THEME.colors.primary }]}>
                   {headToHead?.myWinRate ?? 0}%
                 </Text>
-                <Text style={styles.h2hSideLabel}>Your Win Rate</Text>
+                <Text style={styles.h2hSideLabel}>{t('profile.yourWinRate')}</Text>
               </View>
 
               <View style={styles.h2hSide}>
                 <Text style={[styles.h2hScore, { color: THEME.colors.tertiaryContainer }]}>
                   {headToHead?.myWins ?? 0}
                 </Text>
-                <Text style={styles.h2hSideLabel}>You Won</Text>
+                <Text style={styles.h2hSideLabel}>{t('profile.youWon')}</Text>
               </View>
             </View>
 
@@ -728,14 +740,14 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
           {/* Rating Progression */}
           <View style={styles.chartCard}>
             <View style={styles.progHeaderRow}>
-              <Text style={styles.progTitle}>Rating Progression</Text>
+              <Text style={styles.progTitle}>{t('profile.ratingHistory')}</Text>
               <Text
                 style={[
                   styles.progDelta,
                   monthDelta >= 0 ? styles.textWin : styles.textLoss,
                 ]}
               >
-                {monthDelta >= 0 ? `+${monthDelta}` : `${monthDelta}`} pts this month
+                {t('profile.ptsThisMonth', { delta: monthDelta >= 0 ? `+${monthDelta}` : `${monthDelta}` })}
               </Text>
             </View>
             <RatingChart data={ratingHistory} currentRating={Math.round(rating1v1)} showHeader={false} />
@@ -747,14 +759,14 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               (and the friend button's modal, on demand). */}
           <View style={styles.matchesSection}>
             <View style={styles.matchesHeaderRow}>
-              <Text style={styles.sectionHeading}>RECENT MATCHES</Text>
-              <Text style={styles.matchesSub}>Latest {theirGames.length} games</Text>
+              <Text style={styles.sectionHeading}>{t('profile.recentMatches')}</Text>
+              <Text style={styles.matchesSub}>{t('profile.latestGames', { count: theirGames.length })}</Text>
             </View>
 
             {theirGames.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyCardText}>No matches yet</Text>
-                <Text style={styles.emptyCardSub}>Games against this player will appear here.</Text>
+                <Text style={styles.emptyCardText}>{t('profile.noMatches')}</Text>
+                <Text style={styles.emptyCardSub}>{t('profile.noMatchesSub')}</Text>
               </View>
             ) : (
               <>
@@ -767,6 +779,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                     : f === 'WINS'
                     ? theirWins
                     : theirLosses;
+                const label = f === 'ALL' ? t('profile.all') : f === 'WINS' ? t('profile.wins') : t('profile.losses');
                 return (
                   <TouchableOpacity
                     key={f}
@@ -777,7 +790,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                     }}
                   >
                     <Text style={[styles.filterPillText, filter === f && styles.filterPillTextActive]}>
-                      {f === 'ALL' ? 'All' : f === 'WINS' ? 'Wins' : 'Losses'} ({count})
+                      {label} ({count})
                     </Text>
                   </TouchableOpacity>
                 );
@@ -828,7 +841,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </View>
             ) : (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyCardText}>No matches found in this category.</Text>
+                <Text style={styles.emptyCardText}>{t('profile.noMatches')}</Text>
               </View>
             )}
             {filteredMatches.length > recentVisible && (
@@ -837,7 +850,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 activeOpacity={0.8}
                 onPress={() => setRecentVisible((v) => v + 5)}
               >
-                <Text style={styles.loadMoreText}>Load more</Text>
+                <Text style={styles.loadMoreText}>{t('profile.loadMore')}</Text>
               </TouchableOpacity>
             )}
               </>
@@ -866,7 +879,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 void handleToggleBlock();
               }}
               disabled={blockBusy}
-              accessibilityLabel={blocked ? 'Unblock player' : 'Block player'}
+              accessibilityLabel={blocked ? `${t('profile.unblock')} player` : `${t('profile.block')} player`}
             >
               <Feather
                 name={blocked ? 'check-circle' : 'slash'}
@@ -874,7 +887,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 color={THEME.colors.textSecondary}
               />
               <Text style={styles.safetyItemText}>
-                {blockBusy ? '…' : blocked ? 'Unblock' : 'Block'}
+                {blockBusy ? '…' : blocked ? t('profile.unblock') : t('profile.block')}
               </Text>
             </TouchableOpacity>
             <View style={styles.safetyDivider} />
@@ -885,10 +898,10 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 setShowSafety(false);
                 setShowReport(true);
               }}
-              accessibilityLabel="Report player"
+              accessibilityLabel={`${t('profile.report')} player`}
             >
               <Feather name="flag" size={15} color={THEME.colors.textSecondary} />
-              <Text style={styles.safetyItemText}>Report</Text>
+              <Text style={styles.safetyItemText}>{t('profile.report')}</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -898,10 +911,10 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.drawBg,
+    backgroundColor: THEME.colors.background,
   },
   header: {
     height: 64,
@@ -1105,7 +1118,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 4,
-    backgroundColor: THEME.colors.slate[200],
+    backgroundColor: THEME.colors.surfaceHairline,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1210,7 +1223,7 @@ const styles = StyleSheet.create({
   recordPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: THEME.colors.slate[200],
+    backgroundColor: THEME.colors.surfaceHairline,
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -1415,7 +1428,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   filterPillActive: {
-    backgroundColor: THEME.colors.slate[950],
+    backgroundColor: THEME.colors.inverseSurface,
   },
   filterPillText: {
     fontFamily: THEME.fonts.medium,
@@ -1424,7 +1437,7 @@ const styles = StyleSheet.create({
     color: THEME.colors.textOnMuted,
   },
   filterPillTextActive: {
-    color: THEME.colors.onPrimary,
+    color: THEME.colors.inverseOnSurface,
     fontWeight: '600',
   },
   matchesList: {

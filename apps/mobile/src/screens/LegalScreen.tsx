@@ -1,9 +1,10 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import { LEGAL_DOCS, LEGAL_DEVELOPER, type LegalKind } from '../legal-content';
 import { LEGAL_CONTACT_EMAIL, LEGAL_URLS, openLegalUrl } from '../legal';
+import { useTranslation } from '../i18n';
 
 interface LegalScreenProps {
   kind: LegalKind;
@@ -19,6 +20,8 @@ interface LegalScreenProps {
  * for the Play Console listing.
  */
 export const LegalScreen: React.FC<LegalScreenProps> = ({ kind, onBack }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const doc = LEGAL_DOCS[kind];
   const webUrl =
     kind === 'privacy' ? LEGAL_URLS.privacy : kind === 'terms' ? LEGAL_URLS.terms : LEGAL_URLS.deleteAccount;
@@ -26,8 +29,8 @@ export const LegalScreen: React.FC<LegalScreenProps> = ({ kind, onBack }) => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.closeBtn} onPress={onBack} accessibilityLabel="Back">
-          <Feather name="arrow-left" size={20} color={THEME.colors.slate[700]} />
+        <TouchableOpacity style={styles.closeBtn} onPress={onBack} accessibilityLabel={t('common.back')}>
+          <Feather name="arrow-left" size={20} color={THEME.colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{doc.title}</Text>
         <View style={{ width: 36 }} />
@@ -47,26 +50,26 @@ export const LegalScreen: React.FC<LegalScreenProps> = ({ kind, onBack }) => {
         ))}
 
         <View style={styles.webCard}>
-          <Text style={styles.webTitle}>Web version (Play listing URL)</Text>
+          <Text style={styles.webTitle}>{t('legal.webVersion')}</Text>
           <Text style={styles.webUrl} numberOfLines={2}>
             {webUrl}
           </Text>
           <TouchableOpacity
             style={styles.webButton}
             onPress={() => void openLegalUrl(webUrl)}
-            accessibilityLabel="Open web version"
+            accessibilityLabel={t('legal.openWeb')}
           >
             <Feather name="external-link" size={14} color={THEME.colors.onPrimary} />
-            <Text style={styles.webButtonText}>Open web version</Text>
+            <Text style={styles.webButtonText}>{t('legal.openWeb')}</Text>
           </TouchableOpacity>
-          <Text style={styles.supportText}>Support: {LEGAL_CONTACT_EMAIL}</Text>
+          <Text style={styles.supportText}>{t('settings.support', { email: LEGAL_CONTACT_EMAIL })}</Text>
         </View>
       </ScrollView>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   container: { flex: 1, backgroundColor: THEME.colors.background },
   header: {
     height: 56,

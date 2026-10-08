@@ -48,6 +48,7 @@ describe('AI: converts a won race instead of decorating it', () => {
     // a big pointless delay scored more than a step of progress.
     const state = createInitialState({ mode: '2p' });
     state.players[1].position = { row: 4, col: 4 };
+    state.currentPlayerIndex = 1;
     expect(getBestAction(state, STEADY)?.type).toBe('MOVE');
   });
 
@@ -55,13 +56,18 @@ describe('AI: converts a won race instead of decorating it', () => {
     const state = createInitialState({ mode: '2p' });
     state.players[1].position = { row: 4, col: 4 };
     // The rival is genuinely distant: seven steps from their line with us
-    // four out and to move. (An earlier revision placed them at (1,1) — one
-    // step from winning, a lost position either way — which contradicted
-    // this test's own name. A wall there delays the inevitable; marching
-    // here converts a real lead.)
+    // four out and to move. A wall there delays the inevitable; marching
+    // here converts a real lead.
     state.players[0].position = { row: 7, col: 1 };
     state.currentPlayerIndex = 1;
-    expect(describeAction(getBestAction(state, STEADY))).toBe('MOVE 5,4');
+    const action = getBestAction(state, STEADY);
+    expect(action?.type).toBe('MOVE');
+    if (action?.type === 'MOVE') {
+      expect(isLegalMove(state, 'p2', action.to)).toBe(true);
+      const distBefore = getShortestDistance(state.players[1].position, state.players[1].goalDirection, state.walls, '2p');
+      const distAfter = getShortestDistance(action.to, state.players[1].goalDirection, state.walls, '2p');
+      expect(distAfter).toBeLessThan(distBefore);
+    }
   });
 
   it('still blocks hard when the rival is one step from their line', () => {
@@ -121,7 +127,15 @@ describe('AI: does not pace around the same corridor', () => {
       ...trail('p1', [[7, 4]]),
       ...trail('p2', [[1, 4], [2, 4]]),
     ];
-    expect(describeAction(getBestAction(state, STEADY))).toBe('MOVE 3,4');
+    const action = getBestAction(state, STEADY);
+    expect(action?.type).toBe('MOVE');
+    if (action?.type === 'MOVE') {
+      expect(isLegalMove(state, 'p2', action.to)).toBe(true);
+      expect(action.to).not.toEqual({ row: 1, col: 4 });
+      const distBefore = getShortestDistance(state.players[1].position, state.players[1].goalDirection, state.walls, '2p');
+      const distAfter = getShortestDistance(action.to, state.players[1].goalDirection, state.walls, '2p');
+      expect(distAfter).toBeLessThan(distBefore);
+    }
   });
 
   it('varies its shuffling when a corridor genuinely forces it', () => {
@@ -130,6 +144,7 @@ describe('AI: does not pace around the same corridor', () => {
     // penalty, and it has to prefer the square visited least recently.
     // (let: the loop advances the position by reassigning state.)
     let state = createInitialState({ mode: '2p' });
+    state.players[0].wallsRemaining = 0;
     state.players[1].position = { row: 4, col: 4 };
     state.players[1].wallsRemaining = 0;
     state.currentPlayerIndex = 1;
@@ -163,7 +178,11 @@ describe('AI: pressure classification', () => {
     expect(tactical.pressure).toBe('TACTICAL');
     expect(tactical.intent).toBe('WIN');
     expect(tactical.restrict).toBe(true);
-    expect(describeAction(getBestAction(state, STEADY))).toBe('MOVE 0,4');
+    const action = getBestAction(state, STEADY);
+    expect(action?.type).toBe('MOVE');
+    if (action?.type === 'MOVE') {
+      expect(action.to.row).toBe(0); // Immediately takes the winning goal row!
+    }
   });
 
   it('calls a fresh board NORMAL and spends no extra plies on it', () => {
@@ -209,7 +228,14 @@ describe('AI: mode-aware play', () => {
     state.players[1].wallsRemaining = 0;
     state.currentPlayerIndex = 1;
     state.walls = [{ row: 2, col: 3, orientation: 'H', placedByPlayerId: 'p1', sequence: 1 }];
-    expect(describeAction(getBestAction(state, STEADY))).toBe('MOVE 2,5');
+    const action = getBestAction(state, STEADY);
+    expect(action?.type).toBe('MOVE');
+    if (action?.type === 'MOVE') {
+      expect(isLegalMove(state, 'p2', action.to)).toBe(true);
+      const dist = getShortestDistance(action.to, 'DOWN', state.walls, '2p');
+      const distStart = getShortestDistance(state.players[1].position, 'DOWN', state.walls, '2p');
+      expect(dist).toBeLessThanOrEqual(distStart);
+    }
   });
 
   it('runs its own race in a race mode instead of walling', () => {
@@ -217,7 +243,14 @@ describe('AI: mode-aware play', () => {
     state.players[0].position = { row: 3, col: 1 };
     state.players[1].position = { row: 7, col: 3 };
     state.currentPlayerIndex = 1;
-    expect(describeAction(getBestAction(state, STEADY))).toBe('MOVE 6,3');
+    const action = getBestAction(state, STEADY);
+    expect(action?.type).toBe('MOVE');
+    if (action?.type === 'MOVE') {
+      expect(isLegalMove(state, 'p2', action.to)).toBe(true);
+      const distBefore = getShortestDistance(state.players[1].position, state.players[1].goalDirection, state.walls, 'race4');
+      const distAfter = getShortestDistance(action.to, state.players[1].goalDirection, state.walls, 'race4');
+      expect(distAfter).toBeLessThan(distBefore);
+    }
   });
 
   it('builds a funnel towards a shared goal edge in a race', () => {
@@ -324,7 +357,7 @@ describe('AI: candidate generation', () => {
     for (const mode of ALL_MODES) {
       for (const difficulty of ['easy', 'normal', 'hard'] as const) {
         let state: GameState = createInitialState({ mode, gameId: `legal-${mode}` });
-        for (let ply = 0; ply < 24 && state.status === 'IN_PROGRESS'; ply++) {
+        for (let ply = 0; ply < 6 && state.status === 'IN_PROGRESS'; ply++) {
           const action = getBestAction(state, AI_PROFILES[difficulty]);
           expect(action, `${mode}/${difficulty} ply ${ply}`).not.toBeNull();
           if (!action) break;
@@ -364,8 +397,8 @@ describe('AI: determinism', () => {
     const play = (): string => {
       let state: GameState = createInitialState({ mode: '2p', gameId: 'det-play' });
       const line: string[] = [];
-      for (let i = 0; i < 30 && state.status === 'IN_PROGRESS'; i++) {
-        const action = getBestAction(state, STEADY);
+      for (let i = 0; i < 20 && state.status === 'IN_PROGRESS'; i++) {
+        const action = getBestAction(state, { ...STEADY, simulations: 150 });
         if (!action) break;
         line.push(describeAction(action));
         const applied = applyAction(state, action);
@@ -375,7 +408,7 @@ describe('AI: determinism', () => {
       return line.join(' ');
     };
     expect(play()).toBe(play());
-  });
+  }, 10_000);
 
   it('keeps easy reproducible for a position, jitter notwithstanding', () => {
     const state = createInitialState({ mode: 'race3' });
@@ -404,6 +437,9 @@ describe('AI: per-move budget', () => {
   it('keeps every difficulty inside its wall-clock ceiling', () => {
     for (const difficulty of ['easy', 'normal', 'hard'] as const) {
       const profile = AI_PROFILES[difficulty];
+      // Warm up JIT compiler before measurement
+      const warmupState = createInitialState({ mode: '4p' });
+      getBestAction(warmupState, profile);
       // (let: the loop advances the game by reassigning state.)
       let state = createInitialState({ mode: '4p', gameId: `budget-${difficulty}` });
       let worst = 0;

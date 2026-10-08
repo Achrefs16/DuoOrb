@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
+  isAnalysisDevBypass,
   isAnalysisUnlocked,
   markAnalysisUnlocked,
   pruneAnalysisUnlocks,
@@ -70,5 +71,11 @@ describe('analysis unlocks', () => {
     expect(resolveAccess(true, true)).toBe('premium');
     expect(resolveAccess(false, true)).toBe('unlocked');
     expect(resolveAccess(false, false)).toBe('locked');
+  });
+
+  it('dev bypass is off outside dev builds (release gate untouched)', () => {
+    // Vitest never defines the RN __DEV__ global, which is exactly the
+    // release-like condition: no bypass, the ad/premium gate applies.
+    expect(isAnalysisDevBypass()).toBe(false);
   });
 });

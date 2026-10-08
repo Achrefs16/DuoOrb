@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import { KeyboardShift } from '../components/KeyboardShift';
 import { api, ApiError } from '../network/apiClient';
 import { useSession } from '../network/session';
@@ -19,6 +19,7 @@ import {
   validateUsername,
   USERNAME_MAX,
 } from '../usernamePolicy';
+import { useTranslation } from '../i18n';
 
 type Availability = 'idle' | 'checking' | 'available' | 'taken' | 'error';
 
@@ -39,7 +40,9 @@ interface ChooseUsernameScreenProps {
  * there is no skip, so nobody reaches the app with an auto-generated name.
  */
 export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDone }) => {
+  const styles = useStyles(createStyles);
   const { identity, refreshProfile } = useSession();
+  const { t } = useTranslation();
 
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -130,7 +133,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
   const save = useCallback(async () => {
     const check = validateUsername(draft);
     if (!check.ok) {
-      setError(check.error ?? 'Invalid username.');
+      setError(check.error ?? t('username.invalid'));
       return;
     }
     // Unchanged from the backend handle: nothing to write, just continue.
@@ -139,7 +142,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
       return;
     }
     if (availability === 'taken') {
-      setError('That username is already taken.');
+      setError(t('username.takenError'));
       return;
     }
 
@@ -152,27 +155,27 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
     } catch (e) {
       if (!mounted.current) return;
       if (e instanceof ApiError && e.status === 409) {
-        setError('That username is already taken.');
+        setError(t('username.takenError'));
         setAvailability('taken');
       } else {
-        setError(e instanceof Error ? e.message : 'Could not save the username.');
+        setError(e instanceof Error ? e.message : t('username.saveFailed'));
       }
     } finally {
       if (mounted.current) setSaving(false);
     }
-  }, [draft, availability, currentUsername, refreshProfile, onDone]);
+  }, [draft, availability, currentUsername, refreshProfile, onDone, t]);
 
   const checked = validateUsername(draft);
   const hint = (() => {
     // The backend handle itself: no probe, no stale taken/available label.
     if (currentUsername && checked.value === currentUsername) return null;
     if (draft && !checked.ok) return checked.error ?? null;
-    if (availability === 'checking') return 'Checking availability…';
+    if (availability === 'checking') return t('username.checking');
     if (availability === 'available') {
-      return '@' + validateUsername(draft).value + ' is available';
+      return t('username.available', { name: validateUsername(draft).value });
     }
-    if (availability === 'taken') return 'That username is already taken';
-    if (availability === 'error') return 'Could not check availability';
+    if (availability === 'taken') return t('username.taken');
+    if (availability === 'error') return t('username.checkFailed');
     return null;
   })();
 
@@ -181,14 +184,14 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
     <View style={styles.container}>
       <View style={styles.body}>
         <Image
-          source={require('../../assets/Glossy Orbital Duo Logo.png')}
+          source={require('../../assets/logo-512.webp')}
           style={styles.logo}
           resizeMode="contain"
-          accessibilityLabel="DuoOrb logo"
+          accessibilityLabel={t('welcome.logoA11y')}
         />
-        <Text style={styles.title}>Choose your username</Text>
+        <Text style={styles.title}>{t('username.title')}</Text>
         <Text style={styles.subtitle}>
-          This is how friends find and add you.
+          {t('username.subtitle')}
         </Text>
 
         <View style={styles.fieldRow}>
@@ -224,7 +227,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
             activeOpacity={0.7}
             onPress={shuffle}
             disabled={saving}
-            accessibilityLabel="Suggest another username"
+            accessibilityLabel={t('username.shuffleA11y')}
             accessibilityRole="button"
           >
             <Feather name="shuffle" size={18} color={THEME.colors.textSecondary} />
@@ -232,7 +235,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
         </View>
 
         <Text style={styles.help}>
-          Lowercase letters, numbers and _. {USERNAME_MAX} characters max.
+          {t('username.help', { max: USERNAME_MAX })}
         </Text>
 
         {!!hint && (
@@ -259,11 +262,11 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
           {saving ? (
             <View style={styles.primaryRow}>
               <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
-              <Text style={styles.primaryText}>Saving…</Text>
+              <Text style={styles.primaryText}>{t('common.saving')}</Text>
             </View>
           ) : (
             <Text style={styles.primaryText}>
-              {checked.ok ? `Continue @${checked.value}` : 'Continue'}
+              {checked.ok ? t('username.continueAs', { name: checked.value }) : t('common.continue')}
             </Text>
           )}
         </TouchableOpacity>
@@ -296,10 +299,10 @@ function buildCandidates(displayName: string | null, exclude: string): string[] 
   return out;
 }
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.background,
     paddingHorizontal: 24,
     paddingTop: 72,
     paddingBottom: 40,

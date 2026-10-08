@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 
 /**
  * Shared shells for the two overlays that are built from the same parts.
@@ -19,14 +19,17 @@ export const ToastOverlay: React.FC<{
   top?: number;
   bottom?: number;
   children: React.ReactNode;
-}> = ({ top, bottom, children }) => (
+}> = ({ top, bottom, children }) => {
+  const styles = useStyles(createStyles);
+  return (
   <View
     style={[styles.overlay, top !== undefined && { top }, bottom !== undefined && { bottom }]}
     pointerEvents="box-none"
   >
     {children}
   </View>
-);
+  );
+};
 
 /**
  * The white toast card: hairline border, modal shadow, filled background.
@@ -38,7 +41,9 @@ export const ToastCard: React.FC<{
   borderColor: string;
   style?: object;
   children: React.ReactNode;
-}> = ({ radius, padding, borderColor, style, children }) => (
+}> = ({ radius, padding, borderColor, style, children }) => {
+  const styles = useStyles(createStyles);
+  return (
   <View
     style={[
       styles.card,
@@ -48,13 +53,15 @@ export const ToastCard: React.FC<{
   >
     {children}
   </View>
-);
+  );
+};
 
 /**
  * Spring-in wrapper. Both toasts used the same spring (friction 9, tension
  * 70) and the same rise-and-scale-in; it was declared twice.
  */
 export const ToastAnimatedCard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const styles = useStyles(createStyles);
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.spring(anim, {
@@ -88,7 +95,9 @@ export const ToastAccept: React.FC<{
   onPress: () => void;
   flex?: boolean;
   icon?: React.ReactNode;
-}> = ({ label, onPress, flex, icon }) => (
+}> = ({ label, onPress, flex, icon }) => {
+  const styles = useStyles(createStyles);
+  return (
   <TouchableOpacity
     style={[styles.accept, flex && styles.flex]}
     onPress={onPress}
@@ -97,14 +106,17 @@ export const ToastAccept: React.FC<{
     {icon}
     <Text style={styles.acceptLabel}>{label}</Text>
   </TouchableOpacity>
-);
+  );
+};
 
 /** Muted secondary action inside a toast. */
 export const ToastDecline: React.FC<{
   label: string;
   onPress: () => void;
   compact?: boolean;
-}> = ({ label, onPress, compact }) => (
+}> = ({ label, onPress, compact }) => {
+  const styles = useStyles(createStyles);
+  return (
   <TouchableOpacity
     style={[styles.decline, compact && styles.declineCompact]}
     onPress={onPress}
@@ -112,16 +124,20 @@ export const ToastDecline: React.FC<{
   >
     <Text style={[styles.declineLabel, compact && styles.declineLabelCompact]}>{label}</Text>
   </TouchableOpacity>
-);
+  );
+};
 
 /** Transient one-line notice: dark pill, no actions. */
-export const ToastNotice: React.FC<{ message: string }> = ({ message }) => (
+export const ToastNotice: React.FC<{ message: string }> = ({ message }) => {
+  const styles = useStyles(createStyles);
+  return (
   <View style={styles.notice}>
     <Text style={styles.noticeText}>{message}</Text>
   </View>
-);
+  );
+};
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   overlay: {
     position: 'absolute',
     left: 12,

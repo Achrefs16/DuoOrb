@@ -2,10 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { GameState } from '@duoorb/game-core';
+import * as Clipboard from 'expo-clipboard';
+import { GameState, BotPersonality, formatGame } from '@duoorb/game-core';
 import type { GameEndedDto } from '@duoorb/protocol';
-import { THEME, playerColor } from '../theme';
+import { THEME, playerColor, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { PremiumBadge } from './PremiumBadge';
+import { BotAvatar } from './BotAvatar';
 import { AdBanner } from './AdBanner';
 import { modeLabel } from '../matchModes';
 import { nameInitial } from '../displayName';
@@ -26,6 +29,7 @@ interface GameOverModalProps {
   opponentName?: string;
   /** Frozen premium flag for the named 1v1 opponent (P5.2 subtitle badge). */
   opponentIsPremium?: boolean;
+  botPersonality?: BotPersonality | null;
   isWinner?: boolean;
   /**
    * The opponent's account, when the match was against a real player. Drives
@@ -66,6 +70,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   isRanked = false,
   opponentName,
   opponentIsPremium = false,
+  botPersonality,
   isWinner,
   opponentUserId,
   onViewOpponentProfile,
@@ -79,6 +84,8 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onHome,
   onClose,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const winner = state.players.find((p) => p.id === state.winnerId);
   const isDraw = !state.winnerId && state.status === 'COMPLETED';
   const isMultiplayer = state.players.length > 2;
@@ -103,31 +110,56 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     }
   }, [visible, pop]);
 
+  const [copiedMoves, setCopiedMoves] = useState(false);
+
+  const handleCopyMoves = async () => {
+    try {
+      const notation = formatGame(state);
+      const movesJson = JSON.stringify(
+        state.history.map((entry, index) => {
+          const player = state.players.find((p) => p.id === entry.playerId);
+          return {
+            ply: index,
+            player: player?.displayName ?? entry.playerId,
+            action: entry.action,
+          };
+        }),
+        null,
+        2
+      );
+      await Clipboard.setStringAsync(`${notation}\n\n// Raw History:\n${movesJson}`);
+      setCopiedMoves(true);
+      setTimeout(() => setCopiedMoves(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy moves:', err);
+    }
+  };
+
   // Titles: 1v1 keeps Win/Loss; multiplayer shows placement (yours when
   // known, otherwise the winner for local pass-and-play).
   let outcomeTitle: string;
   let outcomeWin: boolean;
   if (isDraw) {
-    outcomeTitle = 'DRAW';
+    outcomeTitle = t('gameover.draw');
     outcomeWin = false;
   } else if (isMultiplayer) {
     if (myPlace !== null) {
-      outcomeTitle = myPlace === 1 ? 'YOU WIN' : `${ordinal(myPlace)} PLACE`;
+      outcomeTitle = myPlace === 1 ? t('gameover.youWin') : t('gameover.place', { place: myPlace });
       outcomeWin = myPlace === 1;
     } else {
-      outcomeTitle = winner ? `${winner.displayName.toUpperCase()} WINS` : 'GAME OVER';
+      outcomeTitle = winner ? t('gameover.playerWins', { name: winner.displayName.toUpperCase() }) : t('gameover.gameOver');
       outcomeWin = true;
     }
   } else {
     const userWon = isWinner !== undefined ? isWinner : winner?.id === 'p1';
-    outcomeTitle = userWon ? 'YOU WIN' : 'DEFEAT';
+    outcomeTitle = userWon ? t('gameover.youWin') : t('gameover.defeat');
     outcomeWin = !!userWon;
   }
 
   const subtitle = isMultiplayer
-    ? `${state.players.length}-player ${modeLabel(state.mode)}`
+    ? t('gameover.multiplayerSubtitle', { count: state.players.length, mode: modeLabel(state.mode) })
     : opponentName
-    ? `vs ${opponentName}`
+    ? t('gameover.vs', { name: opponentName })
     : null;
 
   // Ending reason, resolved against whose seat is whose: the last history
@@ -141,27 +173,27 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   if (!isDraw && endReason) {
     switch (endReason) {
       case 'GOAL_REACHED':
-        reasonCopy = 'Decided on the board';
+        reasonCopy = t('gameover.decidedOnBoard');
         break;
       case 'RESIGNATION':
-        reasonCopy = actorIsMe ? 'You resigned' : 'Opponent resigned';
+        reasonCopy = actorIsMe ? t('gameover.youResigned') : t('gameover.opponentResigned');
         break;
       case 'TIMEOUT':
-        reasonCopy = actorIsMe ? 'You ran out of time' : 'Opponent ran out of time';
+        reasonCopy = actorIsMe ? t('gameover.youTimeout') : t('gameover.opponentTimeout');
         break;
       case 'DISCONNECT':
-        reasonCopy = iWon ? 'Opponent disconnected' : 'You disconnected';
+        reasonCopy = iWon ? t('gameover.opponentDisconnect') : t('gameover.youDisconnect');
         break;
       case 'AFK':
-        reasonCopy = actorIsMe ? 'Forfeited for inactivity' : 'Opponent forfeited for inactivity';
+        reasonCopy = actorIsMe ? t('gameover.youAfk') : t('gameover.opponentAfk');
         break;
     }
   }
   const metaLine = reasonCopy
-    ? `${isRanked ? 'Ranked' : 'Unrated'} · ${reasonCopy}`
+    ? `${isRanked ? t('gameover.ranked') : t('gameover.unrated')} · ${reasonCopy}`
     : isRanked
-    ? 'Ranked'
-    : 'Unrated';
+    ? t('gameover.ranked')
+    : t('gameover.unrated');
 
   const ratingBefore =
     ratingAfter !== undefined && ratingDelta !== undefined
@@ -192,7 +224,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             style={styles.closeBtn}
             onPress={onClose}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityLabel="Close result"
+            accessibilityLabel={t('gameover.closeResultA11y')}
           >
             <Feather name="x" size={20} color={THEME.colors.textMuted} />
           </TouchableOpacity>
@@ -237,6 +269,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 )}
               </Text>
             )}
+
             <Text style={styles.metaLine}>{metaLine}</Text>
           </View>
 
@@ -265,7 +298,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                       </View>
                       <Text style={styles.rowName} numberOfLines={1}>
                         {p.displayName}
-                        {isMe ? ' (You)' : ''}
+                        {isMe ? ` ${t('gameover.you')}` : ''}
                         {seatPremium?.[p.id] === true && (
                           <Text>
                             {' '}<PremiumBadge />
@@ -296,7 +329,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 >
                   {ratingDelta >= 0 ? `+${Math.round(ratingDelta)}` : `${Math.round(ratingDelta)}`}
                 </Text>
-                <Text style={styles.ratingLabel}>RATING</Text>
+                <Text style={styles.ratingLabel}>{t('gameover.rating')}</Text>
 
                 {ratingAfter !== undefined && (
                   <View style={styles.ratingPill}>
@@ -307,16 +340,31 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 )}
               </View>
             </View>
+          ) : botPersonality ? (
+            <View style={styles.botReactionCard}>
+              <BotAvatar
+                avatarKey={botPersonality.avatarKey}
+                color={botPersonality.color}
+                size="md"
+                showGlow
+              />
+              <View style={styles.botReactionMeta}>
+                <Text style={styles.botReactionName}>{botPersonality.name}</Text>
+                <Text style={styles.botReactionQuote}>
+                  "{isWinner ? botPersonality.dialogue.lose[0] : botPersonality.dialogue.win[0]}"
+                </Text>
+              </View>
+            </View>
           ) : (
             <View style={styles.ratingSection}>
               <Text style={styles.ratingPending}>
-                {isRanked ? 'Calculating…' : 'Unrated'}
+                {isRanked ? t('gameover.calculating') : t('gameover.unrated')}
               </Text>
               {/* Same timing truth as the mid-game finish modal: the number
                   lands with the full result, never piecemeal. */}
               {isRanked && (
                 <Text style={styles.ratingTiming}>
-                  Final rating appears after the full result is finalized.
+                  {t('gameover.finalRatingNote')}
                 </Text>
               )}
             </View>
@@ -331,7 +379,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               onPress={onRematch}
             >
               <Feather name="rotate-ccw" size={16} color={THEME.colors.onPrimary} />
-              <Text style={styles.rematchText}>Rematch</Text>
+              <Text style={styles.rematchText}>{t('gameover.rematch')}</Text>
             </TouchableOpacity>
 
             {/* Secondary Action: New Game (ranked quick/custom only) */}
@@ -342,7 +390,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 onPress={onNewGame}
               >
                 <Feather name="play" size={16} color={THEME.colors.textPrimary} />
-                <Text style={styles.newGameText}>New Game</Text>
+                <Text style={styles.newGameText}>{t('gameover.newGame')}</Text>
               </TouchableOpacity>
             )}
 
@@ -354,7 +402,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 onPress={onReplay}
               >
                 <Feather name="repeat" size={14} color={THEME.colors.textSecondary} />
-                <Text style={styles.utilityText}>Replay</Text>
+                <Text style={styles.utilityText}>{t('gameover.replay')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -363,9 +411,27 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 onPress={onAnalyze}
               >
                 <Feather name="activity" size={14} color={THEME.colors.primary} />
-                <Text style={styles.utilityText}>Analyze</Text>
+                <Text style={styles.utilityText}>{t('gameover.analyze')}</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Copy Moves Button */}
+            <TouchableOpacity
+              style={[styles.copyMovesBtn, copiedMoves && styles.copyMovesBtnCopied]}
+              activeOpacity={0.7}
+              onPress={handleCopyMoves}
+              accessibilityRole="button"
+              accessibilityLabel={copiedMoves ? 'Moves copied to clipboard' : 'Copy game moves'}
+            >
+              <Feather
+                name={copiedMoves ? 'check' : 'copy'}
+                size={14}
+                color={copiedMoves ? THEME.colors.primary : THEME.colors.textSecondary}
+              />
+              <Text style={[styles.copyMovesText, copiedMoves && styles.copyMovesTextCopied]}>
+                {copiedMoves ? 'Moves Copied!' : 'Copy Moves'}
+              </Text>
+            </TouchableOpacity>
 
             {/* Opponent identity: the one place a finished online match can
                 hand the player off to the same profile screen everyone else
@@ -379,7 +445,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 accessibilityLabel={`View ${opponentName ?? 'opponent'}'s profile`}
               >
                 <Feather name="user" size={14} color={THEME.colors.textSecondary} />
-                <Text style={styles.viewProfileText}>View Profile</Text>
+                <Text style={styles.viewProfileText}>{t('gameover.viewProfile')}</Text>
               </TouchableOpacity>
             )}
 
@@ -389,7 +455,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               activeOpacity={0.7}
               onPress={onHome}
             >
-              <Text style={styles.lobbyLinkText}>Close Match</Text>
+              <Text style={styles.lobbyLinkText}>{t('gameover.closeMatch')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -404,7 +470,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
@@ -701,6 +767,31 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: THEME.colors.textSecondary,
   },
+  copyMovesBtn: {
+    width: '100%',
+    height: 38,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderRadius: THEME.radius.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  copyMovesBtnCopied: {
+    borderColor: THEME.colors.primary,
+  },
+  copyMovesText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.colors.textSecondary,
+  },
+  copyMovesTextCopied: {
+    color: THEME.colors.primary,
+  },
   lobbyLink: {
     alignSelf: 'center',
     paddingVertical: 8,
@@ -711,5 +802,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: THEME.colors.textMuted,
+  },
+  botReactionCard: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: THEME.colors.surfaceContainerLow,
+    borderRadius: THEME.radius.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+  },
+  botReactionMeta: {
+    flex: 1,
+    gap: 2,
+  },
+  botReactionName: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.colors.onSurface,
+  },
+  botReactionQuote: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    fontStyle: 'italic',
+    lineHeight: 16,
+    color: THEME.colors.textSecondary,
   },
 });

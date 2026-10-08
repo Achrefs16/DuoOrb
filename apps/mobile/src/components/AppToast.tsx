@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 
 interface ToastAction {
   label: string;
@@ -45,6 +45,7 @@ export const toast = {
 };
 
 export const AppToast: React.FC = () => {
+  const styles = useStyles(createStyles);
   const [current, setCurrent] = useState<ToastRequest | null>(null);
   const queue = useRef<ToastRequest[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,7 +113,7 @@ export const AppToast: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   // Floats above content, below nothing interactive: taps pass around it.
   layer: {
     position: 'absolute',

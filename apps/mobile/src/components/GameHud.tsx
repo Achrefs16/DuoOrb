@@ -8,11 +8,13 @@ import {
 } from 'react-native';
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { GameState, PlayerState } from '@duoorb/game-core';
-import { THEME, hexToRgba, playerColor } from '../theme';
+import { THEME, hexToRgba, playerColor, useStyles } from '../theme';
 import { nameInitial } from '../displayName';
 import { ReactionDock } from './QuickReactions';
 import { PremiumBadge } from './PremiumBadge';
+import { BotAvatar } from './BotAvatar';
 import type { IncomingReaction } from '../network/useQuickReactions';
+import { useTranslation } from '../i18n';
 
 function formatTimer(seconds?: number): string {
   if (seconds === undefined || seconds <= 0) return '0:00';
@@ -60,21 +62,36 @@ export type SeatStatus =
  * who can act on the deadline is the one racing it. `offline` distinguishes
  * a known-dead link from a mere dropped socket.
  */
-export function seatStatusLabel(status: SeatStatus): string {
+export function seatStatusLabel(
+  status: SeatStatus,
+  t?: (key: any, params?: any) => string
+): string {
   switch (status.kind) {
     case 'disconnected':
       return status.mine
-        ? `You forfeit in ${status.secondsLeft}s`
-        : `Disconnected · ${status.secondsLeft}s`;
+        ? t
+          ? t('hud.youForfeit', { seconds: status.secondsLeft })
+          : `You forfeit in ${status.secondsLeft}s`
+        : t
+          ? t('hud.disconnected', { seconds: status.secondsLeft })
+          : `Disconnected · ${status.secondsLeft}s`;
     case 'afk':
       return status.mine
-        ? `Move or forfeit · ${status.secondsLeft}s`
-        : `No move · ${status.secondsLeft}s`;
+        ? t
+          ? t('hud.moveOrForfeit', { seconds: status.secondsLeft })
+          : `Move or forfeit · ${status.secondsLeft}s`
+        : t
+          ? t('hud.noMove', { seconds: status.secondsLeft })
+          : `No move · ${status.secondsLeft}s`;
     case 'reconnecting':
-      if (status.offline) return "You're offline · retrying";
+      if (status.offline) return t ? t('hud.youOffline') : "You're offline · retrying";
       return status.pendingCount > 0
-        ? `Reconnecting… · ${status.pendingCount} to send`
-        : 'Reconnecting…';
+        ? t
+          ? t('hud.reconnectingCount', { count: status.pendingCount })
+          : `Reconnecting… · ${status.pendingCount} to send`
+        : t
+          ? t('hud.reconnecting')
+          : 'Reconnecting…';
     case 'rejected':
       return status.message;
   }
@@ -134,6 +151,31 @@ interface InGamePlayerChipProps {
    * renders nothing, never an error or a placeholder.
    */
   isPremium?: boolean;
+  botAvatarKey?: string | null;
+  /**
+   * Skin card takeover: player cards wear the board skin (bg + border +
+   * matching ink). Absent = app theme owns the cards (classic). Always set
+   * all four together — a skin background with theme ink breaks contrast.
+   */
+  surface?: HudSurface;
+}
+
+/**
+ * Card surface override for premium board skins. Ink travels WITH the card
+ * background so contrast holds in both app appearances (e.g. dark Arena
+ * cards in light mode still get light ink).
+ */
+export interface HudSurface {
+  card: string;
+  border: string;
+  ink: string;
+  subInk: string;
+  /**
+   * Fixed chip fill (rating/timer boxes, reaction buttons). Without it Dark
+   * Mode repaints those pills dark while the ink stays skin-dark — the wood
+   * theme must look identical in both app appearances.
+   */
+  chip: string;
 }
 
 /** Avatar tint per ball color, matching the Stitch active-match design. */
@@ -179,7 +221,11 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
   onReactionDone,
   onPressIdentity,
   isPremium = false,
+  botAvatarKey = null,
+  surface,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const ball = playerColor(player.index, player.color);
   const tint = avatarTint(ball);
   const initial = nameInitial(player.displayName);
@@ -202,7 +248,12 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
       : null;
 
   return (
-    <View style={styles.playerCard}>
+    <View
+      style={[
+        styles.playerCard,
+        surface && { backgroundColor: surface.card, borderColor: surface.border },
+      ]}
+    >
       {/* Left: letter avatar + name + rating + walls */}
       <View style={styles.playerLeft}>
         <Pressable
@@ -212,9 +263,13 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
           accessibilityRole={onPressIdentity ? 'button' : undefined}
           accessibilityLabel={identityLabel}
         >
-          <View style={[styles.avatarBox, { backgroundColor: tint.bg, borderColor: tint.border }]}>
-            <Text style={[styles.avatarLetter, { color: tint.text }]}>{initial}</Text>
-          </View>
+          {botAvatarKey ? (
+            <BotAvatar avatarKey={botAvatarKey} color={ball} size="sm" />
+          ) : (
+            <View style={[styles.avatarBox, { backgroundColor: tint.bg, borderColor: tint.border }]}>
+              <Text style={[styles.avatarLetter, { color: tint.text }]}>{initial}</Text>
+            </View>
+          )}
         </Pressable>
 
         <View style={styles.playerMeta}>
@@ -224,7 +279,11 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
               suppressHighlighting
               accessibilityRole={onPressIdentity ? 'button' : undefined}
               accessibilityLabel={identityLabel}
-              style={[styles.playerName, isActive && styles.playerNameActive]}
+              style={[
+                styles.playerName,
+                isActive && styles.playerNameActive,
+                surface && { color: surface.ink },
+              ]}
               numberOfLines={1}
             >
               {player.displayName}
@@ -235,8 +294,15 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
               )}
             </Text>
             {rating !== undefined && !hideStats && (
-              <View style={styles.ratingBadge}>
-                <Text style={styles.ratingText}>{Math.round(rating)}</Text>
+              <View
+                style={[
+                  styles.ratingBadge,
+                  surface && { backgroundColor: surface.chip },
+                ]}
+              >
+                <Text style={[styles.ratingText, surface && { color: surface.subInk }]}>
+                  {Math.round(rating)}
+                </Text>
               </View>
             )}
             {/* Wall inventory pill — same line as the name, like Stitch. */}
@@ -264,7 +330,7 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
             >
               <Feather name={statusIcon} size={11} color={THEME.colors.onPrimary} />
               <Text style={styles.statusText} numberOfLines={1} ellipsizeMode="tail">
-                {seatStatusLabel(status)}
+                {seatStatusLabel(status, t)}
               </Text>
             </View>
           )}
@@ -273,13 +339,27 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
 
       {/* Right: timer chip — identical on both cards, every turn. */}
       {timeLeft !== undefined && (
-        <View style={styles.timerBox}>
+        <View
+          style={[
+            styles.timerBox,
+            surface && {
+              backgroundColor: surface.chip,
+              borderColor: surface.border,
+            },
+          ]}
+        >
           <MaterialCommunityIcons
             name="timer-outline"
             size={17}
-            color={urgent ?? THEME.colors.textSecondaryStrong}
+            color={urgent ?? surface?.subInk ?? THEME.colors.textSecondaryStrong}
           />
-          <Text style={[styles.timerText, urgent !== null && { color: urgent }]}>
+          <Text
+            style={[
+              styles.timerText,
+              surface && { color: surface.ink },
+              urgent !== null && { color: urgent },
+            ]}
+          >
             {formatTimer(timeLeft)}
           </Text>
           {bonus !== undefined && bonus !== null && bonus > 0 && (
@@ -336,6 +416,9 @@ export const PlayerStrip: React.FC<{
    * crown; absent/false/old data renders nothing — never an error.
    */
   seatPremium?: Record<string, boolean>;
+  botAvatarKeyBySeat?: Record<string, string>;
+  /** Skin card takeover, forwarded to every card variant + the large chip. */
+  surface?: HudSurface;
 }> = ({
   state,
   timers,
@@ -346,10 +429,14 @@ export const PlayerStrip: React.FC<{
   hideWallsForPlayerId,
   seatStatus,
   seatPremium,
+  botAvatarKeyBySeat,
   reactionsBySeat,
   onReactionDone,
   onPressPlayer,
+  surface,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   // Split multiplayer tables (2 up / 2 down): side-by-side compact cards
   // that flex with the row width. Long names truncate (numberOfLines +
   // minWidth 0) while the wall pill and clock are shrink-proof, so the
@@ -370,14 +457,21 @@ export const PlayerStrip: React.FC<{
           const playerBonus = bonus?.playerId === p.id ? bonus.amount : null;
           const urgent = urgencyColor(timers?.[p.id]);
           return (
-            <View
-              key={p.id}
-              style={[
-                styles.compactItem,
-                styles.gridItem,
-                isActive && { borderColor: ball, backgroundColor: tint.bg },
-              ]}
-            >
+              <View
+                key={p.id}
+                style={[
+                  styles.compactItem,
+                  styles.gridItem,
+                  surface && { backgroundColor: surface.card, borderColor: surface.border },
+                  // Skinned cards keep their surface bg (ink is fixed) — the
+                  // turn reads from the ball border + dot, never a theme tint
+                  // that goes dark in dark mode and eats the name.
+                  isActive &&
+                    (surface
+                      ? { borderColor: ball, borderWidth: 2 }
+                      : { borderColor: ball, backgroundColor: tint.bg }),
+                ]}
+              >
               <Pressable
                 onPress={onPressIdentity}
                 disabled={!onPressIdentity}
@@ -386,9 +480,13 @@ export const PlayerStrip: React.FC<{
                 accessibilityLabel={identityLabel}
                 style={styles.gridAvatarPress}
               >
-                <View style={[styles.compactAvatar, { backgroundColor: tint.bg, borderColor: tint.border }]}>
-                  <Text style={[styles.compactLetter, { color: tint.text }]}>{initial}</Text>
-                </View>
+                {botAvatarKeyBySeat?.[p.id] ? (
+                  <BotAvatar avatarKey={botAvatarKeyBySeat[p.id]} color={ball} size="xs" />
+                ) : (
+                  <View style={[styles.compactAvatar, { backgroundColor: tint.bg, borderColor: tint.border }]}>
+                    <Text style={[styles.compactLetter, { color: tint.text }]}>{initial}</Text>
+                  </View>
+                )}
               </Pressable>
               <View style={styles.gridMeta}>
                 <Text
@@ -396,7 +494,7 @@ export const PlayerStrip: React.FC<{
                   suppressHighlighting
                   accessibilityRole={onPressIdentity ? 'button' : undefined}
                   accessibilityLabel={identityLabel}
-                  style={styles.gridName}
+                  style={[styles.gridName, surface && { color: surface.ink }]}
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
@@ -414,18 +512,22 @@ export const PlayerStrip: React.FC<{
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
-                      {seatStatusLabel(seat)}
+                      {seatStatusLabel(seat, t)}
                     </Text>
                   ) : (
                     <>
                       {ratings?.[p.id] !== undefined && (
-                        <Text style={styles.compactRating}>{Math.round(ratings[p.id])}</Text>
+                        <Text
+                          style={[styles.compactRating, surface && { color: surface.subInk }]}
+                        >
+                          {Math.round(ratings[p.id])}
+                        </Text>
                       )}
                     </>
                   )}
                   {p.place !== null && p.place !== undefined && (
                     <Text style={[styles.compactPlace, { color: ball }]}>
-                      {p.place === 1 ? '1ST' : p.place === 2 ? '2ND' : p.place === 3 ? '3RD' : `${p.place}TH`}
+                      {p.place === 1 ? t('game.place1st').toUpperCase() : t('game.placeNth', { place: p.place }).toUpperCase()}
                     </Text>
                   )}
                   {showWalls && (
@@ -437,7 +539,13 @@ export const PlayerStrip: React.FC<{
                     </View>
                   )}
                   {timers?.[p.id] !== undefined && (
-                    <Text style={[styles.compactTime, urgent !== null && { color: urgent }]}>
+                    <Text
+                      style={[
+                        styles.compactTime,
+                        surface && { color: surface.ink },
+                        urgent !== null && { color: urgent },
+                      ]}
+                    >
                       {formatTimer(timers[p.id])}
                     </Text>
                   )}
@@ -483,7 +591,11 @@ export const PlayerStrip: React.FC<{
               key={p.id}
               style={[
                 styles.compactItem,
-                isActive && { borderColor: ball, backgroundColor: tint.bg },
+                surface && { backgroundColor: surface.card, borderColor: surface.border },
+                isActive &&
+                  (surface
+                    ? { borderColor: ball, borderWidth: 2 }
+                    : { borderColor: ball, backgroundColor: tint.bg }),
               ]}
             >
               <Pressable
@@ -493,9 +605,13 @@ export const PlayerStrip: React.FC<{
                 accessibilityRole={onPressIdentity ? 'button' : undefined}
                 accessibilityLabel={identityLabel}
               >
-                <View style={[styles.compactAvatar, { backgroundColor: tint.bg, borderColor: tint.border }]}>
-                  <Text style={[styles.compactLetter, { color: tint.text }]}>{initial}</Text>
-                </View>
+                {botAvatarKeyBySeat?.[p.id] ? (
+                  <BotAvatar avatarKey={botAvatarKeyBySeat[p.id]} color={ball} size="xs" />
+                ) : (
+                  <View style={[styles.compactAvatar, { backgroundColor: tint.bg, borderColor: tint.border }]}>
+                    <Text style={[styles.compactLetter, { color: tint.text }]}>{initial}</Text>
+                  </View>
+                )}
               </Pressable>
               <View style={styles.compactMeta}>
                 <Text
@@ -503,7 +619,7 @@ export const PlayerStrip: React.FC<{
                   suppressHighlighting
                   accessibilityRole={onPressIdentity ? 'button' : undefined}
                   accessibilityLabel={identityLabel}
-                  style={styles.compactName}
+                  style={[styles.compactName, surface && { color: surface.ink }]}
                   numberOfLines={1}
                 >
                   {p.displayName}
@@ -520,16 +636,20 @@ export const PlayerStrip: React.FC<{
                       numberOfLines={1}
                       ellipsizeMode="tail"
                     >
-                      {seatStatusLabel(seat)}
+                      {seatStatusLabel(seat, t)}
                     </Text>
                   ) : (
                     ratings?.[p.id] !== undefined && (
-                      <Text style={styles.compactRating}>{Math.round(ratings[p.id])}</Text>
+                      <Text
+                        style={[styles.compactRating, surface && { color: surface.subInk }]}
+                      >
+                        {Math.round(ratings[p.id])}
+                      </Text>
                     )
                   )}
                   {p.place !== null && p.place !== undefined && (
                     <Text style={[styles.compactPlace, { color: ball }]}>
-                      {p.place === 1 ? '1ST' : p.place === 2 ? '2ND' : p.place === 3 ? '3RD' : `${p.place}TH`}
+                      {p.place === 1 ? t('game.place1st').toUpperCase() : t('game.placeNth', { place: p.place }).toUpperCase()}
                     </Text>
                   )}
                   {!seat && p.wallsRemaining !== undefined && (
@@ -541,7 +661,13 @@ export const PlayerStrip: React.FC<{
                     </View>
                   )}
                   {timers?.[p.id] !== undefined && (
-                    <Text style={[styles.compactTime, urgent !== null && { color: urgent }]}>
+                    <Text
+                      style={[
+                        styles.compactTime,
+                        surface && { color: surface.ink },
+                        urgent !== null && { color: urgent },
+                      ]}
+                    >
                       {formatTimer(timers[p.id])}
                     </Text>
                   )}
@@ -582,6 +708,8 @@ export const PlayerStrip: React.FC<{
             reactions={reactionsBySeat?.[p.id]}
             onReactionDone={onReactionDone}
             isPremium={seatPremium?.[p.id] === true}
+            botAvatarKey={botAvatarKeyBySeat?.[p.id]}
+            surface={surface}
             onPressIdentity={onPressPlayer ? () => onPressPlayer(p.id) : undefined}
           />
         );
@@ -590,7 +718,7 @@ export const PlayerStrip: React.FC<{
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   strip: {
     width: '100%',
     gap: 8,
@@ -689,7 +817,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
-    color: THEME.colors.slate[800],
+    color: THEME.colors.onSurface,
     flexShrink: 0,
   },
   gridRow: {
@@ -848,7 +976,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
-    color: THEME.colors.slate[800],
+    color: THEME.colors.onSurface,
   },
   bonusText: {
     fontFamily: THEME.fonts.bold,

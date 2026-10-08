@@ -8,7 +8,8 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { NetworkError } from '../network/errors';
 
 /** Whose fault it is: the device connection or our servers. */
@@ -29,24 +30,26 @@ export const NoConnectionSection: React.FC<{
   message?: string;
   onRetry: () => void;
 }> = ({ kind, message, onRetry }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   return (
     <View style={styles.section}>
       <Feather name="cloud-off" size={48} color={THEME.colors.textMuted} />
-      <Text style={styles.sectionTitle}>No connection</Text>
+      <Text style={styles.sectionTitle}>{t('connection.noConnection')}</Text>
       <Text style={styles.sectionMessage}>
         {message ??
           (kind === 'offline'
-            ? 'Something went wrong, please check your internet connection and retry.'
-            : 'Sorry, something broke on our side. Please try again.')}
+            ? t('connection.offlineMessage')
+            : t('connection.serverMessage'))}
       </Text>
       <TouchableOpacity
         style={styles.retryBtn}
         activeOpacity={0.85}
         onPress={onRetry}
-        accessibilityLabel="Retry"
+        accessibilityLabel={t('connection.retry')}
         accessibilityRole="button"
       >
-        <Text style={styles.retryText}>Retry</Text>
+        <Text style={styles.retryText}>{t('connection.retry')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -73,6 +76,8 @@ export const offlineAlert = {
 };
 
 export const OfflineModal: React.FC = () => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const [kind, setKind] = useState<NoConnectionKind | null>(null);
 
   useEffect(() => {
@@ -94,21 +99,21 @@ export const OfflineModal: React.FC = () => {
         <View style={styles.card}>
           <Feather name="cloud-off" size={40} color={THEME.colors.textMuted} />
           <Text style={styles.cardTitle}>
-            {kind === 'offline' ? "You're offline" : 'Sorry'}
+            {kind === 'offline' ? t('connection.youAreOffline') : t('connection.sorry')}
           </Text>
           <Text style={styles.cardMessage}>
             {kind === 'offline'
-              ? 'Please check your internet connection.'
-              : 'Something broke on our side. Please try again.'}
+              ? t('connection.checkInternet')
+              : t('connection.serverBroke')}
           </Text>
           <TouchableOpacity
             style={styles.okBtn}
             activeOpacity={0.85}
             onPress={() => setKind(null)}
-            accessibilityLabel="OK"
+            accessibilityLabel={t('connection.ok')}
             accessibilityRole="button"
           >
-            <Text style={styles.okText}>OK</Text>
+            <Text style={styles.okText}>{t('connection.ok')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -150,7 +155,7 @@ export function runWhenOnline(action: () => void | Promise<unknown>): void {
   })();
 }
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   // Full-section state: centers itself wherever it replaces content.
   section: {
     flex: 1,

@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import {
   api,
   FriendItemDto,
@@ -32,6 +32,7 @@ import { FriendsSkeleton } from '../components/Skeleton';
 import { KeyboardShift } from '../components/KeyboardShift';
 import { sheetSlideStyle, useSheetSlide } from '../components/sheetAnimation';
 import { nameInitial, resolveName } from '../displayName';
+import { useTranslation } from '../i18n';
 
 interface FriendsScreenProps {
   onOpenChallengeSetup: (friend: { id: string; username: string }) => void;
@@ -55,6 +56,8 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   onOpenPlayerProfile,
   onRequestCountChange,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const [friends, setFriends] = useState<FriendItemDto[]>([]);
   const [requests, setRequests] = useState<FriendRequestItemDto[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -180,7 +183,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
         setSearchResults(results);
       } catch {
         // Keep the old results: an empty list would claim nobody matches.
-        setAddFeedback("Couldn't search — try again.");
+        setAddFeedback(t('friends.searchFailed'));
       } finally {
         setIsSearching(false);
       }
@@ -260,7 +263,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
       setSentIds((prev) => (prev.includes(target.id) ? prev : [...prev, target.id]));
     } catch (e: any) {
       if (e instanceof NetworkError) throw e; // runWhenOnline shows the dialog
-      setAddFeedback(e?.message ?? 'Could not send request.');
+      setAddFeedback(e?.message ?? t('friends.sendFailed'));
     }
     });
   };
@@ -275,11 +278,11 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
     try {
       const results = await api.searchUsers(name);
       setSearchResults(results);
-      if (results.length === 0) setAddFeedback('No player found with that name.');
+      if (results.length === 0) setAddFeedback(t('friends.noPlayerFound'));
     } catch (e) {
       if (e instanceof NetworkError) throw e; // runWhenOnline shows the dialog
       // Keep the old results: an empty list would claim nobody matches.
-      setAddFeedback("Couldn't search — try again.");
+      setAddFeedback(t('friends.searchFailed'));
     } finally {
       setIsSearching(false);
     }
@@ -336,7 +339,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
             <Text style={styles.friendHandle} numberOfLines={1}>
               @{friend.username} ·{' '}
               <Text style={[styles.statusText, { color: isOnline ? THEME.colors.tertiary : THEME.colors.textMuted }]}>
-                {friend.status === 'PLAYING' ? 'In a match' : isOnline ? 'Online' : 'Offline'}
+                {friend.status === 'PLAYING' ? t('friends.inMatch') : isOnline ? t('friends.online') : t('friends.offline')}
               </Text>
             </Text>
           </View>
@@ -350,7 +353,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               onPress={() => onOpenChallengeSetup({ id: friend.id, username: friend.username })}
             >
               <MaterialCommunityIcons name="sword-cross" size={14} color={THEME.colors.onPrimary} />
-              <Text style={styles.playButtonText}>Challenge</Text>
+              <Text style={styles.playButtonText}>{t('friends.challenge')}</Text>
             </TouchableOpacity>
           )}
           {/* No block action here by design: blocking lives only on the
@@ -366,12 +369,12 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Friends</Text>
+          <Text style={styles.title}>{t('friends.title')}</Text>
         </View>
         <View style={styles.lockWrap}>
           <GuestGate
-            title="Friends need saving"
-            message="Guest progress lives only on this device. Link Google to add friends, challenge, get requests."
+            title={t('friends.needSavingTitle')}
+            message={t('friends.needSavingMessage')}
           />
         </View>
       </View>
@@ -382,12 +385,12 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
     <View style={styles.container}>
       {/* Top Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Friends</Text>
+        <Text style={styles.title}>{t('friends.title')}</Text>
         <TouchableOpacity
           style={styles.addFriendBtn}
           activeOpacity={0.7}
           onPress={() => openAddModal()}
-          accessibilityLabel="Add Friend"
+          accessibilityLabel={t('friends.addFriend')}
         >
           <Feather name="user-plus" size={18} color={THEME.colors.onSurface} />
         </TouchableOpacity>
@@ -399,7 +402,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
           <Feather name="search" size={16} color={THEME.colors.textMuted} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search friends..."
+            placeholder={t('friends.searchPlaceholder')}
             placeholderTextColor={THEME.colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -437,7 +440,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 <View style={styles.section}>
                   <View style={styles.sectionTitleRow}>
                     <Text style={styles.sectionTitle}>
-                      FRIEND REQUESTS · {requests.length}
+                      {t('friends.requestsHeader', { count: requests.length })}
                     </Text>
                   </View>
 
@@ -452,7 +455,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                           </View>
                           <View style={styles.requestMeta}>
                             <Text style={styles.requestUsername}>{req.fromUsername}</Text>
-                            <Text style={styles.requestSub}>Incoming friend request</Text>
+                            <Text style={styles.requestSub}>{t('friends.incomingRequest')}</Text>
                           </View>
                         </View>
 
@@ -461,7 +464,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                             style={styles.acceptBtn}
                             activeOpacity={0.8}
                             onPress={() => handleRespondRequest(req.id, true)}
-                            accessibilityLabel="Accept friend request"
+                            accessibilityLabel={t('friends.acceptA11y')}
                           >
                             <Feather name="check" size={16} color={THEME.colors.onPrimary} />
                           </TouchableOpacity>
@@ -469,7 +472,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                             style={styles.declineBtn}
                             activeOpacity={0.8}
                             onPress={() => handleRespondRequest(req.id, false)}
-                            accessibilityLabel="Decline friend request"
+                            accessibilityLabel={t('friends.declineA11y')}
                           >
                             <Feather name="x" size={16} color={THEME.colors.textSecondary} />
                           </TouchableOpacity>
@@ -483,7 +486,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               {/* Online Friends Section */}
               <View style={styles.section}>
                 <View style={styles.sectionTitleRow}>
-                  <Text style={styles.sectionTitle}>ONLINE · {onlineFriends.length}</Text>
+                  <Text style={styles.sectionTitle}>{t('friends.onlineHeader', { count: onlineFriends.length })}</Text>
                 </View>
 
                 {onlineFriends.length > 0 ? (
@@ -492,7 +495,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                   </View>
                 ) : (
                   <View style={styles.emptyCard}>
-                    <Text style={styles.emptyText}>No friends currently online</Text>
+                    <Text style={styles.emptyText}>{t('friends.noOnline')}</Text>
                   </View>
                 )}
               </View>
@@ -501,7 +504,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               {offlineFriends.length > 0 && (
                 <View style={styles.section}>
                   <View style={styles.sectionTitleRow}>
-                    <Text style={styles.sectionTitle}>OFFLINE · {offlineFriends.length}</Text>
+                    <Text style={styles.sectionTitle}>{t('friends.offlineHeader', { count: offlineFriends.length })}</Text>
                   </View>
                   <View style={styles.cardGroup}>
                     {offlineFriends.map(renderFriendCard)}
@@ -512,16 +515,16 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               {friends.length === 0 && requests.length === 0 && (
                 <View style={styles.zeroFriendsBox}>
                   <Feather name="users" size={40} color={THEME.colors.textMuted} />
-                  <Text style={styles.zeroFriendsTitle}>No friends yet</Text>
+                  <Text style={styles.zeroFriendsTitle}>{t('friends.noFriendsTitle')}</Text>
                   <Text style={styles.zeroFriendsSub}>
-                    Search for players and challenge them to tactical matches.
+                    {t('friends.noFriendsSub')}
                   </Text>
                   <TouchableOpacity
                     style={styles.zeroAddBtn}
                     activeOpacity={0.8}
                     onPress={() => openAddModal()}
                   >
-                    <Text style={styles.zeroAddBtnText}>Find Friends</Text>
+                    <Text style={styles.zeroAddBtnText}>{t('friends.findFriends')}</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -536,10 +539,10 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
         <SafeAreaView style={styles.modalOverlay} edges={['top', 'bottom']}>
           <View style={styles.modalCard}>
             <Text style={styles.removeTitle}>
-              Remove {removeTarget?.username ?? 'friend'}?
+              {t('profile.removeFriendTitle', { name: removeTarget?.username ?? '' })}
             </Text>
             <Text style={styles.removeDesc}>
-              You will no longer see each other in your friends lists.
+              {t('profile.removeFriendDesc')}
             </Text>
             <View style={styles.removeActions}>
               <TouchableOpacity
@@ -548,14 +551,14 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 onPress={() => void handleRemoveFriend()}
               >
                 <Text style={styles.removeConfirmText}>
-                  {removing ? 'Removing…' : 'Remove friend'}
+                  {removing ? t('profile.removing') : t('profile.removeFriend')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.removeCancel}
                 onPress={() => setRemoveTarget(null)}
               >
-                <Text style={styles.removeCancelText}>Cancel</Text>
+                <Text style={styles.removeCancelText}>{t('profile.cancel')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -568,7 +571,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
         <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
           <Animated.View style={[styles.sheetCard, sheetSlideStyle(addSheetSlide)]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Friend</Text>
+              <Text style={styles.modalTitle}>{t('friends.addFriend')}</Text>
               <TouchableOpacity
                 style={styles.sheetClose}
                 onPress={() => {
@@ -586,7 +589,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               <View style={styles.modalSearchBox}>
                 <TextInput
                   style={styles.modalSearchInput}
-                  placeholder="Username or ID"
+                  placeholder={t('friends.searchModalPlaceholder')}
                   placeholderTextColor={THEME.colors.textMuted}
                   value={modalQuery}
                   onChangeText={handleSearchChange}
@@ -614,9 +617,9 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               keyboardShouldPersistTaps="handled"
             >
               {isSearching ? (
-                <Text style={styles.searchHint}>Searching players...</Text>
+                <Text style={styles.searchHint}>{t('friends.searching')}</Text>
               ) : modalQuery.trim().length > 0 && modalQuery.trim().length < 3 ? (
-                <Text style={styles.searchHint}>Type at least 3 letters to search.</Text>
+                <Text style={styles.searchHint}>{t('friends.typeMore')}</Text>
               ) : searchResults.length > 0 ? (
                 searchResults.map((user) => {
                   const alreadyFriend = friends.some((f) => f.id === user.id);
@@ -649,7 +652,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                         <View style={styles.sentTag}>
                           <Feather name="check" size={12} color={THEME.colors.textMuted} />
                           <Text style={styles.sentTagText}>
-                            {alreadyFriend ? 'Friends' : isSelf ? 'You' : 'Sent'}
+                            {alreadyFriend ? t('profile.friends') : isSelf ? t('leaderboard.you') : t('profile.sent')}
                           </Text>
                         </View>
                       ) : (
@@ -662,21 +665,21 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                           accessibilityLabel={`Add ${user.username}`}
                         >
                           <Feather name="user-plus" size={14} color={THEME.colors.textPrimary} />
-                          <Text style={styles.sendRequestBtnText}>Add</Text>
+                          <Text style={styles.sendRequestBtnText}>{t('friends.add')}</Text>
                         </TouchableOpacity>
                       )}
                     </TouchableOpacity>
                   );
                 })
               ) : (
-                <Text style={styles.searchHint}>Type a player's username to send a request.</Text>
+                <Text style={styles.searchHint}>{t('friends.typePlayerPrompt')}</Text>
               )}
             </ScrollView>
 
             {/* Your ID */}
             <View style={styles.ownIdRow}>
               <View>
-                <Text style={styles.ownIdLabel}>Your ID</Text>
+                <Text style={styles.ownIdLabel}>{t('friends.yourId')}</Text>
                 <Text style={styles.ownIdValue}>{ownUsername?.toUpperCase() ?? '…'}</Text>
               </View>
               <TouchableOpacity
@@ -684,7 +687,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 onPress={() => void copyOwnId()}
               >
                 <Feather name="copy" size={16} color={THEME.colors.primary} />
-                <Text style={styles.ownIdCopyText}>{copiedTick ? 'Copied' : 'Copy'}</Text>
+                <Text style={styles.ownIdCopyText}>{copiedTick ? t('friends.copied') : t('friends.copy')}</Text>
               </TouchableOpacity>
             </View>
           </Animated.View>
@@ -695,7 +698,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -762,7 +765,7 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 28,
+    paddingBottom: 120, // Clears the floating nav overlay.
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',

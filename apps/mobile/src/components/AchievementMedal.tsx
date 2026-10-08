@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { THEME } from '../theme';
+import { THEME, useStyles, useTheme } from '../theme';
 import type { BadgeCategory, BadgeProgress, BadgeTier } from '../network/apiClient';
 
 /**
@@ -30,12 +30,11 @@ export const METALS: Record<BadgeTier, Metal> = {
   diamond: { ring: '#8FB8FF', disc: '#1D3A6B', face: '#D8E9FF', label: 'DIAMOND' },
 };
 
-const LOCKED: Metal = {
+const LOCKED_COLORS = (): Omit<Metal, 'label'> => ({
   ring: THEME.colors.boardBorder,
   disc: THEME.colors.surfaceMuted,
   face: THEME.colors.textMuted,
-  label: 'LOCKED',
-};
+});
 
 export const tierOf = (tier?: BadgeTier): BadgeTier =>
   tier && METALS[tier] ? tier : 'bronze';
@@ -53,7 +52,9 @@ export const AchievementMedal: React.FC<MedalProps> = ({
   size = 56,
   locked = false,
 }) => {
-  const metal = locked ? LOCKED : METALS[tierOf(tier)];
+  // Subscribes so the locked-medal tint rebuilds on theme switch.
+  useTheme();
+  const metal: Metal = locked ? { ...LOCKED_COLORS(), label: 'LOCKED' } : METALS[tierOf(tier)];
   const ringWidth = Math.max(2, Math.round(size * 0.07));
   return (
     <View
@@ -98,6 +99,7 @@ export const BadgeProgressBar: React.FC<{ progress: BadgeProgress; tier?: BadgeT
   progress,
   tier,
 }) => {
+  const barStyles = useStyles(createBarStyles);
   const metal = METALS[tierOf(tier)];
   const pct = progress.target > 0 ? Math.min(1, progress.current / progress.target) : 0;
   return (
@@ -119,7 +121,7 @@ const styles = StyleSheet.create({
   },
 });
 
-const barStyles = StyleSheet.create({
+const createBarStyles = () => StyleSheet.create({
   wrap: {
     width: '100%',
     alignItems: 'center',

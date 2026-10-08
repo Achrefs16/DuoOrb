@@ -26,7 +26,7 @@ import {
 } from '@duoorb/game-core';
 import { Feather } from '@expo/vector-icons';
 import type { GameSyncDto } from '@duoorb/protocol';
-import { GameBoard, isInsideBoard, nearestWallSlot } from '../components/GameBoard';
+import { GameBoard, boardRim, isInsideBoard, nearestWallSlot } from '../components/GameBoard';
 import { PlayerStrip, type SeatStatus } from '../components/GameHud';
 import { GameOverModal } from '../components/GameOverModal';
 import { PlayerProfileScreen } from './PlayerProfileScreen';
@@ -38,21 +38,26 @@ import { AchievementMedal } from '../components/AchievementMedal';
 import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
 import { AiWinReward, SubmitAiWinBody } from '../network/apiClient';
 import { flushAiWinQueue, reportHardAiWin } from '../aiwins/aiWins';
-import { THEME, playerColor, wallPreviewColor } from '../theme';
+import { THEME, playerColor, useStyles, wallPreviewColor } from '../theme';
 import { CLOCK_ENABLED, DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
 import { useQuickReactions, groupReactionsBySeat } from '../network/useQuickReactions';import { ReactionDock, ReactionTray } from '../components/QuickReactions';
 import type { ReactionKind } from '../network/useQuickReactions';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
+import { SkinBackdrop } from '../components/SkinBackdrop';
+import { useBoardSkin } from '../theme/boardTheme';
 import { useIdentity } from '../network/auth';
 import { socketManager } from '../network/socket';
 import { RewardSheet } from '../components/RewardSheet';
 import { PremiumSheet } from '../components/PremiumSheet';
+import { useBotDialogue } from '../ai/useBotDialogue';
+import { BotSpeechBubble } from '../components/BotSpeechBubble';
 import { isPremiumActive, refreshPremium, usePremium } from '../monetization/premium';
 import { preloadRewarded, showRewarded } from '../monetization/ads';
-import { isAnalysisUnlocked, markAnalysisUnlocked } from '../monetization/analysisAccess';
+import { TEMP_ANALYSIS_ALWAYS_OPEN, isAnalysisDevBypass, isAnalysisUnlocked, markAnalysisUnlocked } from '../monetization/analysisAccess';
 // Serializes a finished hard-AI win for the server upload (achievements).
 import { formatGame } from '@duoorb/game-core';
+import { useTranslation } from '../i18n';
 
 interface GameScreenProps {
   mode: GameMode;
@@ -204,8 +209,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // unused: opponent profiles open as an in-game overlay so this screen
   // never unmounts mid-match. See profilePlayer.
 }) => {
+  const styles = useStyles(createStyles);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const identity = useIdentity();
+  const { t } = useTranslation();
 
   const online = useOnlineGame({
     gameId: onlineGameId || '',
@@ -244,6 +251,24 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   );
 
   const [state, setState] = useState<GameState>(initialState);
+
+  const botDialogue = useBotDialogue({
+    personality,
+    state,
+    humanIdx,
+    enabled: type === 'ai' && state.players.length === 2,
+  });
+
+  const botAvatarKeyBySeat = useMemo(() => {
+    if (type !== 'ai' || !personality) return undefined;
+    const map: Record<string, string> = {};
+    for (let i = 0; i < state.players.length; i++) {
+      if (i !== humanIdx && personality.avatarKey) {
+        map[state.players[i].id] = personality.avatarKey;
+      }
+    }
+    return map;
+  }, [type, personality, humanIdx, state.players]);
 
   // Cached last-known online state keeps the finished/live board visible
   // during reconnects. The server still replaces it on the next sync.
@@ -315,6 +340,21 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // row funnels through handleAnalyzePress below — premium/unlocked go
   // straight to review, everyone else gets this sheet (one ad = this game).
   const premiumState = usePremium();
+  // Premium board skin: takes over the whole match page (backdrop + page
+  // background) behind the HUD, board and tray. Classic leaves both unset.
+  const skin = useBoardSkin();
+  // Player cards wear the skin too (bg + border + matching ink, always as a
+  // set so contrast holds). Undefined = app theme owns the cards.
+  const hudSurface =
+    skin.hudCard && skin.hudBorder && skin.hudInk && skin.hudSubInk && skin.hudChip
+      ? {
+          card: skin.hudCard,
+          border: skin.hudBorder,
+          ink: skin.hudInk,
+          subInk: skin.hudSubInk,
+          chip: skin.hudChip,
+        }
+      : undefined;
   const [rewardOpen, setRewardOpen] = useState(false);
   const [rewardBusy, setRewardBusy] = useState(false);
   const [rewardError, setRewardError] = useState<string | null>(null);
@@ -740,8 +780,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           // Unbounded deep search off the critical path: time slices yield
           // to the event loop (thinking indicator stays alive), depth is the
           // only ceiling, cancellation keeps the best completed ply.
+          const isBlitzMatch =
+            Boolean(timeControl?.id.includes('blitz')) ||
+            Boolean(timeControl?.id.includes('bullet')) ||
+            (timeControl !== undefined && timeControl.minutes <= 3);
           const aiAction = await getBestActionAsync(live, profile, undefined, {
             shouldCancel: () => cancelled,
+            budget: isBlitzMatch ? { timeMs: 250, maxDepth: 4 } : undefined,
           });
           if (cancelled) return;
           const fresh = stateRef.current;
@@ -1075,7 +1120,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     // Released outside the board → cancel silently.
     if (!isInsideBoard(pt.boardSize, pt.x, pt.y)) return;
 
-    const slot = nearestWallSlot(pt.boardSize, pt.x, pt.y);
+    const slot = nearestWallSlot(
+      pt.boardSize,
+      pt.x,
+      pt.y,
+      boardRim(skin.frameBorderWidth)
+    );
     const candidate: WallCoord = {
       row: slot.row,
       col: slot.col,
@@ -1197,6 +1247,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const handleAnalyzePress = useCallback(async () => {
     setShowGameOver(false);
+    // TEMP: review always opens while the analysis page is being iterated.
+    if (TEMP_ANALYSIS_ALWAYS_OPEN) {
+      openReview();
+      return;
+    }
+    // Dev builds skip the ad gate (iteration speed) — release still gates.
+    if (isAnalysisDevBypass()) {
+      openReview();
+      return;
+    }
     if (isPremiumActive(premiumState)) {
       openReview();
       return;
@@ -1724,7 +1784,12 @@ useEffect(() => {
   if (wallDrag) {
     const pt = toBoardPoint(wallDrag.pageX, wallDrag.pageY);
     if (pt && isInsideBoard(pt.boardSize, pt.x, pt.y)) {
-      const s = nearestWallSlot(pt.boardSize, pt.x, pt.y);
+      const s = nearestWallSlot(
+        pt.boardSize,
+        pt.x,
+        pt.y,
+        boardRim(skin.frameBorderWidth)
+      );
       dragSlotRaw = { row: s.row, col: s.col, orientation: wallDrag.orientation };
     }
   }
@@ -1789,10 +1854,26 @@ useEffect(() => {
       onLayout={measureRoot}
       // No inset padding here: App.tsx already wraps every screen in one
       // SafeAreaView (top + bottom), so adding it again would double the gap.
-      style={styles.container}
+      style={[
+        styles.container,
+        skin.pageBackground ? { backgroundColor: skin.pageBackground } : null,
+      ]}
     >
-      {/* White status strip on Android so the header truly reaches the top. */}
-      <StatusBar barStyle="dark-content" backgroundColor={THEME.colors.backgroundCard} />
+      {/* Skin page texture: full-bleed table/frost/vignette behind everything. */}
+      {skin.pageTexture && <SkinBackdrop texture={skin.pageTexture} />}
+      {/* Status strip follows the skin page so no theme bar cuts the table. */}
+      <StatusBar
+        barStyle={
+          skin.pageBackground
+            ? skin.id === 'walnut'
+              ? 'light-content'
+              : 'dark-content'
+            : THEME.mode === 'dark'
+              ? 'light-content'
+              : 'dark-content'
+        }
+        backgroundColor={skin.pageBackground ?? THEME.colors.backgroundCard}
+      />
 
       {/* Measured top chrome (header + opponent cards) for board sizing.
           Back in the bar: it resigns an active match, frees a finished seat,
@@ -1815,7 +1896,7 @@ useEffect(() => {
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityLabel="Go back"
           >
-            <Feather name="chevron-left" size={24} color={THEME.colors.slate[700]} />
+            <Feather name="chevron-left" size={24} color={hudSurface?.ink ?? THEME.colors.onSurface} />
           </TouchableOpacity>
         </View>
       </View>
@@ -1824,8 +1905,17 @@ useEffect(() => {
       {/* Multiplayer splits 2 up / 2 down in a grid; 1v1 keeps full cards. */}
       {/* Their reaction dock floats over the card, out of layout. */}
       <View style={styles.sideWrap}>
+      {type === 'ai' && botDialogue.text && (
+        <BotSpeechBubble
+          text={botDialogue.text}
+          botName={botDialogue.botName}
+          botColor={botDialogue.botColor}
+          onDismiss={botDialogue.dismiss}
+          surface={hudSurface}
+        />
+      )}
       {reactionsVisible && (
-        <ReactionDock items={groupedReactions.fallback} side="top" onDone={reactions.dismiss} />
+        <ReactionDock items={groupedReactions.fallback} side="top" onDone={reactions.dismiss} surface={hudSurface} />
       )}
       <View
         pointerEvents={wallDrag ? 'none' : 'auto'}
@@ -1835,16 +1925,18 @@ useEffect(() => {
         ]}
       >
           <PlayerStrip
-state={topStripState}
+            state={topStripState}
             timers={timers}
             compact
             grid={splitActive}
             bonus={lastBonus}
             seatStatus={onlineSeatStatus}
             seatPremium={seatPremium}
+            botAvatarKeyBySeat={botAvatarKeyBySeat}
             reactionsBySeat={groupedReactions.bySeat}
             onReactionDone={reactions.dismiss}
             onPressPlayer={handleOpponentPress}
+            surface={hudSurface}
           />
       </View>
       </View>
@@ -1921,9 +2013,11 @@ state={topStripState}
                 hideWallsForPlayerId={splitActive ? seatPlayer?.id : undefined}
                 seatStatus={onlineSeatStatus}
                 seatPremium={seatPremium}
+                botAvatarKeyBySeat={botAvatarKeyBySeat}
                 reactionsBySeat={groupedReactions.bySeat}
                 onReactionDone={reactions.dismiss}
                 onPressPlayer={splitActive ? handleBottomGridPress : undefined}
+                surface={hudSurface}
               />
             </View>
           )}
@@ -1936,6 +2030,7 @@ state={topStripState}
                   items={reactions.outgoing}
                   side="bottom"
                   onDone={reactions.dismissOutgoing}
+                  surface={hudSurface}
                 />
               )}
               {trayPlayer && (
@@ -1958,7 +2053,7 @@ state={topStripState}
               card. AI games have no socket, so the fly-and-land is the whole
               effect there. */}
           {(socketLive || aiSparring) && matchLive && (
-            <ReactionTray onSend={handleReactionSend} />
+            <ReactionTray onSend={handleReactionSend} surface={hudSurface} />
           )}
           {/* Finished match: replay controls step through the stored moves
               on this same board — no separate replay page. */}
@@ -1974,7 +2069,7 @@ state={topStripState}
                   }}
                   accessibilityLabel="First move"
                 >
-                  <Feather name="chevrons-left" size={18} color={THEME.colors.slate[700]} />
+                  <Feather name="chevrons-left" size={18} color={THEME.colors.onSurface} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.replayBtn, (viewingStep ?? totalSteps) <= 0 && styles.replayBtnDisabled]}
@@ -1985,7 +2080,7 @@ state={topStripState}
                   }}
                   accessibilityLabel="Previous move"
                 >
-                  <Feather name="chevron-left" size={18} color={THEME.colors.slate[700]} />
+                  <Feather name="chevron-left" size={18} color={THEME.colors.onSurface} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.replayBtn}
@@ -2001,7 +2096,7 @@ state={topStripState}
                   }}
                   accessibilityLabel={replaying ? 'Pause replay' : 'Play replay'}
                 >
-                  <Feather name={replaying ? 'pause' : 'play'} size={18} color={THEME.colors.slate[700]} />
+                  <Feather name={replaying ? 'pause' : 'play'} size={18} color={THEME.colors.onSurface} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.replayBtn, (viewingStep ?? totalSteps) >= totalSteps && styles.replayBtnDisabled]}
@@ -2012,7 +2107,7 @@ state={topStripState}
                   }}
                   accessibilityLabel="Next move"
                 >
-                  <Feather name="chevron-right" size={18} color={THEME.colors.slate[700]} />
+                  <Feather name="chevron-right" size={18} color={THEME.colors.onSurface} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.replayBtn, (viewingStep ?? totalSteps) >= totalSteps && styles.replayBtnDisabled]}
@@ -2023,7 +2118,7 @@ state={topStripState}
                   }}
                   accessibilityLabel="Last move"
                 >
-                  <Feather name="chevrons-right" size={18} color={THEME.colors.slate[700]} />
+                  <Feather name="chevrons-right" size={18} color={THEME.colors.onSurface} />
                 </TouchableOpacity>
                 <Text style={styles.replayStep}>
                   {(viewingStep ?? totalSteps)} / {totalSteps}
@@ -2031,7 +2126,7 @@ state={topStripState}
               </View>
               {viewingStep !== null && (
                 <TouchableOpacity style={styles.replayLive} onPress={exitReplay}>
-                  <Text style={styles.replayLiveText}>Back to final board</Text>
+                  <Text style={styles.replayLiveText}>{t('game.backToFinalBoard')}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -2039,26 +2134,42 @@ state={topStripState}
           {!isCompleted && canResign && (
             <View style={styles.resignRow}>
               <TouchableOpacity
-                style={styles.resignButton}
+                style={[
+                  styles.resignButton,
+                  hudSurface && {
+                    backgroundColor: hudSurface.card,
+                    borderColor: hudSurface.border,
+                  },
+                ]}
                 onPress={() => setResignOpen(true)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                accessibilityLabel="Resign game"
+                accessibilityLabel={t('game.resign')}
               >
-                <Feather name="flag" size={17} color={THEME.colors.textSecondaryStrong} />
-                <Text style={styles.resignText}>Resign game</Text>
+                <Feather name="flag" size={17} color={hudSurface?.ink ?? THEME.colors.textSecondaryStrong} />
+                <Text style={[styles.resignText, hudSurface && { color: hudSurface.ink }]}>
+                  {t('game.resign')}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
           {!isCompleted && !canResign && type === 'online' && mySeatFinished && (
             <View style={styles.resignRow}>
               <TouchableOpacity
-                style={styles.resignButton}
+                style={[
+                  styles.resignButton,
+                  hudSurface && {
+                    backgroundColor: hudSurface.card,
+                    borderColor: hudSurface.border,
+                  },
+                ]}
                 onPress={leaveFinishedAndHome}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                accessibilityLabel="Leave match"
+                accessibilityLabel={t('game.leave')}
               >
-                <Feather name="log-out" size={17} color={THEME.colors.textSecondaryStrong} />
-                <Text style={styles.resignText}>Leave match</Text>
+                <Feather name="log-out" size={17} color={hudSurface?.ink ?? THEME.colors.textSecondaryStrong} />
+                <Text style={[styles.resignText, hudSurface && { color: hudSurface.ink }]}>
+                  {t('game.leave')}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -2068,15 +2179,25 @@ state={topStripState}
       {/* Stitch resign confirm: dimmed overlay, white card, red icon. */}
       <Modal visible={resignOpen} transparent animationType="fade">
         <SafeAreaView style={styles.resignOverlay} edges={['top', 'bottom']}>
-          <View style={styles.resignCard}>
+          <View
+            style={[
+              styles.resignCard,
+              hudSurface && {
+                backgroundColor: hudSurface.card,
+                borderColor: hudSurface.border,
+              },
+            ]}
+          >
             <View style={styles.resignIconCircle}>
               <Feather name="flag" size={28} color={THEME.colors.error} />
             </View>
-            <Text style={styles.resignTitle}>Resign Match?</Text>
-            <Text style={styles.resignDesc}>
+            <Text style={[styles.resignTitle, hudSurface && { color: hudSurface.ink }]}>
+              {t('game.resignTitle')}
+            </Text>
+            <Text style={[styles.resignDesc, hudSurface && { color: hudSurface.subInk }]}>
               {type === 'online'
-                ? 'Are you sure you want to resign? This will count as a loss and your rating will decrease.'
-                : 'Are you sure you want to resign? This will count as a loss.'}
+                ? t('game.resignDescOnline')
+                : t('game.resignDescLocal')}
             </Text>
             <View style={styles.resignActions}>
               <TouchableOpacity
@@ -2086,20 +2207,21 @@ state={topStripState}
                   handleResign();
                 }}
               >
-                <Text style={styles.resignConfirmText}>Yes, Resign</Text>
+                <Text style={styles.resignConfirmText}>{t('game.resignConfirm')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.resignCancel}
                 onPress={() => setResignOpen(false)}
               >
-                <Text style={styles.resignCancelText}>Keep Playing</Text>
+                <Text style={styles.resignCancelText}>{t('game.resignCancel')}</Text>
               </TouchableOpacity>
             </View>
           </View>
         </SafeAreaView>
       </Modal>
 
-      {/* Held wall follows the finger */}
+      {/* Held wall follows the finger — wears the skin like tray/ghost:
+          sharp rectangle on walnut, capsule elsewhere. */}
       {wallDrag && chipStyle && (
         <View
           pointerEvents="none"
@@ -2110,8 +2232,14 @@ state={topStripState}
               top: chipStyle.top,
               width: chipStyle.width,
               height: chipStyle.height,
-              borderRadius: Math.min(chipStyle.width, chipStyle.height) / 2,
-              backgroundColor: trayColor,
+              borderRadius:
+                skin.wallStyle === 'neutral'
+                  ? 0
+                  : Math.min(chipStyle.width, chipStyle.height) / 2,
+              backgroundColor:
+                skin.wallStyle === 'neutral' && skin.neutralWall
+                  ? skin.neutralWall
+                  : trayColor,
             },
           ]}
         />
@@ -2124,16 +2252,16 @@ state={topStripState}
               <Feather name="award" size={30} color={THEME.colors.assessmentInaccuracy} />
             </View>
             <Text style={styles.finishTitle}>
-              {finishModal?.place === 1 ? '1st Place' : `${finishModal?.place ?? ''} Place`}
+              {finishModal?.place === 1 ? t('game.place1st') : t('game.placeNth', { place: finishModal?.place ?? '' })}
             </Text>
             <Text style={styles.finishDesc}>
-              Match continues. Your final rating change appears after the full result is finalized.
+              {t('game.finishDesc')}
             </Text>
             <TouchableOpacity style={styles.finishPrimary} onPress={() => setFinishModal(null)}>
-              <Text style={styles.finishPrimaryText}>Keep Watching</Text>
+              <Text style={styles.finishPrimaryText}>{t('game.keepWatching')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.finishSecondary} onPress={leaveFinishedAndHome}>
-              <Text style={styles.finishSecondaryText}>Leave Match</Text>
+              <Text style={styles.finishSecondaryText}>{t('game.leaveMatch')}</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -2147,7 +2275,7 @@ state={topStripState}
         <View style={styles.blockingOverlay}>
           <Feather name="alert-circle" size={28} color={THEME.colors.danger} />
           <Text style={styles.blockingTitle}>{online.joinError}</Text>
-          <Text style={styles.blockingSub}>Use Back to search again.</Text>
+          <Text style={styles.blockingSub}>{t('game.searchAgainBack')}</Text>
         </View>
       )}
       {type === 'online' &&
@@ -2156,8 +2284,8 @@ state={topStripState}
         !online.myPlayerId && (
           <View style={styles.blockingOverlay}>
             <ActivityIndicator size="large" color={THEME.colors.primary} />
-            <Text style={styles.blockingTitle}>Finding your seat…</Text>
-            <Text style={styles.blockingSub}>Input resumes when your seat resolves.</Text>
+            <Text style={styles.blockingTitle}>{t('game.findingSeat')}</Text>
+            <Text style={styles.blockingSub}>{t('game.inputResumes')}</Text>
           </View>
         )}
       {type === 'online' &&
@@ -2167,7 +2295,7 @@ state={topStripState}
         online.isSyncing && (
           <View style={styles.blockingOverlay}>
             <ActivityIndicator size="large" color={THEME.colors.primary} />
-            <Text style={styles.blockingTitle}>Joining match…</Text>
+            <Text style={styles.blockingTitle}>{t('game.joiningMatch')}</Text>
           </View>
         )}
 
@@ -2176,6 +2304,7 @@ state={topStripState}
         state={state}
         endReason={type === 'online' ? online.gameEndedResult?.reason ?? null : null}
         isRanked={type === 'online'}
+        botPersonality={personality}
         ratingDelta={type === 'online' && identity ? online.gameEndedResult?.ratingChanges?.[identity.userId]?.delta : undefined}
         ratingAfter={type === 'online' && identity ? online.gameEndedResult?.ratingChanges?.[identity.userId]?.after : undefined}
         opponentName={
@@ -2265,8 +2394,8 @@ state={topStripState}
             <Feather name="rotate-ccw" size={18} color={THEME.colors.primary} />
             <Text style={styles.rematchToastText}>
               {online.rematchOffered && !rematchIncomingDismissed
-                ? 'Opponent wants a rematch'
-                : 'Waiting for opponent…'}
+                ? t('game.rematchOffered')
+                : t('game.waitingOpponent')}
             </Text>
               {online.rematchOffered && !rematchIncomingDismissed && (
                 <>
@@ -2277,7 +2406,7 @@ state={topStripState}
                       setRematchIncomingDismissed(true);
                     }}
                   >
-                    <Text style={styles.rematchDeclineText}>Decline</Text>
+                    <Text style={styles.rematchDeclineText}>{t('game.decline')}</Text>
                   </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.rematchAcceptBtn}
@@ -2286,7 +2415,7 @@ state={topStripState}
                     handleRematch();
                   }}
                 >
-                  <Text style={styles.rematchAcceptText}>Accept</Text>
+                  <Text style={styles.rematchAcceptText}>{t('game.accept')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -2314,10 +2443,10 @@ state={topStripState}
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.drawBg,
+    backgroundColor: THEME.colors.background,
     paddingTop: 0,
     paddingBottom: 8,
     paddingHorizontal: 12,
@@ -2578,7 +2707,7 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 13,
     fontWeight: '700',
-    color: THEME.colors.slate[700],
+    color: THEME.colors.onSurface,
     fontVariant: ['tabular-nums'],
     marginLeft: 8,
     minWidth: 52,

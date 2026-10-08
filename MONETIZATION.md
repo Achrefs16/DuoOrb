@@ -243,7 +243,12 @@ Single analysis type. No profiles split. No daily cap: **one rewarded view = one
   - `markAnalysisUnlocked(gameId, historyLength)` after earned reward; throws (no silent
     grant) if the store write fails (E12).
   - Online games use server `gameId`; AI/local use `state.gameId` (fresh per mount + rematch).
-    History replays (`bare=true`) never analyze — unchanged (E15).
+    History/Profile replays (`bare=true`) carry the same `accessKey` (`SavedGameRecord.id`)
+    and offer the one-ad upgrade to full review from the replay itself (P3.6).
+- [x] P3.6 History/Profile Analyze upgrade: ✅ SHIPPED (2026-10-08). Bare replays show an
+  Analyze button under the step controls: premium/dev/unlocked remount straight into full
+  mode (`App.handleUpgradeReviewToFull` flips `reviewBare`); locked opens the same
+  `RewardSheet` (one ad = that game, premium row attributed to `entry='analysis'`).
 - [x] P3.2 Analyze row → new press flow (gate lives in `GameScreen.handleAnalyzePress`, modal
   untouched): ✅ SHIPPED. Premium/unlocked → straight to review; locked → `RewardSheet`
   ("Watch a short video…", [Watch ad], "Not now"; premium link lands with P7 `PremiumSheet` —
@@ -266,7 +271,7 @@ Single analysis type. No profiles split. No daily cap: **one rewarded view = one
 | E12 | Reward earned but app killed before `markAnalysisUnlocked` | Accept loss (one ad view). Do NOT auto-unlock on next boot without proof — predictable beats clever |
 | E13 | Same game analyzed twice | Cache hit → no second ad. Rematch/new game = new id = new gate |
 | E14 | Premium expires mid-session | `usePremium` refresh on foreground; next Analyze tap re-evaluates (never yank an open review) |
-| E15 | History-screen replays | `bare=true` path untouched — replay always free, analysis never offered there |
+| E15 | History/Profile replays | `bare=true` replay always free; Analyze button offers the same one-ad-per-game upgrade to full review (P3.6) |
 | E16 | UI copy promises duration | Copy says "short video", never "30 seconds" — creative length is advertiser-controlled |
 
 **Verify P3:** free → Analyze → ad → reward → full review renders; early-close → no unlock;
@@ -368,6 +373,29 @@ remains a future extension reusing this exact pattern.
 > P5.1 STATUS (2026-10-05): SHIPPED. `tsc` clean, 95/95 mobile tests (3 new theme specs:
 > palette parity, E23 whitelist, premium gate), lint zero new. `DEV_UNLOCK_THEME` test flag
 > active alongside `DEV_UNLOCK_BOTS` — both removed before any release build.
+
+### P5.3 — Premium board skin: Walnut (Dark Mode board free)
+
+POLICY CHANGE (2026-10-08): Midnight is FREE for everyone (dark-mode board).
+Premium is one full board design (arena + glacier cut — walnut only);
+orb/wall HUES stay identity colors (readability), only the finish changes.
+on every skin (readability), only the finish changes. All skins stay 2D Views.
+
+- [x] P5.3.1 `BoardSkin` system in `src/theme/boardTheme.ts`: `classic` (free,
+  follows appearance) + `walnut` (premium-gated, classic
+  fallback). `DEV_UNLOCK_MIDNIGHT_RENDER` removed; `resolveBoardPalette` free.
+- [x] P5.3.2 `GameBoard` paints per skin: frame radius/border, inner bevel +
+  sheen + goal lips, checker cells + tile bevels, capsule/bevelled walls with
+  top-light strip, orb rim + grounding shadow + highlight strength, Glacier
+  edge coordinates. Geometry (`boardMetrics`, `wallRect`) shared — 2p/4p and
+  both appearances identical. `WallTray` follows skin radii/surfaces.
+- [x] P5.3.3 Settings BOARD DESIGN picker (Classic free + 3 locked): locked tap
+  opens `PremiumSheet` (entry `board-skin`); choice persists in
+  `UserSettings.boardSkinId` (whitelisted on load — E23). Paywall bullets,
+  Settings premium copy and legal copy sell premium boards, never Midnight.
+
+> P5.3 STATUS (2026-10-08): SHIPPED. `tsc` clean, mobile tests green (skin gate,
+> fallback + E23 specs), all 10 locales carry the board-design keys.
 
 ### P5.2 — PremiumBadge (6 render sites)
 

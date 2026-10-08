@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import { TIME_CONTROLS, TimeControl } from '../timeControls';
 import { GameMode, playerCountForMode } from '@duoorb/game-core';
 import { RoomDto } from '@duoorb/protocol';
@@ -29,6 +29,7 @@ import { useRooms } from '../network/useRooms';
 import { api } from '../network/apiClient';
 import { useIdentity } from '../network/auth';
 import { nameInitial, resolveName } from '../displayName';
+import { useTranslation } from '../i18n';
 
 export type OnlineMode = 'quick' | 'rooms';
 
@@ -45,7 +46,9 @@ const MmSeat: React.FC<{
   avatar: React.ReactNode;
   avatarStyle: object;
   letterStyle?: object;
-}> = ({ tag, name, rating, avatar, avatarStyle, letterStyle }) => (
+}> = ({ tag, name, rating, avatar, avatarStyle, letterStyle }) => {
+  const styles = useStyles(createStyles);
+  return (
   <View style={styles.mmPlayerCol}>
     <View style={avatarStyle}>
       {typeof avatar === 'string' ? (
@@ -62,7 +65,8 @@ const MmSeat: React.FC<{
       <Text style={styles.mmRatingText}>{rating}</Text>
     </View>
   </View>
-);
+  );
+};
 
 interface OnlineScreenProps {
   onBack: () => void;
@@ -104,6 +108,8 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   onStartOnlineGame,
   onConsumeAutoEntry,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const [view] = useState<OnlineMode>(initialView);
   const [clock, setClock] = useState<TimeControl>(initialClock);
   // Snapshot the entry config on mount, like view/clock above. The one-shot
@@ -427,20 +433,20 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
     confirmMode !== null && typeof confirmMode === 'object'
       ? 'Kick Player?'
       : confirmMode === 'close'
-      ? 'Close room?'
-      : 'Leave room?';
+      ? t('online.confirmCloseTitle')
+      : t('online.confirmLeaveTitle');
   const confirmDesc =
     confirmMode !== null && typeof confirmMode === 'object'
       ? `Are you sure you want to remove ${confirmMode.name} from the room?`
       : confirmMode === 'close'
-      ? 'This will remove all players from the room.'
-      : 'Are you sure you want to leave this game room?';
+      ? t('online.confirmCloseDesc')
+      : t('online.confirmLeaveDesc');
   const confirmCTA =
     confirmMode !== null && typeof confirmMode === 'object'
       ? 'Kick Player'
       : confirmMode === 'close'
-      ? 'Close Room'
-      : 'Leave';
+      ? t('online.closeRoom')
+      : t('online.leaveRoom');
 
   // Room setup editor (host only). Same pickers as the create form, in the
   // same Quick-Add bottom sheet — a table can switch Center Rush to Race
@@ -507,7 +513,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             onPress={handleBack}
             accessibilityLabel="Cancel matchmaking"
           >
-            <Feather name="x" size={20} color={THEME.colors.slate[700]} />
+            <Feather name="x" size={20} color={THEME.colors.onSurface} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
             {isMatched
@@ -528,20 +534,20 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           {/* Configuration card */}
           <View style={styles.mmConfigCard}>
             <View style={styles.mmConfigRow}>
-              <Text style={styles.mmConfigLabel}>MODE</Text>
+              <Text style={styles.mmConfigLabel}>{t('online.mode')}</Text>
               <Text style={styles.mmConfigValue}>{modeLabel(matchConfig.mode)}</Text>
             </View>
             <View style={styles.mmConfigDivider} />
             <View style={styles.mmConfigRow}>
-              <Text style={styles.mmConfigLabel}>TIME</Text>
+              <Text style={styles.mmConfigLabel}>{t('online.time')}</Text>
               <Text style={styles.mmConfigValue}>{matchConfig.clock.short}</Text>
             </View>
             <View style={styles.mmConfigDivider} />
             <View style={styles.mmConfigRow}>
-              <Text style={styles.mmConfigLabel}>QUEUE</Text>
+              <Text style={styles.mmConfigLabel}>{t('online.queue')}</Text>
               <View style={styles.mmRankedPill}>
                 <View style={styles.mmRankedDot} />
-                <Text style={styles.mmRankedText}>RANKED</Text>
+                <Text style={styles.mmRankedText}>{t('online.ranked')}</Text>
               </View>
             </View>
           </View>
@@ -557,7 +563,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   {nameInitial(identity?.displayName ?? '')}
                 </Text>
               </View>
-              <Text style={styles.mmPlayerTag}>YOU</Text>
+              <Text style={styles.mmPlayerTag}>{t('leaderboard.you')}</Text>
               <Text style={styles.mmPlayerName} numberOfLines={1}>
                 {resolveName(identity?.displayName ?? '', 'You')}
               </Text>
@@ -569,7 +575,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             </View>
 
             <View style={styles.mmVersusCol}>
-              <Text style={styles.mmVersusText}>VS</Text>
+              <Text style={styles.mmVersusText}>{t('online.versus')}</Text>
               <View style={styles.mmDotsRow}>
                 <Animated.View style={[styles.mmDot, { opacity: pulseStyles.dotA }]} />
                 <Animated.View style={[styles.mmDot, { opacity: pulseStyles.dotB }]} />
@@ -593,21 +599,21 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 )}
               </View>
               <Text style={styles.mmPlayerTag}>
-                {isMatched ? 'READY' : 'OPEN'}
+                {isMatched ? t('online.ready').toUpperCase() : 'OPEN'}
               </Text>
               <Text style={styles.mmPlayerName} numberOfLines={1}>
                 {foundGame?.opponents[0]
                   ? foundGame.opponents[0].displayName
                   : isMatched
-                  ? 'Opponent'
-                  : 'Searching'}
+                  ? t('history.opponent')
+                  : t('online.waitingPlayer')}
               </Text>
               <View style={styles.mmRatingPill}>
                 <Text style={styles.mmRatingText}>
                   {foundGame?.opponents[0]
                     ? Math.round(foundGame.opponents[0].rating)
                     : isMatched
-                    ? 'READY'
+                    ? t('online.ready').toUpperCase()
                     : '—'}
                 </Text>
               </View>
@@ -616,7 +622,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           ) : (
           <View style={styles.mmMatchCard}>
             <MmSeat
-              tag="YOU"
+              tag={t('leaderboard.you')}
               name={resolveName(identity?.displayName ?? '', 'You')}
               rating={myRating !== null ? String(myRating) : '—'}
               avatar={nameInitial(identity?.displayName ?? '')}
@@ -629,15 +635,15 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             ).map((opp, i) => (
               <MmSeat
                 key={opp ? opp.userId : `open-${i}`}
-                tag={opp || isMatched ? 'READY' : 'OPEN'}
+                tag={opp || isMatched ? t('online.ready').toUpperCase() : 'OPEN'}
                 name={
-                  opp ? opp.displayName : isMatched ? 'Ready' : 'Searching'
+                  opp ? opp.displayName : isMatched ? t('online.ready') : t('online.waitingPlayer')
                 }
                 rating={
                   opp
                     ? String(Math.round(opp.rating))
                     : isMatched
-                    ? 'READY'
+                    ? t('online.ready').toUpperCase()
                     : '—'
                 }
                 avatar={
@@ -672,7 +678,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 />
                 <View style={styles.startingRow}>
                   <ActivityIndicator size="small" color={THEME.colors.primary} />
-                  <Text style={styles.startingText}>Starting match…</Text>
+                  <Text style={styles.startingText}>{t('online.startingMatch')}</Text>
                 </View>
                 {/* No timed net here by design — but never trap the player:
                     cancel drops the gate (releasing the seat) and re-arms. */}
@@ -685,7 +691,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   }}
                 >
                   <Feather name="x" size={16} color={THEME.colors.onSurface} />
-                  <Text style={styles.cancelSearchText}>Cancel</Text>
+                  <Text style={styles.cancelSearchText}>{t('common.cancel')}</Text>
                 </TouchableOpacity>
               </>
             ) : isSearching ? (
@@ -696,8 +702,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                     search keeps running; this only explains the wait. */}
                 {takingLong && (
                   <Text style={styles.searchSlowText}>
-                    Still searching — uncommon time controls and wide rating gaps
-                    take longer. You can wait or try a standard Rapid clock.
+                    {t('online.searchSlow')}
                   </Text>
                 )}
                 <TouchableOpacity
@@ -709,7 +714,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   }}
                 >
                   <Feather name="x" size={16} color={THEME.colors.onSurface} />
-                  <Text style={styles.cancelSearchText}>Cancel Search</Text>
+                  <Text style={styles.cancelSearchText}>{t('online.cancelSearch')}</Text>
                 </TouchableOpacity>
               </>
             ) : !isMatched ? (
@@ -727,7 +732,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 }}
               >
                 <Feather name="search" size={16} color={THEME.colors.onPrimary} />
-                <Text style={styles.retrySearchText}>Search Again</Text>
+                <Text style={styles.retrySearchText}>{t('online.searchAgain')}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -756,15 +761,15 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity style={styles.closeBtn} onPress={handleBack}>
-            <Feather name="arrow-left" size={20} color={THEME.colors.slate[700]} />
+            <Feather name="arrow-left" size={20} color={THEME.colors.onSurface} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{activeRoom ? 'Private Room' : 'Private Rooms'}</Text>
+          <Text style={styles.headerTitle}>{activeRoom ? t('online.privateRoom') : t('online.privateRooms')}</Text>
         </View>
         {activeRoom ? (
           <View style={styles.headerRight}>
             <TouchableOpacity
               style={styles.codePill}
-              onPress={() => void copyCode(activeRoom.code, 'Code copied!')}
+              onPress={() => void copyCode(activeRoom.code, t('online.shareCodeCopied'))}
             >
               <Text style={styles.codePillText}>{activeRoom.code}</Text>
               <Feather name="copy" size={13} color={THEME.colors.primary} />
@@ -808,14 +813,14 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   accessibilityLabel="Change room setup"
                 >
                   <Feather name="sliders" size={16} color={THEME.colors.primary} />
-                  <Text style={styles.lobbySetupText}>Setup</Text>
+                  <Text style={styles.lobbySetupText}>{t('online.setup')}</Text>
                 </TouchableOpacity>
               )}
             </View>
 
             {/* Players header + count */}
             <View style={styles.slotsHeader}>
-              <Text style={styles.slotsTitle}>Players</Text>
+              <Text style={styles.slotsTitle}>{t('online.playersCount')}</Text>
               <Text style={styles.slotsCount}>
                 {lobbyOccupied}/{activeRoom.slots.length}
               </Text>
@@ -838,11 +843,11 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         <View style={[styles.slotAvatar, styles.slotAvatarEmpty]}>
                           <Text style={styles.slotInitialEmpty}>?</Text>
                         </View>
-                        <Text style={styles.slotWaiting}>Waiting for player…</Text>
+                        <Text style={styles.slotWaiting}>{t('online.waitingPlayer')}</Text>
                       </View>
                       <TouchableOpacity style={styles.quickAddBtn} onPress={() => void openQuickAdd()}>
                         <Feather name="user-plus" size={15} color={THEME.colors.primary} />
-                        <Text style={styles.quickAddText}>Quick Add</Text>
+                        <Text style={styles.quickAddText}>{t('online.quickAdd')}</Text>
                       </TouchableOpacity>
                     </View>
                   );
@@ -858,12 +863,12 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         <View style={styles.slotNameRow}>
                           <Text style={styles.slotUsername} numberOfLines={1}>
                             {slot.displayName}
-                            {isMe ? ' (You)' : ''}
+                            {isMe ? ` ${t('gameover.you')}` : ''}
                           </Text>
                           {slot.isHost && (
                             <View style={styles.hostBadge}>
                               <MaterialCommunityIcons name="crown" size={11} color={THEME.colors.primaryDark} />
-                              <Text style={styles.hostBadgeText}>Host</Text>
+                              <Text style={styles.hostBadgeText}>{t('online.host')}</Text>
                             </View>
                           )}
                         </View>
@@ -890,7 +895,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                             slot.isReady ? styles.readyOnText : styles.readyOffText,
                           ]}
                         >
-                          {slot.isReady ? 'Ready' : 'Not ready'}
+                          {slot.isReady ? t('online.ready') : t('online.notReady')}
                         </Text>
                       </TouchableOpacity>
                     ) : (
@@ -906,7 +911,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                             slot.isReady ? styles.readyOnText : styles.readyOffText,
                           ]}
                         >
-                          {slot.isReady ? 'Ready' : 'Not ready'}
+                          {slot.isReady ? t('online.ready') : t('online.notReady')}
                         </Text>
                       </View>
                     )}
@@ -945,21 +950,21 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   ) : (
                     <>
                       <MaterialCommunityIcons name="play" size={20} color={THEME.colors.onPrimary} />
-                      <Text style={styles.lobbyCtaText}>Start Game</Text>
+                      <Text style={styles.lobbyCtaText}>{t('online.startGame')}</Text>
                     </>
                   )}
                 </TouchableOpacity>
                 {!canStart && (
-                  <Text style={styles.lobbyHint}>Waiting for all players to be ready…</Text>
+                  <Text style={styles.lobbyHint}>{t('online.waitingReady')}</Text>
                 )}
                 <TouchableOpacity
                   style={styles.lobbyCloseBtn}
                   activeOpacity={0.7}
                   onPress={() => setConfirmMode(isHost ? 'close' : 'leave')}
-                  accessibilityLabel={isHost ? 'Close room' : 'Leave room'}
+                  accessibilityLabel={isHost ? t('online.closeRoom') : t('online.leaveRoom')}
                 >
                   <Feather name="log-out" size={15} color={THEME.colors.textSecondary} />
-                  <Text style={styles.lobbyCloseText}>{isHost ? 'Close Room' : 'Leave Room'}</Text>
+                  <Text style={styles.lobbyCloseText}>{isHost ? t('online.closeRoom') : t('online.leaveRoom')}</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -968,7 +973,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 onPress={() => void setReady(!isReady)}
               >
                 <Text style={styles.lobbyCtaText}>
-                  {isReady ? 'Cancel Ready' : "I'm Ready"}
+                  {isReady ? t('common.cancel') : t('online.ready')}
                 </Text>
               </TouchableOpacity>
             )}
@@ -979,11 +984,11 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           <>
             {/* Join Room Card */}
             <View style={styles.rmCard}>
-              <Text style={styles.rmLabel}>Join Room</Text>
+              <Text style={styles.rmLabel}>{t('online.joinRoom')}</Text>
               <View style={styles.rmJoinRow}>
                 <TextInput
                   style={styles.rmJoinInput}
-                  placeholder="Enter room code"
+                  placeholder={t('online.enterCode')}
                   placeholderTextColor={THEME.colors.statusOffline}
                   value={roomCodeInput}
                   onChangeText={(t) => setRoomCodeInput(t.toUpperCase())}
@@ -1006,7 +1011,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   disabled={!roomCodeInput.trim() || roomLoading}
                   onPress={() => runWhenOnline(() => joinRoom(roomCodeInput.trim()))}
                 >
-                  <Text style={styles.rmJoinBtnText}>Join</Text>
+                  <Text style={styles.rmJoinBtnText}>{t('online.join')}</Text>
                 </TouchableOpacity>
               </View>
               {roomError && <Text style={styles.errorText}>{roomError}</Text>}
@@ -1016,7 +1021,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             <View style={styles.rmCard}>
               {/* Mode Selection */}
               <View style={styles.rmSection}>
-                <Text style={styles.rmLabel}>Mode</Text>
+                <Text style={styles.rmLabel}>{t('online.mode')}</Text>
                 <View style={styles.rmTrack}>
                   {(
                     [
@@ -1041,7 +1046,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               {/* Dynamic Player Count */}
               {roomKind !== 'classic' && (
                 <View style={styles.rmSection}>
-                  <Text style={styles.rmLabel}>Players</Text>
+                  <Text style={styles.rmLabel}>{t('online.players')}</Text>
                   <View style={styles.rmTrack}>
                     {([2, 3, 4] as const).map((n) => (
                       <TouchableOpacity
@@ -1060,7 +1065,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
               {/* Time Control */}
               <View style={styles.rmSection}>
-                <Text style={styles.rmLabel}>Time Control</Text>
+                <Text style={styles.rmLabel}>{t('online.timeControl')}</Text>
                 <View style={styles.rmTrack}>
                   {TIME_CONTROLS.slice(0, 3).map((tc) => (
                     <TouchableOpacity
@@ -1078,7 +1083,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
               {/* Walls Setting */}
               <View style={styles.rmSection}>
-                <Text style={styles.rmLabel}>Walls</Text>
+                <Text style={styles.rmLabel}>{t('online.walls')}</Text>
                 <View style={styles.rmTrack}>
                   {([10, 15, 'unlimited'] as const).map((w) => (
                     <TouchableOpacity
@@ -1108,7 +1113,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 {roomLoading ? (
                   <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
                 ) : (
-                  <Text style={styles.rmCtaText}>Create Room</Text>
+                  <Text style={styles.rmCtaText}>{t('online.createRoom')}</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1131,7 +1136,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           />
           <View style={styles.roomStartingBar}>
             <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
-            <Text style={styles.roomStartingText}>Starting match…</Text>
+            <Text style={styles.roomStartingText}>{t('online.startingMatch')}</Text>
             <TouchableOpacity
               onPress={() => {
                 setPendingRoomGame(null);
@@ -1165,7 +1170,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 style={styles.confirmCancel}
                 onPress={() => setConfirmMode(null)}
               >
-                <Text style={styles.confirmCancelText}>Cancel</Text>
+                <Text style={styles.confirmCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1176,15 +1181,15 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
           <View style={styles.sheetCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Quick Add</Text>
+              <Text style={styles.modalTitle}>{t('online.quickAdd')}</Text>
               <TouchableOpacity style={styles.sheetClose} onPress={() => setShowQuickAdd(false)}>
                 <Feather name="x" size={20} color={THEME.colors.textMuted} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.quickAddSub}>Invite an online friend to this room.</Text>
+            <Text style={styles.quickAddSub}>{t('online.quickAddSub')}</Text>
             <ScrollView style={styles.modalResultsScroll} contentContainerStyle={styles.modalResultsContent}>
               {onlineFriends.length === 0 ? (
-                <Text style={styles.searchHint}>No online friends available.</Text>
+                <Text style={styles.searchHint}>{t('online.noOnlineFriends')}</Text>
               ) : (
                 onlineFriends.map((friend) => (
                   <View key={friend.id} style={styles.searchResultItem}>
@@ -1196,12 +1201,12 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                       </View>
                       <View>
                         <Text style={styles.searchUsername}>{resolveName(friend)}</Text>
-                        <Text style={styles.searchHandle}>@{friend.username} · {friend.status === 'PLAYING' ? 'In a match' : 'Online'}</Text>
+                        <Text style={styles.searchHandle}>@{friend.username} · {friend.status === 'PLAYING' ? t('online.inMatch') : t('online.onlineStatus')}</Text>
                       </View>
                     </View>
                     <TouchableOpacity style={styles.quickAddBtn} onPress={() => void inviteFriend(friend.id)}>
                       <Feather name="user-plus" size={15} color={THEME.colors.primary} />
-                      <Text style={styles.quickAddText}>Invite</Text>
+                      <Text style={styles.quickAddText}>{t('online.invite')}</Text>
                     </TouchableOpacity>
                   </View>
                 ))
@@ -1216,17 +1221,17 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
           <View style={styles.sheetCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Room Setup</Text>
+              <Text style={styles.modalTitle}>{t('online.roomSetup')}</Text>
               <TouchableOpacity style={styles.sheetClose} onPress={() => setShowRoomSetup(false)}>
                 <Feather name="x" size={20} color={THEME.colors.textMuted} />
               </TouchableOpacity>
             </View>
             <Text style={styles.quickAddSub}>
-              Changing the setup clears ready states — everyone confirms again.
+              {t('online.roomSetupSub')}
             </Text>
             {/* Mode — same segmented control as the create form. */}
             <View style={styles.rmSection}>
-              <Text style={styles.rmLabel}>Mode</Text>
+              <Text style={styles.rmLabel}>{t('online.mode')}</Text>
               <View style={styles.rmTrack}>
                 {(
                   [
@@ -1250,7 +1255,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             {/* Players — hidden for Classic, which is always head-to-head. */}
             {setupKind !== 'classic' && (
               <View style={styles.rmSection}>
-                <Text style={styles.rmLabel}>Players</Text>
+                <Text style={styles.rmLabel}>{t('online.players')}</Text>
                 <View style={styles.rmTrack}>
                   {([2, 3, 4] as const).map((n) => (
                     <TouchableOpacity
@@ -1268,7 +1273,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             )}
             {/* Time Control */}
             <View style={styles.rmSection}>
-              <Text style={styles.rmLabel}>Time Control</Text>
+              <Text style={styles.rmLabel}>{t('online.timeControl')}</Text>
               <View style={styles.rmTrack}>
                 {TIME_CONTROLS.slice(0, 3).map((tc) => (
                   <TouchableOpacity
@@ -1285,7 +1290,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             </View>
             {/* Walls */}
             <View style={styles.rmSection}>
-              <Text style={styles.rmLabel}>Walls</Text>
+              <Text style={styles.rmLabel}>{t('online.walls')}</Text>
               <View style={styles.rmTrack}>
                 {([10, 15, 'unlimited'] as const).map((w) => (
                   <TouchableOpacity
@@ -1309,7 +1314,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               {setupSaving ? (
                 <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
               ) : (
-                <Text style={styles.rmCtaText}>Save Setup</Text>
+                <Text style={styles.rmCtaText}>{t('online.saveSetup')}</Text>
               )}
             </TouchableOpacity>
             {!!roomError && <Text style={styles.errorText}>{roomError}</Text>}
@@ -1321,7 +1326,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -1337,15 +1342,15 @@ const styles = StyleSheet.create({
     borderBottomColor: THEME.colors.surfaceContainer,
   },
   closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
     fontFamily: THEME.fonts.bold,
-    fontSize: 17,
+    fontSize: 19,
     fontWeight: '700',
     color: THEME.colors.onSurface,
   },
@@ -1389,26 +1394,26 @@ const styles = StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: THEME.colors.slate[700],
+    color: THEME.colors.onSurface,
     letterSpacing: 1,
     fontVariant: ['tabular-nums'],
   },
   lobbySummary: {
     width: '100%',
     backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: THEME.colors.surfaceMuted,
-    padding: 14,
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
     ...THEME.shadows.card,
   },
   lobbySummaryIcon: {
     width: 40,
     height: 40,
-    borderRadius: 8,
+    borderRadius: 12,
     backgroundColor: THEME.colors.surfacePrimaryTint,
     borderWidth: 1,
     borderColor: THEME.colors.surfacePrimaryTintBorder,
@@ -1417,7 +1422,7 @@ const styles = StyleSheet.create({
   },
   lobbySummaryTitle: {
     fontFamily: THEME.fonts.bold,
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     color: THEME.colors.inverseLabel,
   },
@@ -1428,8 +1433,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: THEME.radius.md,
+    paddingVertical: 10,
+    borderRadius: 12,
     backgroundColor: THEME.colors.surfacePrimaryTint,
     borderWidth: 1,
     borderColor: THEME.colors.surfacePrimaryTintBorder,
@@ -1456,7 +1461,7 @@ const styles = StyleSheet.create({
   },
   slotsTitle: {
     fontFamily: THEME.fonts.bold,
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     color: THEME.colors.inverseLabel,
   },
@@ -1469,15 +1474,15 @@ const styles = StyleSheet.create({
   },
   slotsList: {
     width: '100%',
-    gap: 8,
+    gap: 12,
   },
   slotItem: {
     width: '100%',
     backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: THEME.colors.surfaceMuted,
-    padding: 12,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1496,7 +1501,7 @@ const styles = StyleSheet.create({
   slotAvatar: {
     width: 40,
     height: 40,
-    borderRadius: 8,
+    borderRadius: 12,
     backgroundColor: THEME.colors.surfacePrimaryTint,
     borderWidth: 1,
     borderColor: THEME.colors.surfacePrimaryTintBorder,
@@ -1574,7 +1579,7 @@ const styles = StyleSheet.create({
     height: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 6,
+    borderRadius: 12,
   },
   slotRating: {
     fontFamily: THEME.fonts.regular,
@@ -1654,7 +1659,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: THEME.colors.outlineVariant,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 13,
   },
   lobbyCloseText: {
     fontFamily: THEME.fonts.semiBold,
@@ -1665,15 +1670,15 @@ const styles = StyleSheet.create({
   rmCard: {
     width: '100%',
     backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: THEME.colors.surfaceMuted,
     padding: 16,
-    gap: 12,
+    gap: 14,
     ...THEME.shadows.card,
   },
   rmSection: {
-    gap: 6,
+    gap: 10,
   },
   rmLabel: {
     fontFamily: THEME.fonts.semiBold,
@@ -1692,8 +1697,8 @@ const styles = StyleSheet.create({
   },
   rmOpt: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1717,7 +1722,7 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: THEME.colors.primary,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
@@ -1725,7 +1730,7 @@ const styles = StyleSheet.create({
   rmCtaText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: THEME.colors.onPrimary,
   },
   // Breathing room between the last sheet section (walls) and Save Setup.
@@ -1736,32 +1741,32 @@ const styles = StyleSheet.create({
   rmJoinRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
   },
   rmJoinInput: {
     flex: 1,
     backgroundColor: THEME.colors.surfaceMuted,
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 13,
     fontFamily: THEME.fonts.semiBold,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
     color: THEME.colors.inverseLabel,
     letterSpacing: 1,
   },
   rmJoinBtn: {
-    backgroundColor: THEME.colors.slate[200],
+    backgroundColor: THEME.colors.surfaceHairline,
     borderRadius: 12,
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rmJoinBtnText: {
     fontFamily: THEME.fonts.semiBold,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: THEME.colors.inverseLabel,
   },
   confirmOverlay: {
@@ -1779,12 +1784,12 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 320,
     backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 20,
   },
   confirmTitle: {
     fontFamily: THEME.fonts.bold,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: THEME.colors.inverseLabel,
   },
@@ -1797,32 +1802,32 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   confirmActions: {
-    gap: 8,
+    gap: 12,
   },
   confirmDanger: {
     width: '100%',
     backgroundColor: THEME.colors.danger,
-    borderRadius: 8,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingVertical: 13,
     alignItems: 'center',
   },
   confirmDangerText: {
     fontFamily: THEME.fonts.bold,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
     color: THEME.colors.onPrimary,
   },
   confirmCancel: {
     width: '100%',
     backgroundColor: THEME.colors.surfaceMuted,
-    borderRadius: 8,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingVertical: 13,
     alignItems: 'center',
   },
   confirmCancelText: {
     fontFamily: THEME.fonts.semiBold,
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
     color: THEME.colors.textOnMuted,
   },
   // Matchmaking Styling (DuoOrb card-based, square letter avatars)
@@ -1833,14 +1838,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 32,
-    gap: 12,
+    gap: 14,
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',
   },
   mmConfigCard: {
     backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: THEME.radius.lg,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: THEME.colors.outlineVariant,
     paddingHorizontal: 14,
@@ -1850,7 +1855,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
   mmConfigDivider: {
     height: 1,
@@ -1891,11 +1896,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: THEME.radius.lg,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: THEME.colors.outlineVariant,
     paddingVertical: 18,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
   },
   mmPlayerCol: {
     flex: 1,
@@ -1906,7 +1911,7 @@ const styles = StyleSheet.create({
   mmAvatarYou: {
     width: 58,
     height: 58,
-    borderRadius: THEME.radius.lg,
+    borderRadius: 18,
     backgroundColor: THEME.colors.primaryLight,
     borderWidth: 1.5,
     borderColor: THEME.colors.primary,
@@ -1922,7 +1927,7 @@ const styles = StyleSheet.create({
   mmAvatarSlot: {
     width: 58,
     height: 58,
-    borderRadius: THEME.radius.lg,
+    borderRadius: 18,
     backgroundColor: THEME.colors.drawBg,
     borderWidth: 1.5,
     borderColor: THEME.colors.outlineVariant,
@@ -1939,7 +1944,7 @@ const styles = StyleSheet.create({
   mmAvatarYouSm: {
     width: 46,
     height: 46,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     backgroundColor: THEME.colors.primaryLight,
     borderWidth: 1.5,
     borderColor: THEME.colors.primary,
@@ -1949,7 +1954,7 @@ const styles = StyleSheet.create({
   mmAvatarSlotSm: {
     width: 46,
     height: 46,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     backgroundColor: THEME.colors.drawBg,
     borderWidth: 1.5,
     borderColor: THEME.colors.outlineVariant,
@@ -1970,7 +1975,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 46,
     height: 46,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: THEME.colors.primary,
   },
@@ -1978,7 +1983,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 58,
     height: 58,
-    borderRadius: THEME.radius.lg,
+    borderRadius: 18,
     borderWidth: 1.5,
     borderColor: THEME.colors.primary,
   },
@@ -2040,7 +2045,7 @@ const styles = StyleSheet.create({
   cancelSearchBtn: {
     width: '100%',
     height: 46,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     backgroundColor: THEME.colors.backgroundCard,
     borderWidth: 1,
     borderColor: THEME.colors.outlineVariant,
@@ -2065,7 +2070,7 @@ const styles = StyleSheet.create({
   startingRow: {
     width: '100%',
     height: 46,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     backgroundColor: THEME.colors.backgroundCard,
     borderWidth: 1,
     borderColor: THEME.colors.outlineVariant,
@@ -2089,10 +2094,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 12,
     backgroundColor: THEME.colors.primary,
-    borderRadius: THEME.radius.md,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingVertical: 14,
     paddingHorizontal: 14,
     ...THEME.shadows.modal,
   },
@@ -2106,7 +2111,7 @@ const styles = StyleSheet.create({
   retrySearchBtn: {
     width: '100%',
     height: 46,
-    borderRadius: THEME.radius.md,
+    borderRadius: 12,
     backgroundColor: THEME.colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2245,7 +2250,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 12,
     backgroundColor: THEME.colors.surfacePrimaryTint,
   },
   quickAddText: {
@@ -2267,8 +2272,8 @@ const styles = StyleSheet.create({
   },
   sheetCard: {
     backgroundColor: THEME.colors.background,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
     borderWidth: 1,
     borderBottomWidth: 0,
     borderColor: THEME.colors.surfaceContainer,
@@ -2282,16 +2287,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 12,
   },
   modalTitle: {
     fontFamily: THEME.fonts.bold,
-    fontSize: 17,
+    fontSize: 19,
     fontWeight: '700',
     color: THEME.colors.onSurface,
   },
   modalResultsScroll: { maxHeight: 260, marginTop: 4 },
-  modalResultsContent: { gap: 2, paddingBottom: 4 },
+  modalResultsContent: { gap: 10, paddingBottom: 4 },
   searchHint: {
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
@@ -2303,20 +2308,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: THEME.colors.surfaceContainerLow,
   },
   searchResultLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   searchAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     backgroundColor: THEME.colors.surfaceContainerLow,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  searchAvatarText: { fontFamily: THEME.fonts.bold, fontSize: 12, fontWeight: '700', color: THEME.colors.primary },
+  searchAvatarText: { fontFamily: THEME.fonts.bold, fontSize: 14, fontWeight: '700', color: THEME.colors.primary },
   searchUsername: { fontFamily: THEME.fonts.semiBold, fontSize: 14, fontWeight: '600', color: THEME.colors.onSurface },
   searchHandle: { fontFamily: THEME.fonts.regular, fontSize: 11, color: THEME.colors.textMuted },
   sendRequestBtn: {

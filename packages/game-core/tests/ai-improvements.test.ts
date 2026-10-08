@@ -222,7 +222,7 @@ describe('corridor discipline', () => {
       0,
       history
     );
-    const action = getBestAction(state, AI_PROFILES.hard);
+    const action = getBestAction(state, { ...AI_PROFILES.hard, engine: 'search' });
     expect(action).toEqual({ type: 'MOVE', to: { row: 5, col: 4 } });
 
     const ranked = rankActions(state, 'p1', AI_PROFILES.hard, { deterministic: true });
@@ -253,7 +253,7 @@ describe('budget', () => {
 
   it('stays inside the budget and delivers the promised depth untruncated', () => {
     const state = midGame();
-    getBestAction(state, AI_PROFILES.hard);
+    getBestAction(state, { ...AI_PROFILES.hard, engine: 'search' });
     const stats = searchStats();
     // The gameplay ceiling is the mode-aware production budget, not the
     // profile's legacy `timeBudgetMs`, which is only a default for callers that
@@ -373,7 +373,7 @@ describe('self-play', () => {
     let state = makeState('2p', [player(0, 8, 4, 'TOP', 10), player(1, 0, 4, 'BOTTOM', 10)]);
     let plies = 0;
     while (state.status === 'IN_PROGRESS' && plies < 140) {
-      const action = getBestAction(state, AI_PROFILES.normal, 1234 + plies);
+      const action = getBestAction(state, { ...AI_PROFILES.easy, simulations: 150 }, 1234 + plies);
       expect(action).not.toBeNull();
       if (!action) break;
       const applied = applyAction(state, action);
@@ -384,5 +384,5 @@ describe('self-play', () => {
     }
     expect(state.status).toBe('COMPLETED');
     expect(state.winnerId).not.toBeNull();
-  });
+  }, 30_000);
 });

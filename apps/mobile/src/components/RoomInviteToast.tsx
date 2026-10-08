@@ -2,7 +2,8 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { RoomInviteDto } from '@duoorb/protocol';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { ToastAccept, ToastCard, ToastDecline, ToastOverlay } from './ui';
 
 export const RoomInviteToast: React.FC<{
@@ -11,6 +12,8 @@ export const RoomInviteToast: React.FC<{
   onAccept: () => void;
   onDecline: () => void;
 }> = ({ invite, notice, onAccept, onDecline }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   if (!invite && !notice) return null;
   return (
     <ToastOverlay bottom={78}>
@@ -20,15 +23,17 @@ export const RoomInviteToast: React.FC<{
           <View style={styles.copy}>
             <Text style={styles.title}>
               {invite
-                ? `${invite.fromDisplayName || 'A friend'} invited you to a room`
-                : 'Room invite declined'}
+                ? invite.fromDisplayName
+                  ? t('roomToast.invited', { name: invite.fromDisplayName })
+                  : t('roomToast.invitedFriend')
+                : t('roomToast.declined')}
             </Text>
-            {invite && <Text style={styles.sub}>Room {invite.code} · accept to join the lobby</Text>}
+            {invite && <Text style={styles.sub}>{t('roomToast.sub', { code: invite.code })}</Text>}
           </View>
           {invite && (
             <View style={styles.actions}>
-              <ToastDecline label="Decline" onPress={onDecline} compact />
-              <ToastAccept label="Accept" onPress={onAccept} />
+              <ToastDecline label={t('challengeToast.decline')} onPress={onDecline} compact />
+              <ToastAccept label={t('challengeToast.accept')} onPress={onAccept} />
             </View>
           )}
         </View>
@@ -37,7 +42,7 @@ export const RoomInviteToast: React.FC<{
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   copy: { flex: 1 },
   title: {

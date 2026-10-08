@@ -2,7 +2,8 @@ import React from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { modeDisplayName } from '../matchModes';
 import { GameHistoryItemDto } from '../network/apiClient';
 
@@ -31,6 +32,8 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
   onReplay,
   onViewOpponentProfile,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   // An empty userId is how a locally stored game marks "no real opponent", so
   // the action only appears for an opponent who actually has an account.
   const opponent = match?.opponent ?? null;
@@ -55,34 +58,34 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
                 style={styles.closeBtn}
                 onPress={onClose}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityLabel="Close match details"
+                accessibilityLabel={t('result.closeA11y')}
               >
                 <Feather name="x" size={20} color={THEME.colors.textMuted} />
               </TouchableOpacity>
 
               <Text style={styles.outcome}>
-                {isDraw ? 'Draw' : isWin ? 'Victory' : 'Defeat'}
+                {isDraw ? t('result.draw') : isWin ? t('result.victory') : t('result.defeat')}
               </Text>
               <Text style={styles.vs}>
-                vs {opp}
+                {t('gameover.vs', { name: opp })}
                 {oppRating !== undefined && oppRating !== null ? ` · ${Math.round(oppRating)}` : ''}
               </Text>
 
               <View style={styles.rows}>
                 <View style={styles.row}>
-                  <Text style={styles.label}>Mode</Text>
+                  <Text style={styles.label}>{t('result.mode')}</Text>
                   <Text style={styles.value}>
-                    {match.isRanked ? 'Ranked' : 'Practice'} · {modeDisplayName(match.mode)}
+                    {match.isRanked ? t('gameover.ranked') : t('result.practice')} · {modeDisplayName(match.mode)}
                   </Text>
                 </View>
                 <View style={styles.row}>
-                  <Text style={styles.label}>Rating Change</Text>
+                  <Text style={styles.label}>{t('result.ratingChange')}</Text>
                   {match.isRanked ? (
                     <Text style={[styles.value, delta >= 0 ? styles.win : styles.loss]}>
-                      {delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} Rating
+                      {t('result.pts', { count: delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}` })}
                     </Text>
                   ) : (
-                    <Text style={styles.value}>Unrated</Text>
+                    <Text style={styles.value}>{t('gameover.unrated')}</Text>
                   )}
                 </View>
               </View>
@@ -97,7 +100,7 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
                     accessibilityLabel={`View ${opp}'s profile`}
                   >
                     <Feather name="user" size={14} color={THEME.colors.textSecondary} />
-                    <Text style={styles.viewProfileText}>View Profile</Text>
+                    <Text style={styles.viewProfileText}>{t('gameover.viewProfile')}</Text>
                   </TouchableOpacity>
                 )}
 
@@ -105,10 +108,10 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
                   style={styles.replayBtn}
                   onPress={() => onReplay(match)}
                 >
-                  <Text style={styles.replayText}>Replay</Text>
+                  <Text style={styles.replayText}>{t('gameover.replay')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.doneBtn} onPress={onClose}>
-                  <Text style={styles.doneText}>Done</Text>
+                  <Text style={styles.doneText}>{t('result.done')}</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -119,7 +122,7 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.55)',

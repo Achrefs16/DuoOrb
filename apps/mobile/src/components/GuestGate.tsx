@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { GoogleGLogo } from './GoogleGLogo';
 import { useSession } from '../network/session';
 
@@ -37,6 +38,8 @@ export const GuestGate: React.FC<GuestGateProps> = memo(function GuestGate({
   onSecondary,
   mini = false,
 }) {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const { identity, signInWithGoogle, signingIn, error } = useSession();
   if (!identity?.isGuest) return null;
 
@@ -49,7 +52,7 @@ export const GuestGate: React.FC<GuestGateProps> = memo(function GuestGate({
         activeOpacity={0.85}
         onPress={() => void signInWithGoogle()}
         disabled={signingIn}
-        accessibilityLabel="Save with Google"
+        accessibilityLabel={t('premium.saveGoogle')}
         accessibilityRole="button"
       >
         <View style={styles.logoBox}>
@@ -60,7 +63,7 @@ export const GuestGate: React.FC<GuestGateProps> = memo(function GuestGate({
           )}
         </View>
         <Text style={styles.linkButtonText}>
-          {signingIn ? 'Saving…' : 'Save with Google'}
+          {signingIn ? t('common.saving') : t('premium.saveGoogle')}
         </Text>
       </TouchableOpacity>
       {!!error && <Text style={styles.errorText}>{error}</Text>}
@@ -80,7 +83,7 @@ export const GuestGate: React.FC<GuestGateProps> = memo(function GuestGate({
   );
 });
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   card: {
     backgroundColor: THEME.colors.backgroundCard,
     borderWidth: 1,
@@ -115,7 +118,7 @@ const styles = StyleSheet.create({
     height: 50,
     width: '100%',
     borderRadius: THEME.radius.md,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.backgroundElevated,
     borderWidth: 1,
     borderColor: THEME.colors.outlineVariant,
     flexDirection: 'row',

@@ -8,7 +8,8 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 
 /**
  * Rewarded-analysis gate sheet (MONETIZATION.md P3.2).
@@ -31,18 +32,6 @@ interface RewardSheetProps {
   onClose: () => void;
 }
 
-function errorCopy(error: string): string {
-  switch (error) {
-    case 'unavailable':
-      return "Ads aren't available right now — check your connection and try again.";
-    case 'store':
-      return "Couldn't save the unlock — please try again.";
-    case 'dismissed':
-    default:
-      return 'No problem — the analysis stays locked for this game.';
-  }
-}
-
 export const RewardSheet: React.FC<RewardSheetProps> = ({
   visible,
   busy,
@@ -50,49 +39,65 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
   onWatch,
   onPremium,
   onClose,
-}) => (
+}) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
+
+  const getErrorCopy = (err: string): string => {
+    switch (err) {
+      case 'unavailable':
+        return t('reward.errorUnavailable');
+      case 'store':
+        return t('reward.errorStore');
+      case 'dismissed':
+      default:
+        return t('reward.errorDismissed');
+    }
+  };
+
+  return (
   <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
     <View style={styles.backdrop}>
       <View style={styles.card}>
         <View style={styles.titleRow}>
           <Feather name="lock" size={18} color={THEME.colors.primary} />
-          <Text style={styles.title}>Unlock full analysis</Text>
+          <Text style={styles.title}>{t('reward.title')}</Text>
         </View>
         <Text style={styles.copy}>
-          Watch a short video to unlock the full engine review for this game —
-          best moves, mistakes, and the win graph.
+          {t('reward.copy')}
         </Text>
         <TouchableOpacity
           style={[styles.watchButton, busy && styles.watchButtonBusy]}
           onPress={onWatch}
           disabled={busy}
           accessibilityRole="button"
-          accessibilityLabel="Watch ad to unlock analysis"
+          accessibilityLabel={t('reward.watchA11y')}
         >
           {busy ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <>
               <Feather name="play" size={16} color="#FFFFFF" />
-              <Text style={styles.watchText}>Watch ad</Text>
+              <Text style={styles.watchText}>{t('reward.watch')}</Text>
             </>
           )}
         </TouchableOpacity>
-        {error && <Text style={styles.error}>{errorCopy(error)}</Text>}
+        {error && <Text style={styles.error}>{getErrorCopy(error)}</Text>}
         <TouchableOpacity onPress={onPremium} disabled={busy} accessibilityRole="button">
           <Text style={[styles.premium, busy && styles.laterBusy]}>
-            Go Premium — unlimited, no ads
+            {t('reward.goPremium')}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={onClose} disabled={busy} accessibilityRole="button">
-          <Text style={[styles.later, busy && styles.laterBusy]}>Not now</Text>
+          <Text style={[styles.later, busy && styles.laterBusy]}>{t('reward.notNow')}</Text>
         </TouchableOpacity>
       </View>
     </View>
   </Modal>
-);
+  );
+};
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
@@ -143,7 +148,7 @@ const styles = StyleSheet.create({
   },
   error: {
     fontSize: 13,
-    color: '#DC2626',
+    color: THEME.colors.danger,
     marginTop: 8,
     textAlign: 'center',
   },

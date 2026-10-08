@@ -196,10 +196,22 @@ export function isSoundReady(): boolean {
   return webLoaded;
 }
 
-/** For tests and lifecycle teardown. Not used by gameplay. */
-export function releaseSoundsForTest(): void {
+/**
+ * Frees decoded audio after a match closes. The next GameScreen mount (or a
+ * notify toast) re-initializes transparently via ensureLoaded — init state is
+ * reset here so re-entry re-decodes instead of hitting a torn-down mixer.
+ * Device builds never create legacy players (native path), so only the
+ * native mixer is released; legacy players are a web/Expo-Go concern and are
+ * left for process teardown.
+ */
+export function releaseSounds(): void {
   releaseSfx();
   nativeInit = null;
+}
+
+/** For tests and lifecycle teardown. Not used by gameplay. */
+export function releaseSoundsForTest(): void {
+  releaseSounds();
 }
 
 /**

@@ -23,7 +23,7 @@ export const DuoOrbLogo: React.FC<DuoOrbLogoProps> = ({ size = 96, inset = 0 }) 
   return (
     <View style={[styles.wrap, { width: size, height: size }]}>
       <Image
-        source={require('../../assets/Glossy Orbital Duo Logo.png')}
+        source={require('../../assets/logo-512.webp')}
         style={{ width: box, height: box }}
         resizeMode="contain"
         accessibilityRole="image"

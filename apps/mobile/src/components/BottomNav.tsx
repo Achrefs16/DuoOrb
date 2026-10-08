@@ -2,7 +2,9 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+
+import { useTranslation } from '../i18n';
 
 export type MainTab = 'PLAY' | 'FRIENDS' | 'LEADERBOARD' | 'HISTORY' | 'PROFILE';
 
@@ -23,22 +25,21 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onSelectTab,
   friendRequestsCount = 0,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const tabs: TabItem[] = [
-    { id: 'PLAY', label: 'Play', icon: 'grid' },
-    { id: 'FRIENDS', label: 'Friends', icon: 'users' },
-    { id: 'LEADERBOARD', label: 'Leaderboard', icon: 'award' },
-    { id: 'HISTORY', label: 'History', icon: 'clock' },
-    { id: 'PROFILE', label: 'Profile', icon: 'user' },
+    { id: 'PLAY', label: t('nav.play'), icon: 'grid' },
+    { id: 'FRIENDS', label: t('nav.friends'), icon: 'users' },
+    { id: 'LEADERBOARD', label: t('nav.leaderboard'), icon: 'award' },
+    { id: 'HISTORY', label: t('nav.history'), icon: 'clock' },
+    { id: 'PROFILE', label: t('nav.profile'), icon: 'user' },
   ];
-  // Extend the nav background through the bottom inset to the screen edge.
-  // The root SafeAreaView stops above the system navbar zone, so that strip
-  // used to show the window background (grey) under the white bar — the
-  // sandwich. A negative margin paints this background over the inset area
-  // instead; siblings above are unaffected.
+  // Floating pill: the container is transparent so the page background shows
+  // around the bar, and the bar floats above the bottom safe-area inset.
   const bottomInset = useSafeAreaInsets().bottom;
 
   return (
-    <View style={[styles.container, { marginBottom: -bottomInset, paddingBottom: 6 + bottomInset }]}>
+    <View style={[styles.container, { bottom: bottomInset + 20 }]}>
       <View style={styles.navBar}>
         {tabs.map((tab) => {
           const isActive = currentTab === tab.id;
@@ -47,22 +48,24 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           return (
             <TouchableOpacity
               key={tab.id}
-              style={[styles.tabButton, isActive && styles.tabButtonActive]}
+              style={styles.tabButton}
               activeOpacity={0.7}
               onPress={() => onSelectTab(tab.id)}
+              accessibilityLabel={tab.label}
+              accessibilityRole="tab"
             >
-              <View style={styles.iconContainer}>
+              <View style={[styles.iconContainer, isActive && styles.iconContainerActive]}>
                 {tab.id === 'LEADERBOARD' ? (
                   <MaterialCommunityIcons
                     name="trophy-outline"
                     size={20}
-                    color={isActive ? THEME.colors.primary : THEME.colors.textMuted}
+                    color={isActive ? THEME.colors.onPrimary : THEME.colors.textMuted}
                   />
                 ) : (
                   <Feather
                     name={tab.icon}
                     size={20}
-                    color={isActive ? THEME.colors.primary : THEME.colors.textMuted}
+                    color={isActive ? THEME.colors.onPrimary : THEME.colors.textMuted}
                   />
                 )}
                 {showBadge && (
@@ -73,14 +76,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                   </View>
                 )}
               </View>
-              <Text
-                style={[styles.tabLabel, isActive && styles.tabLabelActive]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {tab.label}
-              </Text>
-              {isActive && <View style={styles.activePill} />}
             </TouchableOpacity>
           );
         })}
@@ -89,70 +84,58 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
+  // Overlay: floats above page content instead of pushing it up, so lists
+  // scroll underneath the pill. Tab screens carry matching bottom padding.
   container: {
-    backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderTopWidth: 1,
-    borderTopColor: THEME.colors.surfaceContainer,
-    paddingBottom: 6,
-    paddingTop: 4,
-    ...THEME.shadows.card,
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    backgroundColor: 'transparent',
+    zIndex: 5,
+    elevation: 5,
   },
   navBar: {
     flexDirection: 'row',
-    height: 54,
     alignItems: 'center',
     justifyContent: 'space-around',
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',
+    backgroundColor: THEME.colors.backgroundCard,
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    shadowColor: '#101828',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 8,
   },
   tabButton: {
     flex: 1,
-    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    position: 'relative',
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
-  tabButtonActive: {},
   iconContainer: {
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 28,
-    height: 24,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
   },
-  // Single line, always: at ~360px each tab owns ~72px and "Leaderboard"
-  // at 11sp overflows it, wraps to two lines and breaks the 54px row.
-  // 10sp fits the longest label even bolded (active state); anything
-  // narrower still degrades to a graceful ellipsis, never a wrap.
-  tabLabel: {
-    fontFamily: THEME.fonts.medium,
-    fontSize: 10,
-    fontWeight: '500',
-    color: THEME.colors.textSecondary,
-    marginTop: 2,
-    width: '100%',
-    textAlign: 'center',
-  },
-  tabLabelActive: {
-    fontFamily: THEME.fonts.bold,
-    color: THEME.colors.primary,
-    fontWeight: '700',
-  },
-  activePill: {
-    position: 'absolute',
-    bottom: 0,
-    width: 16,
-    height: 3,
-    borderRadius: 1.5,
+  iconContainerActive: {
     backgroundColor: THEME.colors.primary,
+    borderRadius: 18,
   },
   badge: {
     position: 'absolute',
-    top: -3,
-    right: -7,
+    top: -4,
+    right: 0,
     backgroundColor: THEME.colors.danger,
     borderRadius: 8,
     minWidth: 16,
@@ -161,7 +144,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: THEME.colors.onPrimary,
+    borderColor: THEME.colors.surfaceHairline,
   },
   badgeText: {
     fontFamily: THEME.fonts.extraBold,

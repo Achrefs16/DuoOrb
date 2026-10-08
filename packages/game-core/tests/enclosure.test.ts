@@ -3,7 +3,7 @@ import type { GameState, WallCoord } from '../src/types.js';
 import { createInitialState, applyAction } from '../src/ruleset.js';
 import { getShortestDistance, getLegalWalls, hasPathToGoal } from '../src/index.js';
 import { getLegalMoves } from '../src/movement.js';
-import { getBestActionAsync, AI_PROFILES } from '../src/ai.js';
+import { getBestActionAsync, AI_PROFILES, rankActions } from '../src/ai.js';
 import { mctsBestAction, mctsStats } from '../src/mcts.js';
 
 const H = (row: number, col: number): WallCoord => ({ row, col, orientation: 'H' });
@@ -41,7 +41,7 @@ function maxDenial(st: GameState): { deny: number; wall: WallCoord | null } {
   return { deny: best - base, wall };
 }
 
-const P = (AI_PROFILES as Record<string, { timeBudgetMs: number; maxDepth: number; noise: number }>).hard;
+const P = { ...AI_PROFILES.hard, engine: 'search' as const };
 const think = (st: GameState, seed = 42) => getBestActionAsync(st, P as never, seed, { maxDepth: 7 });
 
 /**

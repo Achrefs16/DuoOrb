@@ -7,7 +7,8 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { api } from '../network/apiClient';
 import { toast } from './AppToast';
 import { actionMessage } from '../network/errors';
@@ -27,6 +28,8 @@ interface BlockedEntry {
  * on Profiles, never on list rows.
  */
 export const BlockedUsers: React.FC = () => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<BlockedEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -73,10 +76,10 @@ export const BlockedUsers: React.FC = () => {
   if (loadFailed && entries.length === 0) {
     return (
       <View style={styles.centerWrap}>
-        <Text style={styles.emptyTitle}>COULD NOT LOAD</Text>
-        <Text style={styles.emptySub}>Check your connection and try again.</Text>
+        <Text style={styles.emptyTitle}>{t('connection.sorry')}</Text>
+        <Text style={styles.emptySub}>{t('connection.checkInternet')}</Text>
         <TouchableOpacity style={styles.retryBtn} activeOpacity={0.7} onPress={() => void load()}>
-          <Text style={styles.retryText}>Try Again</Text>
+          <Text style={styles.retryText}>{t('connection.retry')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -88,9 +91,9 @@ export const BlockedUsers: React.FC = () => {
         <View style={styles.iconCircle}>
           <Feather name="slash" size={26} color={THEME.colors.textMuted} />
         </View>
-        <Text style={styles.emptyTitle}>NO BLOCKED USERS</Text>
+        <Text style={styles.emptyTitle}>{t('profile.noBlockedUsers').toUpperCase()}</Text>
         <Text style={styles.emptySub}>
-          Players you block from their profile will appear here. Blocked players cannot match, challenge or message you.
+          {t('profile.blockedNote')}
         </Text>
       </View>
     );
@@ -116,11 +119,11 @@ export const BlockedUsers: React.FC = () => {
             activeOpacity={0.7}
             disabled={unblocking === b.id}
             onPress={() => void handleUnblock(b.id)}
-            accessibilityLabel={`Unblock ${b.username}`}
+            accessibilityLabel={`${t('profile.unblock')} ${b.username}`}
             accessibilityRole="button"
           >
             <Text style={styles.unblockText}>
-              {unblocking === b.id ? '…' : 'Unblock'}
+              {unblocking === b.id ? '…' : t('profile.unblock')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -129,7 +132,7 @@ export const BlockedUsers: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   centerWrap: {
     alignItems: 'center',
     justifyContent: 'center',

@@ -16,6 +16,13 @@ export interface AIProfile {
   };
   maxCandidateWalls: number;
   timeBudgetMs: number;
+  engine?: 'search' | 'mcts';
+  simulations?: number;
+  uctConst?: number;
+  wallMoveProb?: number;
+  blockMoveProb?: number;
+  maxRolloutPlies?: number;
+  wallHorizon?: number;
 }
 
 export interface AiWallTuning {

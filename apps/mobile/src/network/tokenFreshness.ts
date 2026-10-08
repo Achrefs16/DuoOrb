@@ -19,11 +19,10 @@ function base64UrlDecode(input: string): string | null {
   try {
     const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
     const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-    if (typeof atob === 'function') return atob(padded);
-    // Node/vitest fallback (never runs on device).
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const buf = require('buffer').Buffer.from(padded, 'base64');
-    return buf.toString('utf8');
+    // atob exists on Hermes (device), browsers, and Node (tests) — the only
+    // runtimes this module loads in. No buffer polyfill needed: on failure we
+    // return null and the caller treats the token as stale (refresh path).
+    return atob(padded);
   } catch {
     return null;
   }

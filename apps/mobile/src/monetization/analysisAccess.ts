@@ -28,6 +28,22 @@ export function resolveAccess(premiumActive: boolean, unlocked: boolean): Analys
   return unlocked ? 'unlocked' : 'locked';
 }
 
+/**
+ * TEMP (analysis page iteration): full review opens with NO ad/premium gate
+ * for everyone, every build. Flip back to false when the review UI settles —
+ * release behavior (premium unlimited, free one-ad-per-game) lives behind it.
+ */
+export const TEMP_ANALYSIS_ALWAYS_OPEN = true;
+
+/**
+ * Dev builds skip the ad gate entirely (iteration speed on the review page):
+ * access resolves 'unlocked' and press handlers jump straight to review.
+ * Release behavior is untouched — premium unlimited, free one-ad-per-game.
+ */
+export function isAnalysisDevBypass(): boolean {
+  return typeof __DEV__ !== 'undefined' && __DEV__ === true;
+}
+
 export async function isAnalysisUnlocked(
   gameId: string,
   historyLength: number
@@ -106,6 +122,8 @@ export function useAnalysisAccess(
   // Pure compute (no setState): safe to call from effects and handlers alike.
   const compute = useCallback(async (): Promise<AnalysisAccess> => {
     if (gameId == null) return 'locked';
+    if (TEMP_ANALYSIS_ALWAYS_OPEN) return 'unlocked';
+    if (isAnalysisDevBypass()) return 'unlocked';
     if (isPremiumActive(premium)) return 'premium';
     return resolveAccess(false, await isAnalysisUnlocked(gameId, historyLength));
   }, [gameId, historyLength, premium]);

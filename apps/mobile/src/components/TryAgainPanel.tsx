@@ -7,8 +7,9 @@ import {
   type TryAgainData,
 } from '@duoorb/game-core';
 import { GameBoard } from './GameBoard';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import { ENGINE_TEAL, assessmentColor, cleanName } from '../analysisUi';
+import { useTranslation } from '../i18n';
 
 interface TryAgainPanelProps {
   data: TryAgainData;
@@ -41,6 +42,8 @@ export const TryAgainPanel: React.FC<TryAgainPanelProps> = ({
   data,
   onClose,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const mover = data.stateBefore.players[data.stateBefore.currentPlayerIndex];
   const moverPos = mover?.position ?? { row: 4, col: 4 };
   const [revealed, setRevealed] = useState(false);
@@ -57,17 +60,17 @@ export const TryAgainPanel: React.FC<TryAgainPanelProps> = ({
     const attempt = { type: 'MOVE' as const, to: cell };
     const result = analyzeMove(frozen, attempt, 'fast');
     if (!result) {
-      setFeedback({ text: 'That square is not reachable.', good: false });
+      setFeedback({ text: t('tryAgain.notReachable'), good: false });
       return;
     }
     if (actionsEqual(attempt, data.bestAction)) {
-      setFeedback({ text: 'Best move.', good: true });
+      setFeedback({ text: t('tryAgain.bestMove'), good: true });
       setRevealed(false);
     } else if (data.acceptableActions.some((a) => actionsEqual(attempt, a))) {
-      setFeedback({ text: 'Good choice.', good: true });
+      setFeedback({ text: t('tryAgain.goodChoice'), good: true });
       setRevealed(false);
     } else {
-      setFeedback({ text: 'Not quite — teal shows a stronger idea.', good: false });
+      setFeedback({ text: t('tryAgain.strongerIdea'), good: false });
       setRevealed(true);
     }
   };
@@ -77,7 +80,7 @@ export const TryAgainPanel: React.FC<TryAgainPanelProps> = ({
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.title}>Try again, {moverName}</Text>
+      <Text style={styles.title}>{t('tryAgain.title', { name: moverName })}</Text>
       <GameBoard
         state={frozen}
         legalMoves={[]}
@@ -114,18 +117,18 @@ export const TryAgainPanel: React.FC<TryAgainPanelProps> = ({
           }}
         >
           <Text style={styles.ghostButtonText}>
-            {revealed ? 'Hide answer' : 'Reveal best'}
+            {revealed ? t('tryAgain.hideAnswer') : t('tryAgain.revealBest')}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.ghostButton} onPress={onClose}>
-          <Text style={styles.ghostButtonText}>Back to review</Text>
+          <Text style={styles.ghostButtonText}>{t('tryAgain.backToReview')}</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   panel: {
     alignSelf: 'stretch',
     alignItems: 'center',

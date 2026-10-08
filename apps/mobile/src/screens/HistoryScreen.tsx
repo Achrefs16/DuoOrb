@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   FlatList,
   StyleSheet,
@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { createInitialState } from '@duoorb/game-core';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import { modeDisplayName } from '../matchModes';
 import { api, GameHistoryItemDto } from '../network/apiClient';
 import { useSession } from '../network/session';
@@ -21,6 +21,7 @@ import { HistorySkeleton } from '../components/Skeleton';
 import { MatchResultModal } from '../components/MatchResultModal';
 import { AdBanner } from '../components/AdBanner';
 import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
+import { useTranslation } from '../i18n';
 
 interface HistoryScreenProps {
   onBack: () => void;
@@ -55,6 +56,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   onQuickMatch,
   onOpenPlayerProfile,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const [games, setGames] = useState<GameHistoryItemDto[]>([]);
   const [localGames, setLocalGames] = useState<SavedGameRecord[]>([]);
   const [filter, setFilter] = useState<OutcomeFilter>('ALL');
@@ -180,11 +183,11 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
         setTotal(serverRes.total);
       }
     } catch (e) {
-      toast.show(loadMessage(e) ?? "Couldn't load more matches.");
+      toast.show(loadMessage(e) ?? t('history.loadFailed'));
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, isGuest]);
+  }, [loadingMore, isGuest, t]);
 
   useEffect(() => {
     // Instant restore, silent refresh. Static chrome (header, filters)
@@ -241,7 +244,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
         }
       })
       .catch(() => {
-        toast.show("Couldn't open replay.");
+        toast.show(t('history.replayFailed'));
       });
   };
 
@@ -257,12 +260,17 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
       ?.after ??
     1500;
 
-  // Filtered list
-  const filteredGames = games.filter((g) => {
-    if (filter === 'WINS') return g.outcome === 'WIN';
-    if (filter === 'LOSSES') return g.outcome === 'LOSS';
-    return true;
-  });
+  // Filtered list (memoized: a fresh .filter each render would give FlatList
+  // new data identity and re-render every row on any state change).
+  const filteredGames = useMemo(
+    () =>
+      games.filter((g) => {
+        if (filter === 'WINS') return g.outcome === 'WIN';
+        if (filter === 'LOSSES') return g.outcome === 'LOSS';
+        return true;
+      }),
+    [games, filter]
+  );
 
   /**
    * One row of the match list, in the Profile page's list design: the rows
@@ -270,17 +278,18 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
    * corners, last segment rounds the bottom, hairline dividers between) so
    * the whole list reads as one grouped list instead of a stack of cards.
    */
-  const renderMatchRow = ({
-    item,
-    index,
-  }: {
-    item: GameHistoryItemDto;
-    index: number;
-  }) => {
+  const renderMatchRow = useCallback(
+    ({
+      item,
+      index,
+    }: {
+      item: GameHistoryItemDto;
+      index: number;
+    }) => {
     const isWin = item.outcome === 'WIN';
     const isNeutral = item.outcome === 'DRAW';
     const delta = item.myRating?.delta ?? 0;
-    const opponentName = item.opponent?.displayName || item.opponent?.username || 'Opponent';
+    const opponentName = item.opponent?.displayName || item.opponent?.username || t('history.opponent');
     const opponentRating = item.opponent?.ratingBefore ?? item.opponent?.ratingAfter;
     const pts = item.isRanked
       ? ` · ${delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} pts`
@@ -317,27 +326,31 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
 
         <View style={styles.matchRowMeta}>
           <Text style={styles.matchRowOpponent} numberOfLines={1}>
-            vs {opponentName}
+            {t('gameover.vs', { name: opponentName })}
             {opponentRating !== undefined && opponentRating !== null ? (
               <Text style={styles.matchRowOppRating}> ({Math.round(opponentRating)})</Text>
             ) : null}
           </Text>
           <Text style={styles.matchRowMode}>
-            {item.isRanked ? 'Ranked' : 'Practice'} · {modeDisplayName(item.mode)}
+            {item.isRanked ? t('history.ranked') : t('history.practice')} · {modeDisplayName(item.mode)}
             {pts}
           </Text>
         </View>
 
-        <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
-      </TouchableOpacity>
-    );
-  };
+          <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
+        </TouchableOpacity>
+      );
+    },
+    // Row content reads t/styles plus the list length (first/last segment
+    // styling); setSelected and modeDisplayName are stable.
+    [t, styles, filteredGames]
+  );
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>History</Text>
+        <Text style={styles.title}>{t('history.title')}</Text>
       </View>
 
       {loading && games.length === 0 && localGames.length === 0 ? (
@@ -356,6 +369,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           style={styles.list}
           keyExtractor={(item) => item.gameId}
           renderItem={renderMatchRow}
+          // Retain ~5 screens of rows instead of the default ~10: rows are
+          // cheap cards and the list is short (paged). Deliberately no
+          // removeClippedSubviews (Android overlay artifacts).
+          windowSize={11}
           contentContainerStyle={styles.rowsContent}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
@@ -367,26 +384,26 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
               <View style={styles.summaryCard}>
                 <View style={styles.summaryRowTop}>
                   <View style={styles.summaryStatBox}>
-                    <Text style={styles.statLabel}>MATCHES</Text>
+                    <Text style={styles.statLabel}>{t('history.matches')}</Text>
                     <Text style={styles.statValue}>{totalMatches}</Text>
                   </View>
                   <View style={[styles.summaryStatBox, styles.statBorderHorizontal]}>
-                    <Text style={styles.statLabel}>WINS</Text>
+                    <Text style={styles.statLabel}>{t('history.wins')}</Text>
                     <Text style={[styles.statValue, { color: THEME.colors.tertiary }]}>{totalWins}</Text>
                   </View>
                   <View style={styles.summaryStatBox}>
-                    <Text style={styles.statLabel}>LOSSES</Text>
+                    <Text style={styles.statLabel}>{t('history.losses')}</Text>
                     <Text style={[styles.statValue, { color: THEME.colors.secondary }]}>{totalLosses}</Text>
                   </View>
                 </View>
 
                 <View style={styles.summaryRowBottom}>
                   <View style={styles.summaryStatBox}>
-                    <Text style={styles.statLabel}>WIN RATE</Text>
+                    <Text style={styles.statLabel}>{t('history.winRate')}</Text>
                     <Text style={styles.statValue}>{winRate}%</Text>
                   </View>
                   <View style={styles.summaryStatBox}>
-                    <Text style={styles.statLabel}>CURRENT RATING</Text>
+                    <Text style={styles.statLabel}>{t('history.currentRating')}</Text>
                     <Text style={[styles.statValue, { color: THEME.colors.primary }]}>{currentRating}</Text>
                   </View>
                 </View>
@@ -397,13 +414,13 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                   own heading. */}
               {isGuest && (
                 <GuestGate
-                  title="Keep every match"
-                  message="Link Google to save rating, friends, history & head-to-head."
+                  title={t('profile.keepEveryMatch')}
+                  message={t('profile.keepEveryMatchDesc')}
                   mini
                 />
               )}
               {isGuest && (
-                <Text style={styles.deviceLabel}>ON THIS DEVICE</Text>
+                <Text style={styles.deviceLabel}>{t('history.onThisDevice')}</Text>
               )}
 
               {/* Filter Pills — same segmented control as the Profile page. */}
@@ -418,7 +435,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                       onPress={() => setFilter(f)}
                     >
                       <Text style={[styles.filterPillText, filter === f && styles.filterPillTextActive]}>
-                        {f === 'ALL' ? 'All' : f === 'WINS' ? 'Wins' : 'Losses'} ({count})
+                        {f === 'ALL' ? t('profile.all') : f === 'WINS' ? t('profile.wins') : t('profile.losses')} ({count})
                       </Text>
                     </TouchableOpacity>
                   );
@@ -430,14 +447,14 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Feather name="clock" size={36} color={THEME.colors.textMuted} />
-              <Text style={styles.emptyTitle}>No matches recorded</Text>
-              <Text style={styles.emptySub}>Play your first match to see your tactical history.</Text>
+              <Text style={styles.emptyTitle}>{t('history.noMatchesRecorded')}</Text>
+              <Text style={styles.emptySub}>{t('history.noMatchesSub')}</Text>
               <TouchableOpacity
                 style={styles.quickMatchBtn}
                 activeOpacity={0.8}
                 onPress={onQuickMatch}
               >
-                <Text style={styles.quickMatchBtnText}>Play Now</Text>
+                <Text style={styles.quickMatchBtnText}>{t('history.playNow')}</Text>
               </TouchableOpacity>
             </View>
           }
@@ -451,7 +468,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                   onPress={() => void loadMore()}
                 >
                   <Text style={styles.loadMoreText}>
-                    {loadingMore ? 'Loading…' : `Load more (${games.length}/${total})`}
+                    {loadingMore ? t('history.loading') : `${t('history.loadMore')} (${games.length}/${total})`}
                   </Text>
                 </TouchableOpacity>
               ) : null}
@@ -473,7 +490,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,
@@ -508,7 +525,7 @@ const styles = StyleSheet.create({
   },
   rowsContent: {
     paddingHorizontal: 16,
-    paddingBottom: 28,
+    paddingBottom: 120, // Clears the floating nav overlay.
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',
@@ -583,7 +600,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   filterPillActive: {
-    backgroundColor: THEME.colors.slate[950],
+    backgroundColor: THEME.colors.inverseSurface,
   },
   filterPillText: {
     fontFamily: THEME.fonts.medium,
@@ -592,7 +609,7 @@ const styles = StyleSheet.create({
     color: THEME.colors.textOnMuted,
   },
   filterPillTextActive: {
-    color: THEME.colors.onPrimary,
+    color: THEME.colors.inverseOnSurface,
     fontWeight: '600',
   },
   // Grouped list rows: every row carries the card's left/right borders, the

@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import {
   REACTION_EMOJI,
   REACTION_ORDER,
@@ -29,8 +29,15 @@ const ENTER_MS = 180;
 const HOLD_MS = 1000;
 const EXIT_MS = 260;
 
-const ReactionBubble: React.FC<{ kind: ReactionKind; side: DockSide; onDone: () => void }> = memo(
-  function ReactionBubble({ kind, side, onDone }) {
+import type { HudSurface } from './GameHud';
+
+const ReactionBubble: React.FC<{
+  kind: ReactionKind;
+  side: DockSide;
+  onDone: () => void;
+  surface?: HudSurface;
+}> = memo(function ReactionBubble({ kind, side, onDone, surface }) {
+    const styles = useStyles(createStyles);
     const scale = useRef(new Animated.Value(0.6)).current;
     // Your bubbles rise out of the inventory; theirs drop in over their card.
     const dy = useRef(new Animated.Value(side === 'top' ? -10 : 10)).current;
@@ -65,10 +72,20 @@ const ReactionBubble: React.FC<{ kind: ReactionKind; side: DockSide; onDone: () 
         style={[styles.bubbleWrap, { transform: [{ scale }, { translateY: dy }], opacity }]}
         accessibilityLabel={`${side === 'top' ? 'Opponent' : 'You'} reacted ${reactionLabel(kind)}`}
       >
-        <View style={styles.bubble}>
+        <View
+          style={[
+            styles.bubble,
+            surface && { backgroundColor: surface.card, borderColor: surface.border },
+          ]}
+        >
           <Text style={styles.bubbleEmoji}>{REACTION_EMOJI[kind]}</Text>
           {/* Tail pointing back at the card the bubble belongs to. */}
-          <View style={side === 'top' ? styles.bubbleTailUp : styles.bubbleTailDown} />
+          <View
+            style={[
+              side === 'top' ? styles.bubbleTailUp : styles.bubbleTailDown,
+              surface && { backgroundColor: surface.card, borderColor: surface.border },
+            ]}
+          />
         </View>
       </Animated.View>
     );
@@ -80,7 +97,9 @@ export const ReactionDock: React.FC<{
   items: IncomingReaction[];
   side: DockSide;
   onDone: (id: number) => void;
-}> = memo(function ReactionDock({ items, side, onDone }) {
+  surface?: HudSurface;
+}> = memo(function ReactionDock({ items, side, onDone, surface }) {
+  const styles = useStyles(createStyles);
   // Overlay, never layout: zero room, so the board never moves when one lands.
   if (items.length === 0) return null;
   return (
@@ -91,21 +110,43 @@ export const ReactionDock: React.FC<{
     >
       <View style={styles.dockRow} pointerEvents="none">
         {items.map((item) => (
-          <ReactionBubble key={item.id} kind={item.kind} side={side} onDone={() => onDone(item.id)} />
+          <ReactionBubble
+            key={item.id}
+            kind={item.kind}
+            side={side}
+            onDone={() => onDone(item.id)}
+            surface={surface}
+          />
         ))}
       </View>
     </View>
   );
 });
 
-export const ReactionTray: React.FC<{ onSend: (kind: ReactionKind) => void }> = memo(
-  function ReactionTray({ onSend }) {
+export const ReactionTray: React.FC<{
+  onSend: (kind: ReactionKind) => void;
+  surface?: HudSurface;
+}> = memo(
+  function ReactionTray({ onSend, surface }) {
+    const styles = useStyles(createStyles);
     return (
-      <View style={styles.trayCard} accessibilityLabel="Quick reactions">
+      <View
+        style={[
+          styles.trayCard,
+          surface && { backgroundColor: surface.card, borderColor: surface.border },
+        ]}
+        accessibilityLabel="Quick reactions"
+      >
         {REACTION_ORDER.map((kind) => (
           <TouchableOpacity
             key={kind}
-            style={styles.trayBtn}
+            style={[
+              styles.trayBtn,
+              surface && {
+                backgroundColor: surface.chip,
+                borderColor: surface.border,
+              },
+            ]}
             activeOpacity={0.6}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={() => onSend(kind)}
@@ -120,7 +161,7 @@ export const ReactionTray: React.FC<{ onSend: (kind: ReactionKind) => void }> = 
   }
 );
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   // Floating over a card: absolute, so a bubble never takes layout room and
   // never covers the board.
   dock: {

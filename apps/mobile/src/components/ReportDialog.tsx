@@ -2,17 +2,18 @@ import React, { useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import { api } from '../network/apiClient';
 
 export const REPORT_REASONS = [
-  { code: 'harassment', label: 'Harassment or bullying' },
-  { code: 'hate', label: 'Hate speech' },
-  { code: 'sexual_content', label: 'Sexual content' },
-  { code: 'cheating', label: 'Cheating / unfair play' },
-  { code: 'spam', label: 'Spam' },
-  { code: 'impersonation', label: 'Impersonation' },
-  { code: 'other', label: 'Something else' },
+  { code: 'harassment' },
+  { code: 'hate' },
+  { code: 'sexual_content' },
+  { code: 'cheating' },
+  { code: 'spam' },
+  { code: 'impersonation' },
+  { code: 'other' },
 ] as const;
 
 interface ReportDialogProps {
@@ -39,11 +40,25 @@ export const ReportDialog: React.FC<ReportDialogProps> = ({
   targetUserId,
   gameId,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const [reason, setReason] = useState<string | null>(null);
   const [details, setDetails] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
+  const getReasonLabel = (code: string) => {
+    switch (code) {
+      case 'harassment': return t('report.harassment');
+      case 'hate': return t('report.hate');
+      case 'sexual_content': return t('report.sexual');
+      case 'cheating': return t('report.cheating');
+      case 'spam': return t('report.spam');
+      case 'impersonation': return t('report.impersonation');
+      default: return t('report.other');
+    }
+  };
 
   const close = () => {
     setReason(null);
@@ -63,7 +78,7 @@ export const ReportDialog: React.FC<ReportDialogProps> = ({
       setDone(true);
       onSubmitted?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not send the report.');
+      setError(e instanceof Error ? e.message : t('report.sendFailed'));
     } finally {
       setSending(false);
     }
@@ -74,46 +89,46 @@ export const ReportDialog: React.FC<ReportDialogProps> = ({
       <SafeAreaView style={styles.overlay} edges={['top', 'bottom']}>
         <View style={styles.card}>
           <View style={styles.head}>
-            <Text style={styles.title}>Report @{targetUsername}</Text>
-            <TouchableOpacity onPress={close} accessibilityLabel="Close report">
+            <Text style={styles.title}>{t('report.title', { name: targetUsername })}</Text>
+            <TouchableOpacity onPress={close} accessibilityLabel={t('report.closeA11y')}>
               <Feather name="x" size={20} color={THEME.colors.textSecondary} />
             </TouchableOpacity>
           </View>
           {done ? (
             <>
               <Feather name="check-circle" size={32} color={THEME.colors.success} />
-              <Text style={styles.doneTitle}>Report sent</Text>
+              <Text style={styles.doneTitle}>{t('report.sentTitle')}</Text>
               <Text style={styles.doneText}>
-                Thanks — our team will review this player. You will not see the outcome, but
-                blocking them hides them from you immediately.
+                {t('report.sentMessage')}
               </Text>
               <TouchableOpacity style={styles.primary} onPress={close}>
-                <Text style={styles.primaryText}>Done</Text>
+                <Text style={styles.primaryText}>{t('report.done')}</Text>
               </TouchableOpacity>
             </>
           ) : (
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.label}>What happened?</Text>
+              <Text style={styles.label}>{t('report.whatHappened')}</Text>
               {REPORT_REASONS.map((r) => {
                 const active = reason === r.code;
+                const label = getReasonLabel(r.code);
                 return (
                   <TouchableOpacity
                     key={r.code}
                     style={[styles.reason, active && styles.reasonActive]}
                     onPress={() => setReason(r.code)}
-                    accessibilityLabel={r.label}
+                    accessibilityLabel={label}
                   >
                     <View style={[styles.radio, active && styles.radioActive]}>
                       {active && <View style={styles.radioDot} />}
                     </View>
-                    <Text style={[styles.reasonText, active && styles.reasonTextActive]}>{r.label}</Text>
+                    <Text style={[styles.reasonText, active && styles.reasonTextActive]}>{label}</Text>
                   </TouchableOpacity>
                 );
               })}
-              <Text style={[styles.label, { marginTop: 12 }]}>Details (optional)</Text>
+              <Text style={[styles.label, { marginTop: 12 }]}>{t('report.details')}</Text>
               <TextInput
                 style={styles.input}
-                placeholder="What did they do? Name, bio, avatar…"
+                placeholder={t('report.placeholder')}
                 placeholderTextColor={THEME.colors.textMuted}
                 value={details}
                 onChangeText={setDetails}
@@ -126,10 +141,10 @@ export const ReportDialog: React.FC<ReportDialogProps> = ({
                 disabled={!reason || sending}
                 onPress={() => void submit()}
               >
-                <Text style={styles.primaryText}>{sending ? 'Sending…' : 'Send report'}</Text>
+                <Text style={styles.primaryText}>{sending ? t('report.sending') : t('report.send')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.cancel} onPress={close}>
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={styles.cancelText}>{t('report.cancel')}</Text>
               </TouchableOpacity>
             </ScrollView>
           )}
@@ -139,7 +154,7 @@ export const ReportDialog: React.FC<ReportDialogProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.55)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   card: { width: '100%', maxWidth: 420, maxHeight: '85%', backgroundColor: THEME.colors.backgroundCard, borderRadius: THEME.radius.lg, padding: 18, gap: 8 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

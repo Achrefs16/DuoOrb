@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 
 interface EvaluationMeterProps {
   evaluation: number; // positive = P1 advantage, negative = P2 advantage
@@ -11,6 +11,7 @@ interface EvaluationMeterProps {
 export const EvaluationMeter: React.FC<EvaluationMeterProps> = ({
   evaluation,
 }) => {
+  const styles = useStyles(createStyles);
   const clamped = Math.max(-20, Math.min(20, evaluation));
   const p1Percentage = Math.round(((clamped + 20) / 40) * 100);
 
@@ -33,7 +34,7 @@ export const EvaluationMeter: React.FC<EvaluationMeterProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   container: {
     width: '100%',
     backgroundColor: THEME.colors.backgroundCard,

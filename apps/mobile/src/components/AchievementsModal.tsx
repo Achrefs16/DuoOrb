@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import type { AchievementsResponseDto, BadgeDto } from '../network/apiClient';
 import { loadViewedAchievements, markAchievementViewed } from '../storage/achievementViews';
 import {
@@ -64,6 +65,8 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
   onClose,
   readOnly = false,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t, language } = useTranslation();
   const [openCode, setOpenCode] = useState<string | null>(null);
   // Codes already opened on this device: their NEW pill is spent.
   const [viewed, setViewed] = useState<string[]>([]);
@@ -103,6 +106,26 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
   const earnedAtOf = (code: string) =>
     achievements.earned.find((e) => e.code === code)?.earnedAt;
 
+  const categoryTitle = (cat: string) => {
+    switch (cat) {
+      case 'prowess': return t('achievements.prowess');
+      case 'grind': return t('achievements.grind');
+      case 'tactics': return t('achievements.tactics');
+      case 'community': return t('achievements.community');
+      default: return cat;
+    }
+  };
+
+  const metalLabel = (tier: string) => {
+    switch (tier.toLowerCase()) {
+      case 'bronze': return t('achievements.bronze');
+      case 'silver': return t('achievements.silver');
+      case 'gold': return t('achievements.gold');
+      case 'diamond': return t('achievements.diamond');
+      default: return tier;
+    }
+  };
+
   /** Opening a badge spends its NEW pill, for good. */
   const handleToggle = useCallback((code: string) => {
     setOpenCode((prev) => (prev === code ? null : code));
@@ -115,14 +138,14 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
       <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
         <Animated.View style={[styles.sheetCard, sheetSlideStyle(slide)]}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Achievements</Text>
+            <Text style={styles.modalTitle}>{t('achievements.title')}</Text>
             <Text style={styles.headerCount}>
-              {earnedCount}/{catalog.length}
+              {t('achievements.earnedCount', { earned: earnedCount, total: catalog.length })}
             </Text>
             <TouchableOpacity
               style={styles.sheetClose}
               onPress={onClose}
-              accessibilityLabel="Close achievements"
+              accessibilityLabel={t('achievements.closeA11y')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Feather name="x" size={20} color={THEME.colors.textMuted} />
@@ -141,9 +164,9 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                 <View key={section.cat} style={styles.section}>
                   <View style={styles.sectionHeader}>
                     <Feather name={meta.icon} size={13} color={THEME.colors.textSecondaryStrong} />
-                    <Text style={styles.sectionTitle}>{meta.title}</Text>
+                    <Text style={styles.sectionTitle}>{categoryTitle(section.cat)}</Text>
                     <Text style={styles.sectionCount}>
-                      {got}/{section.items.length}
+                      {t('achievements.earnedCount', { earned: got, total: section.items.length })}
                     </Text>
                   </View>
 
@@ -155,6 +178,14 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                       !!earnedAt &&
                       !viewed.includes(badge.code) &&
                       Date.now() - new Date(earnedAt).getTime() < NEW_WINDOW_MS;
+                    const dateStr = earnedAt
+                      ? new Date(earnedAt).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })
+                      : '';
+                    const owners = achievements.owners[badge.code] ?? 0;
                     return (
                       <View
                         key={badge.code}
@@ -180,29 +211,21 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                               </Text>
                               {isNew && (
                                 <View style={styles.newPill}>
-                                  <Text style={styles.newPillText}>NEW</Text>
+                                  <Text style={styles.newPillText}>{t('achievements.new')}</Text>
                                 </View>
                               )}
                               {isEquipped && (
                                 <View style={styles.equippedPill}>
-                                  <Text style={styles.equippedPillText}>EQUIPPED</Text>
+                                  <Text style={styles.equippedPillText}>{t('achievements.equipped')}</Text>
                                 </View>
                               )}
                             </View>
                             <Text style={styles.rowTier}>
                               {badge.comingSoon
-                                ? 'COMING SOON'
+                                ? t('achievements.comingSoon')
                                 : badge.earned
-                                ? `EARNED ${
-                                    earnedAt
-                                      ? new Date(earnedAt).toLocaleDateString('en-US', {
-                                          month: 'short',
-                                          day: 'numeric',
-                                          year: 'numeric',
-                                        })
-                                      : ''
-                                  }`
-                                : METALS[tierOf(badge.tier)].label}
+                                ? t('achievements.earnedBadge', { date: dateStr })
+                                : metalLabel(METALS[tierOf(badge.tier)].label)}
                             </Text>
                           </View>
                           <Feather
@@ -219,10 +242,10 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                             {!readOnly && (
                               <Text style={styles.detailMeta}>
                                 {badge.comingSoon
-                                  ? 'Not awarded yet — unlocks with a bigger player base.'
-                                  : `Owned by ${achievements.owners[badge.code] ?? 0} player${
-                                      (achievements.owners[badge.code] ?? 0) === 1 ? '' : 's'
-                                    }`}
+                                  ? t('achievements.notAwarded')
+                                  : owners === 1
+                                  ? t('achievements.ownedBySingle')
+                                  : t('achievements.ownedBy', { count: owners })}
                               </Text>
                             )}
                             {!badge.earned && !badge.comingSoon && badge.progress && (
@@ -239,7 +262,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                                 <Text
                                   style={[styles.equipText, isEquipped && styles.equipTextActive]}
                                 >
-                                  {isEquipped ? 'Unequip' : 'Equip'}
+                                  {isEquipped ? t('achievements.unequip') : t('achievements.equip')}
                                 </Text>
                               </TouchableOpacity>
                             )}
@@ -254,8 +277,8 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
 
             <Text style={styles.footnote}>
               {readOnly
-                ? 'Badges they have equipped on their profile.'
-                : 'Three earned badges can be equipped and appear on your profile.'}
+                ? t('achievements.readOnlyNote')
+                : t('achievements.equippedNote')}
             </Text>
             </ScrollView>
         </Animated.View>
@@ -264,7 +287,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   sheetOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.4)',

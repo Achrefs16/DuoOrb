@@ -1,17 +1,20 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
 import { COPY, type ErrorKind } from '../network/errors';
+import { useTranslation } from '../i18n';
 
 interface LoadingStateProps {
   message?: string;
 }
 
-export const LoadingState: React.FC<LoadingStateProps> = ({ message = 'Loading…' }) => {
+export const LoadingState: React.FC<LoadingStateProps> = ({ message }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   return (
     <View style={styles.centerContainer}>
       <ActivityIndicator size="small" color={THEME.colors.textPrimary} />
-      <Text style={styles.loadingText}>{message}</Text>
+      <Text style={styles.loadingText}>{message ?? t('common.loadingText')}</Text>
     </View>
   );
 };
@@ -29,6 +32,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   actionLabel,
   onAction,
 }) => {
+  const styles = useStyles(createStyles);
   return (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyOrbRing}>
@@ -60,28 +64,30 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
   kind,
   onRetry,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const resolvedTitle =
     title ??
     (kind === 'OFFLINE' || kind === 'TIMEOUT'
-      ? COPY.screenOfflineTitle
+      ? t('connection.youAreOffline')
       : kind === 'SERVER' || kind === 'PARSE'
-        ? COPY.screenServerTitle
-        : 'Unable to load.');
+        ? t('connection.serverBroke')
+        : t('common.tryAgain'));
   const resolvedMessage =
     message ??
-    (kind === 'OFFLINE' || kind === 'TIMEOUT' ? COPY.screenOfflineSub : undefined);
+    (kind === 'OFFLINE' || kind === 'TIMEOUT' ? t('connection.checkInternet') : undefined);
   return (
     <View style={styles.centerContainer}>
       <Text style={styles.errorTitle}>{resolvedTitle}</Text>
       {!!resolvedMessage && <Text style={styles.errorSub}>{resolvedMessage}</Text>}
       <TouchableOpacity style={styles.retryButton} activeOpacity={0.8} onPress={onRetry}>
-        <Text style={styles.retryButtonText}>Try Again</Text>
+        <Text style={styles.retryButtonText}>{t('common.tryAgain')}</Text>
       </TouchableOpacity>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   centerContainer: {
     paddingVertical: 48,
     paddingHorizontal: 24,

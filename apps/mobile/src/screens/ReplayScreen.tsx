@@ -8,7 +8,8 @@ import {
   replayPrevious,
 } from '@duoorb/game-core';
 import { GameBoard } from '../components/GameBoard';
-import { THEME } from '../theme';
+import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 
 interface ReplayScreenProps {
   initialState: GameState;
@@ -25,6 +26,8 @@ export const ReplayScreen: React.FC<ReplayScreenProps> = ({
   onBack,
   onAnalyze,
 }) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const [session, setSession] = useState(() =>
     createReplaySession(initialState, history)
   );
@@ -47,7 +50,7 @@ export const ReplayScreen: React.FC<ReplayScreenProps> = ({
         </Text>
         {onAnalyze ? (
           <TouchableOpacity onPress={onAnalyze}>
-            <Text style={styles.analyzeText}>Analyze</Text>
+            <Text style={styles.analyzeText}>{t('gameover.analyze')}</Text>
           </TouchableOpacity>
         ) : (
           <View style={{ width: 52 }} />
@@ -84,7 +87,7 @@ export const ReplayScreen: React.FC<ReplayScreenProps> = ({
           disabled={session.currentStep === 0}
           onPress={() => setSession(replayPrevious(session))}
         >
-          <Text style={styles.controlText}>‹ Prev</Text>
+          <Text style={styles.controlText}>{t('replay.prev')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[
@@ -94,14 +97,14 @@ export const ReplayScreen: React.FC<ReplayScreenProps> = ({
           disabled={session.currentStep === session.actions.length}
           onPress={() => setSession(replayNext(session))}
         >
-          <Text style={styles.controlText}>Next ›</Text>
+          <Text style={styles.controlText}>{t('replay.next')}</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.background,

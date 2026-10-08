@@ -1,9 +1,11 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { WallDragGhost } from './WallDragGhost';
+import { BoardGrain } from './SkinBackdrop';
 import {
   Animated,
   LayoutChangeEvent,
   StyleSheet,
+  Text,
   TouchableOpacity,
   View,
   useWindowDimensions,
@@ -18,8 +20,8 @@ import {
   isGoalCell,
   isLegalWallPlacement,
 } from '@duoorb/game-core';
-import { THEME, playerColor, wallColorForPlayer, wallPreviewColor } from '../theme';
-import { BoardPalette, useBoardPalette } from '../theme/boardTheme';
+import { THEME, playerColor, useTheme, wallColorForPlayer, wallPreviewColor } from '../theme';
+import { BoardSkin, useBoardSkin } from '../theme/boardTheme';
 
 interface GameBoardProps {
   state: GameState;
@@ -48,9 +50,20 @@ interface GameBoardProps {
   onQueuedWallPress?: (qi: number) => void;
   onCellPress?: (cell: CellCoord) => void;
   /** Actual analyzed move: from/to cells or wall, one restrained color. */
-  moveMark?: { from?: CellCoord; to?: CellCoord; wall?: WallCoord; color: string } | null;
+  moveMark?: { from?: CellCoord; to?: CellCoord; wall?: WallCoord; color: string; solid?: boolean } | null;
   /** Engine's preferred alternative: ghost wall or hollow target ring. */
   altMark?: { to?: CellCoord; wall?: WallCoord; color: string } | null;
+  /**
+   * Review classification badge (?? / ? / ?! / !) pinned on the move's
+   * destination cell — the chess-style glyph that needs no legend.
+   */
+  badgeMark?: { cell: CellCoord; glyph: string; color: string } | null;
+  /**
+   * Review best-move arrow: thick engine-colored arrow from the mover's
+   * origin to the engine's preferred destination (piece moves only —
+   * best walls keep the altMark ghost).
+   */
+  bestArrow?: { from: CellCoord; to: CellCoord; color: string } | null;
   /** Route dots for path visualization. */
   pathDots?: Array<{ cell: CellCoord; color: string }>;
   /** Board rotation driver — orbs counter-rotate so their light spot stays on top. */
@@ -66,8 +79,18 @@ interface GameBoardProps {
   size?: number;
 }
 
-/** Inner padding between the board border and the cell grid. */
+/** Inner padding between the rim and the cell grid. */
 export const BOARD_PAD = 8;
+
+/**
+ * Rim allowance: thick skin frames eat into the board box, so the grid must
+ * shrink by the frame width or the last row/column clips under the rim
+ * (the walnut drift). Classic's 1px hairline counts as zero, so classic
+ * geometry stays byte-identical.
+ */
+export function boardRim(frameBorderWidth: number): number {
+  return Math.max(0, frameBorderWidth - 1);
+}
 
 /**
  * Active-player indicator: the orb simply grows.
@@ -82,8 +105,8 @@ const ACTIVE_SCALE = 1.15;
 const ACTIVE_PULSE = 1.04; // gentle breathing on top of the growth
 
 /** Board geometry shared with the drag-drop drop logic. */
-export function boardMetrics(boardSize: number): { cell: number; gap: number } {
-  const content = boardSize - BOARD_PAD * 2;
+export function boardMetrics(boardSize: number, rim = 0): { cell: number; gap: number } {
+  const content = boardSize - rim * 2 - BOARD_PAD * 2;
   const gap = Math.max(5, Math.round(content * 0.018));
   const cell = (content - (BOARD_SIZE - 1) * gap) / BOARD_SIZE;
   return { cell, gap };
@@ -96,10 +119,14 @@ export function computeBoardSize(measuredWidth: number, fallbackWidth: number): 
 export function nearestWallSlot(
   boardSize: number,
   x: number,
-  y: number
+  y: number,
+  rim = 0
 ): { row: number; col: number } {
-  const { cell, gap } = boardMetrics(boardSize);
-  return nearestSlot(x - BOARD_PAD, y - BOARD_PAD, cell, gap);
+  const { cell, gap } = boardMetrics(boardSize, rim);
+  // Touch points are outer-box relative (rim included); the grid origin is
+  // rim + pad from the outer edge.
+  const origin = rim + BOARD_PAD;
+  return nearestSlot(x - origin, y - origin, cell, gap);
 }
 
 export function isInsideBoard(
@@ -237,6 +264,8 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   onCellPress,
   moveMark = null,
   altMark = null,
+  badgeMark = null,
+  bestArrow = null,
   pathDots = [],
   flipAnim = null,
   rotationDeg = 0,
@@ -246,13 +275,28 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [measuredWidth, setMeasuredWidth] = useState(0);
 
+  // Active skin first: rim geometry below depends on it.
+  const theme = useTheme();
+  const skin: BoardSkin = useBoardSkin();
+  const styles = useMemo(() => getBoardStyles(), [skin, theme]);
+
   const fallbackWidth = Math.min(windowWidth - 32, 420);
   // Without an explicit size, respect both width and height so the board
   // grows on tablets but never overflows its screen (e.g. landscape).
   const heightBased = Math.max(240, windowHeight - 300);
   const boardSize =
     size ?? Math.min(computeBoardSize(measuredWidth, fallbackWidth), heightBased);
-  const { cell: CELL, gap: GAP } = boardMetrics(boardSize);
+  // Rim-aware grid: thick frames shrink the playable field instead of
+  // clipping it. Classic rim is 0 — geometry untouched.
+  const rim = boardRim(skin.frameBorderWidth);
+  const { cell: CELL, gap: GAP } = boardMetrics(boardSize, rim);
+  // Fence corner radius in px: capsule fills the wall thickness, a number
+  // draws sharp rectangles (walnut 0). One helper so placed, preview,
+  // queued and analysis walls always match.
+  const wallRadiusFor = (w: number, h: number): number =>
+    skin.wallRadius === 'capsule' ? Math.min(w, h) / 2 : skin.wallRadius;
+  const wallEdgeRadius =
+    typeof skin.wallRadius === 'number' ? Math.min(1, skin.wallRadius) : 1;
   // Whole pixels only, so the orb's own edge stays crisp at any density.
   const orbDiameter = Math.round(CELL * 0.68);
 
@@ -266,11 +310,6 @@ const GameBoardView: React.FC<GameBoardProps> = ({
     currentPlayer?.color
   );
   const hintColor = moveHintColor ?? currentBallColor;
-  // Premium board palette (midnight for members, light otherwise): memoized
-  // per palette so every `styles.*` below follows the active theme.
-  const boardPalette = useBoardPalette();
-  const styles = useMemo(() => getBoardStyles(boardPalette), [boardPalette]);
-
   const orbAnims = useOrbAnimations(state, CELL, GAP);
 
   // Breathing pulse layered on the active orb's growth. One shared value is
@@ -391,9 +430,91 @@ const GameBoardView: React.FC<GameBoardProps> = ({
       <View
         style={[
           styles.container,
-          { width: boardSize, height: boardSize, backgroundColor: boardPalette.boardBackground },
+          {
+            width: boardSize,
+            height: boardSize,
+            backgroundColor: skin.boardBackground,
+            borderColor: skin.boardBorder,
+            borderWidth: skin.frameBorderWidth,
+            borderRadius: skin.frameRadius,
+          },
         ]}
       >
+        {/* Skin frame dressing: inner bevel/stitch, top sheen, goal lips.
+            All behind the cells (first children, no zIndex). */}
+        {skin.boardGrain && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: skin.frameBorderWidth,
+              left: skin.frameBorderWidth,
+            }}
+          >
+            <BoardGrain size={boardSize - skin.frameBorderWidth * 2} />
+          </View>
+        )}
+        {/* Bevel hugs the cell field: inside thick rims, clear of the cells. */}
+        {skin.frameInnerBorder &&
+          (() => {
+            const inset = Math.min(skin.frameBorderWidth + 1, BOARD_PAD - 3);
+            return (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  top: inset,
+                  left: inset,
+                  right: inset,
+                  bottom: inset,
+                  borderWidth: 1,
+                  borderColor: skin.frameInnerBorder,
+                  borderRadius: Math.max(0, skin.frameRadius - inset),
+                }}
+              />
+            );
+          })()}
+        {skin.frameSheen && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 12,
+              backgroundColor: 'rgba(255, 255, 255, 0.10)',
+            }}
+          />
+        )}
+        {skin.goalEdgeTop && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 8,
+              right: 8,
+              height: 3,
+              borderRadius: 2,
+              backgroundColor: skin.goalEdgeTop,
+            }}
+          />
+        )}
+        {skin.goalEdgeBottom && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 8,
+              right: 8,
+              height: 3,
+              borderRadius: 2,
+              backgroundColor: skin.goalEdgeBottom,
+            }}
+          />
+        )}
         {/* Cells */}
         {Array.from({ length: BOARD_SIZE }).map((_, r) => (
           <React.Fragment key={`row-${r}`}>
@@ -409,6 +530,11 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                 isCenterGoalMode(state.mode) && r === BOARD_CENTER.row && c === BOARD_CENTER.col;
               const top = BOARD_PAD + r * (CELL + GAP);
               const left = BOARD_PAD + c * (CELL + GAP);
+              // Skin checker: alternate tone on odd squares (walnut/arena).
+              const cellBase =
+                skin.cellAlt && (r + c) % 2 === 1 ? skin.cellAlt : skin.cell;
+              const bevelLight = skin.cellBevelLight ?? skin.cellBorder;
+              const bevelDark = skin.cellBevelDark ?? skin.cellBorder;
               return (
                 <TouchableOpacity
                   key={`cell-${r}-${c}`}
@@ -430,12 +556,47 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                           : goalTint ??
                             (isLegal && !hideDots
                               ? hexA(hintColor, 0.1)
-                              : boardPalette.cell)),
-                      borderColor: boardPalette.cellBorder,
+                              : cellBase)),
+                      borderRadius: skin.cellRadius,
                       borderWidth: 1,
+                      borderTopColor: bevelLight,
+                      borderLeftColor: bevelLight,
+                      borderBottomColor: bevelDark,
+                      borderRightColor: bevelDark,
                     },
                   ]}
                 >
+                  {/* Glacier edge coordinates, chess.com-style inside the rim. */}
+                  {skin.showCoordinates && r === BOARD_SIZE - 1 && (
+                    <Text
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        right: 2,
+                        bottom: 0,
+                        fontSize: 8,
+                        fontFamily: THEME.fonts.semiBold,
+                        color: skin.coordinateColor,
+                      }}
+                    >
+                      {'abcdefghi'[c]}
+                    </Text>
+                  )}
+                  {skin.showCoordinates && c === 0 && (
+                    <Text
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        left: 2,
+                        top: 0,
+                        fontSize: 8,
+                        fontFamily: THEME.fonts.semiBold,
+                        color: skin.coordinateColor,
+                      }}
+                    >
+                      {String(BOARD_SIZE - r)}
+                    </Text>
+                  )}
                   {isLegal && !occupant && !hideDots && (
                     <View
                         style={[
@@ -467,11 +628,19 @@ const GameBoardView: React.FC<GameBoardProps> = ({
           </React.Fragment>
         ))}
 
-        {/* Placed walls — player colored */}
+        {/* Placed walls. Walnut fences are NEUTRAL stained wood like the
+            physical game (no owner hue, no glow); glacier is flat matte;
+            arena lacquered with glow. Finish only — geometry shared. */}
         {state.walls.map((wall) => {
           const rect = wallRect(wall, CELL, GAP);
           const owner = state.players.find((p) => p.id === wall.placedByPlayerId);
           const ball = playerColor(owner?.index ?? 0, owner?.color);
+          const isH = wall.orientation === 'H';
+          const neutral = skin.wallStyle === 'neutral';
+          const wallFill = neutral
+            ? (skin.neutralWall ?? ball)
+            : playerWallBg(owner?.index ?? 0, owner?.color);
+          const wallEdge = neutral ? skin.neutralWallEdge : skin.wallTopLight;
           return (
             <View
               key={`placed-${wall.row}-${wall.col}-${wall.orientation}-${wall.sequence}`}
@@ -483,11 +652,42 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                   left: rect.left,
                   width: rect.width,
                   height: rect.height,
-                  backgroundColor: playerWallBg(owner?.index ?? 0, owner?.color),
-                  shadowColor: ball,
+                  backgroundColor: wallFill,
+                  // Flat/neutral fences lie on the wood: no glow, no shadow.
+                  ...(skin.wallStyle === 'glow'
+                    ? { shadowColor: ball }
+                    : { shadowOpacity: 0, elevation: 0 }),
+                  borderRadius: wallRadiusFor(rect.width, rect.height),
                 },
               ]}
-            />
+            >
+              {wallEdge &&
+                (isH ? (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      top: 1,
+                      left: 4,
+                      right: 4,
+                      height: 2,
+                      borderRadius: wallEdgeRadius,
+                      backgroundColor: wallEdge,
+                    }}
+                  />
+                ) : (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      left: 1,
+                      top: 4,
+                      bottom: 4,
+                      width: 2,
+                      borderRadius: wallEdgeRadius,
+                      backgroundColor: wallEdge,
+                    }}
+                  />
+                ))}
+            </View>
           );
         })}
 
@@ -503,7 +703,16 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                 pointerEvents="none"
                 style={[styles.wallSlotTouchArea, { top, left }]}
               >
-                <View style={styles.wallSlotPoint} />
+                <View
+                  style={[
+                    styles.wallSlotPoint,
+                    {
+                      width: skin.wallSlotSize ?? 3,
+                      height: skin.wallSlotSize ?? 3,
+                      backgroundColor: skin.wallSlot,
+                    },
+                  ]}
+                />
               </View>
             );
           })
@@ -538,6 +747,78 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                 },
               ]}
             >
+              {/* Arena grounding shadow: centered ellipse, rotation-proof. */}
+              {skin.orbShadow && (
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    width: orbDiameter * 0.95,
+                    height: orbDiameter * 0.55,
+                    borderRadius: 999,
+                    backgroundColor: 'rgba(0, 0, 0, 0.30)',
+                  }}
+                />
+              )}
+              {/* Flat dama-style disc: matte, groove ring, no gloss, no glow.
+                  Gloss sphere otherwise (classic). Hue always the player's —
+                  only the finish changes. */}
+              {skin.orbStyle === 'flatDisc' ? (
+                (() => {
+                  // Integer geometry: the groove ring + pin center by flex,
+                  // so sub-pixel percentage insets can never drift them.
+                  const ringSize = Math.max(
+                    8,
+                    orbDiameter - 2 * Math.max(4, Math.round(orbDiameter * 0.16))
+                  );
+                  return (
+                    <Animated.View
+                      style={{
+                        width: orbDiameter,
+                        height: orbDiameter,
+                        borderRadius: 9999,
+                        backgroundColor: ball,
+                        borderWidth: skin.orbRimWidth ?? 2,
+                        borderColor:
+                          skin.orbRim ?? skin.orbGroove ?? 'rgba(0, 0, 0, 0.30)',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        transform: [
+                          { scale: isSelected ? 1.08 : 1 },
+                          { scale: anim.scale },
+                          { scale: isActive ? turnPulse : 1 },
+                        ],
+                      }}
+                    >
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          width: ringSize,
+                          height: ringSize,
+                          borderRadius: ringSize / 2,
+                          borderWidth: 2,
+                          borderColor: skin.orbGroove ?? 'rgba(0, 0, 0, 0.30)',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                      >
+                        {skin.id === 'walnut' && (
+                          <View
+                            pointerEvents="none"
+                            style={{
+                              width: 5,
+                              height: 5,
+                              borderRadius: 3,
+                              backgroundColor:
+                                skin.orbGroove ?? 'rgba(0, 0, 0, 0.30)',
+                            }}
+                          />
+                        )}
+                      </View>
+                    </Animated.View>
+                  );
+                })()
+              ) : (
               <Animated.View
                 style={[
                   styles.orb,
@@ -547,6 +828,8 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                     borderRadius: 9999,
                     backgroundColor: ball,
                     shadowColor: ball,
+                    borderWidth: skin.orbRimWidth ?? 0,
+                    borderColor: skin.orbRim ?? 'transparent',
                     transform: [
                       { scale: isSelected ? 1.08 : 1 },
                       { scale: anim.scale },
@@ -555,8 +838,14 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                   },
                 ]}
               >
-                <View style={styles.orbHighlight} />
+                <View
+                  style={[
+                    styles.orbHighlight,
+                    { backgroundColor: `rgba(255, 255, 255, ${skin.orbHighlightOpacity ?? 0.45})` },
+                  ]}
+                />
               </Animated.View>
+              )}
             </Animated.View>
           );
         })}
@@ -583,7 +872,8 @@ const GameBoardView: React.FC<GameBoardProps> = ({
           );
         })}
 
-        {/* Analysis: actual move — from tint, to ring, slim direction bar */}
+        {/* Analysis: actual move — from tint, to ring, slim direction bar.
+            solid=true fills both squares (review mistake footprint). */}
         {moveMark?.from && (
           <View
             pointerEvents="none"
@@ -594,7 +884,9 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                 left: BOARD_PAD + moveMark.from.col * (CELL + GAP),
                 width: CELL,
                 height: CELL,
-                backgroundColor: hexA(moveMark.color, 0.14),
+                backgroundColor: moveMark.solid
+                  ? hexA(moveMark.color, 0.55)
+                  : hexA(moveMark.color, 0.14),
               },
             ]}
           />
@@ -610,8 +902,10 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                 width: CELL - 4,
                 height: CELL - 4,
                 borderRadius: THEME.radius.sm,
-                borderColor: moveMark.color,
-                backgroundColor: hexA(moveMark.color, 0.16),
+                borderColor: moveMark.solid ? 'transparent' : moveMark.color,
+                backgroundColor: moveMark.solid
+                  ? hexA(moveMark.color, 0.55)
+                  : hexA(moveMark.color, 0.16),
               },
             ]}
           />
@@ -631,6 +925,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                     height: rect.height,
                     backgroundColor: hexA(moveMark.color, 0.35),
                     borderColor: moveMark.color,
+                    borderRadius: wallRadiusFor(rect.width, rect.height),
                   },
                 ]}
               />
@@ -680,6 +975,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                     height: rect.height,
                     backgroundColor: hexA(altMark.color, 0.4),
                     borderColor: altMark.color,
+                    borderRadius: wallRadiusFor(rect.width, rect.height),
                   },
                 ]}
               />
@@ -703,6 +999,90 @@ const GameBoardView: React.FC<GameBoardProps> = ({
           />
         )}
 
+        {/* Review: classification badge (?? / ? / ?! / !) on the destination */}
+        {badgeMark && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              zIndex: 40,
+              top: BOARD_PAD + badgeMark.cell.row * (CELL + GAP) - 8,
+              left:
+                BOARD_PAD + badgeMark.cell.col * (CELL + GAP) + CELL - 14,
+              minWidth: 22,
+              height: 22,
+              paddingHorizontal: 4,
+              borderRadius: 11,
+              backgroundColor: badgeMark.color,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text
+              style={{
+                color: '#FFFFFF',
+                fontSize: 11,
+                fontWeight: '800',
+                fontFamily: THEME.fonts.bold,
+              }}
+            >
+              {badgeMark.glyph}
+            </Text>
+          </View>
+        )}
+
+        {/* Review: best-move arrow (piece moves; best walls use altMark) */}
+        {bestArrow &&
+          (() => {
+            const x1 = BOARD_PAD + bestArrow.from.col * (CELL + GAP) + CELL / 2;
+            const y1 = BOARD_PAD + bestArrow.from.row * (CELL + GAP) + CELL / 2;
+            const x2 = BOARD_PAD + bestArrow.to.col * (CELL + GAP) + CELL / 2;
+            const y2 = BOARD_PAD + bestArrow.to.row * (CELL + GAP) + CELL / 2;
+            const dist = Math.hypot(x2 - x1, y2 - y1);
+            if (dist < 1) return null;
+            // Stop the head short of the target orb so it never covers it.
+            const len = Math.max(8, dist - CELL * 0.45);
+            const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
+            const color = hexA(bestArrow.color, 0.9);
+            return (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: (x1 + x2) / 2 - len / 2,
+                  top: (y1 + y2) / 2 - 3,
+                  width: len,
+                  height: 6,
+                  transform: [{ rotate: `${angle}deg` }],
+                }}
+              >
+                <View
+                  style={{
+                    width: Math.max(0, len - 8),
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: color,
+                  }}
+                />
+                <View
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: -4,
+                    width: 0,
+                    height: 0,
+                    borderTopWidth: 7,
+                    borderTopColor: 'transparent',
+                    borderBottomWidth: 7,
+                    borderBottomColor: 'transparent',
+                    borderLeftWidth: 11,
+                    borderLeftColor: color,
+                  }}
+                />
+              </View>
+            );
+          })()}
+
         {/* External static preview (legacy / replay-safe) */}
         {previewWall &&
           (() => {
@@ -720,6 +1100,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                     backgroundColor: isPreviewValid
                       ? currentBallColor
                       : 'rgba(220, 38, 38, 0.35)',
+                    borderRadius: wallRadiusFor(rect.width, rect.height),
                   },
                 ]}
               />
@@ -744,6 +1125,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                   width: rect.width,
                   height: rect.height,
                   backgroundColor: wallPreviewColor(q.color, 0.32),
+                  borderRadius: wallRadiusFor(rect.width, rect.height),
                 },
               ]}
             />
@@ -782,11 +1164,10 @@ function hexA(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// Board-surface styles parameterized by palette (MONETIZATION.md P5.1):
-// the component memoizes one sheet per palette, so switching themes never
-// rebuilds styles mid-render. Only board-surface tokens come from `p` —
-// identity colors (orbs, placed walls, crown) and geometry stay global.
-const getBoardStyles = (p: BoardPalette) =>
+// Board layout sheet: geometry only — every color/radius/bevel token
+// applies inline at the call sites above so skins switch without a sheet
+// rebuild. Memoized per skin + app theme (shadows follow the mode).
+const getBoardStyles = () =>
   StyleSheet.create({
   outer: {
     width: '100%',
@@ -794,9 +1175,6 @@ const getBoardStyles = (p: BoardPalette) =>
     userSelect: 'none',
   },
   container: {
-    borderWidth: 1,
-    borderColor: p.boardBorder,
-    borderRadius: 8,
     position: 'relative',
     overflow: 'hidden',
     alignSelf: 'center',
@@ -804,7 +1182,6 @@ const getBoardStyles = (p: BoardPalette) =>
   },
   cell: {
     position: 'absolute',
-    borderRadius: THEME.radius.sm,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -844,11 +1221,10 @@ const getBoardStyles = (p: BoardPalette) =>
     width: '34%',
     height: '26%',
     borderRadius: 999,
-    backgroundColor: 'rgba(255, 255, 255, 0.45)',
   },
   placedWall: {
     position: 'absolute',
-    borderRadius: 4,
+    overflow: 'hidden',
     ...THEME.shadows.wall,
     zIndex: 10,
   },
@@ -894,9 +1270,6 @@ const getBoardStyles = (p: BoardPalette) =>
     zIndex: 15,
   },
   wallSlotPoint: {
-    width: 3,
-    height: 3,
     borderRadius: 2,
-    backgroundColor: p.wallSlot,
   },
 });

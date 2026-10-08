@@ -23,6 +23,7 @@ import {
 } from '../ai-threat.js';
 import { resetMobilityMemo } from './evaluation.js';
 import { buildRootCandidates } from './candidates.js';
+import { mctsBestAction, mctsBestActionAsync, mctsStats } from '../mcts.js';
 import {
   AI_PROFILES,
   STRATEGIC_EXTRA_DEPTH,
@@ -176,6 +177,33 @@ export function getBestAction(
     return null;
   }
 
+  if (profile.engine !== 'search') {
+    const isBlitz =
+      Boolean(state.gameId && state.gameId.toLowerCase().includes('blitz')) ||
+      (state.mode as string) === 'blitz';
+    const production = budget ?? productionBudget(profile, state.mode);
+    const defaultSims = profile.difficulty === 'easy' ? 300 : profile.difficulty === 'normal' ? 800 : 2000;
+    const sims = profile.simulations ?? defaultSims;
+    const isExplicitDeterministic = randomSeed !== undefined;
+    const rawLimit = budget?.timeMs ?? (isExplicitDeterministic ? undefined : production.timeMs);
+    const timeLimit = isBlitz ? Math.min(rawLimit ?? 250, 250) : rawLimit;
+    const action = mctsBestAction(state, {
+      simulations: sims,
+      seed: randomSeed ?? positionSeed(state, currentPlayer.index),
+      wallMoveProb: profile.wallMoveProb ?? (profile.difficulty === 'easy' ? 0.2 : 0.35),
+      blockMoveProb: profile.blockMoveProb ?? 0.35,
+      uctConst: profile.uctConst ?? 0.4,
+      maxRolloutPlies: profile.maxRolloutPlies,
+      timeBudgetMs: timeLimit,
+      wallHorizon: profile.wallHorizon,
+    });
+    const st = mctsStats();
+    lastSearchStats.nodes = st.nodes;
+    lastSearchStats.elapsedMs = st.elapsedMs;
+    lastSearchStats.depthReached = 1;
+    return action;
+  }
+
   const tactical = readTacticalState(state, currentPlayer.id);
   const multiplayer = state.players.length > 2;
   const production = budget ?? productionBudget(profile, state.mode);
@@ -283,6 +311,31 @@ export async function getBestActionAsync(
   if (state.status !== 'IN_PROGRESS') return finish(null);
   const currentPlayer = state.players[state.currentPlayerIndex];
   if (!currentPlayer) return finish(null);
+
+  if (profile.engine !== 'search') {
+    const isBlitz =
+      Boolean(state.gameId && state.gameId.toLowerCase().includes('blitz')) ||
+      (state.mode as string) === 'blitz';
+    const defaultSims = profile.difficulty === 'easy' ? 600 : profile.difficulty === 'normal' ? 4000 : 15000;
+    const sims = profile.simulations ?? defaultSims;
+    const baseBudget = hooks.budget?.timeMs ?? profile.timeBudgetMs;
+    const timeLimit = isBlitz ? Math.min(baseBudget ?? 250, 250) : baseBudget;
+    const action = await mctsBestActionAsync(state, {
+      simulations: sims,
+      seed: randomSeed ?? (profile.randomness <= 0 ? positionSeed(state, currentPlayer.index) : undefined),
+      wallMoveProb: profile.wallMoveProb ?? (profile.difficulty === 'easy' ? 0.2 : 0.35),
+      blockMoveProb: profile.blockMoveProb ?? 0.35,
+      uctConst: profile.uctConst ?? 0.4,
+      maxRolloutPlies: profile.maxRolloutPlies,
+      timeBudgetMs: timeLimit,
+      wallHorizon: profile.wallHorizon,
+    }, { shouldCancel: hooks.shouldCancel });
+    const st = mctsStats();
+    lastSearchStats.nodes = st.nodes;
+    lastSearchStats.elapsedMs = st.elapsedMs;
+    lastSearchStats.depthReached = 1;
+    return finish(action);
+  }
 
   const tactical = readTacticalState(state, currentPlayer.id);
   const multiplayer = state.players.length > 2;
