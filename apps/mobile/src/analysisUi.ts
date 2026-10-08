@@ -3,7 +3,7 @@ import { formatAction } from '@duoorb/game-core';
 import { THEME } from './theme';
 
 /** Restrained assessment colors — only markers use them, never whole screens. */
-export function assessmentColor(a: MoveAssessment): string {
+export function assessmentColor(a?: MoveAssessment): string {
   switch (a) {
     case 'BEST':
       return THEME.colors.assessmentBest;
@@ -17,6 +17,8 @@ export function assessmentColor(a: MoveAssessment): string {
       return THEME.colors.assessmentBlunder;
     case 'BLUNDER':
       return THEME.colors.danger;
+    default:
+      return THEME.colors.assessmentGood;
   }
 }
 
@@ -28,7 +30,7 @@ export const ENGINE_TEAL = THEME.colors.assessmentBest;
  * blunder ??, mistake ?, inaccuracy ?!, best ★ (white star). Lesser moves
  * show none. The star renders through the system font fallback.
  */
-export function assessmentGlyph(a: MoveAssessment): string {
+export function assessmentGlyph(a?: MoveAssessment): string {
   switch (a) {
     case 'BLUNDER':
       return '??';
@@ -47,14 +49,14 @@ export function assessmentGlyph(a: MoveAssessment): string {
  * Badge fill per assessment. Best moves get a green star badge; everything
  * else wears its assessment color.
  */
-export function assessmentBadgeColor(a: MoveAssessment): string {
+export function assessmentBadgeColor(a?: MoveAssessment): string {
   if (a === 'BEST') return THEME.colors.success;
   return assessmentColor(a);
 }
 
 /** Verdict-word locale key for the coach line ("Hd4 is a blunder"). */
 export function assessmentVerdictKey(
-  a: MoveAssessment
+  a?: MoveAssessment
 ):
   | 'review.verdictBest'
   | 'review.verdictExcellent'
@@ -75,6 +77,8 @@ export function assessmentVerdictKey(
       return 'review.verdictMistake';
     case 'BLUNDER':
       return 'review.verdictBlunder';
+    default:
+      return 'review.verdictGood';
   }
 }
 
@@ -83,9 +87,10 @@ export function assessmentVerdictKey(
  * letter); walls keep the full token (Hd4) since H/V carries the shape.
  */
 export function shortMoveLabel(
-  action: Parameters<typeof formatAction>[0],
+  action: Parameters<typeof formatAction>[0] | undefined | null,
   playerIndex: number
 ): string {
+  if (!action) return '—';
   const full = formatAction(action, playerIndex);
   if (action.type === 'MOVE') {
     return full.length > 1 ? full.slice(1) : full;
@@ -94,8 +99,8 @@ export function shortMoveLabel(
 }
 
 /** Signed one-decimal eval for coach pills and the eval bar. */
-export function formatEvalShort(v: number): string {
-  if (!Number.isFinite(v)) return '—';
+export function formatEvalShort(v?: number | null): string {
+  if (v == null || !Number.isFinite(v)) return '—';
   const sign = v > 0 ? '+' : '';
   return `${sign}${v.toFixed(1)}`;
 }

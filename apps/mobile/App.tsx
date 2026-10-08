@@ -511,7 +511,13 @@ export default function App() {
     access: { gameId: string; historyLength: number } | null = null,
     ratings?: Record<string, number>
   ) => {
-    setReplayData({ initialState, history, perspectiveIdx, ratings, accessKey: access });
+    const safeInitial =
+      initialState ||
+      createInitialState({
+        gameId: access?.gameId || `game-${Date.now()}`,
+        mode: '2p',
+      });
+    setReplayData({ initialState: safeInitial, history: history || [], perspectiveIdx, ratings, accessKey: access });
     setReviewBare(false);
     navigate(currentTab, 'REVIEW');
   };
@@ -815,7 +821,7 @@ export default function App() {
 
           {subScreen === 'REVIEW' && replayData && (
             <GameReviewScreen
-              key={`${replayData.initialState.gameId}-${replayData.history.length}-${reviewBare ? 'bare' : 'full'}`}
+              key={`${replayData.initialState?.gameId || 'review'}-${replayData.history?.length || 0}-${reviewBare ? 'bare' : 'full'}`}
               initialState={replayData.initialState}
               history={replayData.history}
               perspectiveIdx={replayData.perspectiveIdx}

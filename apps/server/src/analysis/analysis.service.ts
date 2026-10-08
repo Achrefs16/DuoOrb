@@ -102,9 +102,48 @@ export class AnalysisService {
 
     // 4. Compute analysis asynchronously in Rust via NAPI worker thread
     const startTime = performance.now();
-    const review = await analyzeGameAsync(safeState, safeHistory);
+    const rawReview = await analyzeGameAsync(safeState, safeHistory);
     const durationMs = (performance.now() - startTime).toFixed(2);
     this.logger.log(`Analyzed game ${gameId} (${safeHistory.length} moves) in ${durationMs}ms via Rust engine`);
+
+    // Normalize and alias fields so mobile UI receives both canonical and UI-convenience shapes
+    const normalizedMoves = (rawReview.moveAnalyses || []).map((m: any) => {
+      const act = m.playedAction ?? m.action;
+      const evalVal = m.evaluationAfter ?? m.evaluation ?? 0;
+      const winVal = m.winChanceAfter ?? m.winChance ?? 0.5;
+      return {
+        ...m,
+        action: act,
+        playedAction: act,
+        evaluation: evalVal,
+        evaluationAfter: evalVal,
+        winChance: winVal,
+        winChanceAfter: winVal,
+      };
+    });
+
+    const winChanceHistory = normalizedMoves.map((m: any, idx: number) => ({
+      step: m.step ?? idx + 1,
+      winChance: m.winChance,
+    }));
+
+    const decidingMoments = (rawReview.criticalMoments ?? []).map((step: number) => ({
+      moveNumber: step,
+      playerId: normalizedMoves[step - 1]?.playerId ?? 'p1',
+      reason: 'SWING' as const,
+      beforeWinChance: normalizedMoves[step - 2]?.winChance ?? 0.5,
+      afterWinChance: normalizedMoves[step - 1]?.winChance ?? 0.5,
+      evaluationSwing: normalizedMoves[step - 1]?.evaluationLoss ?? 0,
+      raceSwing: 0,
+      importance: 1,
+    }));
+
+    const review: GameReview = {
+      ...rawReview,
+      moveAnalyses: normalizedMoves,
+      winChanceHistory,
+      decidingMoments,
+    };
 
     // 5. Persist to database cache in background if connected
     if (this.prisma.isConnected) {

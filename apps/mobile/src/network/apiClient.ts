@@ -835,7 +835,7 @@ export const api = {
     gameId?: string
   ): Promise<GameReview> {
     const resolvedGameId = gameId || initialState?.gameId;
-    return request<GameReview>('/analysis/review', {
+    const raw = await request<GameReview>('/analysis/review', {
       method: 'POST',
       body: JSON.stringify({
         initialState,
@@ -844,15 +844,68 @@ export const api = {
         mode: initialState?.mode,
       }),
     });
+    return normalizeReview(raw);
   },
 
   /**
    * Fetch cached match analysis from the server by gameId.
    */
   async getGameReview(gameId: string): Promise<GameReview> {
-    return request<GameReview>(`/analysis/${gameId}`, {
+    const raw = await request<GameReview>(`/analysis/${gameId}`, {
       method: 'GET',
     });
+    return normalizeReview(raw);
   },
 };
+
+function normalizeReview(rawReview: any): GameReview {
+  if (!rawReview || !Array.isArray(rawReview.moveAnalyses)) {
+    return rawReview as GameReview;
+  }
+  const normalizedMoves = rawReview.moveAnalyses.map((m: any, idx: number) => {
+    const act = m.playedAction ?? m.action;
+    const evalVal = m.evaluationAfter ?? m.evaluation ?? 0;
+    const winVal = m.winChanceAfter ?? m.winChance ?? 0.5;
+    return {
+      ...m,
+      step: m.step ?? idx + 1,
+      action: act,
+      playedAction: act,
+      evaluation: evalVal,
+      evaluationAfter: evalVal,
+      winChance: winVal,
+      winChanceAfter: winVal,
+    };
+  });
+
+  const winChanceHistory =
+    rawReview.winChanceHistory ??
+    normalizedMoves.map((m: any, idx: number) => ({
+      step: m.step ?? idx + 1,
+      winChance: m.winChance,
+    }));
+
+  const decidingMoments =
+    rawReview.decidingMoments ??
+    (rawReview.criticalMoments ?? []).map((step: any) => {
+      const stepNum = typeof step === 'number' ? step : (step.moveNumber ?? step.step ?? 1);
+      return {
+        moveNumber: stepNum,
+        playerId: normalizedMoves[stepNum - 1]?.playerId ?? 'p1',
+        reason: 'SWING' as const,
+        beforeWinChance: normalizedMoves[stepNum - 2]?.winChance ?? 0.5,
+        afterWinChance: normalizedMoves[stepNum - 1]?.winChance ?? 0.5,
+        evaluationSwing: normalizedMoves[stepNum - 1]?.evaluationLoss ?? 0,
+        raceSwing: 0,
+        importance: 1,
+      };
+    });
+
+  return {
+    ...rawReview,
+    moveAnalyses: normalizedMoves,
+    winChanceHistory,
+    decidingMoments,
+  };
+}
 

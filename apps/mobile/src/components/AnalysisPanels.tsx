@@ -14,7 +14,8 @@ export const ImpactRows: React.FC<{
 }> = ({ analysis, moverName, threatName, multi }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
-  const { before, after } = analysis;
+  const { before, after } = analysis ?? {};
+  if (!before || !after) return null;
   const wallsChanged = before.ownWalls !== after.ownWalls;
   return (
     <View style={styles.impact}>
@@ -74,18 +75,24 @@ export const ShowWhy: React.FC<{ lines: string[] }> = ({ lines }) => {
 export const DetailsRows: React.FC<{ analysis: MoveAnalysis }> = ({ analysis }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const evalVal = analysis.evaluationAfter ?? (analysis as any).evaluation ?? 0;
+  const winVal = analysis.winChanceAfter ?? (analysis as any).winChance ?? 0.5;
   const rows: Array<[string, string]> = [
-    [t('analysis.evaluation'), formatEval(analysis.evaluationAfter)],
-    [t('analysis.winChance'), `${Math.round(analysis.winChanceAfter * 100)}%`],
-    [t('analysis.yourRoute'), `${analysis.after.ownDistance}`],
-    [t('analysis.rivalRoute'), `${analysis.after.closestThreatDistance}`],
+    [t('analysis.evaluation'), formatEval(evalVal)],
+    [t('analysis.winChance'), `${Math.round(winVal * 100)}%`],
   ];
+  if (analysis.after) {
+    rows.push([t('analysis.yourRoute'), `${analysis.after.ownDistance}`]);
+    rows.push([t('analysis.rivalRoute'), `${analysis.after.closestThreatDistance}`]);
+    rows.push([t('analysis.mobility'), `${analysis.after.ownMobility}`]);
+  }
   if (analysis.wallImpact) {
     const s = analysis.wallImpact.efficiencyScore;
     rows.push([t('analysis.wallEfficiency'), s >= 60 ? t('analysis.high') : s >= 35 ? t('analysis.medium') : t('analysis.low')]);
   }
-  rows.push([t('analysis.mobility'), `${analysis.after.ownMobility}`]);
-  rows.push([t('analysis.depth'), `${analysis.depthReached}`]);
+  if (analysis.depthReached != null) {
+    rows.push([t('analysis.depth'), `${analysis.depthReached}`]);
+  }
   return (
     <View style={styles.details}>
       {rows.map(([label, value]) => (

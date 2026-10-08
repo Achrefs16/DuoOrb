@@ -69,8 +69,13 @@ export function formatAction(
   action: RecordedAction['action'],
   playerIndex: number
 ): string {
-  if (action.type === 'MOVE') return `${seatLetter(playerIndex)}${file(action.to.col)}${rank(action.to.row)}`;
+  if (!action) return '—';
+  if (action.type === 'MOVE') {
+    if (!action.to) return '—';
+    return `${seatLetter(playerIndex)}${file(action.to.col)}${rank(action.to.row)}`;
+  }
   if (action.type === 'PLACE_WALL') {
+    if (!action.wall) return '—';
     return `${action.wall.orientation}${file(action.wall.col)}${rank(action.wall.row)}`;
   }
   return action.type === 'RESIGN' ? 'resign' : 'timeout';

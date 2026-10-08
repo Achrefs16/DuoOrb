@@ -374,14 +374,15 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     : undefined;
   const moverColor = playerColor(mover?.index ?? 0, mover?.color);
   const moverName = cleanName(mover?.displayName);
-  const threat = currentAnalysis
-    ? currentState.players.find((p) => p.id === currentAnalysis.after.closestThreatId)
+  const threat = currentAnalysis?.after
+    ? currentState.players.find((p) => p.id === currentAnalysis.after?.closestThreatId)
     : undefined;
   const markColor = currentAnalysis ? assessmentColor(currentAnalysis.assessment) : moverColor;
 
+  const currentAct = currentAnalysis ? (currentAnalysis.playedAction ?? (currentAnalysis as any).action) : undefined;
   const bestDiffers =
     !!currentAnalysis?.bestAction &&
-    !actionsEqual(currentAnalysis.bestAction, currentAnalysis.playedAction);
+    !actionsEqual(currentAnalysis.bestAction, currentAct);
   const showAlt =
     !!currentAnalysis &&
     (currentAnalysis.assessment === 'INACCURACY' ||
@@ -394,7 +395,8 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const moveMark = useMemo(() => {
     // Bare replay shows the plain board: no assessment-colored lines.
     if (bare || !currentAnalysis) return null;
-    const pa = currentAnalysis.playedAction;
+    const pa = currentAnalysis.playedAction ?? (currentAnalysis as any).action;
+    if (!pa) return null;
     const solid =
       currentAnalysis.assessment === 'MISTAKE' ||
       currentAnalysis.assessment === 'BLUNDER';
@@ -437,7 +439,8 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     if (bare || !currentAnalysis) return null;
     const glyph = assessmentGlyph(currentAnalysis.assessment);
     if (!glyph) return null;
-    const pa = currentAnalysis.playedAction;
+    const pa = currentAnalysis.playedAction ?? (currentAnalysis as any).action;
+    if (!pa) return null;
     const cell =
       pa.type === 'MOVE'
         ? pa.to
@@ -467,13 +470,23 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const viewerIdx = initialState.players[perspectiveIdx]?.index ?? 0;
   const viewerColor = playerColor(viewerIdx, initialState.players[perspectiveIdx]?.color);
   const wcEntry = useMemo(() => {
-    const h = review?.winChanceHistory ?? [];
-    let found: { step: number; winChance: number; perPlayer?: Record<string, number> } | null = null;
-    for (const e of h) {
-      if (e.step <= currentStep) found = e;
-      else break;
+    if (review?.winChanceHistory && review.winChanceHistory.length > 0) {
+      const h = review.winChanceHistory;
+      let found: { step: number; winChance: number; perPlayer?: Record<string, number> } | null = null;
+      for (const e of h) {
+        if (e.step <= currentStep) found = e;
+        else break;
+      }
+      return found ?? h[h.length - 1] ?? null;
     }
-    return found ?? h[h.length - 1] ?? null;
+    if (review?.moveAnalyses && review.moveAnalyses.length > 0) {
+      const ma = review.moveAnalyses[Math.min(currentStep - 1, review.moveAnalyses.length - 1)];
+      if (ma) {
+        const wc = (ma as any).winChance ?? (ma as any).winChanceAfter ?? 0.5;
+        return { step: ma.step ?? currentStep, winChance: wc };
+      }
+    }
+    return null;
   }, [review, currentStep]);
   const viewerWC = useMemo(() => {
     if (!wcEntry) return 0.5;
@@ -486,21 +499,44 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
       : 1 - wcEntry.winChance;
   }, [wcEntry, viewerId, review, currentStep]);
   const evalNum = useMemo(() => {
-    const h = review?.evaluationHistory ?? [];
-    let found: { step: number; evaluation: number } | null = null;
-    for (const e of h) {
-      if (e.step <= currentStep) found = e;
-      else break;
+    if (review?.evaluationHistory && review.evaluationHistory.length > 0) {
+      const h = review.evaluationHistory;
+      let found: { step: number; evaluation: number } | null = null;
+      for (const e of h) {
+        if (e.step <= currentStep) found = e;
+        else break;
+      }
+      return (found ?? h[h.length - 1] ?? null)?.evaluation ?? null;
     }
-    return (found ?? h[h.length - 1] ?? null)?.evaluation ?? null;
+    if (review?.moveAnalyses && review.moveAnalyses.length > 0) {
+      const ma = review.moveAnalyses[Math.min(currentStep - 1, review.moveAnalyses.length - 1)];
+      if (ma) {
+        return (ma as any).evaluation ?? (ma as any).evaluationAfter ?? null;
+      }
+    }
+    return null;
   }, [review, currentStep]);
 
   // Key moments for Next: deciding moments in move order; Next disables
   // past the last one (no wrap).
-  const keyMoments = useMemo(() => {
-    return [...(review?.decidingMoments ?? [])].sort(
-      (a, b) => a.moveNumber - b.moveNumber
-    );
+  const keyMoments = useMemo<{ moveNumber: number }[]>(() => {
+    if (review?.decidingMoments && review.decidingMoments.length > 0) {
+      return [...review.decidingMoments].sort(
+        (a, b) => a.moveNumber - b.moveNumber
+      );
+    }
+    if (review?.criticalMoments && review.criticalMoments.length > 0) {
+      return [...review.criticalMoments]
+        .map((m: any) => ({ moveNumber: typeof m === 'number' ? m : (m.moveNumber ?? m.step ?? 1) }))
+        .sort((a, b) => a.moveNumber - b.moveNumber);
+    }
+    if (review?.moveAnalyses && review.moveAnalyses.length > 0) {
+      return review.moveAnalyses
+        .filter((m) => m.assessment === 'BLUNDER' || m.assessment === 'MISTAKE' || m.assessment === 'INACCURACY')
+        .map((m) => ({ moveNumber: m.step }))
+        .sort((a, b) => a.moveNumber - b.moveNumber);
+    }
+    return [];
   }, [review]);
   const nextMoment = keyMoments.find((m) => m.moveNumber > currentStep) ?? null;
 
@@ -803,14 +839,18 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               )}
             </View>
 
-            <Text style={styles.insightText}>{currentAnalysis.explanation}</Text>
+            {currentAnalysis.explanation ? (
+              <Text style={styles.insightText}>{currentAnalysis.explanation}</Text>
+            ) : null}
 
-            <ImpactRows
-              analysis={currentAnalysis}
-              moverName={moverName}
-              threatName={threat ? cleanName(threat.displayName) : null}
-              multi={currentState.players.length > 2}
-            />
+            {currentAnalysis.before && currentAnalysis.after && (
+              <ImpactRows
+                analysis={currentAnalysis}
+                moverName={moverName}
+                threatName={threat ? cleanName(threat.displayName) : null}
+                multi={currentState.players.length > 2}
+              />
+            )}
 
             <View style={styles.analysisActionsRow}>
               {currentAnalysis.tryAgain && !tryOpen && (
@@ -847,9 +887,17 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         <View style={styles.graphCard}>
           <Text style={styles.graphTitle}>{t('review.winProbability')}</Text>
           <WinGraph
-            points={review.winChanceHistory.map((w) => w.winChance)}
+            points={
+              review.winChanceHistory?.map((w) => w.winChance) ??
+              review.moveAnalyses?.map((m) => m.winChance ?? (m as any).winChanceAfter ?? 0.5) ??
+              []
+            }
             current={currentStep}
-            moments={review.decidingMoments.map((m) => m.moveNumber)}
+            moments={
+              review.decidingMoments?.map((m) => m.moveNumber) ??
+              review.criticalMoments ??
+              []
+            }
           />
         </View>
         )}
@@ -954,7 +1002,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 <Text style={styles.verdictText}>
                   {t('review.verdictIsA', {
                     label: shortMoveLabel(
-                      currentAnalysis.playedAction,
+                      currentAnalysis.playedAction ?? (currentAnalysis as any).action,
                       mover?.index ?? 0
                     ),
                     verdict: t(assessmentVerdictKey(currentAnalysis.assessment)),
@@ -962,13 +1010,17 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 </Text>
                 <View style={styles.evalPill}>
                   <Text style={styles.evalPillText}>
-                    {formatEvalShort(currentAnalysis.evaluationAfter)}
+                    {formatEvalShort(
+                      currentAnalysis.evaluationAfter ?? (currentAnalysis as any).evaluation ?? 0
+                    )}
                   </Text>
                 </View>
               </View>
-              <Text style={styles.coachText} numberOfLines={3}>
-                {currentAnalysis.explanation}
-              </Text>
+              {currentAnalysis.explanation ? (
+                <Text style={styles.coachText} numberOfLines={3}>
+                  {currentAnalysis.explanation}
+                </Text>
+              ) : null}
             </View>
           </View>
         ) : (
