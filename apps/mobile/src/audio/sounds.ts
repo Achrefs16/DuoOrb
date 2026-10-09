@@ -119,6 +119,17 @@ async function ensureWebLoaded(): Promise<void> {
   await webInit;
 }
 
+// On Web, browsers block audio until user interaction. Preload/resume on first tap.
+if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  const unlockAudio = () => {
+    window.removeEventListener('pointerdown', unlockAudio);
+    window.removeEventListener('keydown', unlockAudio);
+    void ensureWebLoaded().catch(() => {});
+  };
+  window.addEventListener('pointerdown', unlockAudio, { once: true, passive: true });
+  window.addEventListener('keydown', unlockAudio, { once: true, passive: true });
+}
+
 async function playWeb(name: SoundName): Promise<void> {
   if (muted) return;
   const sound = players[name];

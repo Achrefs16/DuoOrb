@@ -465,6 +465,8 @@ export const tr: Dictionary = {
   'online.enterCode': '6 harfli oda kodu',
   'online.shareCode': 'Oda Kodunu Paylaş',
   'online.shareCodeCopied': 'Oda kodu kopyalandı!',
+  'online.shareInvite': 'Davet bağlantısını paylaş',
+  'online.inviteLinkCopied': 'Davet bağlantısı kopyalandı!',
   'online.playersCount': 'Oyuncular',
   'online.waitingPlayer': 'Oyuncu bekleniyor…',
   'online.host': 'Kurucu',

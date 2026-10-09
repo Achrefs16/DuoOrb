@@ -498,6 +498,24 @@ function subscribeTheme(fn: () => void): () => void {
   };
 }
 
+function applyWebThemeBackground(color: string): void {
+  if (Platform.OS === 'web' && typeof document !== 'undefined') {
+    try {
+      document.documentElement.style.backgroundColor = color;
+      if (document.body) {
+        document.body.style.backgroundColor = color;
+      }
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) {
+        meta.setAttribute('content', color);
+      }
+    } catch {}
+  }
+}
+
+// Initial sync for web document background matching active theme
+applyWebThemeBackground(THEME.colors.background);
+
 /**
  * Called from App when settings load and whenever the mode toggles.
  * Live styles (useStyles) and subscribers (useTheme) pick the new entry
@@ -510,6 +528,7 @@ export function setThemeName(next: unknown): ThemeName {
     themeVersion += 1;
     emitTheme();
   }
+  applyWebThemeBackground(THEME.colors.background);
   return name;
 }
 

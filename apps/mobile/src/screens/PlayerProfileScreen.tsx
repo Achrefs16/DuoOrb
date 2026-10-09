@@ -1127,7 +1127,7 @@ const createStyles = () => StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 4,
-    backgroundColor: THEME.colors.inverseLabel,
+    backgroundColor: THEME.colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

@@ -465,6 +465,8 @@ export const id: Dictionary = {
   'online.enterCode': 'Kode ruangan 6 huruf',
   'online.shareCode': 'Bagikan Kode',
   'online.shareCodeCopied': 'Kode ruangan disalin!',
+  'online.shareInvite': 'Bagikan tautan undangan',
+  'online.inviteLinkCopied': 'Tautan undangan disalin!',
   'online.playersCount': 'Pemain',
   'online.waitingPlayer': 'Menunggu pemain…',
   'online.host': 'Tuan Rumah',

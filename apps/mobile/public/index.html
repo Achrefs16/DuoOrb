@@ -2,9 +2,62 @@
 <html lang="%LANG_ISO_CODE%">
   <head>
     <meta charset="utf-8" />
-    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-    <title>%WEB_TITLE%</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover, user-scalable=no" />
+    <title>DuoOrb — Tactical 1v1 Grid Board Game | Free Online</title>
+    <meta name="description" content="Play DuoOrb free online in your browser. Tactical 1v1 grid board game: outsmart opponents, place strategic walls, and race to the goal. Play against friends or smart AI." />
+    <link rel="canonical" href="https://duoorb.com/" />
+
+    <!-- Google AdSense -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6057010656402010" crossorigin="anonymous"></script>
+
+    <!-- PWA & Mobile Web Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <meta name="theme-color" content="#F2F3FF" />
+
+    <!-- iOS PWA / Standalone Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="DuoOrb" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <!-- Open Graph / WhatsApp / Discord / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DuoOrb" />
+    <meta property="og:url" content="https://duoorb.com/" />
+    <meta property="og:title" content="DuoOrb — Tactical 1v1 Grid Board Game | Play Free Online" />
+    <meta property="og:description" content="Outsmart opponents, place strategic walls, and race to the goal. Play free against friends or smart AI bots in your browser." />
+    <meta property="og:image" content="https://duoorb.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="DuoOrb — Tactical 1v1 Grid Board Game" />
+    <meta name="twitter:description" content="Play free 1v1 tactical wall-placement grid game online with friends or AI bots." />
+    <meta name="twitter:image" content="https://duoorb.com/og-image.png" />
+
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": ["WebApplication", "VideoGame"],
+      "name": "DuoOrb",
+      "url": "https://duoorb.com/",
+      "description": "Tactical 1v1 grid board game inspired by Quoridor and Barricade. Place walls, hop over opponents, and race to the goal.",
+      "applicationCategory": "GameApplication",
+      "genre": ["Board Game", "Strategy", "Turn-Based Strategy"],
+      "playMode": ["SinglePlayer", "MultiPlayer"],
+      "operatingSystem": "Web, iOS, Android",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -156,13 +209,24 @@
         font-display: swap;
       }
     </style>
-    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+
     <style id="expo-reset">
-      /* These styles make the body full-height */
-      html,
+      html {
+        height: 100%;
+        background-color: #F2F3FF;
+      }
       body {
         height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #F2F3FF;
         font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        touch-action: manipulation;
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
       }
       html[lang="ar"],
       html[dir="rtl"],
@@ -170,24 +234,216 @@
       html[dir="rtl"] body {
         font-family: 'Tajarib', 'Tajarib-Regular', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
-      /* These styles disable body scrolling if you are using <ScrollView> */
-      body {
-        overflow: hidden;
-      }
-      /* These styles make the root element full-height */
+
+      /* Root App Canvas */
       #root {
         display: flex;
         height: 100%;
         flex: 1;
       }
+
+      /* Desktop Widescreen Layout: Clean Focused Web App Container */
+      @media (min-width: 600px) {
+        body {
+          display: flex;
+          justify-content: center;
+          align-items: stretch;
+          background-color: inherit;
+        }
+        #root {
+          width: 100%;
+          height: 100%;
+          min-height: 100vh;
+          min-height: 100dvh;
+          max-height: none;
+          margin: 0 auto;
+          position: relative;
+          overflow: hidden;
+          border-radius: 0;
+          box-shadow: 0 0 24px rgba(0, 0, 0, 0.05);
+          /* Default desktop widescreen (16:9 / 16:10): fits home screen cleanly within 1080p monitor height without scrolling */
+          max-width: min(420px, calc(0.48 * 100vh));
+        }
+      }
+
+      /* Tablets & iPads (Portrait / Square-ish Screen Dimensions): Expand width for comfortable gameplay */
+      @media (min-width: 600px) and (max-aspect-ratio: 13/10) {
+        #root {
+          max-width: min(580px, 92vw);
+        }
+      }
+
+      /* Tablets & iPads in Landscape (768px - 1100px wide): Well-proportioned view */
+      @media (min-width: 768px) and (max-width: 1100px) and (min-aspect-ratio: 13/10) {
+        #root {
+          max-width: min(540px, calc(0.68 * 100vh));
+        }
+      }
+
+      /* Input outline reset */
+      input, textarea {
+        outline: none !important;
+      }
     </style>
+
+    <script>
+      // 1. Mouse-wheel horizontal scrolling for horizontal scroll views on Web
+      window.addEventListener('wheel', function(e) {
+        var target = e.target;
+        while (target && target !== document.body) {
+          var style = window.getComputedStyle(target);
+          var isHorizontal = (style.overflowX === 'auto' || style.overflowX === 'scroll');
+          if (isHorizontal && target.scrollWidth > target.clientWidth) {
+            var rawDelta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+            var multiplier = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? target.clientWidth : 1;
+            var delta = rawDelta * multiplier;
+            if (Math.abs(delta) < 40 && delta !== 0) {
+              delta = Math.sign(delta) * 60;
+            }
+            var canScrollLeft = target.scrollLeft > 0 && delta < 0;
+            var canScrollRight = target.scrollLeft < (target.scrollWidth - target.clientWidth - 1) && delta > 0;
+            if (canScrollLeft || canScrollRight) {
+              e.preventDefault();
+              target.scrollLeft += delta;
+              return;
+            }
+          }
+          target = target.parentElement;
+        }
+      }, { passive: false });
+
+      // 2. Click-and-drag mouse scrolling for horizontal scroll views on Web
+      (function() {
+        var isDown = false;
+        var startX = 0;
+        var scrollLeft = 0;
+        var activeContainer = null;
+        var hasDragged = false;
+
+        window.addEventListener('mousedown', function(e) {
+          if (e.button !== 0) return;
+          var target = e.target;
+          while (target && target !== document.body) {
+            var style = window.getComputedStyle(target);
+            if ((style.overflowX === 'auto' || style.overflowX === 'scroll') && target.scrollWidth > target.clientWidth) {
+              isDown = true;
+              hasDragged = false;
+              activeContainer = target;
+              startX = e.pageX - target.offsetLeft;
+              scrollLeft = target.scrollLeft;
+              return;
+            }
+            target = target.parentElement;
+          }
+        });
+
+        window.addEventListener('mouseleave', function() {
+          isDown = false;
+          activeContainer = null;
+        });
+
+        window.addEventListener('mouseup', function() {
+          isDown = false;
+          activeContainer = null;
+        });
+
+        window.addEventListener('mousemove', function(e) {
+          if (!isDown || !activeContainer) return;
+          var x = e.pageX - activeContainer.offsetLeft;
+          var walk = (x - startX);
+          if (Math.abs(walk) > 5) {
+            hasDragged = true;
+            e.preventDefault();
+            activeContainer.scrollLeft = scrollLeft - walk;
+          }
+        });
+
+        // Prevent click if user was dragging
+        window.addEventListener('click', function(e) {
+          if (hasDragged) {
+            e.stopPropagation();
+            e.preventDefault();
+            hasDragged = false;
+          }
+        }, true);
+      })();
+    </script>
   </head>
 
   <body>
-    <!-- Use static rendering with Expo Router to support running without JavaScript. -->
+    <!-- Boot splash: static first paint while the bundle downloads and the
+      session restores. Pure HTML/CSS (no JS) so it shows instantly; the app
+      removes #duoorb-splash once booted. Kept outside #root so React's first
+      paint can't clear it early. -->
+    <div id="duoorb-splash" aria-hidden="true">
+      <div class="duoorb-splash-inner">
+        <img class="duoorb-splash-logo" src="/icons/splash-400.webp" alt="" />
+        <div class="duoorb-splash-word">DuoOrb</div>
+        <div class="duoorb-splash-bar"><span></span></div>
+      </div>
+    </div>
+    <style>
+      #duoorb-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #F2F3FF;
+      }
+      .duoorb-splash-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+      }
+      .duoorb-splash-logo {
+        width: 200px;
+        height: auto;
+        display: block;
+      }
+      .duoorb-splash-word {
+        font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-weight: 800;
+        font-size: 26px;
+        letter-spacing: 0.5px;
+        color: #131B2E;
+      }
+      .duoorb-splash-bar {
+        width: 160px;
+        height: 4px;
+        border-radius: 2px;
+        background-color: rgba(19, 27, 46, 0.1);
+        overflow: hidden;
+      }
+      .duoorb-splash-bar span {
+        display: block;
+        width: 40%;
+        height: 100%;
+        border-radius: 2px;
+        background-color: #6C6FFD;
+        animation: duoorb-splash-slide 1.1s ease-in-out infinite;
+      }
+      @keyframes duoorb-splash-slide {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(400%); }
+      }
+      @media (prefers-color-scheme: dark) {
+        #duoorb-splash { background-color: #000000; }
+        .duoorb-splash-word { color: #FFFFFF; }
+        .duoorb-splash-bar { background-color: rgba(255, 255, 255, 0.14); }
+      }
+    </style>
     <noscript>
-      You need to enable JavaScript to run this app.
+      <div style="padding: 2rem; color: #131B2E; background: #F2F3FF; text-align: center; font-family: 'Manrope', -apple-system, sans-serif;">
+        <h1>DuoOrb — Tactical 1v1 Grid Board Game</h1>
+        <p>Outsmart opponents, place strategic walls, and race your orb to the goal. Play free online against friends or smart AI bots.</p>
+        <p>Please enable JavaScript to play DuoOrb in your browser.</p>
+        <p><a href="/rules.html" style="color: #6C6FFD;">Game Rules</a> · <a href="/quoridor-online.html" style="color: #6C6FFD;">Quoridor Online Alternative</a></p>
+      </div>
     </noscript>
+
     <!-- The root element for your Expo app. -->
     <div id="root"></div>
   </body>

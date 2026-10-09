@@ -465,6 +465,8 @@ export const fr: Dictionary = {
   'online.enterCode': 'Code de salon à 6 lettres',
   'online.shareCode': 'Partager le code',
   'online.shareCodeCopied': 'Code copié !',
+  'online.shareInvite': "Partager le lien d'invitation",
+  'online.inviteLinkCopied': "Lien d'invitation copié !",
   'online.playersCount': 'Joueurs',
   'online.waitingPlayer': 'En attente de joueur…',
   'online.host': 'Hôte',

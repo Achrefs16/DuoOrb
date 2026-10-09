@@ -465,6 +465,8 @@ export const es: Dictionary = {
   'online.enterCode': 'Código de sala de 6 letras',
   'online.shareCode': 'Compartir código',
   'online.shareCodeCopied': '¡Código copiado!',
+  'online.shareInvite': 'Compartir enlace de invitación',
+  'online.inviteLinkCopied': '¡Enlace de invitación copiado!',
   'online.playersCount': 'Jugadores',
   'online.waitingPlayer': 'Esperando jugador…',
   'online.host': 'Anfitrión',

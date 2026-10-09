@@ -478,6 +478,8 @@ export const en = {
   'online.enterCode': 'Enter 6-letter room code',
   'online.shareCode': 'Share Room Code',
   'online.shareCodeCopied': 'Room code copied!',
+  'online.shareInvite': 'Share invite link',
+  'online.inviteLinkCopied': 'Invite link copied!',
   'online.playersCount': 'Players',
   'online.waitingPlayer': 'Waiting for player…',
   'online.host': 'Host',

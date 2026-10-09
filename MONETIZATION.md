@@ -439,7 +439,15 @@ menus unchanged.
 
 ---
 
-## 8. Ads runtime (P6 — placements decided: O1 yes, O2 yes, O3 REVISED)
+## 8. Ads runtime (P6 — placements decided: O1 yes, O2 yes, O3 REVISED twice)
+
+O3 REVISION 2 (2026-10-08, owner decision): win-only interstitial ships. It fires
+exactly once per trigger — when the result modal is EXITED (home/close link), never
+on modal open (rematch/replay/analyze stay uninterrupted), never mid-match, never at
+app start, never after a loss, never back-to-back with a rewarded view. Caps enforced
+in `src/monetization/interstitial.ts` from ADS_CONFIG: games finished ≥ 2, game length
+≥ 60s, max 3/day, ≥ 180s gap, session ≥ 2, premium excluded. (O3 revision 1, 2026-10-05,
+had ruled interstitials out entirely; the reserved unit below is now live.)
 
 O3 REVISION (2026-10-05, owner decision): NO fullscreen interstitial. Instead a small
 horizontal banner pinned at the BOTTOM of the GameOverModal under all buttons — visible on

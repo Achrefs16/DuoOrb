@@ -303,6 +303,8 @@ const createStyles = () => StyleSheet.create({
     padding: 20,
     paddingBottom: 32,
     width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
     maxHeight: '88%',
     ...THEME.shadows.modal,
   },

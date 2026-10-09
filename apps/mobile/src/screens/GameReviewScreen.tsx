@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { ActivityIndicator, Animated, PanResponder, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, Animated, PanResponder, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import {
   GameReview,
@@ -135,6 +135,33 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const styles = useStyles(createStyles);
   const theme = useTheme();
   const { t } = useTranslation();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const [topH, setTopH] = useState(0);
+  const [bottomH, setBottomH] = useState(0);
+  // Measured board-anchor width (same desktop-web squeeze as the match
+  // screen: the CSS column can be narrower than the window).
+  const [anchorW, setAnchorW] = useState(0);
+  const handleAnchorLayout = (e: { nativeEvent: { layout: { width: number } } }) => {
+    const { width } = e.nativeEvent.layout;
+    setAnchorW((prev) => (Math.abs(prev - width) > 1 ? width : prev));
+  };
+  const isTabletScreen = windowWidth >= 600 && (windowWidth <= 1100 || windowHeight >= windowWidth);
+  const desktopWidthCap = Platform.OS === 'web' && !isTabletScreen
+    ? Math.min(420, Math.floor(0.48 * windowHeight))
+    : (isTabletScreen ? 580 : 420);
+  const maxContainerWidth = Platform.OS === 'web' ? desktopWidthCap : windowWidth;
+  const effectiveWidth = Math.min(windowWidth, maxContainerWidth);
+  const measuredBoardSize = Math.max(
+    180,
+    Math.floor(
+      Math.min(
+        effectiveWidth - 24,
+        anchorW > 0 ? anchorW : Number.POSITIVE_INFINITY,
+        windowHeight - topH - bottomH - 26
+      )
+    )
+  );
+
   // Full analysis, computed OFF the first paint. analyzeGame replays every
   // move with a search per move (seconds on a phone CPU), and it used to run
   // inside a useMemo during render — freezing the app from the Analyze tap
@@ -642,7 +669,13 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
 
         {/* Opponent HUD Card (Directly Above Board) */}
         {opponentPlayer && (
-          <View style={styles.hudCard}>
+          <View
+            style={styles.hudCard}
+            onLayout={(e) => {
+              const h = e.nativeEvent.layout.height;
+              setTopH((prev) => (Math.abs(prev - h) > 1 ? h : prev));
+            }}
+          >
             <View style={styles.hudLeft}>
               <View style={[styles.hudAvatar, { backgroundColor: THEME.colors.secondaryContainer }]}>
                 <Text style={[styles.hudInitial, { color: THEME.colors.secondary }]}>
@@ -650,7 +683,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 </Text>
               </View>
               <View style={styles.hudMeta}>
-                <Text style={styles.hudName}>{opponentPlayer.displayName}</Text>
+                <Text style={styles.hudName} numberOfLines={1}>{opponentPlayer.displayName}</Text>
                 <View style={styles.hudTagRow}>
                   {ratings?.[opponentPlayer.id] !== undefined && (
                     <Text style={styles.ratingText}>{ratings[opponentPlayer.id]}</Text>
@@ -670,36 +703,46 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           </View>
         )}
 
-        {/* Board Viewport (Our Custom GameBoard Preserved) */}
-        <View {...swipe.panHandlers} style={styles.boardViewport}>
-          <Animated.View
-            style={{
-              transform: [
-                {
-                  rotate: flip.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0deg', '180deg'],
-                  }),
-                },
-              ],
-            }}
-          >
-            <GameBoard
-              state={currentState}
-              legalMoves={[]}
-              previewWall={null}
-              selectedCell={null}
-              interactive={false}
-              flipAnim={flip}
-              moveMark={moveMark}
-              altMark={altMark}
-            />
-          </Animated.View>
+        {/* Board Viewport (Exact GameScreen Board Implementation) */}
+        <View style={styles.boardWrap}>
+          <View style={styles.boardAnchor} onLayout={handleAnchorLayout} {...swipe.panHandlers}>
+            <Animated.View
+              style={{
+                transform: [
+                  {
+                    rotate: flip.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0deg', '180deg'],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <GameBoard
+                state={currentState}
+                legalMoves={[]}
+                previewWall={null}
+                selectedCell={null}
+                interactive={false}
+                flipAnim={flip}
+                moveMark={moveMark}
+                altMark={altMark}
+                size={measuredBoardSize}
+              />
+            </Animated.View>
+          </View>
         </View>
 
-        {/* User HUD Card (Directly Below Board) */}
-        {userPlayer && (
-          <View style={styles.hudCard}>
+        <View
+          style={styles.replayBottomBar}
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            setBottomH((prev) => (Math.abs(prev - h) > 1 ? h : prev));
+          }}
+        >
+          {/* User HUD Card (Directly Below Board) */}
+          {userPlayer && (
+            <View style={styles.hudCard}>
             <View style={styles.hudLeft}>
               <View style={[styles.hudAvatar, { backgroundColor: THEME.colors.primaryLight }]}>
                 <Text style={[styles.hudInitial, { color: THEME.colors.primary }]}>
@@ -707,7 +750,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 </Text>
               </View>
               <View style={styles.hudMeta}>
-                <Text style={styles.hudName}>{userPlayer.displayName} {t('gameover.you')}</Text>
+                <Text style={styles.hudName} numberOfLines={1}>{userPlayer.displayName} {t('gameover.you')}</Text>
                 <View style={styles.hudTagRow}>
                   {ratings?.[userPlayer.id] !== undefined && (
                     <Text style={styles.ratingText}>{ratings[userPlayer.id]}</Text>
@@ -838,6 +881,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           </ScrollView>
           )}
         </View>
+      </View>
 
         {/* Bare -> full upgrade (History/Profile Analyze path): same gate as
             the win/lose modal — premium/dev/unlocked go straight to review,
@@ -995,198 +1039,219 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
       </ScrollView>
       ) : (
       <View style={styles.fullBody}>
-        {/* Eval bar: who's winning, by how much, exact number — always on. */}
-        <View style={styles.evalBarRow}>
-          <Text style={styles.evalNum}>
-            {evalNum == null ? '—' : formatEvalShort(evalNum)}
-          </Text>
-          <View
-            style={[
-              styles.evalTrack,
-              is2p && { backgroundColor: opponentColor },
-            ]}
-          >
-            <Animated.View
+        {/* Top chrome: eval bar + coach card (measured so board takes exact remaining space) */}
+        <View
+          style={styles.analysisTopChrome}
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            setTopH((prev) => (Math.abs(prev - h) > 1 ? h : prev));
+          }}
+        >
+          {/* Eval bar: who's winning, by how much, exact number — always on. */}
+          <View style={styles.evalBarRow}>
+            <Text style={styles.evalNum}>
+              {evalNum == null ? '—' : formatEvalShort(evalNum)}
+            </Text>
+            <View
               style={[
-                styles.evalFill,
-                {
-                  width: evalBarWidth,
-                  backgroundColor: viewerColor,
-                },
+                styles.evalTrack,
+                is2p && { backgroundColor: opponentColor },
               ]}
-            />
-          </View>
-        </View>
-
-        {/* Coach: one verdict + one sentence. */}
-        {currentAnalysis ? (
-          <View style={styles.coachCard}>
-            <View style={[styles.coachAvatar, { backgroundColor: moverColor }]}>
-              <Text style={styles.coachAvatarText}>
-                {(moverName.charAt(0) || '•').toUpperCase()}
-              </Text>
+            >
+              <Animated.View
+                style={[
+                  styles.evalFill,
+                  {
+                    width: evalBarWidth,
+                    backgroundColor: viewerColor,
+                  },
+                ]}
+              />
             </View>
-            <View style={styles.coachMain}>
-              <View style={styles.verdictRow}>
-                {assessmentGlyph(currentAnalysis.assessment) !== '' && (
-                  <View
-                    style={[
-                      styles.glyphBadge,
-                      {
-                        backgroundColor: assessmentBadgeColor(
-                          currentAnalysis.assessment
-                        ),
-                      },
-                    ]}
-                  >
-                    <Text style={styles.glyphText}>
-                      {assessmentGlyph(currentAnalysis.assessment)}
+          </View>
+
+          {/* Coach: one verdict + one sentence. */}
+          {currentAnalysis ? (
+            <View style={styles.coachCard}>
+              <View style={[styles.coachAvatar, { backgroundColor: moverColor }]}>
+                <Text style={styles.coachAvatarText}>
+                  {(moverName.charAt(0) || '•').toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.coachMain}>
+                <View style={styles.verdictRow}>
+                  {assessmentGlyph(currentAnalysis.assessment) !== '' && (
+                    <View
+                      style={[
+                        styles.glyphBadge,
+                        {
+                          backgroundColor: assessmentBadgeColor(
+                            currentAnalysis.assessment
+                          ),
+                        },
+                      ]}
+                    >
+                      <Text style={styles.glyphText}>
+                        {assessmentGlyph(currentAnalysis.assessment)}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.verdictText}>
+                    {t('review.verdictIsA', {
+                      label: shortMoveLabel(
+                        currentAnalysis.playedAction ?? (currentAnalysis as any).action,
+                        mover?.index ?? 0
+                      ),
+                      verdict: t(assessmentVerdictKey(currentAnalysis.assessment)),
+                    })}
+                  </Text>
+                  <View style={styles.evalPill}>
+                    <Text style={styles.evalPillText}>
+                      {formatEvalShort(
+                        currentAnalysis.evaluationAfter ?? (currentAnalysis as any).evaluation ?? 0
+                      )}
                     </Text>
                   </View>
-                )}
-                <Text style={styles.verdictText}>
-                  {t('review.verdictIsA', {
-                    label: shortMoveLabel(
-                      currentAnalysis.playedAction ?? (currentAnalysis as any).action,
-                      mover?.index ?? 0
-                    ),
-                    verdict: t(assessmentVerdictKey(currentAnalysis.assessment)),
-                  })}
-                </Text>
-                <View style={styles.evalPill}>
-                  <Text style={styles.evalPillText}>
-                    {formatEvalShort(
-                      currentAnalysis.evaluationAfter ?? (currentAnalysis as any).evaluation ?? 0
-                    )}
+                </View>
+                {currentAnalysis.explanation ? (
+                  <Text style={styles.coachText} numberOfLines={3}>
+                    {currentAnalysis.explanation}
                   </Text>
-                </View>
+                ) : null}
               </View>
-              {currentAnalysis.explanation ? (
-                <Text style={styles.coachText} numberOfLines={3}>
-                  {currentAnalysis.explanation}
-                </Text>
-              ) : null}
             </View>
-          </View>
-        ) : review && currentStep === 0 ? (
-          <View style={styles.coachCard}>
-            <View style={[styles.coachAvatar, { backgroundColor: viewerColor }]}>
-              <Feather name="play" size={18} color="#FFFFFF" />
-            </View>
-            <View style={styles.coachMain}>
-              <View style={styles.verdictRow}>
-                <Text style={styles.verdictText}>
-                  {review.accuracies?.p1 != null
-                    ? `${review.accuracies.p1}% vs ${review.accuracies.p2 ?? 50}%`
-                    : t('review.matchReview')}
-                </Text>
-                <View style={styles.evalPill}>
-                  <Text style={styles.evalPillText}>0.0</Text>
-                </View>
+          ) : review && currentStep === 0 ? (
+            <View style={styles.coachCard}>
+              <View style={[styles.coachAvatar, { backgroundColor: viewerColor }]}>
+                <Feather name="play" size={18} color="#FFFFFF" />
               </View>
-              <Text style={styles.coachText} numberOfLines={2}>
-                {review.summary?.keyLesson?.detail ?? 'Initial board position. Tap Next to review the match.'}
-              </Text>
+              <View style={styles.coachMain}>
+                <View style={styles.verdictRow}>
+                  <Text style={styles.verdictText}>
+                    {review.accuracies?.p1 != null
+                      ? `${review.accuracies.p1}% vs ${review.accuracies.p2 ?? 50}%`
+                      : t('review.matchReview')}
+                  </Text>
+                  <View style={styles.evalPill}>
+                    <Text style={styles.evalPillText}>0.0</Text>
+                  </View>
+                </View>
+                <Text style={styles.coachText} numberOfLines={2}>
+                  {review.summary?.keyLesson?.detail ?? 'Initial board position. Tap Next to review the match.'}
+                </Text>
+              </View>
             </View>
-          </View>
-        ) : (
-          <View style={styles.coachCard}>
-            <ActivityIndicator size="small" color={THEME.colors.primary} />
-            <Text style={styles.coachText}>{t('review.analyzing')}</Text>
-          </View>
-        )}
-
-        {/* Board viewport (swipe steps like the replay bar). */}
-        <View {...swipe.panHandlers} style={styles.fullBoardWrap}>
-          <Animated.View
-            style={{
-              transform: [
-                {
-                  rotate: flip.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0deg', '180deg'],
-                  }),
-                },
-              ],
-            }}
-          >
-            <GameBoard
-              state={currentState}
-              legalMoves={[]}
-              previewWall={null}
-              selectedCell={null}
-              interactive={false}
-              moveMark={isolateBest ? null : moveMark}
-              altMark={showLine ? altMark : null}
-              badgeMark={isolateBest ? null : badgeMark}
-              bestArrow={showLine ? bestArrow : null}
-              flipAnim={flip}
-            />
-          </Animated.View>
+          ) : (
+            <View style={styles.coachCard}>
+              <ActivityIndicator size="small" color={THEME.colors.primary} />
+              <Text style={styles.coachText}>{t('review.analyzing')}</Text>
+            </View>
+          )}
         </View>
 
-        {/* Move strip navigator. */}
-        <View style={styles.stripRow}>
-          <TouchableOpacity
-            style={styles.stripNav}
-            disabled={currentStep <= 0}
-            onPress={() => goTo(currentStep - 1)}
-            accessibilityRole="button"
-            accessibilityLabel="Previous move"
-          >
-            <Feather
-              name="chevron-left"
-              size={20}
-              color={
-                currentStep <= 0
-                  ? THEME.colors.textMuted
-                  : THEME.colors.textSecondary
-              }
-            />
-          </TouchableOpacity>
-          {stripSteps.map((s) => {
-            const a = stripAssessment(s);
-            const bad = a === 'MISTAKE' || a === 'BLUNDER';
-            const active = s === currentStep;
-            return (
-              <TouchableOpacity
-                key={s}
-                style={[styles.stripChip, active && styles.stripChipActive]}
-                onPress={() => goTo(s)}
-              >
-                <Text
-                  style={[
-                    styles.stripChipText,
-                    active && styles.stripChipTextActive,
-                  ]}
+        {/* Board viewport (Exact GameScreen Board Implementation) */}
+        <View style={styles.boardWrap}>
+          <View style={styles.boardAnchor} onLayout={handleAnchorLayout} {...swipe.panHandlers}>
+            <Animated.View
+              style={{
+                transform: [
+                  {
+                    rotate: flip.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0deg', '180deg'],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <GameBoard
+                state={currentState}
+                legalMoves={[]}
+                previewWall={null}
+                selectedCell={null}
+                interactive={false}
+                moveMark={isolateBest ? null : moveMark}
+                altMark={showLine ? altMark : null}
+                badgeMark={isolateBest ? null : badgeMark}
+                bestArrow={showLine ? bestArrow : null}
+                flipAnim={flip}
+                size={measuredBoardSize}
+              />
+            </Animated.View>
+          </View>
+        </View>
+
+        {/* Bottom chrome: strip navigator + action bar */}
+        <View
+          style={styles.analysisBottomChrome}
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            setBottomH((prev) => (Math.abs(prev - h) > 1 ? h : prev));
+          }}
+        >
+          {/* Move strip navigator. */}
+          <View style={styles.stripRow}>
+            <TouchableOpacity
+              style={styles.stripNav}
+              disabled={currentStep <= 0}
+              onPress={() => goTo(currentStep - 1)}
+              accessibilityRole="button"
+              accessibilityLabel="Previous move"
+            >
+              <Feather
+                name="chevron-left"
+                size={20}
+                color={
+                  currentStep <= 0
+                    ? THEME.colors.textMuted
+                    : THEME.colors.textSecondary
+                }
+              />
+            </TouchableOpacity>
+            {stripSteps.map((s) => {
+              const a = stripAssessment(s);
+              const bad = a === 'MISTAKE' || a === 'BLUNDER';
+              const active = s === currentStep;
+              return (
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.stripChip, active && styles.stripChipActive]}
+                  onPress={() => goTo(s)}
                 >
-                  {s === 0 ? 'Start' : `${s} · ${stripLabel(s)}`}
-                </Text>
-                {bad && <View style={styles.stripBad} />}
-              </TouchableOpacity>
-            );
-          })}
-          <TouchableOpacity
-            style={styles.stripNav}
-            disabled={currentStep >= history.length}
-            onPress={() => goTo(currentStep + 1)}
-            accessibilityRole="button"
-            accessibilityLabel="Next move"
-          >
-            <Feather
-              name="chevron-right"
-              size={20}
-              color={
-                currentStep >= history.length
-                  ? THEME.colors.textMuted
-                  : THEME.colors.textSecondary
-              }
-            />
-          </TouchableOpacity>
-        </View>
+                  <Text
+                    style={[
+                      styles.stripChipText,
+                      active && styles.stripChipTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {s === 0 ? 'Start' : `${s} · ${stripLabel(s)}`}
+                  </Text>
+                  {bad && <View style={styles.stripBad} />}
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              style={styles.stripNav}
+              disabled={currentStep >= history.length}
+              onPress={() => goTo(currentStep + 1)}
+              accessibilityRole="button"
+              accessibilityLabel="Next move"
+            >
+              <Feather
+                name="chevron-right"
+                size={20}
+                color={
+                  currentStep >= history.length
+                    ? THEME.colors.textMuted
+                    : THEME.colors.textSecondary
+                }
+              />
+            </TouchableOpacity>
+          </View>
 
-        {/* Action bar: Show / Best / Next. */}
-        <View style={styles.actionBar}>
+          {/* Action bar: Show / Best / Next. */}
+          <View style={styles.actionBar}>
             <TouchableOpacity
               style={[styles.actionBtn, showLine && styles.actionBtnActive]}
               onPress={() => setShowLine((v) => !v)}
@@ -1205,6 +1270,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                   styles.actionLabel,
                   showLine && { color: THEME.colors.primary },
                 ]}
+                numberOfLines={1}
               >
                 {t('review.show')}
               </Text>
@@ -1232,6 +1298,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                   styles.actionLabel,
                   isolateBest && { color: THEME.colors.primary },
                 ]}
+                numberOfLines={1}
               >
                 {t('review.best')}
               </Text>
@@ -1252,10 +1319,11 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Next move or key moment"
             >
-              <Text style={styles.nextBtnText}>{t('review.next')}</Text>
+              <Text style={styles.nextBtnText} numberOfLines={1}>{t('review.next')}</Text>
             </TouchableOpacity>
           </View>
         </View>
+      </View>
       )}
       {/* Upgrade sheet for the bare Analyze path (History/Profile). */}
       <RewardSheet
@@ -1277,16 +1345,22 @@ const createStyles = () => StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: THEME.colors.background,
+    paddingTop: 0,
+    paddingBottom: 8,
+    paddingHorizontal: 12,
+    justifyContent: 'flex-start',
+    userSelect: 'none',
   },
   header: {
     height: 56,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.colors.surfaceContainer,
+    marginHorizontal: -12,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceContainer,
   },
   backBtn: {
     width: 36,
@@ -1303,15 +1377,12 @@ const createStyles = () => StyleSheet.create({
   },
   scrollArea: {
     flex: 1,
+    width: '100%',
   },
   content: {
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 28,
-    maxWidth: 440,
-    width: '100%',
-    alignSelf: 'center',
     gap: 8,
+    paddingVertical: 4,
+    width: '100%',
   },
   summaryBadgeRow: {
     flexDirection: 'row',
@@ -1365,6 +1436,8 @@ const createStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
+    marginRight: 8,
   },
   hudAvatar: {
     width: 34,
@@ -1426,10 +1499,19 @@ const createStyles = () => StyleSheet.create({
     color: THEME.colors.onSurface,
     fontVariant: ['tabular-nums'],
   },
-  boardViewport: {
-    alignItems: 'center',
+  boardWrap: {
+    flex: 1,
     justifyContent: 'center',
-    marginVertical: 4,
+    alignItems: 'center',
+    width: '100%',
+  },
+  boardAnchor: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  replayBottomBar: {
+    width: '100%',
+    gap: 8,
   },
   replayControlsCard: {
     backgroundColor: THEME.colors.surfaceContainerLowest,
@@ -1662,7 +1744,16 @@ const createStyles = () => StyleSheet.create({
   fullBody: {
     flex: 1,
     gap: 8,
-    paddingBottom: 4,
+    paddingBottom: 8,
+    paddingHorizontal: 12,
+    maxWidth: 580,
+    width: '100%',
+    alignSelf: 'center',
+    justifyContent: 'space-between',
+  },
+  analysisTopChrome: {
+    width: '100%',
+    gap: 8,
   },
   // Eval bar: number + viewer-share track.
   evalBarRow: {
@@ -1766,6 +1857,11 @@ const createStyles = () => StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
+  },
+  analysisBottomChrome: {
+    width: '100%',
+    gap: 8,
   },
   // Move strip navigator.
   stripRow: {

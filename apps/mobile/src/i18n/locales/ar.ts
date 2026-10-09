@@ -465,6 +465,8 @@ export const ar: Dictionary = {
   'online.enterCode': 'رمز الغرفة المكون من 6 أحرف',
   'online.shareCode': 'مشاركة الرمز',
   'online.shareCodeCopied': 'تم نسخ رمز الغرفة!',
+  'online.shareInvite': 'مشاركة رابط الغرفة',
+  'online.inviteLinkCopied': 'تم نسخ رابط الغرفة!',
   'online.playersCount': 'اللاعبون',
   'online.waitingPlayer': 'في انتظار اللاعب…',
   'online.host': 'المضيف',

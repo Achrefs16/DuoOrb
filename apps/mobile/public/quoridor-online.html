@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Play Quoridor Online Free — Modern Tactical Grid Game | DuoOrb</title>
+  <meta name="description" content="Play Quoridor online free in your browser. Tactical wall placement, hop over rival pieces, challenge friends in private rooms, climb the global leaderboard, and train against smart AI bots." />
+  <link rel="canonical" href="https://duoorb.com/quoridor-online.html" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+
+  <!-- Google AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6057010656402010" crossorigin="anonymous"></script>
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="DuoOrb" />
+  <meta property="og:url" content="https://duoorb.com/quoridor-online.html" />
+  <meta property="og:title" content="Play Quoridor Online Free — Tactical Grid Board Game" />
+  <meta property="og:description" content="Experience the ultimate 1v1 tactical maze and wall-placement game in your browser. Play instantly against friends or smart AI." />
+  <meta property="og:image" content="https://duoorb.com/og-image.png" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Play Quoridor Online Free | DuoOrb" />
+  <meta name="twitter:description" content="Tactical wall placement board game. Race your orb, block passages, jump rivals." />
+  <meta name="twitter:image" content="https://duoorb.com/og-image.png" />
+
+  <link rel="stylesheet" href="/css/style.css" />
+
+  <!-- JSON-LD Structured Data: WebApplication, VideoGame & FAQPage -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": ["WebApplication", "VideoGame"],
+        "name": "DuoOrb — Quoridor Online",
+        "url": "https://duoorb.com/quoridor-online.html",
+        "applicationCategory": "GameApplication",
+        "genre": ["Strategy", "Board Game", "Abstract Strategy"],
+        "operatingSystem": "Web, iOS, Android",
+        "description": "Tactical 1v1 grid board game inspired by Quoridor and Barricade.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is Quoridor and how is DuoOrb related?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Quoridor is an award-winning abstract strategy board game where players race to the opposite edge while placing walls to slow down opponents. DuoOrb modernizes this classic formula with online multiplayer, custom board sizes, Center Rush and Race modes, multi-level AI bots, and real-time clock controls."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I play DuoOrb online without installing an app?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes! DuoOrb runs entirely in any modern browser on PC, Mac, iPhone, and Android. You can play as a guest immediately with zero downloads."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can you completely block an opponent from winning in Quoridor / DuoOrb?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. The golden rule of the game dictates that you can never completely trap an opponent. At least one open path to the goal line must always remain available."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does the jump rule work?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "When two orbs face each other with no wall between them, you can jump directly over your opponent into the square beyond. If a wall blocks the square behind them, you may jump diagonally to either side."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Site Navigation -->
+  <header class="site-nav">
+    <div class="container site-nav-inner">
+      <a href="/" class="brand-link" aria-label="DuoOrb Home">
+        <img src="/favicon.ico" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" />
+        <span class="brand-text">DuoOrb</span>
+      </a>
+
+      <nav aria-label="Main Navigation">
+        <ul class="nav-links">
+          <li><a href="/quoridor-online.html" class="active">Play Online</a></li>
+          <li><a href="/rules.html">Rules & Strategy</a></li>
+          <li><a href="/app.html">Mobile App</a></li>
+          <li><a href="/what-is-the-game-with-two-balls-and-walls.html">About the Game</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="/" class="btn-pill btn-pill-primary">Play Now</a>
+        <button id="mobile-nav-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Dropdown Navigation (Clean, strictly no icons) -->
+    <div id="mobile-nav-drawer" class="mobile-nav-drawer">
+      <ul class="mobile-nav-list">
+        <li><a href="/quoridor-online.html" class="active">Play Online</a></li>
+        <li><a href="/rules.html">Rules & Strategy</a></li>
+        <li><a href="/app.html">Mobile App</a></li>
+        <li><a href="/what-is-the-game-with-two-balls-and-walls.html">About the Game</a></li>
+      </ul>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="section" style="padding-top: 56px; padding-bottom: 64px;">
+      <div class="container">
+        <div class="hero-split-grid">
+          <div>
+            <span class="section-tag">Instant Web Arena</span>
+            <h1>Play Quoridor online free: The pure tactical grid duel.</h1>
+            <p class="lead" style="margin-top: 20px; margin-bottom: 32px;">
+              Place tactical fences, navigate tense labyrinths, and race your orb across a 9×9 arena. Jump into rated 1v1 duels, challenge friends in private rooms, or train against adaptive AI opponents.
+            </p>
+
+            <div class="hero-actions" style="margin-bottom: 24px;">
+              <a href="/" class="btn-pill btn-pill-primary">Play Now</a>
+              <a href="/app.html" class="btn-pill btn-pill-ghost">Get Mobile App</a>
+              <a href="/rules.html" class="btn-pill btn-pill-ghost">Learn Rules</a>
+            </div>
+
+            <p style="font-size: 14px; color: var(--color-ash-gray);">
+              Instant browser play · Global Elo rankings · Real-time Blitz & Rapid clocks
+            </p>
+          </div>
+
+          <!-- Hero Floating Product Artifact -->
+          <div class="product-artifact">
+            <div class="artifact-screen-wrap" style="padding: 24px 20px;">
+              <img src="/screenshots/gameplay-duel.png" alt="DuoOrb real-time 1v1 tactical match screen" loading="eager" width="300" height="650" style="max-width: 280px;" />
+            </div>
+            <div class="artifact-caption">
+              <h2 style="font-size: 26px; font-family: var(--font-sans); font-weight: 600; margin-bottom: 6px;">Live Match Gameplay</h2>
+              <p>Tactile wall placement controls with instant legal-move highlights and live clocks.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Viral Search Funnel Callout (Blush Peach Accent Card) -->
+    <section class="section section-fog">
+      <div class="container">
+        <div class="card-peach peach-split-card">
+          <div>
+            <span class="peach-tag">Viral Board Game Sensation</span>
+            <h2 style="margin-bottom: 14px;">Seen the trending duel with two spheres and wooden fences?</h2>
+            <p style="margin-bottom: 20px;">
+              Millions of viewers have watched intense corridor races go viral across TikTok, Instagram Reels, and Shorts. That captivating tabletop duel is Quoridor — and DuoOrb brings the entire strategic experience directly to your browser and phone with online duels, friend rooms, and smart AI sparring.
+            </p>
+            <div class="hero-actions">
+              <a href="/" class="btn-pill btn-pill-primary">Play Now</a>
+              <a href="/what-is-the-game-with-two-balls-and-walls.html" class="btn-pill btn-pill-ghost">Read the Full Viral Guide →</a>
+            </div>
+          </div>
+          <div style="text-align: center;">
+            <img src="/screenshots/gameplay-duel.png" alt="Viral game with two balls and walls in action" style="max-width: 220px; width: 100%; border-radius: 14px; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);" loading="lazy" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features & Capabilities -->
+    <section class="section">
+      <div class="container">
+        <div class="section-header text-center">
+          <span class="section-tag">Game Modes</span>
+          <h2>A Modern Take on an Abstract Masterpiece</h2>
+          <p class="lead" style="margin: 0 auto;">Classic Quoridor is brilliant, but DuoOrb gives you the full suite of a modern competitive platform.</p>
+        </div>
+
+        <div class="grid-3" style="margin-bottom: 48px;">
+          <div class="card-neutral">
+            <span class="section-tag">Matchmaking & Social</span>
+            <h3>Rated Duels & Private Rooms</h3>
+            <p>Climb global Elo tiers in rated matchmaking, or generate instant room codes to duel friends across WhatsApp, Telegram, or Discord.</p>
+          </div>
+
+          <div class="card-neutral">
+            <span class="section-tag">Adaptive Bots</span>
+            <h3>Offline AI Sparring</h3>
+            <p>Practice tactics anytime against calibrated bot personalities with distinct playing styles, from forgiving beginners to relentless club masters.</p>
+          </div>
+
+          <div class="card-neutral">
+            <span class="section-tag">Party Battle</span>
+            <h3>4-Player Center Rush</h3>
+            <p>Take on 3 rivals at once. Four orbs contest a shared labyrinth in a high-stakes race to claim the golden center tile.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Mobile Presence Showcase -->
+    <section class="section section-fog">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">App Store Presence</span>
+          <h2>Play Anywhere: Web, Android & iOS</h2>
+          <p class="lead">Seamless play whether you prefer your desktop browser or tactile native phone haptics.</p>
+        </div>
+
+        <div class="hero-split-grid" style="margin-bottom: 32px;">
+          <div>
+            <h3 style="margin-bottom: 14px;">Native 60 FPS Mobile App</h3>
+            <p style="margin-bottom: 20px;">
+              Take the duel with you on flights, subway rides, and road trips. Full offline play against calibrated bots, instant pass-and-play on a single screen, and real-time private rooms.
+            </p>
+
+            <div class="store-badges" style="margin-bottom: 24px;">
+              <a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" class="store-badge-btn" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3.609 1.814L13.793 12 3.61 22.186a2.227 2.227 0 0 1-.22-.977V2.791c0-.361.08-.7.219-.977zm11.242 11.243l2.257 2.257-12.01 6.84 9.753-9.097zm0-2.114L5.098 1.846l12.01 6.84-2.257 2.257zm1.472 1.057l3.242 1.847c1.169.666 1.169 1.75 0 2.416l-3.242 1.847-2.128-2.128 2.128-2.002-.001-.02.001.04z"/>
+                </svg>
+                <div class="store-badge-text">
+                  <span class="store-badge-label">Available on</span>
+                  <span class="store-badge-title">Google Play</span>
+                </div>
+              </a>
+
+              <a href="/app.html" class="btn-pill btn-pill-ghost">
+                Explore Mobile App Features →
+              </a>
+            </div>
+
+            <p style="font-size: 13px; color: var(--color-ash-gray);">
+              Cross-platform progression · Offline bot sparring · Zero mid-game ads
+            </p>
+          </div>
+
+          <div class="product-artifact">
+            <div class="artifact-screen-wrap">
+              <img src="/screenshots/app-modes.png" alt="DuoOrb game modes menu on mobile" loading="lazy" width="300" height="650" />
+            </div>
+            <div class="artifact-caption">
+              <h3 style="font-size: 20px; font-family: var(--font-sans); font-weight: 600; margin-bottom: 6px;">Unified Mode Selection</h3>
+              <p>Quick match, custom rules, offline bot sparring, and pass-and-play.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Competitor Comparison Table -->
+    <section class="section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Platform Comparison</span>
+          <h2>How DuoOrb Compares to Other Options</h2>
+          <p class="lead">Compare DuoOrb against legacy browser portals and ad-supported mobile apps.</p>
+        </div>
+
+        <div class="table-wrap">
+          <table class="editorial-table">
+            <thead>
+              <tr>
+                <th scope="col">Feature</th>
+                <th scope="col">DuoOrb (Web & App)</th>
+                <th scope="col">Legacy Web Portals</th>
+                <th scope="col">Ad-Supported Mobile Clones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Instant Guest Play</strong></td>
+                <td>Yes · Play instantly in any browser</td>
+                <td>Rare · Mandatory account registration</td>
+                <td>Rare · Lengthy forced tutorials</td>
+              </tr>
+              <tr>
+                <td><strong>Gameplay Experience</strong></td>
+                <td>Zero in-match ads · Fluid 60 FPS</td>
+                <td>Clunky turn-based lobby delays</td>
+                <td>Frequent 30-second video interruptions</td>
+              </tr>
+              <tr>
+                <td><strong>Engine Match Analysis</strong></td>
+                <td>Yes · Move classification & path eval</td>
+                <td>Basic move notation list only</td>
+                <td>No analysis tools</td>
+              </tr>
+              <tr>
+                <td><strong>Offline Bot Sparring</strong></td>
+                <td>Yes · Calibrated bot personalities</td>
+                <td>Browser online connection required</td>
+                <td>Basic random-move bots</td>
+              </tr>
+              <tr>
+                <td><strong>Alternative Modes</strong></td>
+                <td>Classic 1v1, 4P Center Rush, Custom Rules</td>
+                <td>Standard 1v1 rules only</td>
+                <td>Fixed boards only</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="section section-fog">
+      <div class="container">
+        <div class="section-header text-center">
+          <span class="section-tag">Frequently Asked Questions</span>
+          <h2>Everything You Need to Know</h2>
+        </div>
+
+        <div class="faq-grid">
+          <div class="faq-item">
+            <h3>What is Quoridor and how is DuoOrb related?</h3>
+            <p>Quoridor is an award-winning abstract strategy board game where players race to the opposite edge while placing walls to slow down opponents. DuoOrb modernizes this classic formula with online multiplayer, custom board sizes, Center Rush and Race modes, multi-level AI bots, and real-time clock controls.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>Can I play DuoOrb online without installing an app?</h3>
+            <p>Yes! DuoOrb runs entirely in any modern browser on PC, Mac, iPhone, and Android. You can play as a guest immediately with zero downloads.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>Can you completely block an opponent from winning?</h3>
+            <p>No. The golden rule of the game dictates that you can never completely trap an opponent. At least one open path to the goal line must always remain available.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>How does the jump rule work?</h3>
+            <p>When two orbs face each other with no wall between them, you can jump directly over your opponent into the square beyond. If a wall blocks the square behind them, you may jump diagonally to either side.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bottom CTA -->
+    <section class="section" style="text-align: center; padding: 88px 0;">
+      <div class="container" style="max-width: 640px;">
+        <span class="section-tag">Start Playing Now</span>
+        <h2 style="margin-bottom: 18px;">Ready to outsmart your next opponent?</h2>
+        <p class="lead" style="margin: 0 auto 32px;">Join thousands of tacticians worldwide. Zero install required.</p>
+        <div class="hero-actions" style="justify-content: center;">
+          <a href="/" class="btn-pill btn-pill-primary">Play Now</a>
+          <a href="/app.html" class="btn-pill btn-pill-ghost">Get Mobile App</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a href="/" class="brand-link" aria-label="DuoOrb Home">
+            <img src="/favicon.ico" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" />
+            <span class="brand-text">DuoOrb</span>
+          </a>
+          <p>The modern abstract strategy board game inspired by Quoridor and Barricade. Play free online or download on mobile.</p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Play</h4>
+          <ul>
+            <li><a href="/">Play Now</a></li>
+            <li><a href="/quoridor-online.html">Quoridor Online</a></li>
+            <li><a href="/rules.html">Rules & Strategy</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Learn</h4>
+          <ul>
+            <li><a href="/rules.html">Complete Rules</a></li>
+            <li><a href="/rules.html#jump-rule">Jump Rule Masterclass</a></li>
+            <li><a href="/what-is-the-game-with-two-balls-and-walls.html">Game Identifier Guide</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Platforms</h4>
+          <ul>
+            <li><a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" target="_blank" rel="noopener noreferrer">Google Play Store</a></li>
+            <li><a href="/app.html">Mobile App Overview</a></li>
+            <li><a href="/app.html">Install Web App (PWA)</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p>© 2026 DuoOrb. All rights reserved. Strategic grid games reimagined.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Mobile Navigation Toggle Script -->
+  <script>
+    (function() {
+      var btn = document.getElementById('mobile-nav-toggle');
+      var drawer = document.getElementById('mobile-nav-drawer');
+      if (!btn || !drawer) return;
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var isOpen = drawer.classList.toggle('open');
+        btn.classList.toggle('active', isOpen);
+        btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+      document.addEventListener('click', function(e) {
+        if (!drawer.contains(e.target) && !btn.contains(e.target) && drawer.classList.contains('open')) {
+          drawer.classList.remove('open');
+          btn.classList.remove('active');
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    })();
+  </script>
+
+</body>
+</html>

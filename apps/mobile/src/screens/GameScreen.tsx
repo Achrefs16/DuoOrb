@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, BackHandler, Modal, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 
+import { ActivityIndicator, Animated, BackHandler, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 
 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -493,6 +493,24 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     };
   }, [type, onlineGameId]);
 
+  // On Web: prevent screen sleep while match is active
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
+      let sentinel: any = null;
+      if (state.status === 'IN_PROGRESS') {
+        (navigator as any).wakeLock
+          ?.request('screen')
+          .then((lock: any) => {
+            sentinel = lock;
+          })
+          .catch(() => {});
+      }
+      return () => {
+        sentinel?.release?.().catch(() => {});
+      };
+    }
+  }, [state.status]);
+
   // Action sounds — fire for both player and AI actions.
   // A move onto the goal line gets its own distinct chime, a hop over
   // another orb gets the jump sound, and your moves sound different from
@@ -551,9 +569,27 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // no gaps — resign is always visible, nothing overflows.
   const [topH, setTopH] = useState(0);
   const [bottomH, setBottomH] = useState(0);
+  const [anchorW, setAnchorW] = useState(0);
+  // Measured board-anchor width: the truth on every platform. Desktop web
+  // CSS squeezes the app column below the window width, so window-based
+  // math overflows — the anchor reports what actually fits.
+  const isTabletScreen = windowWidth >= 600 && (windowWidth <= 1100 || windowHeight >= windowWidth);
+  const maxContainerWidth = Platform.OS === 'web' ? (isTabletScreen ? 580 : 420) : windowWidth;
+  const effectiveWidth = Math.min(windowWidth, maxContainerWidth);
+
+  // Board size, unified for 2p and 4p: the measured container width (never
+  // the window — desktop web CSS squeezes the column below it) capped by
+  // the leftover height so short windows shrink instead of clipping.
+  // Phones measure anchor == effectiveWidth - 24, so 2p is pixel-identical.
   const measuredBoardSize = Math.max(
     200,
-    Math.floor(Math.min(windowWidth - 24, windowHeight - topH - bottomH - 26))
+    Math.floor(
+      Math.min(
+        effectiveWidth - 24,
+        anchorW > 0 ? anchorW : Number.POSITIVE_INFINITY,
+        windowHeight - topH - bottomH - 26
+      )
+    )
   );
   const anchorRef = useRef<View>(null);
   const anchorRectRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -1902,7 +1938,11 @@ useEffect(() => {
         <View
           ref={anchorRef}
           collapsable={false}
-          onLayout={measureAnchor}
+          onLayout={(e) => {
+            measureAnchor();
+            const { width } = e.nativeEvent.layout;
+            setAnchorW((prev) => (Math.abs(prev - width) > 1 ? width : prev));
+          }}
           style={styles.boardAnchor}
         >
           <Animated.View
@@ -2413,6 +2453,7 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'flex-start',
     // No text selection anywhere while dragging walls around the board.
     userSelect: 'none',
+    ...(Platform.OS === 'web' ? { overflowY: 'auto' as any } : {}),
   },
   // Same bar every other page uses: 56 tall, 16 of horizontal padding, the
   // lowest surface with a container hairline under it.

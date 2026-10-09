@@ -465,6 +465,8 @@ export const ptBR: Dictionary = {
   'online.enterCode': 'Código da sala de 6 letras',
   'online.shareCode': 'Compartilhar Código',
   'online.shareCodeCopied': 'Código copiado!',
+  'online.shareInvite': 'Compartilhar link de convite',
+  'online.inviteLinkCopied': 'Link de convite copiado!',
   'online.playersCount': 'Jogadores',
   'online.waitingPlayer': 'Aguardando jogador…',
   'online.host': 'Anfitrião',

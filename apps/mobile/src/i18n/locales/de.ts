@@ -465,6 +465,8 @@ export const de: Dictionary = {
   'online.enterCode': '6-stelliger Raum-Code',
   'online.shareCode': 'Code teilen',
   'online.shareCodeCopied': 'Raum-Code kopiert!',
+  'online.shareInvite': 'Einladungslink teilen',
+  'online.inviteLinkCopied': 'Einladungslink kopiert!',
   'online.playersCount': 'Spieler',
   'online.waitingPlayer': 'Warten auf Spieler…',
   'online.host': 'Host',

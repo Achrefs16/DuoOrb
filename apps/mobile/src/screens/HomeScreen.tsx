@@ -1,6 +1,8 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Image,
+  LayoutChangeEvent,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -47,14 +49,52 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   // retry instead of a healthy-looking count.
   const verified = useVerified();
 
-  // Responsive scale: EVERY visual size on this screen derives from viewport
-  // width (phones ~360-430). Tablets clamp: layout already caps at 480 wide,
-  // and the factor clamps so nothing inflates past large-phone proportions.
-  // Squares stay square at any size via aspectRatio; this moves everything
-  // else (type, icons, paddings, gaps, heights) together.
-  const { width: winWidth } = useWindowDimensions();
-  const rs = (n: number) =>
-    Math.round(n * Math.min(1.12, Math.max(0.86, winWidth / 375)));
+  // Track the actual rendered container width on Web
+  const [webLayoutWidth, setWebLayoutWidth] = useState<number>(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const rootEl = document.getElementById('root');
+      if (rootEl && rootEl.clientWidth > 0) {
+        return rootEl.clientWidth;
+      }
+    }
+    return 0;
+  });
+
+  const { width: winWidth, height: winHeight } = useWindowDimensions();
+  const isTablet = winWidth >= 600 && (winWidth <= 1100 || winHeight >= winWidth);
+  const maxWebWidth = isTablet ? 580 : 420;
+
+  // On Web, derive actual width from the real container (#root) rather than the desktop monitor window.
+  // On Native Mobile, winWidth is the physical phone screen width.
+  const contentWidth = Platform.OS === 'web'
+    ? (webLayoutWidth || (typeof document !== 'undefined' ? document.getElementById('root')?.clientWidth : 0) || Math.min(winWidth, maxWebWidth))
+    : winWidth;
+
+  const rs = (n: number) => {
+    if (Platform.OS === 'web') {
+      if (!isTablet) {
+        // Desktop PC / mobile web phone container:
+        // Base width matches standard modern phone dimensions (~400px).
+        // Preserves phone proportions (scale ~1.0) and dynamically adapts as container width changes.
+        const scale = Math.min(1.02, Math.max(0.86, contentWidth / 400));
+        return Math.round(n * scale);
+      }
+      // Tablet view: allow comfortable scaling up to 1.10
+      const scale = Math.min(1.10, Math.max(0.95, contentWidth / 480));
+      return Math.round(n * scale);
+    }
+    // Native Mobile APK (100% untouched)
+    return Math.round(n * Math.min(1.12, Math.max(0.86, winWidth / 375)));
+  };
+
+  const handleLayout = (e: LayoutChangeEvent) => {
+    if (Platform.OS === 'web') {
+      const w = Math.round(e.nativeEvent.layout.width);
+      if (w > 0 && Math.abs(w - webLayoutWidth) >= 1) {
+        setWebLayoutWidth(w);
+      }
+    }
+  };
 
   const guarded = (fn: () => void) => () => {
     const now = Date.now();
@@ -64,7 +104,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   };
 
   return (
-    <View style={styles.screen}>
+    <View style={styles.screen} onLayout={handleLayout}>
       {/* Stitch Fixed Top Header */}
       <View style={styles.topHeader}>
         <View style={styles.brandGroup}>
@@ -247,8 +287,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </View>
           </View>
           <View style={styles.journeyMeta}>
-            <Text style={styles.journeyTitle}>{t('home.journey')}</Text>
-            <Text style={styles.journeyDesc} numberOfLines={2}>
+            <Text style={[styles.journeyTitle, { fontSize: rs(16) }]}>{t('home.journey')}</Text>
+            <Text style={[styles.journeyDesc, { fontSize: rs(11) }]} numberOfLines={2}>
               {t('home.journeyDesc')}
             </Text>
           </View>
@@ -259,8 +299,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             accessibilityRole="button"
             accessibilityLabel={t('home.journeyA11y')}
           >
-            <Text style={styles.journeyButtonText}>{t('home.start')}</Text>
-            <Feather name="arrow-right" size={14} color={THEME.colors.textPrimary} />
+            <Text style={[styles.journeyButtonText, { fontSize: rs(13) }]}>{t('home.start')}</Text>
+            <Feather name="arrow-right" size={rs(14)} color={THEME.colors.textPrimary} />
           </TouchableOpacity>
         </View>
 
@@ -332,8 +372,8 @@ const createStyles = () => StyleSheet.create({
   content: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 120, // Clears the floating nav overlay.
-    maxWidth: 480,
+    paddingBottom: Platform.OS === 'web' ? 84 : 120, // Clears the floating nav overlay.
+    maxWidth: 580,
     width: '100%',
     alignSelf: 'center',
     gap: 12,

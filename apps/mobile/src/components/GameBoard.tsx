@@ -4,6 +4,7 @@ import { BoardGrain } from './SkinBackdrop';
 import {
   Animated,
   LayoutChangeEvent,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -113,7 +114,7 @@ export function boardMetrics(boardSize: number, rim = 0): { cell: number; gap: n
 }
 
 export function computeBoardSize(measuredWidth: number, fallbackWidth: number): number {
-  return measuredWidth > 0 ? Math.min(measuredWidth, 680) : fallbackWidth;
+  return measuredWidth > 0 ? Math.min(measuredWidth, 580) : fallbackWidth;
 }
 
 export function nearestWallSlot(
@@ -282,7 +283,9 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   const skin: BoardSkin = useBoardSkin();
   const styles = useMemo(() => getBoardStyles(), [skin, theme]);
 
-  const fallbackWidth = Math.min(windowWidth - 32, 420);
+  const isTabletScreen = windowWidth >= 600 && (windowWidth <= 1100 || windowHeight >= windowWidth);
+  const maxCap = isTabletScreen ? 560 : (Platform.OS === 'web' ? 396 : 420);
+  const fallbackWidth = Math.min(windowWidth - 32, maxCap);
   // Without an explicit size, respect both width and height so the board
   // grows on tablets but never overflows its screen (e.g. landscape).
   const heightBased = Math.max(240, windowHeight - 300);

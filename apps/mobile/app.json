@@ -3,9 +3,9 @@
     "name": "DuoOrb",
     "slug": "duoorb",
     "scheme": "duoorb",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/logo-512.webp",
+    "icon": "./assets/icon-512.png",
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.asdigital.duoorb",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.asdigital.duoorb",
-      "versionCode": 7,
+      "versionCode": 8,
       "permissions": [],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
@@ -23,7 +23,7 @@
       ],
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-          "foregroundImage": "./assets/adaptive-foreground-432.webp"
+          "foregroundImage": "./assets/adaptive-foreground-432.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -49,7 +49,7 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#FFFFFF",
-          "image": "./assets/splash-400.webp",
+          "image": "./assets/splash-400.png",
           "imageWidth": 200,
           "resizeMode": "contain"
         }

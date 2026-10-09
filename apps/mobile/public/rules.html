@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How to Play DuoOrb & Quoridor — Official Illustrated Rules & Tactics</title>
+  <meta name="description" content="Master DuoOrb and Quoridor with the complete official rules guide. Illustrated diagrams for orb movement, jumping rivals, legal wall placements, and AI engine analysis." />
+  <link rel="canonical" href="https://duoorb.com/rules.html" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+
+  <!-- Google AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6057010656402010" crossorigin="anonymous"></script>
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="DuoOrb" />
+  <meta property="og:url" content="https://duoorb.com/rules.html" />
+  <meta property="og:title" content="How to Play DuoOrb & Quoridor — Official Rules & Strategy" />
+  <meta property="og:description" content="Illustrated rules guide: Learn orb steps, jumping over rivals, wall placement rules, and tactical traps." />
+  <meta property="og:image" content="https://duoorb.com/og-image.png" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="DuoOrb Official Rules & Strategy Guide" />
+  <meta name="twitter:description" content="Illustrated rules for DuoOrb and Quoridor tactical grid games." />
+  <meta name="twitter:image" content="https://duoorb.com/og-image.png" />
+
+  <link rel="stylesheet" href="/css/style.css" />
+
+  <!-- JSON-LD HowTo & FAQPage Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "HowTo",
+        "name": "How to Play DuoOrb and Quoridor",
+        "description": "A turn-based tactical duel where two players race to cross a 9x9 grid while placing walls to slow down the opponent.",
+        "step": [
+          {
+            "@type": "HowToStep",
+            "name": "Board Setup",
+            "text": "Players place their orbs in the center square of opposite baseline rows. Each player receives 10 walls in reserve."
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Turn Choice",
+            "text": "On your turn, choose exactly one action: move your orb one square orthogonally, or place one wall into any valid groove."
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Jumping Opponents",
+            "text": "If two orbs face each other with no wall between them, jump directly over your opponent. If a wall blocks the square behind, jump diagonally."
+          },
+          {
+            "@type": "HowToStep",
+            "name": "The Golden Rule",
+            "text": "You may never completely seal off your opponent. At least one legal pathway to the goal line must remain open at all times."
+          }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Can you jump over two walls or a wall with your orb?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Orbs can never jump over walls. Walls act as absolute barriers that force orbs to walk around them."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can you completely trap an opponent so they have zero moves?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Under the official Golden Rule of Quoridor and DuoOrb, every wall placement must leave at least one open path to the opposing goal line for both players."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "When can you make a diagonal jump?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "A diagonal jump is legal only when you face your opponent head-to-head and the square directly behind them is blocked by a wall or the board edge."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Site Navigation -->
+  <header class="site-nav">
+    <div class="container site-nav-inner">
+      <a href="/" class="brand-link" aria-label="DuoOrb Home">
+        <img src="/favicon.ico" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" />
+        <span class="brand-text">DuoOrb</span>
+      </a>
+
+      <nav aria-label="Main Navigation">
+        <ul class="nav-links">
+          <li><a href="/quoridor-online.html">Play Online</a></li>
+          <li><a href="/rules.html" class="active">Rules & Strategy</a></li>
+          <li><a href="/app.html">Mobile App</a></li>
+          <li><a href="/what-is-the-game-with-two-balls-and-walls.html">About the Game</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="/" class="btn-pill btn-pill-primary">Play Now</a>
+        <button id="mobile-nav-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Dropdown Navigation (Clean, strictly no icons) -->
+    <div id="mobile-nav-drawer" class="mobile-nav-drawer">
+      <ul class="mobile-nav-list">
+        <li><a href="/quoridor-online.html">Play Online</a></li>
+        <li><a href="/rules.html" class="active">Rules & Strategy</a></li>
+        <li><a href="/app.html">Mobile App</a></li>
+        <li><a href="/what-is-the-game-with-two-balls-and-walls.html">About the Game</a></li>
+      </ul>
+    </div>
+  </header>
+
+  <main>
+    <!-- Header Hero -->
+    <article class="section" style="padding-top: 56px; padding-bottom: 48px;">
+      <div class="container" style="max-width: 820px;">
+        <span class="section-tag">Rulebook & Tactical Handbook</span>
+        <h1>How to play DuoOrb and Quoridor: Complete official rules</h1>
+        <p class="lead" style="margin-top: 20px; margin-bottom: 28px;">
+          Two pieces. Twenty walls. One objective: be the first player to touch any square on the opposing baseline. Every turn presents a pivotal trade-off between advancing your own piece or lengthening your rival's route.
+        </p>
+
+        <div class="hero-actions" style="margin-bottom: 40px;">
+          <a href="#movement" class="btn-pill btn-pill-ghost">Basic Moves</a>
+          <a href="#jump-rule" class="btn-pill btn-pill-ghost">Jump Rule Masterclass</a>
+          <a href="#golden-rule" class="btn-pill btn-pill-ghost">The Golden Rule</a>
+          <a href="#engine-tactics" class="btn-pill btn-pill-ghost">Engine Tactics</a>
+        </div>
+      </div>
+    </article>
+
+    <!-- Core Rules Section -->
+    <section class="section section-fog" id="movement">
+      <div class="container" style="max-width: 820px;">
+        <div class="section-header">
+          <span class="section-tag">Fundamental Gameplay</span>
+          <h2>The Four Canonical Rules</h2>
+          <p>Every match follows strict, elegant geometry. Below is each canonical rule illustrated with board diagrams.</p>
+        </div>
+
+        <!-- Rule 1: Setup & Objective -->
+        <div class="product-artifact" style="margin-bottom: 36px; padding: 28px;">
+          <span class="section-tag">Rule One</span>
+          <h3 style="font-size: 24px; margin-bottom: 14px;">The Objective & Starting Setup</h3>
+          <p style="margin-bottom: 20px;">
+            The game is played on a 9×9 grid. Player 1 (Blue) begins on the center square of row 9. Player 2 (Red) begins on the center square of row 1. In a standard 2-player match, each player receives a reserve of 10 walls. The first player to reach any square on their opponent's starting edge wins immediately.
+          </p>
+
+          <!-- SVG Diagram 1: Setup -->
+          <div style="background: #fafafb; border: 1px solid var(--color-border-hairline); border-radius: 14px; padding: 20px; text-align: center;">
+            <svg viewBox="0 0 360 220" width="100%" height="220" style="max-width: 440px;" aria-label="DuoOrb board setup diagram showing Blue and Red starting positions">
+              <rect x="20" y="20" width="320" height="180" rx="12" fill="#ffffff" stroke="#e2e2e5" stroke-width="1.5" />
+              <!-- Goal Line Indicators -->
+              <rect x="20" y="20" width="320" height="16" fill="#fef2f2" />
+              <text x="180" y="32" text-anchor="middle" font-size="11" font-weight="600" fill="#dc2626" font-family="system-ui">RED GOAL LINE (BLUE TARGET)</text>
+
+              <rect x="20" y="184" width="320" height="16" fill="#eff6ff" />
+              <text x="180" y="196" text-anchor="middle" font-size="11" font-weight="600" fill="#2563eb" font-family="system-ui">BLUE GOAL LINE (RED TARGET)</text>
+
+              <!-- Board Grid Simplified -->
+              <g stroke="#ececef" stroke-width="1">
+                <line x1="60" y1="36" x2="60" y2="184" />
+                <line x1="100" y1="36" x2="100" y2="184" />
+                <line x1="140" y1="36" x2="140" y2="184" />
+                <line x1="180" y1="36" x2="180" y2="184" />
+                <line x1="220" y1="36" x2="220" y2="184" />
+                <line x1="260" y1="36" x2="260" y2="184" />
+                <line x1="300" y1="36" x2="300" y2="184" />
+
+                <line x1="20" y1="72" x2="340" y2="72" />
+                <line x1="20" y1="110" x2="340" y2="110" />
+                <line x1="20" y1="148" x2="340" y2="148" />
+              </g>
+
+              <!-- Red Orb at Top Center -->
+              <circle cx="180" cy="54" r="13" fill="#dc2626" />
+              <text x="180" y="58" text-anchor="middle" font-size="11" font-weight="bold" fill="#ffffff" font-family="system-ui">P2</text>
+
+              <!-- Blue Orb at Bottom Center -->
+              <circle cx="180" cy="166" r="13" fill="#2563eb" />
+              <text x="180" y="170" text-anchor="middle" font-size="11" font-weight="bold" fill="#ffffff" font-family="system-ui">P1</text>
+
+              <!-- Directional Arrows -->
+              <path d="M180 146 L180 126" stroke="#2563eb" stroke-width="2.5" stroke-dasharray="3,3" />
+              <path d="M180 74 L180 94" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="3,3" />
+            </svg>
+            <p style="font-size: 13px; color: var(--color-ash-gray); margin-top: 8px;">Blue moves upward toward row 1; Red moves downward toward row 9.</p>
+          </div>
+        </div>
+
+        <!-- Rule 2: Actions Per Turn -->
+        <div class="product-artifact" style="margin-bottom: 36px; padding: 28px;">
+          <span class="section-tag">Rule Two</span>
+          <h3 style="font-size: 24px; margin-bottom: 14px;">The Two Actions: Move or Place a Wall</h3>
+          <p style="margin-bottom: 16px;">
+            Players take turns alternating. On your turn, you must perform exactly <strong>one</strong> of two choices:
+          </p>
+          <ul style="padding-left: 20px; margin-bottom: 20px; color: var(--color-slate-gray); display: flex; flex-direction: column; gap: 8px;">
+            <li><strong>Move your piece:</strong> Step one square horizontally or vertically (up, down, left, right). Diagonal moves are not allowed during standard steps.</li>
+            <li><strong>Place a wall:</strong> Position a wall into the groove between squares. Each wall spans exactly two square lengths and can be placed horizontally or vertically. Once placed, walls are permanent and cannot be moved or removed.</li>
+          </ul>
+        </div>
+
+        <!-- Rule 3: Jump Rule Masterclass -->
+        <div class="product-artifact" id="jump-rule" style="margin-bottom: 36px; padding: 28px;">
+          <span class="section-tag">Rule Three</span>
+          <h3 style="font-size: 24px; margin-bottom: 14px;">The Jumping Rule: Straight & Diagonal Leaps</h3>
+          <p style="margin-bottom: 18px;">
+            When two opposing orbs stand face-to-face on adjacent squares with no intervening wall, special leap mechanics apply:
+          </p>
+
+          <div class="diagram-grid-2" style="margin-bottom: 20px;">
+            <!-- Straight Jump -->
+            <div style="background: #ffffff; border: 1px solid var(--color-border-hairline); border-radius: 12px; padding: 16px; text-align: center;">
+              <h4 style="font-size: 15px; margin-bottom: 8px;">Case A: Straight Jump</h4>
+              <p style="font-size: 13px; margin-bottom: 12px;">If the space behind the rival is clear, leap straight over them into the square beyond.</p>
+              <svg viewBox="0 0 160 160" width="100%" height="140" aria-label="Straight jump diagram">
+                <rect x="10" y="10" width="140" height="140" rx="8" fill="#fafafb" stroke="#e2e2e5" />
+                <line x1="10" y1="56" x2="150" y2="56" stroke="#ececef" />
+                <line x1="10" y1="104" x2="150" y2="104" stroke="#ececef" />
+                <!-- Rival Red at center -->
+                <circle cx="80" cy="80" r="14" fill="#dc2626" />
+                <!-- Player Blue jumping over -->
+                <circle cx="80" cy="128" r="14" fill="#2563eb" opacity="0.4" />
+                <!-- Landing Target -->
+                <circle cx="80" cy="32" r="14" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-dasharray="4,3" />
+                <!-- Jump trajectory arc -->
+                <path d="M80 114 Q52 80 80 46" fill="none" stroke="#2563eb" stroke-width="2.5" />
+              </svg>
+            </div>
+
+            <!-- Diagonal Jump -->
+            <div style="background: #ffffff; border: 1px solid var(--color-border-hairline); border-radius: 12px; padding: 16px; text-align: center;">
+              <h4 style="font-size: 15px; margin-bottom: 8px;">Case B: Diagonal Jump</h4>
+              <p style="font-size: 13px; margin-bottom: 12px;">If a wall or board edge blocks the straight square, leap diagonally to the left or right.</p>
+              <svg viewBox="0 0 160 160" width="100%" height="140" aria-label="Diagonal jump diagram">
+                <rect x="10" y="10" width="140" height="140" rx="8" fill="#fafafb" stroke="#e2e2e5" />
+                <line x1="56" y1="10" x2="56" y2="150" stroke="#ececef" />
+                <line x1="104" y1="10" x2="104" y2="150" stroke="#ececef" />
+                <!-- Blocking Wall behind red -->
+                <line x1="45" y1="56" x2="115" y2="56" stroke="#17191c" stroke-width="6" stroke-linecap="round" />
+                <!-- Rival Red at center -->
+                <circle cx="80" cy="80" r="14" fill="#dc2626" />
+                <!-- Player Blue at bottom -->
+                <circle cx="80" cy="128" r="14" fill="#2563eb" />
+                <!-- Diagonal Landing Targets -->
+                <circle cx="32" cy="80" r="12" fill="none" stroke="#2563eb" stroke-width="2" stroke-dasharray="3,3" />
+                <circle cx="128" cy="80" r="12" fill="none" stroke="#2563eb" stroke-width="2" stroke-dasharray="3,3" />
+                <!-- Arc arrows -->
+                <path d="M80 116 Q45 110 36 94" fill="none" stroke="#2563eb" stroke-width="2" />
+                <path d="M80 116 Q115 110 124 94" fill="none" stroke="#2563eb" stroke-width="2" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rule 4: The Golden Rule -->
+        <div class="product-artifact" id="golden-rule" style="margin-bottom: 36px; padding: 28px;">
+          <span class="section-tag">Rule Four</span>
+          <h3 style="font-size: 24px; margin-bottom: 14px;">The Golden Rule: Complete Trapping is Strictly Forbidden</h3>
+          <p style="margin-bottom: 18px;">
+            You may build sprawling labyrinths and detours that force your opponent to walk thirty steps out of their way. However, you <strong>cannot completely seal off</strong> any player. Every legal wall placement must leave at least one open path connecting each player to their respective victory edge.
+          </p>
+          <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px; padding: 16px 20px; color: #92400e;">
+            <strong>Engine Enforcement:</strong> In the DuoOrb app and online arena, our graph-validation algorithm checks connectivity before allowing a wall drop. Illegal placements that create zero-path dead ends cannot be confirmed.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Master Tip Editorial Card (Blush Peach) -->
+    <section class="section">
+      <div class="container" style="max-width: 820px;">
+        <div class="card-peach">
+          <span class="peach-tag">Tactical Wisdom</span>
+          <h2 style="margin-bottom: 14px;">Wall Parity and the Tempo Paradox</h2>
+          <p style="margin-bottom: 18px;">
+            Novice players often rush to spend their 10 walls in the opening 5 turns. This is known as the <em>Wall Depletion Trap</em>. When you run out of fences, your rival controls the board state completely and can shepherd you into a long labyrinth without resistance.
+          </p>
+          <p>
+            <strong>The Grandmaster Principle:</strong> Every wall you place should ideally accomplish two things: increase the opponent's shortest path distance by at least 2 steps, while maintaining your own escape flexibility. Always reserve 2 to 3 walls for the endgame race.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI Match Analysis Deep-Dive -->
+    <section class="section section-fog" id="engine-tactics">
+      <div class="container" style="max-width: 820px;">
+        <div class="section-header">
+          <span class="section-tag">Grandmaster Analysis</span>
+          <h2>How DuoOrb Analyzes Your Decisions</h2>
+          <p>Just like modern chess platforms evaluate pawn structure and king safety, DuoOrb's engine evaluates path differential and tempo advantage.</p>
+        </div>
+
+        <div class="hero-split-grid" style="margin-bottom: 40px;">
+          <div>
+            <h3 style="margin-bottom: 14px;">Positional Path Evaluation (+0.9)</h3>
+            <p style="margin-bottom: 16px;">
+              DuoOrb's analysis engine calculates the shortest distance to the goal line for both players after every turn. When a player commands a shorter path or forces a costly detour upon their opponent, the engine highlights that positional advantage on the live evaluation bar.
+            </p>
+            <p>
+              Every turn is graded to help you learn: discover brilliant tactical defenses, identify missed shortcuts, and review mistakes with interactive step-by-step guidance.
+            </p>
+          </div>
+
+          <div class="product-artifact">
+            <div class="artifact-screen-wrap">
+              <img src="/screenshots/match-review-analysis.png" alt="DuoOrb post-match engine analysis showing +0.9 evaluation bar and inaccuracy classification" loading="lazy" width="300" height="650" />
+            </div>
+            <div class="artifact-caption">
+              <h3 style="font-size: 20px; font-family: var(--font-sans); font-weight: 600; margin-bottom: 6px;">Interactive Move Stepper</h3>
+              <p>Step backward and forward through any match to pinpoint where the advantage swung.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- FAQ Grid -->
+        <div class="section-header" style="margin-top: 64px;">
+          <span class="section-tag">Frequently Asked Questions</span>
+          <h2>Clarifications on Common Scenarios</h2>
+        </div>
+
+        <div class="faq-grid">
+          <div class="faq-item">
+            <h3>Can I place a wall behind my own orb?</h3>
+            <p>Yes. Defensive walls that shield your back line from opponent counters are completely legal, as long as an open path to your goal line remains available.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>Can I pass my turn without moving or placing a wall?</h3>
+            <p>No. Quoridor and DuoOrb do not permit passing. You must execute either an orb move or a legal wall placement on every turn.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>What happens in 4-player games when three orbs cluster?</h3>
+            <p>In 4-player mode, you can jump over one adjacent opponent. If a second opponent stands behind the first, you cannot double-jump in a straight line; you must leap diagonally to an open adjacent square.</p>
+          </div>
+
+          <div class="faq-item">
+            <h3>Can I play against AI bots to practice these rules?</h3>
+            <p>Yes! DuoOrb includes calibrated offline sparring bots: Martin (800 ELO), Elena (1100 ELO), Nelson (1450 ELO), and the full Engine AI, available in both the web and mobile app.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bottom CTA -->
+    <section class="section" style="text-align: center; padding: 80px 0;">
+      <div class="container" style="max-width: 640px;">
+        <span class="section-tag">Ready to Play?</span>
+        <h2 style="margin-bottom: 16px;">Test your strategy against real players.</h2>
+        <p class="lead" style="margin: 0 auto 32px;">No signup needed. Jump right into a quick match in your browser or download the mobile app.</p>
+        <div class="hero-actions" style="justify-content: center;">
+          <a href="/" class="btn-pill btn-pill-primary">Play Now</a>
+          <a href="/app.html" class="btn-pill btn-pill-ghost">Get Mobile App</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a href="/" class="brand-link" aria-label="DuoOrb Home">
+            <img src="/favicon.ico" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" />
+            <span class="brand-text">DuoOrb</span>
+          </a>
+          <p>The modern abstract strategy board game inspired by Quoridor and Barricade. Play free online or download on mobile.</p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Play</h4>
+          <ul>
+            <li><a href="/">Play Now</a></li>
+            <li><a href="/quoridor-online.html">Quoridor Online</a></li>
+            <li><a href="/rules.html">Rules & Strategy</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Learn</h4>
+          <ul>
+            <li><a href="/rules.html">Complete Rules</a></li>
+            <li><a href="/rules.html#jump-rule">Jump Rule Masterclass</a></li>
+            <li><a href="/what-is-the-game-with-two-balls-and-walls.html">Game Identifier Guide</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Platforms</h4>
+          <ul>
+            <li><a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" target="_blank" rel="noopener noreferrer">Google Play Store</a></li>
+            <li><a href="/app.html">Mobile App Overview</a></li>
+            <li><a href="/app.html">Install Web App (PWA)</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p>© 2026 DuoOrb. All rights reserved. Strategic grid games reimagined.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Mobile Navigation Toggle Script -->
+  <script>
+    (function() {
+      var btn = document.getElementById('mobile-nav-toggle');
+      var drawer = document.getElementById('mobile-nav-drawer');
+      if (!btn || !drawer) return;
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var isOpen = drawer.classList.toggle('open');
+        btn.classList.toggle('active', isOpen);
+        btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+      document.addEventListener('click', function(e) {
+        if (!drawer.contains(e.target) && !btn.contains(e.target) && drawer.classList.contains('open')) {
+          drawer.classList.remove('open');
+          btn.classList.remove('active');
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    })();
+  </script>
+
+</body>
+</html>

@@ -454,71 +454,74 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
         {/* Premium (MONETIZATION.md P7.3): the manage/cancel path is legally
             required — premium members get the Play Subscription Center link
-            right here, next to the upgrade entry. */}
-        <LinearGradient
-          colors={['#F7DE9B', '#D9A62E']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.card, styles.premiumCard]}
-        >
-          <Text style={[styles.sectionLabel, styles.premiumLabel]}>{t('settings.premium')}</Text>
-          {isPremiumMember ? (
-            <View style={styles.settingRow}>
-              <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                <MaterialCommunityIcons name="crown" size={15} color={PREMIUM_GOLD} />
-              </View>
-              <View style={styles.settingText}>
-                <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.premiumActive')}</Text>
-                <Text style={[styles.settingDesc, styles.premiumDesc]}>
-                  {t('settings.premiumActiveDesc')}
-                </Text>
-              </View>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.settingRow}
-              onPress={() => {
-                setPremiumEntry('settings');
-                setPremiumOpen(true);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={t('settings.getPremium')}
-            >
-              <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                <MaterialCommunityIcons name="crown" size={15} color={PREMIUM_GOLD} />
-              </View>
-              <View style={styles.settingText}>
-                <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.getPremium')}</Text>
-                <Text style={[styles.settingDesc, styles.premiumDesc]}>
-                  {t('settings.getPremiumDesc', { price: '$3.99' })}
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={14} color="#3A2A00" />
-            </TouchableOpacity>
-          )}
-          {isPremiumMember && (
-            <>
-              <View style={[styles.divider, styles.premiumDivider]} />
-              <TouchableOpacity
-                style={styles.settingRow}
-                onPress={openSubscriptionCenter}
-                accessibilityRole="button"
-                accessibilityLabel={t('settings.manageSub')}
-              >
+            right here, next to the upgrade entry. Web hides this card for
+            non-subscribers while preserving status & manage link for Google Play subscribers. */}
+        {!(Platform.OS === 'web' && !isPremiumMember) && (
+          <LinearGradient
+            colors={['#F7DE9B', '#D9A62E']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.card, styles.premiumCard]}
+          >
+            <Text style={[styles.sectionLabel, styles.premiumLabel]}>{t('settings.premium')}</Text>
+            {isPremiumMember ? (
+              <View style={styles.settingRow}>
                 <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                  <Feather name="settings" size={15} color={PREMIUM_GOLD} />
+                  <MaterialCommunityIcons name="crown" size={15} color={PREMIUM_GOLD} />
                 </View>
                 <View style={styles.settingText}>
-                  <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.manageSub')}</Text>
+                  <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.premiumActive')}</Text>
                   <Text style={[styles.settingDesc, styles.premiumDesc]}>
-                    {t('settings.manageSubDesc')}
+                    {t('settings.premiumActiveDesc')}
                   </Text>
                 </View>
-                <Feather name="external-link" size={14} color="#3A2A00" />
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => {
+                  setPremiumEntry('settings');
+                  setPremiumOpen(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={t('settings.getPremium')}
+              >
+                <View style={[styles.settingIconBox, styles.premiumIconBox]}>
+                  <MaterialCommunityIcons name="crown" size={15} color={PREMIUM_GOLD} />
+                </View>
+                <View style={styles.settingText}>
+                  <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.getPremium')}</Text>
+                  <Text style={[styles.settingDesc, styles.premiumDesc]}>
+                    {t('settings.getPremiumDesc', { price: '$3.99' })}
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={14} color="#3A2A00" />
               </TouchableOpacity>
-            </>
-          )}
-        </LinearGradient>
+            )}
+            {isPremiumMember && (
+              <>
+                <View style={[styles.divider, styles.premiumDivider]} />
+                <TouchableOpacity
+                  style={styles.settingRow}
+                  onPress={openSubscriptionCenter}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('settings.manageSub')}
+                >
+                  <View style={[styles.settingIconBox, styles.premiumIconBox]}>
+                    <Feather name="settings" size={15} color={PREMIUM_GOLD} />
+                  </View>
+                  <View style={styles.settingText}>
+                    <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.manageSub')}</Text>
+                    <Text style={[styles.settingDesc, styles.premiumDesc]}>
+                      {t('settings.manageSubDesc')}
+                    </Text>
+                  </View>
+                  <Feather name="external-link" size={14} color="#3A2A00" />
+                </TouchableOpacity>
+              </>
+            )}
+          </LinearGradient>
+        )}
 
         <PremiumSheet
           visible={premiumOpen}

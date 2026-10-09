@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -94,6 +95,10 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
 
   useEffect(() => {
     if (!visible) return;
+    if (Platform.OS === 'web') {
+      setLoadingPlans(false);
+      return;
+    }
     track('paywall_viewed', { entry });
     let cancelled = false;
     // All state lands inside the promise continuation (never synchronously
@@ -208,116 +213,153 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
             ))}
           </View>
 
-          {loadingPlans ? (
-            <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
-          ) : (
-            <View style={styles.plans}>
-              {plans.map((p) => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={[styles.planRow, selected === p.id && styles.planRowActive]}
-                  onPress={() => setSelected(p.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${p.title}, ${p.priceLine}`}
-                >
-                  <View style={styles.planMeta}>
-                    <Text style={styles.planTitle}>
-                      {p.title}
-                      {p.featured ? ` · ${t('premium.bestValue')}` : ''}
-                    </Text>
-                    <Text style={styles.planPrice}>{p.priceLine}</Text>
-                    {p.trialLine ? (
-                      <Text style={styles.planTrial}>{p.trialLine}</Text>
-                    ) : null}
-                  </View>
-                  <View
-                    style={[
-                      styles.radio,
-                      selected === p.id && styles.radioActive,
-                    ]}
-                  >
-                    {selected === p.id && <View style={styles.radioDot} />}
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* Play-compliant disclosure: price, period, renewal, trial terms,
-              cancel path, and the app-works-without statement — all visible
-              with no extra taps. */}
-          {activePlan && (
-            <Text style={styles.disclosure}>
-              {activePlan.trialLine
-                ? `${activePlan.trialLine}. ${t('premium.disclosureRenews')} `
-                : `${activePlan.priceLine}, ${t('premium.disclosureRenews')} `}
-              {t('premium.disclosure')}
-            </Text>
-          )}
-
-          {showLink && !linked ? (
-            <View style={styles.linkCard}>
-              <Text style={styles.linkTitle}>{t('premium.keepOnAllDevices')}</Text>
-              <Text style={styles.linkCopy}>
-                {t('premium.guestLossWarning')}
+          {Platform.OS === 'web' ? (
+            <View style={styles.webContainer}>
+              <Text style={styles.webNotice}>
+                DuoOrb Premium is managed through Google Play on Android. If you already have an active subscription, sign in with your Google account to enjoy ad-free play, Walnut theme, and unlimited analysis across all devices.
               </Text>
-              <TouchableOpacity
-                style={styles.linkButton}
-                onPress={handleLink}
-                disabled={linking}
-                accessibilityRole="button"
-                accessibilityLabel={t('premium.saveGoogle')}
-              >
-                {linking ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <GoogleGLogo size={16} />
-                    <Text style={styles.linkButtonText}>{t('premium.saveGoogle')}</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-              {linkError && <Text style={styles.error}>{linkError}</Text>}
-                <TouchableOpacity onPress={() => setShowLink(false)} disabled={linking}>
-                  <Text style={styles.later}>{t('common.back')}</Text>
+              {!linked && (
+                <TouchableOpacity
+                  style={styles.linkButton}
+                  onPress={handleLink}
+                  disabled={linking}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('premium.saveGoogle')}
+                >
+                  {linking ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <GoogleGLogo size={16} />
+                      <Text style={styles.linkButtonText}>{t('premium.saveGoogle')}</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
+              )}
+              {linkError && <Text style={styles.error}>{linkError}</Text>}
+              <TouchableOpacity
+                style={styles.buyButton}
+                onPress={handleClose}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.continue')}
+              >
+                <Text style={styles.buyText}>{t('common.continue')}</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <>
-              <TouchableOpacity
-                style={[
-                  styles.buyButton,
-                  (buying || !canBuy || !activePlan) && styles.buyButtonBusy,
-                ]}
-                onPress={handleBuy}
-                disabled={buying || !activePlan}
-                accessibilityRole="button"
-                accessibilityLabel={canBuy ? t('premium.continue') : t('premium.availableSoon')}
-              >
-                {buying ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.buyText}>
-                    {canBuy ? t('premium.continue') : t('premium.availableSoon')}
-                  </Text>
-                )}
-              </TouchableOpacity>
-              {isDevBuild() && !loadingPlans && !canBuy && buyReason && (
-                <Text style={styles.devHint}>
-                  {DEV_REASON_COPY[buyReason] ?? DEV_REASON_COPY['store-error']}
+              {loadingPlans ? (
+                <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
+              ) : (
+                <View style={styles.plans}>
+                  {plans.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={[styles.planRow, selected === p.id && styles.planRowActive]}
+                      onPress={() => setSelected(p.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${p.title}, ${p.priceLine}`}
+                    >
+                      <View style={styles.planMeta}>
+                        <Text style={styles.planTitle}>
+                          {p.title}
+                          {p.featured ? ` · ${t('premium.bestValue')}` : ''}
+                        </Text>
+                        <Text style={styles.planPrice}>{p.priceLine}</Text>
+                        {p.trialLine ? (
+                          <Text style={styles.planTrial}>{p.trialLine}</Text>
+                        ) : null}
+                      </View>
+                      <View
+                        style={[
+                          styles.radio,
+                          selected === p.id && styles.radioActive,
+                        ]}
+                      >
+                        {selected === p.id && <View style={styles.radioDot} />}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Play-compliant disclosure: price, period, renewal, trial terms,
+                  cancel path, and the app-works-without statement — all visible
+                  with no extra taps. */}
+              {activePlan && (
+                <Text style={styles.disclosure}>
+                  {activePlan.trialLine
+                    ? `${activePlan.trialLine}. ${t('premium.disclosureRenews')} `
+                    : `${activePlan.priceLine}, ${t('premium.disclosureRenews')} `}
+                  {t('premium.disclosure')}
                 </Text>
               )}
-              {error && <Text style={styles.error}>{error}</Text>}
-              <View style={styles.rowLinks}>
-                <TouchableOpacity onPress={handleRestore} disabled={restoring}>
-                  <Text style={styles.link}>
-                    {restoring ? t('premium.restoring') : t('premium.restorePurchase')}
+
+              {showLink && !linked ? (
+                <View style={styles.linkCard}>
+                  <Text style={styles.linkTitle}>{t('premium.keepOnAllDevices')}</Text>
+                  <Text style={styles.linkCopy}>
+                    {t('premium.guestLossWarning')}
                   </Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleClose} disabled={buying || restoring}>
-                  <Text style={styles.later}>{t('premium.notNow')}</Text>
-                </TouchableOpacity>
-              </View>
+                  <TouchableOpacity
+                    style={styles.linkButton}
+                    onPress={handleLink}
+                    disabled={linking}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('premium.saveGoogle')}
+                  >
+                    {linking ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <GoogleGLogo size={16} />
+                        <Text style={styles.linkButtonText}>{t('premium.saveGoogle')}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  {linkError && <Text style={styles.error}>{linkError}</Text>}
+                    <TouchableOpacity onPress={() => setShowLink(false)} disabled={linking}>
+                      <Text style={styles.later}>{t('common.back')}</Text>
+                    </TouchableOpacity>
+                </View>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={[
+                      styles.buyButton,
+                      (buying || !canBuy || !activePlan) && styles.buyButtonBusy,
+                    ]}
+                    onPress={handleBuy}
+                    disabled={buying || !activePlan}
+                    accessibilityRole="button"
+                    accessibilityLabel={canBuy ? t('premium.continue') : t('premium.availableSoon')}
+                  >
+                    {buying ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.buyText}>
+                        {canBuy ? t('premium.continue') : t('premium.availableSoon')}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                  {isDevBuild() && !loadingPlans && !canBuy && buyReason && (
+                    <Text style={styles.devHint}>
+                      {DEV_REASON_COPY[buyReason] ?? DEV_REASON_COPY['store-error']}
+                    </Text>
+                  )}
+                  {error && <Text style={styles.error}>{error}</Text>}
+                  <View style={styles.rowLinks}>
+                    <TouchableOpacity onPress={handleRestore} disabled={restoring}>
+                      <Text style={styles.link}>
+                        {restoring ? t('premium.restoring') : t('premium.restorePurchase')}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleClose} disabled={buying || restoring}>
+                      <Text style={styles.later}>{t('premium.notNow')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
             </>
           )}
         </View>
@@ -340,6 +382,9 @@ const createStyles = () => StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 32,
     gap: 14,
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
   },
   handle: {
     width: 40,
@@ -553,5 +598,17 @@ const createStyles = () => StyleSheet.create({
     fontWeight: '700',
     color: THEME.colors.textSecondary,
     paddingVertical: 6,
+  },
+  webContainer: {
+    gap: 14,
+    paddingTop: 6,
+  },
+  webNotice: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: THEME.colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: 8,
   },
 });

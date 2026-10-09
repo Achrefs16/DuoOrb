@@ -1,6 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, BackHandler, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, BackHandler, Linking, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { TextStyle, ViewStyle } from 'react-native';
+
+function parseRoomCodeFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url, 'https://duoorb.com');
+    const room = parsed.searchParams.get('room') || parsed.searchParams.get('join');
+    if (room && /^[A-Za-z0-9]{4,8}$/.test(room.trim())) {
+      return room.trim().toUpperCase();
+    }
+  } catch {}
+  return null;
+}
 import { NavigationBar } from 'expo-navigation-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AIDifficulty, GameMode, GameState, RecordedAction } from '@duoorb/game-core';
@@ -166,13 +177,16 @@ export default function App() {
     inviteName?: string | null;
     autoMatch?: { mode: GameMode; clock: TimeControl; wallsEach: number } | null;
     autoRoom?: { mode: GameMode; clock: TimeControl; wallsEach: number } | null;
+    autoJoinCode?: string | null;
     initialRoom?: RoomDto | null;
   }>({
     clock: DEFAULT_TIME_CONTROL,
     view: 'quick',
     inviteName: null,
     autoRoom: null,
+    autoJoinCode: null,
   });
+  const pendingRoomRef = useRef<string | null>(null);
   const [settings, setSettings] = useState<UserSettings>({ ...DEFAULT_SETTINGS });
   // Themed UI paints only after the persisted mode is applied, so first
   // paint already carries the right theme (no light-then-dark flash).
@@ -190,6 +204,8 @@ export default function App() {
   // Paywall attribution: which surface opened the sheet ('bots' default,
   // 'analysis' for the review upgrade path).
   const [premiumEntry, setPremiumEntry] = useState('bots');
+  // Origin tracking for review screen: 'match' (post-game modal) vs 'history' (History/Profile tab).
+  const [reviewOrigin, setReviewOrigin] = useState<'match' | 'history'>('match');
 
   /** Forward navigation: records where we came from, then moves. */
   const navigate = (tab: MainTab, sub: SubScreen) => {
@@ -197,6 +213,9 @@ export default function App() {
     setExitAsk(false);
     setCurrentTab(tab);
     setSubScreen(sub);
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history?.pushState) {
+      window.history.pushState({ tab, sub }, '');
+    }
   };
 
   /**
@@ -275,6 +294,10 @@ export default function App() {
         dismissTo(currentTab, null);
         return;
       }
+      if (currentTab !== 'PLAY') {
+        dismissTo('PLAY', null);
+        return;
+      }
       setExitAsk(true);
       return;
     }
@@ -304,23 +327,25 @@ export default function App() {
   // (same map as closing the match itself). Bare history/profile replays
   // keep normal stack-back — their parent screen is still underneath.
   const handleCloseReview = useCallback(() => {
-    if (!reviewBare) {
+    if (reviewOrigin === 'match' && !reviewBare) {
       dismissMatchToOrigin();
       return;
     }
     goBack();
-  }, [reviewBare, gameConfig, currentTab, goBack]);
+  }, [reviewOrigin, reviewBare, gameConfig, currentTab, goBack]);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (exitAsk) {
-        BackHandler.exitApp();
+        if (Platform.OS !== 'web') {
+          BackHandler.exitApp();
+        }
         return true;
       }
       // Post-match review takes the origin-dismissal path (same as its
       // header back button) — the raw stack pop would remount the finished
       // GAME screen and boot a brand-new match.
-      if (subScreen === 'REVIEW' && !reviewBare) {
+      if (subScreen === 'REVIEW' && reviewOrigin === 'match' && !reviewBare) {
         handleCloseReview();
         return true;
       }
@@ -328,7 +353,105 @@ export default function App() {
       return true;
     });
     return () => sub.remove();
-  }, [exitAsk, goBack, subScreen, reviewBare, handleCloseReview]);
+  }, [exitAsk, goBack, subScreen, reviewBare, reviewOrigin, handleCloseReview]);
+
+  // Initial web browser history state
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history?.replaceState) {
+      if (!window.history.state || !window.history.state.tab) {
+        window.history.replaceState({ tab: 'PLAY', sub: null }, '');
+      }
+    }
+  }, []);
+
+  // Web Browser Back Button sync (popstate -> goBack / return to Home)
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const handlePop = (e: PopStateEvent) => {
+        if (subScreen !== null) {
+          if (subScreen === 'REVIEW' && reviewOrigin === 'match' && !reviewBare) {
+            handleCloseReview();
+          } else {
+            goBack();
+          }
+          return;
+        }
+
+        if (currentTab !== 'PLAY') {
+          const targetTab: MainTab =
+            e.state && typeof e.state.tab === 'string' && ['PLAY', 'FRIENDS', 'LEADERBOARD', 'HISTORY', 'PROFILE'].includes(e.state.tab)
+              ? (e.state.tab as MainTab)
+              : 'PLAY';
+          setExitAsk(false);
+          setSubScreen(null);
+          setCurrentTab(targetTab);
+          return;
+        }
+      };
+      window.addEventListener('popstate', handlePop);
+      return () => window.removeEventListener('popstate', handlePop);
+    }
+  }, [subScreen, currentTab, goBack, reviewOrigin, reviewBare, handleCloseReview]);
+
+  // Room invite deep-link listener (?room=ABCD or ?join=ABCD)
+  useEffect(() => {
+    const handleUrl = (rawUrl: string) => {
+      const code = parseRoomCodeFromUrl(rawUrl);
+      if (!code) return;
+      pendingRoomRef.current = code;
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+      handleUrl(window.location.href);
+      try {
+        const u = new URL(window.location.href);
+        if (u.searchParams.has('room') || u.searchParams.has('join')) {
+          u.searchParams.delete('room');
+          u.searchParams.delete('join');
+          window.history.replaceState({}, document.title, u.pathname + (u.search ? u.search : ''));
+        }
+      } catch {}
+    }
+
+    void Linking.getInitialURL().then((url) => {
+      if (url) handleUrl(url);
+    }).catch(() => {});
+
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      const code = parseRoomCodeFromUrl(url);
+      if (!code) return;
+      setOnlineEntry({
+        clock: DEFAULT_TIME_CONTROL,
+        view: 'rooms',
+        inviteName: null,
+        autoMatch: null,
+        autoRoom: null,
+        autoJoinCode: code,
+        initialRoom: null,
+      });
+      navigate('PLAY', 'ONLINE');
+    });
+
+    return () => sub.remove();
+  }, []);
+
+  // Post-onboarding room entry: called when new identity finishes username setup
+  const handleUsernameCompleted = useCallback(() => {
+    if (pendingRoomRef.current) {
+      const code = pendingRoomRef.current;
+      pendingRoomRef.current = null;
+      setOnlineEntry({
+        clock: DEFAULT_TIME_CONTROL,
+        view: 'rooms',
+        inviteName: null,
+        autoMatch: null,
+        autoRoom: null,
+        autoJoinCode: code,
+        initialRoom: null,
+      });
+      navigate('PLAY', 'ONLINE');
+    }
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setSplashElapsed(true), SPLASH_MIN_MS);
@@ -347,8 +470,37 @@ export default function App() {
   useEffect(() => {
     if (booted) {
       void SplashScreen.hideAsync().catch(() => {});
+      // Web has no native splash: drop the static boot splash from index.html
+      // now the React tree (gates, tabs) is actually rendering underneath.
+      if (Platform.OS === 'web') {
+        try {
+          (globalThis as any).document
+            ?.getElementById('duoorb-splash')
+            ?.remove();
+        } catch {
+          // Static splash stays hidden behind the app; harmless.
+        }
+      }
     }
   }, [booted]);
+
+  // Auto-enter pending room if already authenticated when booted
+  useEffect(() => {
+    if (booted && identityReady && pendingRoomRef.current) {
+      const code = pendingRoomRef.current;
+      pendingRoomRef.current = null;
+      setOnlineEntry({
+        clock: DEFAULT_TIME_CONTROL,
+        view: 'rooms',
+        inviteName: null,
+        autoMatch: null,
+        autoRoom: null,
+        autoJoinCode: code,
+        initialRoom: null,
+      });
+      navigate('PLAY', 'ONLINE');
+    }
+  }, [booted, identityReady]);
 
   useEffect(() => {
     // A kill before the async storage queue drains strands half an
@@ -562,8 +714,8 @@ export default function App() {
    */
   const consumeOnlineEntryTransients = useCallback(() => {
     setOnlineEntry((prev) =>
-      prev.autoMatch || prev.autoRoom
-        ? { ...prev, autoMatch: null, autoRoom: null }
+      prev.autoMatch || prev.autoRoom || prev.autoJoinCode
+        ? { ...prev, autoMatch: null, autoRoom: null, autoJoinCode: null }
         : prev
     );
   }, []);
@@ -587,6 +739,7 @@ export default function App() {
       });
     setReplayData({ initialState: safeInitial, history: history || [], perspectiveIdx, ratings, accessKey: access });
     setReviewBare(false);
+    setReviewOrigin('match');
     navigate(currentTab, 'REVIEW');
   };
 
@@ -614,6 +767,7 @@ export default function App() {
     // History/Profile replays open the bare match page (board, HUD cards,
     // step controls with speed) - no analysis panels.
     setReviewBare(true);
+    setReviewOrigin('history');
     navigate(currentTab, 'REVIEW');
   };
 
@@ -641,6 +795,7 @@ export default function App() {
       accessKey,
     });
     setReviewBare(false);
+    setReviewOrigin('history');
     navigate(currentTab, 'REVIEW');
     await requestAnalysisEntry(
       isPremiumActive(premium),
@@ -720,7 +875,7 @@ export default function App() {
       <SystemChrome />
       <SessionProvider>
         {settingsLoaded ? (
-        <SessionGate>
+        <SessionGate onUsernameDone={handleUsernameCompleted}>
           {/* Authenticated-only side effects: nothing here runs before a
               canonical identity exists. */}
           <SessionEffects onFriendRequests={setFriendRequestsCount} onOnlineCount={setOnlineCount} />
@@ -755,7 +910,7 @@ export default function App() {
 
               {currentTab === 'HISTORY' && (
                 <HistoryScreen
-                  onBack={() => setCurrentTab('PLAY')}
+                  onBack={goBack}
                   onSelectGame={handleSelectGameFromHistory}
                   onAnalyzeGame={handleAnalyzeGameFromHistory}
                   onQuickMatch={() => handleOpenOnline(DEFAULT_TIME_CONTROL, 'quick')}
@@ -890,12 +1045,13 @@ export default function App() {
 
           {subScreen === 'ONLINE' && (
             <OnlineScreen
-              key={`${onlineEntry.clock.id}-${onlineEntry.view}-${onlineEntry.inviteName ?? ''}`}
+              key={`${onlineEntry.clock.id}-${onlineEntry.view}-${onlineEntry.inviteName ?? ''}-${onlineEntry.autoJoinCode ?? ''}`}
               initialClock={onlineEntry.clock}
               initialView={onlineEntry.view}
               inviteName={onlineEntry.inviteName}
               autoMatch={onlineEntry.autoMatch}
               autoRoom={onlineEntry.autoRoom}
+              autoJoinCode={onlineEntry.autoJoinCode}
               initialRoom={onlineEntry.initialRoom}
               onBack={goBack}
               onConsumeAutoEntry={consumeOnlineEntryTransients}
@@ -937,9 +1093,13 @@ export default function App() {
             <BottomNav
               currentTab={currentTab}
               onSelectTab={(tab) => {
+                if (tab === currentTab && subScreen === null) return;
                 setExitAsk(false);
                 setSubScreen(null);
                 setCurrentTab(tab);
+                if (Platform.OS === 'web' && typeof window !== 'undefined' && window.history?.pushState) {
+                  window.history.pushState({ tab, sub: null }, '');
+                }
               }}
               friendRequestsCount={friendRequestsCount}
             />
@@ -1056,7 +1216,10 @@ const SystemChrome: React.FC = () => {
  * Nothing else in the tree decides whether the user is signed in, so there is
  * exactly one place where "is there a session?" is answered.
  */
-const SessionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const SessionGate: React.FC<{ children: React.ReactNode; onUsernameDone?: () => void }> = ({
+  children,
+  onUsernameDone,
+}) => {
   const { status, bootError, retryBoot } = useSession();
   const identity = useIdentity();
   const { isConnected } = useConnectivity();
@@ -1084,7 +1247,8 @@ const SessionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const handleUsernameDone = useCallback(() => {
     void markOnboardingComplete();
     if (userId) setRecord({ userId, done: true });
-  }, [userId]);
+    onUsernameDone?.();
+  }, [userId, onUsernameDone]);
 
   if (status === 'restoring') {
     // Boot failed reaching the server (a stored session exists but is

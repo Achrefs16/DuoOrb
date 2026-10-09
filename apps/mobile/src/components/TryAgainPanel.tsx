@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import {
   GameState,
   getLegalMoves,
@@ -43,6 +43,10 @@ export const TryAgainPanel: React.FC<TryAgainPanelProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const { width: windowWidth } = useWindowDimensions();
+  const isTablet = windowWidth >= 600;
+  const maxW = Platform.OS === 'web' ? (isTablet ? 540 : 380) : windowWidth;
+  const tryAgainSize = Math.max(180, Math.min(windowWidth - 56, maxW - 48));
   const mover = data.stateBefore.players[data.stateBefore.currentPlayerIndex];
   const moverPos = mover?.position ?? { row: 4, col: 4 };
   const [revealed, setRevealed] = useState(false);
@@ -86,6 +90,7 @@ export const TryAgainPanel: React.FC<TryAgainPanelProps> = ({
         selectedCell={moverPos}
         interactive
         moveMark={null}
+        size={tryAgainSize}
         altMark={
           revealed
             ? best.type === 'MOVE'

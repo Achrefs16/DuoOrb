@@ -2,6 +2,7 @@ import React from 'react';
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -83,11 +84,13 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
           )}
         </TouchableOpacity>
         {error && <Text style={styles.error}>{getErrorCopy(error)}</Text>}
-        <TouchableOpacity onPress={onPremium} disabled={busy} accessibilityRole="button">
-          <Text style={[styles.premium, busy && styles.laterBusy]}>
-            {t('reward.goPremium')}
-          </Text>
-        </TouchableOpacity>
+        {Platform.OS !== 'web' && (
+          <TouchableOpacity onPress={onPremium} disabled={busy} accessibilityRole="button">
+            <Text style={[styles.premium, busy && styles.laterBusy]}>
+              {t('reward.goPremium')}
+            </Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={onClose} disabled={busy} accessibilityRole="button">
           <Text style={[styles.later, busy && styles.laterBusy]}>{t('reward.notNow')}</Text>
         </TouchableOpacity>
@@ -110,6 +113,9 @@ const createStyles = () => StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 20,
     paddingBottom: 32,
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
   },
   titleRow: {
     flexDirection: 'row',

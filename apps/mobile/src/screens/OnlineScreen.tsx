@@ -6,6 +6,7 @@ import {
   Modal,
   Platform,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -77,6 +78,8 @@ interface OnlineScreenProps {
   autoMatch?: { mode: GameMode; clock: TimeControl; wallsEach: number } | null;
   /** Custom Online Match config: create this room immediately on entry. */
   autoRoom?: { mode: GameMode; clock: TimeControl; wallsEach: number } | null;
+  /** Room Invite Link: auto-join room code immediately on entry. */
+  autoJoinCode?: string | null;
   initialRoom?: RoomDto | null;
   /**
    * Called after a one-shot entry trigger (autoMatch/autoRoom) fires, so
@@ -104,6 +107,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   inviteName = null,
   autoMatch = null,
   autoRoom = null,
+  autoJoinCode = null,
   initialRoom = null,
   onStartOnlineGame,
   onConsumeAutoEntry,
@@ -379,6 +383,44 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRoom]);
+
+  // Deep-link / invite auto-join (?room=ABCD)
+  const autoJoinHandled = useRef(false);
+  useEffect(() => {
+    if (!autoJoinCode || autoJoinHandled.current) return;
+    autoJoinHandled.current = true;
+    onConsumeAutoEntry?.();
+    runWhenOnline(() => joinRoom(autoJoinCode.trim().toUpperCase()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoJoinCode]);
+
+  const handleShareInvite = async () => {
+    if (!activeRoom) return;
+    const inviteUrl = `https://duoorb.com/?room=${activeRoom.code}`;
+    const message = `Play DuoOrb with me! Room code: ${activeRoom.code}\n${inviteUrl}`;
+    if (Platform.OS === 'web') {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        try {
+          await navigator.share({
+            title: 'DuoOrb Match Invite',
+            text: message,
+            url: inviteUrl,
+          });
+          return;
+        } catch {}
+      }
+      await copyCode(inviteUrl, t('online.inviteLinkCopied') || 'Invite link copied!');
+    } else {
+      try {
+        await Share.share({
+          message,
+          url: inviteUrl,
+        });
+      } catch {
+        await copyCode(inviteUrl, t('online.inviteLinkCopied') || 'Invite link copied!');
+      }
+    }
+  };
 
   const openQuickAdd = async () => {
     if (!activeRoom || quickAddLoading) return;
@@ -770,9 +812,17 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             <TouchableOpacity
               style={styles.codePill}
               onPress={() => void copyCode(activeRoom.code, t('online.shareCodeCopied'))}
+              accessibilityLabel={t('online.shareCode')}
             >
               <Text style={styles.codePillText}>{activeRoom.code}</Text>
               <Feather name="copy" size={13} color={THEME.colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.shareBtn}
+              onPress={() => void handleShareInvite()}
+              accessibilityLabel={t('online.shareInvite')}
+            >
+              <Feather name="share-2" size={14} color={THEME.colors.primary} />
             </TouchableOpacity>
           </View>
         ) : (
@@ -1397,6 +1447,16 @@ const createStyles = () => StyleSheet.create({
     color: THEME.colors.onSurface,
     letterSpacing: 1,
     fontVariant: ['tabular-nums'],
+  },
+  shareBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: THEME.radius.sm,
+    backgroundColor: THEME.colors.surfacePrimaryTint,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfacePrimaryTintBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   lobbySummary: {
     width: '100%',
@@ -2280,6 +2340,8 @@ const createStyles = () => StyleSheet.create({
     padding: 20,
     paddingBottom: 32,
     width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
     ...THEME.shadows.modal,
   },
   sheetClose: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },

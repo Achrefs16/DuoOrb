@@ -188,6 +188,9 @@ const createStyles = () =>
       borderWidth: 1,
       borderColor: THEME.colors.surfaceHairline,
       maxHeight: '88%',
+      maxWidth: 480,
+      width: '100%',
+      alignSelf: 'center',
       ...THEME.shadows.modal,
     },
     sheetContent: {

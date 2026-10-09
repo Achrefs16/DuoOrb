@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DuoOrb Mobile App — Tactical Wall & Orb Strategy for iOS & Android</title>
+  <meta name="description" content="Download DuoOrb for Android and iOS. Experience real-time tactical wall placement, offline AI bots, 4-player Center Rush, and chess-grade match analysis." />
+  <link rel="canonical" href="https://duoorb.com/app.html" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+
+  <!-- Google AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6057010656402010" crossorigin="anonymous"></script>
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="DuoOrb" />
+  <meta property="og:url" content="https://duoorb.com/app.html" />
+  <meta property="og:title" content="DuoOrb Mobile — The Pure Duel of Wits on iOS & Android" />
+  <meta property="og:description" content="Download DuoOrb. 60 FPS offline play, tactical bot sparring, and grandmaster match analysis on your phone." />
+  <meta property="og:image" content="https://duoorb.com/og-image.png" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="DuoOrb Mobile App | Android & iOS" />
+  <meta name="twitter:description" content="Tactical wall placement board game. Race your orb, block passages, jump rivals." />
+  <meta name="twitter:image" content="https://duoorb.com/og-image.png" />
+
+  <link rel="stylesheet" href="/css/style.css" />
+
+  <!-- JSON-LD MobileApplication Schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "DuoOrb: Tactical Grid Board Game",
+    "operatingSystem": "Android, iOS, Web",
+    "applicationCategory": "GameApplication",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "downloadUrl": "https://play.google.com/store/apps/details?id=com.asdigital.duoorb"
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Site Navigation -->
+  <header class="site-nav">
+    <div class="container site-nav-inner">
+      <a href="/" class="brand-link" aria-label="DuoOrb Home">
+        <img src="/favicon.ico" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" />
+        <span class="brand-text">DuoOrb</span>
+      </a>
+
+      <nav aria-label="Main Navigation">
+        <ul class="nav-links">
+          <li><a href="/quoridor-online.html">Play Online</a></li>
+          <li><a href="/rules.html">Rules & Strategy</a></li>
+          <li><a href="/app.html" class="active">Mobile App</a></li>
+          <li><a href="/what-is-the-game-with-two-balls-and-walls.html">About the Game</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="/" class="btn-pill btn-pill-primary">Play Now</a>
+        <button id="mobile-nav-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Dropdown Navigation (Clean, strictly no icons) -->
+    <div id="mobile-nav-drawer" class="mobile-nav-drawer">
+      <ul class="mobile-nav-list">
+        <li><a href="/quoridor-online.html">Play Online</a></li>
+        <li><a href="/rules.html">Rules & Strategy</a></li>
+        <li><a href="/app.html" class="active">Mobile App</a></li>
+        <li><a href="/what-is-the-game-with-two-balls-and-walls.html">About the Game</a></li>
+      </ul>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="section" style="padding-top: 56px; padding-bottom: 64px;">
+      <div class="container">
+        <div style="max-width: 760px; margin-bottom: 40px;">
+          <span class="section-tag">Official Mobile App</span>
+          <h1>The pure duel of wits, engineered for your phone.</h1>
+          <p class="lead" style="margin-top: 18px; margin-bottom: 28px;">
+            DuoOrb transforms the timeless abstract strategy of Quoridor into a fast, fluid mobile experience. Place fences, race your orb, jump rivals, and dissect every blunder with grandmaster-level match analysis.
+          </p>
+
+          <div class="store-badges" style="margin-bottom: 24px;">
+            <a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" class="store-badge-btn" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3.609 1.814L13.793 12 3.61 22.186a2.227 2.227 0 0 1-.22-.977V2.791c0-.361.08-.7.219-.977zm11.242 11.243l2.257 2.257-12.01 6.84 9.753-9.097zm0-2.114L5.098 1.846l12.01 6.84-2.257 2.257zm1.472 1.057l3.242 1.847c1.169.666 1.169 1.75 0 2.416l-3.242 1.847-2.128-2.128 2.128-2.002-.001-.02.001.04z"/>
+              </svg>
+              <div class="store-badge-text">
+                <span class="store-badge-label">Get it on</span>
+                <span class="store-badge-title">Google Play</span>
+              </div>
+            </a>
+
+            <a href="/" class="store-badge-btn" title="Play instantly on iOS Safari">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.75 1.04-1.8 0.92-2.85-.9.04-1.98.6-2.62 1.34-.57.65-1.06 1.71-.93 2.73 1 .08 2.01-.47 2.63-1.22z"/>
+              </svg>
+              <div class="store-badge-text">
+                <span class="store-badge-label">Play on iOS</span>
+                <span class="store-badge-title">Web App / PWA</span>
+              </div>
+            </a>
+
+            <a href="/" class="btn-pill btn-pill-primary">
+              Play Now
+            </a>
+          </div>
+
+          <p style="font-size: 14px; color: var(--color-ash-gray);">
+            Full cross-platform play · 100% Free to play · Zero mid-game ads
+          </p>
+        </div>
+
+        <!-- Floating Product Artifacts Showcase -->
+        <div style="margin-top: 56px;">
+          <h2 style="font-size: 24px; margin-bottom: 24px; color: var(--color-ink-black);">Experience the board at your fingertips</h2>
+          <div class="artifact-grid-3">
+            <div class="product-artifact">
+              <div class="artifact-screen-wrap">
+                <img src="/screenshots/gameplay-duel.png" alt="DuoOrb real-time 1v1 tactical match screen" loading="lazy" width="300" height="650" />
+              </div>
+              <div class="artifact-caption">
+                <h3 style="font-size: 20px; font-family: var(--font-sans); font-weight: 600; margin-bottom: 6px;">Real-Time 1v1 Arena</h3>
+                <p>Tactile wall placement controls with instant legal-move highlights and live clocks.</p>
+              </div>
+            </div>
+
+            <div class="product-artifact" style="transform: translateY(24px);">
+              <div class="artifact-screen-wrap">
+                <img src="/screenshots/match-review-analysis.png" alt="DuoOrb chess-grade game review and evaluation bar" loading="lazy" width="300" height="650" />
+              </div>
+              <div class="artifact-caption">
+                <h3 style="font-size: 20px; font-family: var(--font-sans); font-weight: 600; margin-bottom: 6px;">Engine Review</h3>
+                <p>Every move graded by minimax AI: inaccuracies, blunders, and winning lines.</p>
+              </div>
+            </div>
+
+            <div class="product-artifact">
+              <div class="artifact-screen-wrap">
+                <img src="/screenshots/four-player-rush.png" alt="DuoOrb 4-player Center Rush match mode" loading="lazy" width="300" height="650" />
+              </div>
+              <div class="artifact-caption">
+                <h3 style="font-size: 20px; font-family: var(--font-sans); font-weight: 600; margin-bottom: 6px;">4-Player Center Rush</h3>
+                <p>Four orbs, shared walls, and a race to claim the contested golden center tile.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- App Modes Section -->
+    <section class="section section-fog">
+      <div class="container">
+        <div class="section-header text-center">
+          <span class="section-tag">Modes & Capabilities</span>
+          <h2>Every way to play, completely unlocked.</h2>
+          <p class="lead" style="margin: 0 auto;">Whether you want thirty seconds of tactical puzzle-solving on the subway or an intense 15-minute ranked duel, DuoOrb fits your pace.</p>
+        </div>
+
+        <div class="grid-3">
+          <div class="card-neutral">
+            <span class="section-tag">Solo Sparring</span>
+            <h3>Adaptive AI Personalities</h3>
+            <p>Spar against calibrated bots: Martin (800 ELO beginner), Elena (1100 intermediate), Nelson (1450 club level), or the uncompromising Engine AI. Works 100% offline without internet.</p>
+          </div>
+
+          <div class="card-neutral">
+            <span class="section-tag">Social Play</span>
+            <h3>Pass & Play + Private Rooms</h3>
+            <p>Play locally with a friend on one phone using shared touch controls, or generate a 4-digit room code to challenge a friend anywhere in the world in under two seconds.</p>
+          </div>
+
+          <div class="card-neutral">
+            <span class="section-tag">Custom Rules</span>
+            <h3>Flexible Arena Rules</h3>
+            <p>Select Classic 1v1, Race, or Center Rush. Adjust wall budgets between 10 walls, 15 walls, or unlimited sandbox mode. Set timers to 1+0 bullet, 3+0 blitz, or unlimited.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Editorial Accent Highlight Card (Blush Peach) -->
+    <section class="section">
+      <div class="container">
+        <div class="card-peach peach-split-card">
+          <div>
+            <span class="peach-tag">Precision Engine</span>
+            <h2 style="margin-bottom: 16px;">Chess-grade game review. Built right into the app.</h2>
+            <p style="margin-bottom: 24px;">
+              Most mobile board games end with a victory banner and nothing more. DuoOrb redefines strategy gaming with an automated post-match breakdown powered by a high-speed engine. Discover the exact turn where you allowed a counter-trap, inspect the +0.9 advantage curve, and master optimal fence placement.
+            </p>
+            <div class="hero-actions">
+              <a href="/" class="btn-pill btn-pill-primary">Play Now</a>
+              <a href="/rules.html" class="btn-pill btn-pill-ghost">Read Rules & Analysis Guide →</a>
+            </div>
+          </div>
+          <div style="text-align: center;">
+            <img src="/screenshots/match-review-analysis.png" alt="Inaccuracy move analysis breakdown" style="max-width: 240px; width: 100%; border-radius: 16px; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);" loading="lazy" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Technical Specs & Feature Matrix -->
+    <section class="section section-fog">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-tag">Platform Comparison</span>
+          <h2>Native App vs Browser Experience</h2>
+          <p class="lead">DuoOrb is built to meet you wherever you play, with zero barriers to entry.</p>
+        </div>
+
+        <div class="table-wrap">
+          <table class="editorial-table">
+            <thead>
+              <tr>
+                <th scope="col">Feature</th>
+                <th scope="col">Mobile App (Android / iOS)</th>
+                <th scope="col">Browser Web App (duoorb.com)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Match Engine</strong></td>
+                <td>Native 60 FPS touch response</td>
+                <td>Instant WebAssembly runtime</td>
+              </tr>
+              <tr>
+                <td><strong>Offline Play</strong></td>
+                <td>Full offline play vs Martin, Elena, Nelson & AI</td>
+                <td>Requires cached PWA session</td>
+              </tr>
+              <tr>
+                <td><strong>Multiplayer Lobby</strong></td>
+                <td>Push notifications & friend invites</td>
+                <td>Instant room code link sharing</td>
+              </tr>
+              <tr>
+                <td><strong>Haptic Feedback</strong></td>
+                <td>Tactile vibration on wall snap & jumps</td>
+                <td>Audio feedback</td>
+              </tr>
+              <tr>
+                <td><strong>Account Requirement</strong></td>
+                <td>Optional guest play or Google sign-in</td>
+                <td>Zero login required</td>
+              </tr>
+              <tr>
+                <td><strong>Price & Ads</strong></td>
+                <td>100% Free · Zero mid-game popups</td>
+                <td>100% Free · No banner clutter</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="section" style="text-align: center; padding: 96px 0;">
+      <div class="container" style="max-width: 680px;">
+        <span class="section-tag">Get DuoOrb Today</span>
+        <h2 style="margin-bottom: 20px;">Master the walls. Claim the grid.</h2>
+        <p class="lead" style="margin: 0 auto 36px;">
+          Available now on Google Play and upcoming on the Apple App Store. Start your journey from novice to master tactician.
+        </p>
+
+        <div class="store-badges" style="justify-content: center; margin-bottom: 24px;">
+          <a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" class="store-badge-btn" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3.609 1.814L13.793 12 3.61 22.186a2.227 2.227 0 0 1-.22-.977V2.791c0-.361.08-.7.219-.977zm11.242 11.243l2.257 2.257-12.01 6.84 9.753-9.097zm0-2.114L5.098 1.846l12.01 6.84-2.257 2.257zm1.472 1.057l3.242 1.847c1.169.666 1.169 1.75 0 2.416l-3.242 1.847-2.128-2.128 2.128-2.002-.001-.02.001.04z"/>
+            </svg>
+            <div class="store-badge-text">
+              <span class="store-badge-label">Download for</span>
+              <span class="store-badge-title">Google Play</span>
+            </div>
+          </a>
+
+          <a href="/" class="btn-pill btn-pill-primary">
+            Play Now
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a href="/" class="brand-link" aria-label="DuoOrb Home">
+            <img src="/favicon.ico" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" />
+            <span class="brand-text">DuoOrb</span>
+          </a>
+          <p>The modern abstract strategy board game inspired by Quoridor and Barricade. Play free online or download on mobile.</p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Play</h4>
+          <ul>
+            <li><a href="/">Play Now</a></li>
+            <li><a href="/quoridor-online.html">Quoridor Online</a></li>
+            <li><a href="/rules.html">Rules & Strategy</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Learn</h4>
+          <ul>
+            <li><a href="/rules.html">Complete Rules</a></li>
+            <li><a href="/rules.html#jump-rule">Jump Rule Masterclass</a></li>
+            <li><a href="/what-is-the-game-with-two-balls-and-walls.html">Game Identifier Guide</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Platforms</h4>
+          <ul>
+            <li><a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" target="_blank" rel="noopener noreferrer">Google Play Store</a></li>
+            <li><a href="/app.html">Mobile App Overview</a></li>
+            <li><a href="/app.html">Install Web App (PWA)</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p>© 2026 DuoOrb. All rights reserved. Strategic grid games reimagined.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Mobile Navigation Toggle Script -->
+  <script>
+    (function() {
+      var btn = document.getElementById('mobile-nav-toggle');
+      var drawer = document.getElementById('mobile-nav-drawer');
+      if (!btn || !drawer) return;
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var isOpen = drawer.classList.toggle('open');
+        btn.classList.toggle('active', isOpen);
+        btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+      document.addEventListener('click', function(e) {
+        if (!drawer.contains(e.target) && !btn.contains(e.target) && drawer.classList.contains('open')) {
+          drawer.classList.remove('open');
+          btn.classList.remove('active');
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    })();
+  </script>
+
+</body>
+</html>
