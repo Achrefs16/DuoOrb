@@ -1,20 +1,36 @@
 <!DOCTYPE html>
-<html lang="%LANG_ISO_CODE%">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover, user-scalable=no" />
-    <title>DuoOrb — Tactical 1v1 Grid Board Game | Free Online</title>
-    <meta name="description" content="Play DuoOrb free online in your browser. Tactical 1v1 grid board game: outsmart opponents, place strategic walls, and race to the goal. Play against friends or smart AI." />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+    <title>DuoOrb — Play 1v1 Tactical Wall &amp; Grid Strategy Online Free</title>
+    <meta name="description" content="Play Quoridor online free in your browser. Rated duels, private friend rooms, 7 clocks, smart bots. No download, no account needed." />
     <link rel="canonical" href="https://duoorb.com/" />
 
     <!-- Google AdSense -->
+    <!-- Google Consent Mode v2 Bootstrap (EEA/UK/CH Safe Default) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('consent', 'default', {
+        'ad_storage': 'denied',
+        'ad_user_data': 'denied',
+        'ad_personalization': 'denied',
+        'analytics_storage': 'denied',
+        'regions': ['AT','BE','BG','CY','CZ','DE','DK','EE','ES','FI','FR','GB','GR','HR','HU','IE','IS','IT','LI','LT','LU','LV','MT','NL','NO','PL','PT','RO','SE','SI','SK','CH'],
+        'wait_for_update': 500
+      });
+      gtag('set', 'ads_data_redaction', true);
+      gtag('set', 'url_passthrough', false);
+    </script>
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6057010656402010" crossorigin="anonymous"></script>
 
     <!-- PWA & Mobile Web Manifest -->
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <meta name="theme-color" content="#F2F3FF" />
+    <link rel="stylesheet" href="/css/style.css" />
+    <meta name="theme-color" content="#FFFFFF" />
 
     <!-- iOS PWA / Standalone Support -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -45,7 +61,7 @@
       "@type": ["WebApplication", "VideoGame"],
       "name": "DuoOrb",
       "url": "https://duoorb.com/",
-      "description": "Tactical 1v1 grid board game inspired by Quoridor and Barricade. Place walls, hop over opponents, and race to the goal.",
+      "description": "Tactical 1v1 grid board game. Place walls, hop over opponents, and race to the goal.",
       "applicationCategory": "GameApplication",
       "genre": ["Board Game", "Strategy", "Turn-Based Strategy"],
       "playMode": ["SinglePlayer", "MultiPlayer"],
@@ -54,13 +70,26 @@
         "@type": "Offer",
         "price": "0",
         "priceCurrency": "USD"
-      }
+      },
+      "author": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/about.html", "email": "support@duoorb.com" },
+      "publisher": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/", "logo": { "@type": "ImageObject", "url": "https://duoorb.com/icons/icon-512.png", "width": 512, "height": 512 } }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "Can I play online without installing anything?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. DuoOrb runs in any modern browser on phone or computer. Play as a guest immediately — zero downloads." } },
+        { "@type": "Question", "name": "How do private rooms work?", "acceptedAnswer": { "@type": "Answer", "text": "Create a room, share the 6-letter code or link, and your friend joins instantly. No account needed for guest play." } },
+        { "@type": "Question", "name": "How does rated matchmaking work?", "acceptedAnswer": { "@type": "Answer", "text": "Queue for a rated 1v1 duel on one universal rating from 1500. Wins move you up the global leaderboard." } },
+        { "@type": "Question", "name": "What is DuoOrb's relationship to classic corridor strategy?", "acceptedAnswer": { "@type": "Answer", "text": "DuoOrb is a modern take on the classic 9x9 wall-placement duel: same race-and-block heart, plus online rooms, clocks, bots and engine review." } }
+      ]
     }
     </script>
 
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <!-- Preload LCP Splash Image for Instant First Contentful / Largest Contentful Paint -->
+    <link rel="preload" as="image" href="/icons/splash-400.webp" type="image/webp" fetchpriority="high" />
     <style id="duoorb-fonts">
       @font-face {
         font-family: 'Manrope';
@@ -377,7 +406,7 @@
       paint can't clear it early. -->
     <div id="duoorb-splash" aria-hidden="true">
       <div class="duoorb-splash-inner">
-        <img class="duoorb-splash-logo" src="/icons/splash-400.webp" alt="" />
+        <img class="duoorb-splash-logo" src="/icons/splash-400.webp" width="200" height="200" fetchpriority="high" decoding="async" alt="DuoOrb" />
         <div class="duoorb-splash-word">DuoOrb</div>
         <div class="duoorb-splash-bar"><span></span></div>
       </div>
@@ -400,7 +429,7 @@
       }
       .duoorb-splash-logo {
         width: 200px;
-        height: auto;
+        height: 200px;
         display: block;
       }
       .duoorb-splash-word {
@@ -440,11 +469,419 @@
         <h1>DuoOrb — Tactical 1v1 Grid Board Game</h1>
         <p>Outsmart opponents, place strategic walls, and race your orb to the goal. Play free online against friends or smart AI bots.</p>
         <p>Please enable JavaScript to play DuoOrb in your browser.</p>
-        <p><a href="/rules.html" style="color: #6C6FFD;">Game Rules</a> · <a href="/quoridor-online.html" style="color: #6C6FFD;">Quoridor Online Alternative</a></p>
+        <p><a href="/rules.html" style="color: #6C6FFD;">Game Rules</a> · <a href="/strategy.html" style="color: #6C6FFD;">Strategy</a> · <a href="/bots-and-analysis.html" style="color: #6C6FFD;">AI &amp; Analysis</a> · <a href="/#mobile" style="color: #6C6FFD;">Play on Phone</a> · <a href="/about.html" style="color: #6C6FFD;">About</a></p>
+        <p><a href="/privacy.html" style="color: #6C6FFD;">Privacy</a> · <a href="/terms.html" style="color: #6C6FFD;">Terms</a> · <a href="/cookies.html" style="color: #6C6FFD;">Cookies</a> · <a href="/contact.html" style="color: #6C6FFD;">Contact</a></p>
       </div>
     </noscript>
 
-    <!-- The root element for your Expo app. -->
-    <div id="root"></div>
+    <!-- DuoOrb web home overlay: editorial landing shown before the game loads. Same design system (/css/style.css), web-only, game bundle untouched. -->
+    <div id="duoorb-home">
+      <header class="site-nav">
+        <div class="container site-nav-inner">
+          <a href="/" class="brand-link" aria-label="DuoOrb Home">
+            <img src="/icons/icon-192.png" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" />
+            <span class="brand-text">DuoOrb</span>
+          </a>
+          <nav aria-label="Main Navigation">
+            <ul class="nav-links">
+              <li><a href="/">Home</a></li>
+              <li><a href="/rules.html">Rules</a></li>
+              <li><a href="/strategy.html">Strategy</a></li>
+              <li><a href="/bots-and-analysis.html">AI &amp; Analysis</a></li>
+              <li><a href="/about.html">About</a></li>
+            </ul>
+          </nav>
+          <div class="nav-actions">
+            <a href="/" class="btn-pill btn-pill-primary" data-duoorb-play="true">Play Now</a>
+            <button id="mobile-nav-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false">
+              <span></span><span></span><span></span>
+            </button>
+          </div>
+        </div>
+        <div id="mobile-nav-drawer" class="mobile-nav-drawer">
+          <ul class="mobile-nav-list">
+            <li><a href="/">Home</a></li>
+            <li><a href="/rules.html">Rules</a></li>
+            <li><a href="/strategy.html">Strategy</a></li>
+            <li><a href="/bots-and-analysis.html">AI &amp; Analysis</a></li>
+            <li><a href="/about.html">About</a></li>
+          </ul>
+        </div>
+      </header>
+      <main>
+        <section class="section" style="padding-top: 56px; padding-bottom: 48px;">
+          <div class="container" style="max-width: 820px;">
+            <span class="section-tag">Tactical 1v1 Grid Board Game</span>
+            <h1>DuoOrb — the pure duel of wits. Play free in your browser.</h1>
+            <p class="lead" style="margin-top: 20px; margin-bottom: 28px;">Race your orb to the far edge while placing walls to slow your rival. One move or one wall per turn, straight jumps over adjacent orbs, diagonal jumps when blocked, and one golden rule: at least one path must always stay open. Rated duels, private friend rooms, multi-orb party modes, offline bot sparring, and engine-graded match review.</p>
+            <div class="hero-actions" style="margin-bottom: 16px;">
+              <a href="/" class="btn-pill btn-pill-primary" data-duoorb-play="true">Play Now</a>
+              <a href="/rules.html" class="btn-pill btn-pill-ghost">Learn Rules</a>
+            </div>
+            <p style="font-size: 14px;">Looking for the phone app? <a href="/#mobile">See phone play options</a>.</p>
+            <p style="font-size: 14px; color: var(--color-ash-gray);">Free to play · No account needed for guest play · Matches are never interrupted by popups</p>
+          </div>
+        </section>
+        <section class="section section-fog">
+          <div class="container" style="max-width: 820px;">
+            <div class="section-header">
+              <span class="section-tag">Why DuoOrb</span>
+              <h2>Everything you need for a serious duel</h2>
+            </div>
+            <div class="grid-3" style="margin-bottom: 24px;">
+              <div class="card-neutral"><span class="section-tag">Ranked</span><h3>Rated ladder</h3><p>Climb a universal rating on the global leaderboard, from your first match to club level.</p></div>
+              <div class="card-neutral"><span class="section-tag">Friends</span><h3>Private rooms</h3><p>Share a room code or link. Friends join instantly in the browser.</p></div>
+              <div class="card-neutral"><span class="section-tag">Practice</span><h3>Bot sparring, offline</h3><p>Seven personalities plus 3 practice tiers. All bots free. Details: <a href="/bots-and-analysis.html">AI &amp; Analysis</a>.</p></div>
+              <div class="card-neutral"><span class="section-tag">Review</span><h3>Engine analysis</h3><p>Every move graded best to blunder with accuracy and deciding moment.</p></div>
+              <div class="card-neutral"><span class="section-tag">Party</span><h3>Center Rush + Race</h3><p>Classic duels, multi-orb center capture, and edge-race variants. Details: <a href="/rules.html">Rules</a>.</p></div>
+              <div class="card-neutral"><span class="section-tag">Mobile</span><h3>App + PWA</h3><p>Coming soon to Google Play and the Apple App Store. Play instantly in your browser or install the web app (PWA) today.</p></div>
+            </div>
+            <div class="hero-actions">
+              <a href="/rules.html#clocks" class="btn-pill btn-pill-ghost">Time Controls &amp; Rules</a>
+              <a href="/about.html" class="btn-pill btn-pill-ghost">About DuoOrb</a>
+            </div>
+          </div>
+        </section>
+        <section class="section">
+          <div class="container grid-2" style="max-width: 820px;">
+            <div class="card-neutral">
+              <span class="section-tag">Fair by Design</span>
+              <h3>Zero Luck. Pure Skill.</h3>
+              <p>No dice, no hidden cards, no pay-to-win. Every match is decided by who counts paths better and spends walls smarter. The full specs engineers love live one click away in <a href="/strategy.html">Strategy</a>.</p>
+              <p><a href="/strategy.html" class="btn-pill btn-pill-ghost">Read the Opening &amp; Endgame Strategy Guide →</a></p>
+            </div>
+            <div class="product-artifact">
+              <div class="artifact-screen-wrap">
+                <img src="/screenshots/match-setup.png" width="300" height="650" loading="lazy" alt="DuoOrb custom match setup screen showing wall budgets of 10, 15, or 99 walls and Fischer clock presets" />
+              </div>
+              <div class="artifact-caption">
+                <h3>Custom Arena Configuration</h3>
+                <p>Select Classic 1v1, Center Rush, or Race modes, set wall budgets (10, 15, or 99 sandbox), and configure Fischer increment clocks before launching.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="section section-fog">
+          <div class="container" style="max-width: 820px;">
+            <div class="section-header">
+              <span class="section-tag">Anatomy of a Turn</span>
+              <h2>Sixty Seconds to Your First Match</h2>
+              <p>One tap opens the arena. From there every turn works the same way, whether you face a friend, a rated stranger, or a starter bot. Details: <a href="/bots-and-analysis.html">AI &amp; Analysis</a>.</p>
+            </div>
+            <div class="grid-3">
+              <div class="card-neutral"><span class="section-tag">Step 1</span><h3>Step or Build</h3><p>Move your orb one square — or spend the turn placing one wall from your reserve into the grooves. Walls are permanent, so each one is a real decision.</p></div>
+              <div class="card-neutral"><span class="section-tag">Step 2</span><h3>Jump When Close</h3><p>Meet face-to-face with no wall between you and you leap straight over your rival — or diagonally if a wall, the board edge, or a third orb blocks the landing square.</p></div>
+              <div class="card-neutral"><span class="section-tag">Step 3</span><h3>Race, Review, Climb</h3><p>Touch the far edge (or the center tile in Center Rush) to win. Then open Engine Review to see every move graded, and queue ranked to climb the ladder.</p></div>
+            </div>
+          </div>
+        </section>
+        <section class="section" id="private-room-architecture">
+          <div class="container grid-2" style="max-width: 820px;">
+            <div class="card-neutral">
+              <span class="section-tag">Play With Friends</span>
+              <h3>How Private Room Codes Work</h3>
+              <p>Tap <strong>Create Room</strong> and you get a short 6-letter code. Send it — or the join link — over any chat app, and your friend is playing with you in seconds, no account needed. You pick the mode, walls and clock, then you both hit Ready.</p>
+            </div>
+            <div class="card-neutral">
+              <span class="section-tag">Rating, Simply</span>
+              <h3>How the Rating Ladder Works</h3>
+              <p>Every rated 1v1 match moves one number: your rating, starting at <strong>1500</strong>. Win and it climbs — faster when you're new, steadier once you've proven yourself. The leaderboard shows exactly where you stand.</p>
+            </div>
+          </div>
+        </section>
+        <section class="section section-fog" id="match-flow">
+          <div class="container" style="max-width: 820px;">
+            <div class="section-header">
+              <span class="section-tag">From Lobby to Review</span>
+              <h2>How an Online Match Flows</h2>
+            </div>
+            <div class="grid-3">
+              <div class="card-neutral"><span class="section-tag">1 · Lobby</span><h3>Create or Queue</h3><p>Generate a room code for a friend, or enter rated matchmaking. The host sets the mode, wall budget and clock before both sides mark Ready.</p></div>
+              <div class="card-neutral"><span class="section-tag">2 · Duel</span><h3>Play the Clock</h3><p>Alternate move-or-wall turns under your chosen control. Illegal walls — overlaps, crosses or zero-path seals — are rejected before they land.</p></div>
+              <div class="card-neutral"><span class="section-tag">3 · Review</span><h3>Grade Every Turn</h3><p>Win or lose, Engine Review scores each turn from Best to Blunder and names the deciding moment. Rematch in one tap.</p></div>
+            </div>
+          </div>
+        </section>
+        <section class="section">
+          <div class="container" style="max-width: 820px;">
+            <div class="section-header">
+              <span class="section-tag">Platform Comparison</span>
+              <h2>Instant Play, No Lobby Delays, Real Analysis</h2>
+              <p>What you get here versus legacy browser portals and ad-heavy clones. Full disclosure: these guide pages run Google AdSense page ads — that is what keeps the arena free. Matches themselves are never interrupted.</p>
+            </div>
+            <div class="table-wrap">
+              <table class="editorial-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Feature</th>
+                    <th scope="col">DuoOrb</th>
+                    <th scope="col">Legacy Portals</th>
+                    <th scope="col">Ad-Heavy Clones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td><strong>Start playing</strong></td><td>Instantly, in any browser</td><td>Often needs an account</td><td>Lengthy forced tutorials</td></tr>
+                  <tr><td><strong>During matches</strong></td><td>Never interrupted · Fluid 60 FPS</td><td>Clunky lobby delays</td><td>Frequent video interruptions</td></tr>
+                  <tr><td><strong>After matches</strong></td><td>Move-by-move engine grades</td><td>Move list only</td><td>No analysis tools</td></tr>
+                  <tr><td><strong>Practice</strong></td><td>7 free bots, offline-ready</td><td>Online connection required</td><td>Basic random-move bots</td></tr>
+                  <tr><td><strong>Modes</strong></td><td>Classic 1v1, Center Rush, Race, custom rules</td><td>Standard 1v1 only</td><td>Fixed boards only</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+        <section class="section" id="mobile">
+          <div class="container" style="max-width: 820px;">
+            <div class="section-header">
+              <span class="section-tag">Zero Download</span>
+              <h2>Play on Your Phone in 10 Seconds</h2>
+              <p>No store download needed. Two players share one phone screen with pass-and-play, or add DuoOrb to your home screen: iPhone Safari → Share → Add to Home Screen; Android Chrome → menu → Install app. Sign in with Google and your rating, history and friends sync everywhere.</p>
+            </div>
+            <div class="grid-3">
+              <div class="card-neutral"><h3>Pass &amp; Play</h3><p>Two players, one phone, shared touch controls. No account, no waiting — hand it over after every turn.</p></div>
+              <div class="card-neutral"><h3>iPhone &amp; iPad</h3><p>Open duoorb.com in Safari, tap Share, choose Add to Home Screen, tap Add. Full-screen portrait, custom icon.</p></div>
+              <div class="card-neutral"><h3>Android</h3><p>Open duoorb.com in Chrome, tap the menu, choose Install app. Core board assets cache locally for instant launch.</p></div>
+            </div>
+            <p style="margin-top: 16px; font-size: 14px; color: var(--color-ash-gray);">Native Google Play and Apple App Store apps are coming soon — listings will appear here at launch. Full details: <a href="/#mobile">Mobile install &amp; store status</a>.</p>
+          </div>
+        </section>
+        <section class="section" id="viral-guide">
+          <div class="container" style="max-width: 820px;">
+            <div class="section-header">
+              <span class="section-tag">60-Second Identification Guide</span>
+              <h2>Looking for the Viral Game with Two Balls and Wooden Walls?</h2>
+              <p>People search for this classic under dozens of names — from “the two marbles and wooden fences game” to “the 9×9 corridor block game.” Match these five signatures against the clip you watched:</p>
+            </div>
+            <div class="table-wrap">
+              <table class="editorial-table">
+                <thead>
+                  <tr>
+                    <th scope="col">What You Saw in the Clip</th>
+                    <th scope="col">Actual Game Term in DuoOrb</th>
+                    <th scope="col">How the Mechanic Works</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Two orbs starting at opposite ends of a square grid</td>
+                    <td><strong>Orbs on the 9×9 Arena</strong></td>
+                    <td>Blue starts on bottom center <code>e9</code> and races to the top edge; Red starts on top center <code>e1</code> and races to the bottom edge.</td>
+                  </tr>
+                  <tr>
+                    <td>Players sliding flat wooden planks into slots between squares</td>
+                    <td><strong>2-Square Groove Walls</strong></td>
+                    <td>Each player starts a 1v1 duel with 10 walls. Placing a wall takes your entire turn and permanently blocks two adjacent square edges.</td>
+                  </tr>
+                  <tr>
+                    <td>One orb hopping straight or diagonally over the other orb</td>
+                    <td><strong>Straight &amp; Diagonal Jumps</strong></td>
+                    <td>Face-to-face with no wall between you, leap straight over — or diagonally if a wall blocks behind. Full rules: <a href="/rules.html">Rules</a>.</td>
+                  </tr>
+                  <tr>
+                    <td>A player forced to walk all the way back across a giant zig-zag maze</td>
+                    <td><strong>The Golden Path Rule</strong></td>
+                    <td>You can never seal an opponent in completely (at least 1 open path must always exist), but you can force a 25-step detour across the board.</td>
+                  </tr>
+                  <tr>
+                    <td>Four different colored orbs racing toward the middle of the board</td>
+                    <td><strong>4-Player Center Rush</strong></td>
+                    <td>DuoOrb's party mode where 4 players start on all four edges with 5 walls each and race to claim the single center square.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+        <section class="section section-fog" id="online-faq">
+          <div class="container" style="max-width: 820px;">
+            <div class="section-header text-center">
+              <span class="section-tag">Multiplayer Questions</span>
+              <h2>Online Play, Answered</h2>
+            </div>
+            <div class="faq-grid">
+              <div class="faq-item">
+                <h3>Can I play online without installing anything?</h3>
+                <p>Yes. DuoOrb runs in any modern browser on phone or computer. Play as a guest immediately — zero downloads.</p>
+              </div>
+              <div class="faq-item">
+                <h3>How do private rooms work?</h3>
+                <p>Create a room, share the 6-letter code or link, and your friend joins instantly. No account needed for guest play.</p>
+              </div>
+              <div class="faq-item">
+                <h3>How does rated matchmaking work?</h3>
+                <p>Queue for a rated 1v1 duel on one universal rating from 1500. Wins move you up the global leaderboard.</p>
+              </div>
+              <div class="faq-item">
+                <h3>What is DuoOrb's relationship to classic corridor strategy?</h3>
+                <p>DuoOrb is our modern take on the classic 9×9 wall-placement duel: same race-and-block heart, plus online rooms, clocks, bots and engine review. New to the rules? Start at <a href="/rules.html">Rules</a>.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+      <footer class="site-footer">
+        <div class="container">
+          <div class="footer-top">
+            <div class="footer-brand">
+              <a href="/" class="brand-link" aria-label="DuoOrb Home"><img src="/icons/icon-192.png" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" /><span class="brand-text">DuoOrb</span></a>
+              <p>The modern abstract strategy board game. Play free online or download on mobile.</p>
+            </div>
+            <div class="footer-col">
+          <h4>Play</h4>
+          <ul>
+            <li><a href="/?play=1">Play Now</a></li>
+            <li><a href="/">Home Overview</a></li>
+            <li><a href="/rules.html#clocks">Time Controls &amp; Clocks</a></li>
+          </ul>
+        </div>
+            <div class="footer-col">
+          <h4>Learn &amp; Master</h4>
+          <ul>
+            <li><a href="/rules.html">Complete Rules</a></li>
+            <li><a href="/strategy.html">Strategy &amp; Openings</a></li>
+            <li><a href="/bots-and-analysis.html">AI Bots &amp; Analysis</a></li>
+            <li><a href="/#viral-guide">Two Balls &amp; Walls Game</a></li>
+          </ul>
+        </div>
+            <div class="footer-col">
+          <h4>Mobile &amp; Studio</h4>
+          <ul>
+            <li><a href="/#mobile">Play on Your Phone</a></li>
+            <li><a href="/about.html">About DuoOrb &amp; AS Digital</a></li>
+            <li><a href="/contact.html">Support &amp; Contact</a></li>
+          </ul>
+        </div>
+          </div>
+          <div class="footer-bottom"><p>© 2026 DuoOrb by AS Digital.</p><p><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/cookies.html">Cookies &amp; Ads</a> · <a href="/contact.html">Contact</a></p></div>
+        </div>
+      </footer>
+    </div>
+    <style>
+      #duoorb-home { position: fixed; inset: 0; z-index: 9000; overflow-y: auto; background: var(--color-paper-white, #fff); scroll-padding-top: 84px; }
+      #duoorb-home.hidden { display: none; }
+      #duoorb-home [id] { scroll-margin-top: 84px; }
+      #duoorb-home, #duoorb-home * { -webkit-user-select: text; user-select: text; }
+      #duoorb-webnav { position: fixed; z-index: 8000; display: none; background: rgba(255,255,255,0.96); border: 1px solid rgba(23,25,28,0.08); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+      body:not(.duoorb-in-menu) #duoorb-webnav-toggle,
+      body:not(.duoorb-in-menu) #duoorb-webnav { display: none !important; }
+      #duoorb-webnav a { text-decoration: none; font-size: 13px; font-weight: 500; color: #454c5b; padding: 8px 12px; border-radius: 10px; white-space: nowrap; }
+      #duoorb-webnav a:hover { background: #f2f2f3; color: #17191c; }
+      #duoorb-webnav .duoorb-webnav-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #7d8595; padding: 2px 12px 6px; }
+      #duoorb-webnav-toggle { position: fixed; top: 10px; right: 58px; z-index: 8001; display: none; width: 36px; height: 36px; border-radius: 10px; border: 1px solid rgba(23,25,28,0.08); background: #ffffff; color: #17191c; font-size: 17px; line-height: 1; cursor: pointer; align-items: center; justify-content: center; }
+      @media (min-width: 1100px) {
+        #duoorb-webnav.visible { display: flex; flex-direction: column; align-items: stretch; gap: 2px; left: 24px; top: 50%; transform: translateY(-50%); min-width: 176px; border-radius: 16px; padding: 10px 8px; }
+        #duoorb-webnav-toggle { display: none !important; }
+      }
+      @media (max-width: 1099px) {
+        #duoorb-webnav-toggle.visible { display: flex; }
+        #duoorb-webnav.open { display: flex; flex-direction: column; align-items: stretch; gap: 2px; top: 56px; left: 0; right: 0; border-radius: 0; border-left: none; border-right: none; padding: 8px 12px 12px; }
+        #duoorb-webnav.open a { font-size: 15px; padding: 10px 12px; }
+        #duoorb-webnav .duoorb-webnav-label { display: none; }
+      }
+      @media (min-width: 600px) and (max-width: 1099px) {
+        #duoorb-webnav-toggle { right: calc(50% - min(210px, 24vh) + 58px); }
+      }
+      @media (min-width: 600px) and (max-aspect-ratio: 13/10) and (max-width: 1099px) {
+        #duoorb-webnav-toggle { right: calc(50% - min(290px, 46vw) + 58px); }
+      }
+      @media (min-width: 768px) and (max-width: 1099px) and (min-aspect-ratio: 13/10) {
+        #duoorb-webnav-toggle { right: calc(50% - min(270px, 34vh) + 58px); }
+      }
+    </style>
+    <!-- Web site menu: left sidebar rail on wide screens, top-bar menu on mobile web. Web-only; the native app is untouched. -->
+    <nav id="duoorb-webnav" aria-label="Site">
+      <span class="duoorb-webnav-label">Explore</span><a href="/">Home</a><a href="/?play=1">Play</a><a href="/rules.html">Rules</a><a href="/strategy.html">Strategy</a><a href="/bots-and-analysis.html">AI &amp; Analysis</a><a href="/about.html">About</a>
+    </nav>
+    <button id="duoorb-webnav-toggle" aria-label="Open site menu" aria-expanded="false">☰</button>
+    <script>
+      (function() {
+        function showGame() {
+          var home = document.getElementById('duoorb-home');
+          var nav = document.getElementById('duoorb-webnav');
+          var fab = document.getElementById('duoorb-webnav-toggle');
+          if (home) {
+            home.style.display = 'none';
+            home.classList.add('hidden');
+            home.setAttribute('aria-hidden', 'true');
+          }
+          document.body.classList.add('duoorb-playing');
+          if (nav) nav.classList.add('visible');
+          if (fab) fab.classList.add('visible');
+          try { history.replaceState({ duoorbPlay: 1 }, '', '/'); } catch (e) {}
+        }
+        function roomInUrl() { try { return /[?&](room|join|play)(=|&|$)/i.test(location.search); } catch (e) { return false; } }
+        document.addEventListener('click', function(e) {
+          var t = e.target && e.target.closest ? e.target.closest('[data-duoorb-play]') : null;
+          if (!t) return;
+          e.preventDefault();
+          showGame();
+        });
+        var fab = document.getElementById('duoorb-webnav-toggle');
+        var sitenav = document.getElementById('duoorb-webnav');
+        if (fab && sitenav) fab.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var open = sitenav.classList.toggle('open');
+          fab.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        document.addEventListener('click', function(e) {
+          if (sitenav && sitenav.classList.contains('open') && fab && !sitenav.contains(e.target) && !fab.contains(e.target)) {
+            sitenav.classList.remove('open');
+            fab.setAttribute('aria-expanded', 'false');
+          }
+        });
+        // State-aware chrome: show the site menu only on game menu screens
+        // (history.state.sub == null). Inside matches/setup/review it hides
+        // completely so nothing floats over the board. Web-only; game untouched.
+        function syncNavVisibility() {
+          var sub = null;
+          try { sub = (window.history.state && window.history.state.sub) || null; } catch (e) {}
+          var inMenu = !sub;
+          document.body.classList.toggle('duoorb-in-menu', inMenu);
+          if (!inMenu && sitenav) {
+            sitenav.classList.remove('open');
+            if (fab) fab.setAttribute('aria-expanded', 'false');
+          }
+        }
+        window.addEventListener('popstate', syncNavVisibility);
+        setInterval(syncNavVisibility, 500);
+        syncNavVisibility();
+        var btn = document.getElementById('mobile-nav-toggle');
+        var drawer = document.getElementById('mobile-nav-drawer');
+        if (btn && drawer) btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var open = drawer.classList.toggle('open');
+          btn.classList.toggle('active', open);
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        if (roomInUrl()) showGame();
+        // Fragment links landing inside the overlay (e.g. /#mobile): the boot
+        // splash + webfont/image layout shifts can strand the initial scroll,
+        // so re-assert it after load. Same-page # links scroll the overlay.
+        function scrollToHash() {
+          try {
+            if (!location.hash) return;
+            var el = document.getElementById(location.hash.slice(1));
+            var home = document.getElementById('duoorb-home');
+            if (el && home && !home.classList.contains('hidden')) el.scrollIntoView();
+          } catch (e) {}
+        }
+        document.addEventListener('click', function(e) {
+          var a = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+          if (!a) return;
+          var el = document.getElementById(a.getAttribute('href').slice(1));
+          var home = document.getElementById('duoorb-home');
+          if (el && home && !home.classList.contains('hidden')) {
+            e.preventDefault();
+            try { history.replaceState(null, '', a.getAttribute('href')); } catch (err) {}
+            el.scrollIntoView();
+          }
+        });
+        window.addEventListener('load', function() { setTimeout(scrollToHash, 60); setTimeout(scrollToHash, 600); });
+        setTimeout(scrollToHash, 300);
+      })();
+    </script>
+
+    <!-- The root element for your Expo app. Role main satisfies the accessibility landmark audit. -->
+    <div id="root" role="main"></div>
   </body>
 </html>

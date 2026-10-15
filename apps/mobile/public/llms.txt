@@ -1,0 +1,25 @@
+# DuoOrb (https://duoorb.com)
+
+> DuoOrb by AS Digital is a free-to-play competitive 9×9 tactical grid board game (inspired by classic abstract corridor strategy rules) playable instantly in any modern web browser with zero registration required. Players alternate moving their orb one orthogonal square or placing a permanent two-square wall into the 8×8 groove lattice (128 wall slots) to lengthen their opponent's shortest path while obeying the Golden Path Rule (every active player must always retain at least one valid path to their goal).
+
+## Core Capabilities & Engine Truth
+- **Instant Browser Arena (`https://duoorb.com/`):** Play immediately as a guest with zero downloads or signups.
+- **Private Friend Lobbies:** One-tap creation of a 6-letter unambiguous room code (`https://duoorb.com/?room=CODE`) supporting custom wall budgets (10, 15, or 99 walls).
+- **Rated 1v1 Matchmaking:** Universal Glicko-2 competitive rating starting at 1500 with global leaderboards.
+- **7 Fischer Clock Presets:** `1+0` Bullet, `1+1` Bullet, `3+0` Blitz (Default), `3+2` Blitz, `5+0` Rapid, `5+3` Rapid, and `10+0` Classical Rapid.
+- **4 Competitive Game Modes:** Classic 1v1 (10 walls each, opposite baseline goal), 4-Player Center Rush (5 walls each, race to center tile `(4,4)`), 2P/3P Center Duel (10 or 6 walls each, goal `(4,4)`), and 2P–4P Baseline Race.
+- **7 Free Offline MCTS AI Personalities + 3 Calibration Tiers:** Powered by `duoorb-rust-mcts-2.0`. Personalities: Martin (800), Elena (1100), Nelson (1450), Sofia (1650), Marcus (1900), Viktor (2100), and Achref (2400), plus Easy (1200), Normal (1500), and Hard (1800). All bots are 100% free.
+- **Post-Match Engine Review:** Grades every move (`Best`, `Excellent`, `Good`, `Forced`, `Inaccuracy`, `Mistake`, `Blunder`) using expected win-equity loss (`Δq × 40`), shortest-path evaluation bars, and interactive move steppers.
+- **Platforms & Localization:** Live on Web and installable as an offline-capable PWA today; native Android (Google Play) and iOS (App Store) apps are Coming Soon. Localized in 10 languages (EN, AR, FR, DE, ES, TR, PT, and more).
+
+## Canonical Documentation & Pages
+- [Web Arena & Overview](https://duoorb.com/): Instant browser gameplay and mode specifications.
+- [Time controls & clocks](https://duoorb.com/rules.html#clocks): 7 Fischer presets from 1+0 Bullet to 10+0 Classical Rapid.
+- [Private rooms & rating ladder (on the home page)](https://duoorb.com/#private-room-architecture): 6-letter room codes and universal rating details.
+- [Complete Illustrated Rules](https://duoorb.com/rules.html): 9×9 setup, straight vs. 3-trigger diagonal jump rules, Golden Path BFS validation, and algebraic notation (`Bd5`, `Hd4`).
+- [Tactical Strategy & Openings](https://duoorb.com/strategy.html): Central March opening, the 3-Space Rule, Wall Parity, and endgame corridor tactics.
+- [AI Bots & MCTS Analysis Engine](https://duoorb.com/bots-and-analysis.html): Dossiers on all 7 free MCTS bots (800–2400) and `duoorb-rust-mcts-2.0` move grading math.
+- [Viral "Two Balls and Walls" Identifier](https://duoorb.com/what-is-the-game-with-two-balls-and-walls.html): Visual identification guide for players who saw the wooden fence maze game on social video feeds.
+- [Play on Your Phone (PWA Guide & Store Status)](https://duoorb.com/#mobile): Pass-and-play, iOS/Android home-screen install steps, and upcoming store status.
+- [About AS Digital](https://duoorb.com/about.html): Studio identity, fair-play server architecture, and contact (`support@duoorb.com`).
+- [Legal & Privacy](https://duoorb.com/privacy.html): Privacy Policy, [Terms of Service](https://duoorb.com/terms.html), [Cookies & AdSense Disclosure](https://duoorb.com/cookies.html), and [Contact](https://duoorb.com/contact.html).

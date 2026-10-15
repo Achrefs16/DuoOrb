@@ -1,0 +1,1400 @@
+# DuoOrb Web — Full Content Report (verbatim, unmodified)
+
+> Every page: name, URL, how to reach it, then its exact visible text copied as-is on 2026-10-15. Nothing rewritten.
+
+---
+
+## 1. Home
+
+URL: https://duoorb.com/
+File: `apps/mobile/public/index.html`
+<title>: Play Quoridor Online Free | DuoOrb Tactical Grid Game
+Access: Header nav Home (all pages) · Logo/brand (all pages) · Game pill Home · Footer · Direct URL. Note: Play buttons site-wide go to /?play=1 which opens the game directly, skipping the landing.
+
+### Visible text (verbatim, in page order)
+
+- Play Quoridor Online Free | DuoOrb Tactical Grid Game
+- DuoOrb
+- DuoOrb — Tactical 1v1 Grid Board Game
+- Outsmart opponents, place strategic walls, and race your orb to the goal. Play free online against friends or smart AI bots.
+- Please enable JavaScript to play DuoOrb in your browser.
+- Clocks &amp; Rooms
+- ·
+- Game Rules
+- ·
+- Mobile App
+- ·
+- About
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- DuoOrb
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Play Now
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Tactical 1v1 Grid Board Game
+- DuoOrb — the pure duel of wits. Play free in your browser.
+- Race your orb to the far edge while placing walls to slow your rival. One move or one wall per turn, straight jumps over adjacent orbs, diagonal jumps when blocked, and one golden rule: at least one path must always stay open. Rated duels, private friend rooms, multi-orb party modes, offline bot sparring, and engine-graded match review.
+- Play Now
+- Learn Rules
+- Looking for the phone app?
+- See Mobile App status
+- .
+- Free to play · No account needed for guest play · Matches are never interrupted by popups
+- Why DuoOrb
+- Everything you need for a serious duel
+- Ranked
+- Rated ladder
+- Climb a universal rating on the global leaderboard, from your first match to club level.
+- Friends
+- Private rooms
+- Share a room code or link. Friends join instantly in the browser.
+- Practice
+- Bot sparring, offline
+- Seven personalities plus 3 practice tiers. All bots free. Details:
+- AI &amp; Analysis
+- .
+- Review
+- Engine analysis
+- Every move graded best to blunder with accuracy and deciding moment.
+- Party
+- Center Rush + Race
+- Classic duels, multi-orb center capture, and edge-race variants. Details:
+- Rules
+- .
+- Mobile
+- App + PWA
+- Coming soon to Google Play and the Apple App Store. Play instantly in your browser or install the web app (PWA) today.
+- Rooms &amp; Clocks
+- About DuoOrb
+- Fair by Design
+- Zero Luck. Pure Skill.
+- No dice, no hidden cards, no pay-to-win. Every match is decided by who counts paths better and spends walls smarter. The full specs engineers love live one click away in
+- Strategy
+- .
+- Read the Opening &amp; Endgame Strategy Guide →
+- Custom Arena Configuration
+- Select Classic 1v1, Center Rush, or Race modes, set wall budgets (10, 15, or 99 sandbox), and configure Fischer increment clocks before launching.
+- Anatomy of a Turn
+- Sixty Seconds to Your First Match
+- One tap opens the arena. From there every turn works the same way, whether you face a friend, a rated stranger, or a starter bot. Details:
+- AI &amp; Analysis
+- .
+- Step 1
+- Step or Build
+- Move your orb one square — or spend the turn placing one wall from your reserve into the grooves. Walls are permanent, so each one is a real decision.
+- Step 2
+- Jump When Close
+- Meet face-to-face with no wall between you and you leap straight over your rival — or diagonally if a wall, the board edge, or a third orb blocks the landing square.
+- Step 3
+- Race, Review, Climb
+- Touch the far edge (or the center tile in Center Rush) to win. Then open Engine Review to see every move graded, and queue ranked to climb the ladder.
+- Play With Friends
+- How Private Room Codes Work
+- Tap
+- Create Room
+- and you get a short 6-letter code. Send it — or the join link — over any chat app, and your friend is playing with you in seconds, no account needed. You pick the mode, walls and clock, then you both hit Ready.
+- Rating, Simply
+- How the Rating Ladder Works
+- Every rated 1v1 match moves one number: your rating, starting at
+- 1500
+- . Win and it climbs — faster when you're new, steadier once you've proven yourself. The leaderboard shows exactly where you stand.
+- From Lobby to Review
+- How an Online Match Flows
+- 1 · Lobby
+- Create or Queue
+- Generate a room code for a friend, or enter rated matchmaking. The host sets the mode, wall budget and clock before both sides mark Ready.
+- 2 · Duel
+- Play the Clock
+- Alternate move-or-wall turns under your chosen control. Illegal walls — overlaps, crosses or zero-path seals — are rejected before they land.
+- 3 · Review
+- Grade Every Turn
+- Win or lose, Engine Review scores each turn from Best to Blunder and names the deciding moment. Rematch in one tap.
+- Platform Comparison
+- Instant Play, No Lobby Delays, Real Analysis
+- What you get here versus legacy browser portals and ad-heavy clones.
+- Feature
+- DuoOrb
+- Legacy Portals
+- Ad-Heavy Clones
+- Start playing
+- Instantly, in any browser
+- Often needs an account
+- Lengthy forced tutorials
+- During matches
+- Never interrupted · Fluid 60 FPS
+- Clunky lobby delays
+- Frequent video interruptions
+- After matches
+- Move-by-move engine grades
+- Move list only
+- No analysis tools
+- Practice
+- 7 free bots, offline-ready
+- Online connection required
+- Basic random-move bots
+- Modes
+- Classic 1v1, Center Rush, Race, custom rules
+- Standard 1v1 only
+- Fixed boards only
+- Zero Download
+- Play on Your Phone in 10 Seconds
+- No store download needed. Two players share one phone screen with pass-and-play, or add DuoOrb to your home screen: iPhone Safari → Share → Add to Home Screen; Android Chrome → menu → Install app. Sign in with Google and your rating, history and friends sync everywhere. Full steps:
+- Mobile install guide
+- .
+- Multiplayer Questions
+- Online Play, Answered
+- Can I play online without installing anything?
+- Yes. DuoOrb runs in any modern browser on phone or computer. Play as a guest immediately — zero downloads.
+- How do private rooms work?
+- Create a room, share the 6-letter code or link, and your friend joins instantly. No account needed for guest play.
+- How does rated matchmaking work?
+- Queue for a rated 1v1 duel on one universal rating from 1500. Wins move you up the global leaderboard.
+- What is DuoOrb's relationship to classic corridor strategy?
+- DuoOrb is our modern take on the classic 9×9 wall-placement duel: same race-and-block heart, plus online rooms, clocks, bots and engine review. New to the rules? Start at
+- Rules
+- .
+- DuoOrb
+- The modern abstract strategy board game. Play free online or download on mobile.
+- Play
+- Play Now
+- Rules
+- Learn
+- Complete Rules
+- About DuoOrb
+- Game Identifier Guide
+- Platforms
+- Mobile App (Coming soon)
+- Mobile App Overview
+- Install Web App (PWA)
+- © 2026 DuoOrb. All rights reserved.
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- ·
+- About
+- Explore
+- Home
+- Play
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- ☰
+
+---
+
+## 2. Rules
+
+URL: https://duoorb.com/rules.html
+File: `apps/mobile/public/rules.html`
+<title>: How to Play DuoOrb — Complete Illustrated Rules &amp; Tactics
+Access: Header nav Rules (all pages) · Drawer · Footer Play/Learn cols · In-content links (Home cards, App, Strategy, Bots FAQs).
+
+### Visible text (verbatim, in page order)
+
+- How to Play DuoOrb — Complete Illustrated Rules &amp; Tactics
+- DuoOrb
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Play Now
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Rulebook & Tactical Handbook
+- How to Play DuoOrb: Complete Illustrated Rules &amp; Tactics
+- Two pieces. Twenty walls. One objective: be the first player to touch any square on the opposing baseline. Every turn presents a pivotal trade-off between advancing your own piece or lengthening your rival's route.
+- Fundamental Gameplay
+- The Four Canonical Rules
+- Every match follows strict, elegant geometry. Below is each canonical rule illustrated with board diagrams.
+- Rule One
+- The Objective & Starting Setup
+- The game is played on a 9×9 grid. Player 1 (Blue) begins on the center square of row 9 (
+- e9
+- ). Player 2 (Red) begins on the center square of row 1 (
+- e1
+- ). In a standard 2-player match, each player receives a reserve of 10 walls. The first player to reach any square on their opponent's starting edge wins immediately.
+- RED GOAL LINE (BLUE TARGET)
+- BLUE GOAL LINE (RED TARGET)
+- P2
+- P1
+- Blue moves upward toward row 1; Red moves downward toward row 9.
+- Rule Two
+- The Two Actions: Move or Place a Wall
+- Players take turns alternating. On your turn, you must perform exactly
+- one
+- of two choices:
+- Move your piece:
+- Step one square horizontally or vertically (up, down, left, right). Diagonal moves are not allowed during standard steps.
+- Place a wall:
+- Position a wall into the groove between squares. Each wall spans exactly two square lengths and can be placed horizontally or vertically. Once placed, walls are permanent and cannot be moved or removed.
+- Rule Three
+- The Jumping Rule: Straight & Diagonal Leaps
+- When two opposing orbs stand face-to-face on adjacent squares with no intervening wall, special leap mechanics apply:
+- Case A: Straight Jump
+- If the space behind the rival is clear, leap straight over them into the square beyond.
+- Case B: Diagonal Jump
+- If a wall, the board edge, or a third occupied orb blocks the straight square behind your rival, leap diagonally to the left or right. When the straight jump is open it is mandatory — and finished orbs in multiplayer modes become pass-through ghosts.
+- Rule Four
+- The Golden Rule: Complete Trapping is Strictly Forbidden
+- You may build sprawling labyrinths and detours that force your opponent to walk thirty steps out of their way. However, you
+- cannot completely seal off
+- any player. Every legal wall placement must leave at least one open path connecting each player to their respective victory edge.
+- Engine Enforcement:
+- In the DuoOrb app and online arena, our graph-validation algorithm checks connectivity before allowing a wall drop. Illegal placements that create zero-path dead ends cannot be confirmed.
+- 2-Player, 3-Player &amp; 4-Player Specifications
+- Wall Budgets, Starting Coordinates &amp; Victory Targets
+- When more than two orbs share the 9×9 board, wall budgets scale down to keep the 128-slot groove lattice open and tactical, while victory conditions shift based on the selected format.
+- Format ID
+- Active Seats
+- Walls per Seat
+- Starting Coordinates (Row, Col)
+- Goal Target
+- Classic 1v1 (
+- 2p
+- )
+- 2 (Blue, Red)
+- 10 walls each
+- Blue
+- e9
+- · Red
+- e1
+- Blue → Rank 1 edge · Red → Rank 9 edge
+- 4P Center Rush (
+- 4p
+- )
+- 4 (Blue, Red, Green, Yellow)
+- 5 walls each
+- B
+- e9
+- · R
+- e1
+- · G
+- a5
+- · Y
+- i5
+- Exact center square
+- (4,4)
+- 2P Center Duel (
+- center2
+- )
+- 2 (Blue, Red)
+- 10 walls each
+- Blue
+- e9
+- · Red
+- e1
+- Exact center square
+- (4,4)
+- 3P Center Rush (
+- center3
+- )
+- 3 (Blue, Red, Green)
+- 6 walls each
+- Blue
+- e9
+- · Red
+- e1
+- · Green
+- a5
+- Exact center square
+- (4,4)
+- Baseline Race (
+- race2–4
+- )
+- 2, 3, or 4
+- 10 (2P), 6 (3P), 5 (4P)
+- Rank 9:
+- c9+g9
+- (2P),
+- b9+e9+h9
+- (3P),
+- b9+d9+f9+h9
+- (4P)
+- All seats race to the Rank 1 edge
+- Clocks
+- Time Controls &amp; Fischer Increments
+- Every match runs on a real clock: a starting bank of minutes plus bonus seconds after each turn. Seven presets, from 90-second bullet chaos to slow study games.
+- Preset
+- Category
+- Base Time
+- Increment per Turn
+- Typical Match
+- 1+0
+- Bullet
+- 1 Minute
+- +0 seconds
+- 90–120 seconds of pure intuition.
+- 1+1
+- Bullet Increment
+- 1 Minute
+- +1 second
+- 2–3 minutes, enough to survive a long endgame detour.
+- 3+0
+- Blitz (Default)
+- 3 Minutes
+- +0 seconds
+- 4–6 minutes, the standard ladder format.
+- 3+2
+- Blitz Increment
+- 3 Minutes
+- +2 seconds
+- 5–8 minutes for high-wall tactical battles.
+- 5+0
+- Rapid
+- 5 Minutes
+- +0 seconds
+- 7–10 minutes, club standard with exact step-counting.
+- 5+3
+- Rapid Increment
+- 5 Minutes
+- +3 seconds
+- 9–13 minutes for deep positional squeezing.
+- 10+0
+- Classical Rapid
+- 10 Minutes
+- +0 seconds
+- 12–20 minutes, full-calculation championship pace.
+- Match Recording &amp; Replay Standard
+- How to Read DuoOrb Algebraic Notation
+- Every match played in DuoOrb is recorded in a compact, human-readable coordinate notation used by the move stepper and analysis engine.
+- 1. Grid Coordinates
+- The 9×9 board uses columns
+- a through i
+- (left to right) and ranks
+- 1 through 9
+- . Each seat is prefixed by its color code:
+- B
+- (Blue, Seat 1),
+- R
+- (Red, Seat 2),
+- G
+- (Green, Seat 3), and
+- Y
+- (Yellow, Seat 4).
+- 2. Pawn Steps (
+- Bd5
+- )
+- A pawn move combines the seat letter with the destination square. For example,
+- Bd5
+- means the Blue orb stepped (or jumped) onto column
+- d
+- , rank
+- 5
+- . Similarly,
+- Re7
+- records the Red orb moving to square
+- e7
+- .
+- 3. Wall Drops (
+- Hd4
+- /
+- Ve6
+- )
+- Wall placements sit on the 8×8 internal intersection lattice (anchored by the top-left square of the 2×2 block the wall bisects).
+- Hd4
+- places a two-square
+- Horizontal
+- wall anchored at
+- d4
+- ;
+- Ve6
+- places a
+- Vertical
+- wall anchored at
+- e6
+- .
+- Instant Legality Check
+- Why a Wall Drop Gets Accepted or Rejected
+- Before any wall lands, the engine runs four checks in order. Learn them and you will never be surprised by a rejected placement — or miss a chance to punish one.
+- Checks 1–2: Stock and Geometry
+- First, you must have a wall left in reserve — empty hands mean walking only. Second, the wall must sit fully inside the 8×8 intersection lattice, spanning exactly two squares horizontally or vertically.
+- Checks 3–4: Conflicts and Paths
+- Third, the wall must not duplicate, cross, or overlap an existing wall along the same groove. Fourth, the golden path rule: after placement, every active orb must still own at least one route to its goal, verified by breadth-first search.
+- Ending Early
+- Resigning, Flagging and Multiplayer Finishes
+- In 1v1, resigning or running out of time hands the win to your opponent immediately. In 3–4 player games a resignation takes the worst remaining place while the rest play on, and finished orbs become pass-through ghosts. Full notation of every finished match is kept for review — see
+- AI &amp; Analysis
+- to learn how grades are computed.
+- Engine Review
+- See How the Engine Scores Your Moves
+- Every turn graded from Best to Blunder, with accuracy and the deciding moment.
+- Read the AI &amp; Analysis Guide →
+- Frequently Asked Questions
+- Clarifications on Common Scenarios
+- Can I place a wall behind my own orb?
+- Yes. Defensive walls that shield your back line from opponent counters are completely legal, as long as an open path to your goal line remains available.
+- Can I pass my turn without moving or placing a wall?
+- No. Quoridor and DuoOrb do not permit passing. You must execute either an orb move or a legal wall placement on every turn.
+- What happens in 4-player games when three orbs cluster?
+- In 4-player mode, you can jump over one adjacent opponent. If a second opponent stands behind the first, you cannot double-jump in a straight line; you must leap diagonally to an open adjacent square.
+- Can I play against AI bots to practice these rules?
+- Yes! DuoOrb includes 7 sparring personalities rated 800–2400 plus three practice tiers — all 100% free. Full dossiers:
+- AI &amp; Analysis
+- .
+- Ready to Play?
+- Test your strategy against real players.
+- No signup needed. Jump right into a quick match in your browser.
+- Play Now
+- DuoOrb
+- DuoOrb rules reference: movement, walls, jumps and the golden path rule.
+- Play
+- Play Now
+- Rooms &amp; Clocks
+- Rules
+- Learn
+- Complete Rules
+- Jump Rule Masterclass
+- Game Identifier Guide
+- Platforms
+- Mobile App (Coming soon)
+- Mobile App Overview
+- Install Web App (PWA)
+- © 2026 DuoOrb. All rights reserved.
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- ·
+- About
+
+---
+
+## 3. Strategy
+
+URL: https://duoorb.com/strategy.html
+File: `apps/mobile/public/strategy.html`
+<title>: DuoOrb & Quoridor Strategy Guide — Openings, Wall Parity & Endgame Tactics
+Access: Header nav Strategy (all pages) · Drawer · Footer Learn col · In-content links (Home fairness card, Bots hero, Rules link card).
+
+### Visible text (verbatim, in page order)
+
+- DuoOrb & Quoridor Strategy Guide — Openings, Wall Parity & Endgame Tactics
+- DuoOrb
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Play Now
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Grandmaster Tactical Manual
+- DuoOrb Strategy Guide: Openings, Wall Parity &amp; 9×9 Endgame Calculation
+- The rules take sixty seconds to learn. Winning takes discipline: every turn you choose between running toward the goal or spending one of your 10 walls to slow your rival down. This guide teaches the three habits that separate beginners from club players — spending walls only when they earn two steps, keeping distance from open corridors, and saving walls for the endgame.
+- Play Now
+- The Three Laws of Path Economics
+- How Master Players Value a Single Wall
+- Beginners place walls emotionally — dropping a fence right in front of the opponent just to force one sidestep. Strong players ask one question first: does this wall earn its turn? These three rules answer it.
+- Invariant 01
+- Only Spend a Wall When It Earns Two Steps
+- A wall costs your whole turn plus 1 of your 10 walls. So a wall that only forces one sidestep loses you the exchange. Attack only when a wall costs your rival 2 or more extra steps — or when it completes a trap built over several turns.
+- Invariant 02
+- The 3-Space Proximity Rule
+- Every wall covers two squares, so any existing wall or board edge near your path is a hook for a trap. Crossing the middle of the board, keep roughly three squares of distance from open side corridors — or close your own safe lane first with a defensive wall.
+- Invariant 03
+- Wall Parity &amp; Reserve Discipline
+- Count walls like points. Holding 3 walls when your rival has none is usually a forced win: they can only walk straight ahead while you build a 15-step detour across the board. Never be the first to run out. Most beginners fall into the
+- Wall Depletion Trap
+- — burning all 10 walls in the opening turns, then watching helplessly while you dictate the maze. Always keep 2 to 3 walls back for the endgame race.
+- First 6 Plies
+- Standard Opening Systems on the 9×9 Grid
+- In almost all high-level games, both players spend the first three turns walking straight down the middle until their orbs meet at the center. What happens next decides the whole match.
+- 1. The Classical Central March (3+3 Stem)
+- Blue starts at
+- (8,4)
+- and Red starts at
+- (0,4)
+- . Both players step straight toward the center row for three consecutive turns. Why not place walls on turn 1 or turn 2? Because an early wall placed while your opponent is still on row 1 or row 2 leaves them eight open ranks to route around it effortlessly, wasting your wall for zero net detour.
+- Once the pawns stand one square apart in the center, tension peaks: whoever steps directly adjacent first hands the opponent a
+- free straight jump
+- , yielding a two-square leap in a single turn.
+- 2. The Defensive Back-Wall &amp; Gap System
+- Instead of stepping into a face-to-face jump disadvantage, master players often play a
+- defensive horizontal wall behind their own orb
+- (or one column offset, creating a two-square side gate). This accomplishes two strategic goals simultaneously: it passes the move initiative (forcing your opponent to step forward or spend a wall first) and it prevents your opponent from sealing your back ranks later in the mid-game.
+- Mid-Game &amp; Endgame Patterns
+- Four Tactical Motifs Every Competitor Must Recognize
+- Tactical Motif
+- Board Geometry
+- Execution &amp; Counterplay
+- Self-Walling (Highway Locking)
+- Placing a vertical or horizontal wall adjacent to your own path that blocks a future enemy cut-off.
+- Because walls cannot cross or overlap, placing a wall through a critical intersection (for example a wall like
+- Hd4
+- across your own corridor) makes it geometrically impossible for your opponent to place a perpendicular wall across that same groove.
+- The Two-Side Pinch
+- A horizontal wall skeleton spans columns b–g, leaving open passages on both the a-file (left) and i-file (right).
+- Never close the side your opponent is walking toward first while the far side remains open — they will simply seal your path instead. Force them to commit to one wing, or close the distant wing when you hold a tempo lead.
+- Diagonal Jump Traps
+- Two orbs stand adjacent with a wall directly behind one orb, enabling a lateral diagonal leap.
+- Before placing a frontal wall directly behind your own pawn in a duel (a vertical seal like
+- Ve6
+- is the classic), verify whether your opponent can step adjacent on the next ply and use your own wall as a springboard for a diagonal bypass.
+- 4-Player Center Rush Funneling
+- Four players hold 5 walls each, all converging on tile
+- (4,4)
+- .
+- In
+- 4p
+- Center Rush, spending walls early against one player hands a free tempo lead to the other two seats. Conserve at least 3 of your 5 walls until an opponent enters the inner 3×3 ring around
+- (4,4)
+- .
+- Tactical Questions
+- Strategy FAQ
+- Does the first player have a first-move advantage?
+- In a pure 9×9 race with zero walls, moving first gives a 1-tempo lead. However, because both players hold 10 walls and face the central jump standoff, the second player can use defensive back-walling to equalize tempo and force the first player to commit the first structural wall.
+- When should I walk instead of placing a wall?
+- Follow the grandmaster default rule:
+- when in doubt, advance your orb.
+- Pawn steps are an unlimited resource that permanently reduce your distance to the goal, whereas walls are strictly capped at 10 per game.
+- How do I stop losing to early wall spammers?
+- If an opponent drops 5 or 6 walls in the first 8 turns, do not retaliate with counter-walls. Calmly walk the shortest available route around their fences. Once their wall counter drops below 3 while you still hold 8 or more walls, use your massive wall surplus to force them all the way back to their starting baseline.
+- How can I find out which wall cost me the game?
+- After any match in DuoOrb, open
+- Engine Review
+- . The Rust MCTS solver evaluates the win-probability change of every turn and flags the exact
+- Deciding Moment
+- where a premature wall or missed shortcut swung the match.
+- DuoOrb
+- DuoOrb strategy handbook: openings, wall parity and endgame calculation.
+- Play
+- Play Now
+- Rules
+- Learn
+- Complete Rules
+- Strategy Guide
+- AI &amp; Analysis
+- Platforms
+- Mobile App (Coming soon)
+- Install Web App (PWA)
+- About DuoOrb
+- © 2026 DuoOrb. All rights reserved.
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- ·
+- About
+
+---
+
+## 4. AI & Analysis
+
+URL: https://duoorb.com/bots-and-analysis.html
+File: `apps/mobile/public/bots-and-analysis.html`
+<title>: DuoOrb AI Bots — Free Sparring Partners From Beginner to 2400
+Access: Header nav AI & Analysis (all pages) · Drawer · Footer Learn col · In-content links (Home practice card, Rules FAQ + link card, App modes card, Strategy hero).
+
+### Visible text (verbatim, in page order)
+
+- DuoOrb AI Bots — Free Sparring Partners From Beginner to 2400
+- DuoOrb
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Play Now
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- AI Sparring Partners
+- Meet the 7 Free AI Sparring Partners
+- Stuck with no friends online? Seven sparring partners wait inside DuoOrb, from Martin — who plays like your friendly dad — up to Achref, who calculates like a machine. Every one is free, works offline, and teaches you something different. And after each match, the same engine grades every move you made.
+- Play Now
+- 100% Free · Works Offline
+- The Complete 7-Bot Personality Ladder (800 to 2400 Rating)
+- Reading the table:
+- MCTS Playouts measure how many future board positions each bot calculates per turn, while Randomness controls how often a bot intentionally plays a human-like imperfect move. Higher playouts plus zero randomness means a colder, stronger opponent. Three plain sparring tiers back the roster up:
+- Easy (1200)
+- ,
+- Normal (1500)
+- , and
+- Hard (1800)
+- .
+- Bot Personality
+- Rating &amp; Tier
+- MCTS Playouts
+- Think Budget
+- Randomness
+- Signature Playing Style
+- Martin
+- The Friendly Dad
+- 800
+- Beginner
+- 250 sims
+- 40 ms
+- 0.50 (High)
+- Low wall frequency (0.15). Plays for fun, advances his orb straightforwardly, and leaves clear tactical openings for newcomers learning jump rules.
+- Elena
+- The Eager Student
+- 1100
+- Beginner
+- 600 sims
+- 60 ms
+- 0.15 (Moderate)
+- Moderate wall frequency (0.35). A university board-game theorist who tests early opening fences and punishes basic one-move overlooks.
+- Nelson
+- The Aggressive Challenger
+- 1450
+- Intermediate
+- 1,000 sims
+- 100 ms
+- 0.10 (Low)
+- Direct, relentless pressure. Loves dropping aggressive frontal walls to disrupt your rhythm and force early corridor detours.
+- Sofia
+- The Calm Competitor
+- 1650
+- Intermediate
+- 1,500 sims
+- 150 ms
+- 0.05 (Minimal)
+- Experienced club player who favors surgical, high-efficiency walls and clean tempo calculation over reckless wall races.
+- Marcus
+- The Seasoned Master
+- 1900
+- Master
+- 2,200 sims
+- 200 ms
+- 0.00 (Zero)
+- Pure deterministic search. Builds suffocating multi-wall corridors and exploits wall-parity imbalances in the second half of the match.
+- Viktor
+- The Master Analyst
+- 2100
+- Master
+- 3,000 sims
+- 240 ms
+- 0.00 (Zero)
+- Grandmaster theorist with deep branching calculation. Counts exact endgame step differentials and locks down side-file escape routes.
+- Achref
+- The System Architect
+- 2400
+- Master
+- 3,500 sims
+- 1,000 ms
+- 0.00 (Zero)
+- The pinnacle DuoOrb architect persona. Runs full-second deep MCTS rollouts to uncover hidden counter-traps and mathematically optimal wall geometry.
+- Post-Match Breakdown
+- How Every Move Gets Graded, From Best to Blunder
+- After each match, DuoOrb replays every turn and scores how much win chance it gained or lost you — then labels it in plain words, from Best down to Blunder:
+- Best (Loss ≤ 0.03):
+- The mathematically optimal path step or highest-leverage wall on the board.
+- Excellent (Loss ≤ 0.07):
+- A near-optimal decision that preserves full positional command.
+- Good (Loss ≤ 0.15):
+- A solid, practical move (guaranteed whenever move accuracy retains ≥ 85% win equity).
+- Forced:
+- The only sensible legal response in a single-corridor sequence.
+- Inaccuracy (Loss ≤ 0.28):
+- A suboptimal wall or passive step that yields 1–2 steps of tempo.
+- Mistake (Loss ≤ 0.42):
+- A serious tactical slip that hands control of the board state to your opponent.
+- Blunder (Loss greater than 0.42):
+- A game-swinging error — such as sealing the wrong wing of the board or walking into a multi-wall trap.
+- Interactive Move Stepper &amp; Deciding Moment
+- Scrub through every ply of your match, inspect the live evaluation bar, and compare your move against the engine's recommended line.
+- Frequently Asked Questions
+- AI &amp; Analysis Questions
+- Are DuoOrb bots free?
+- Yes. All 7 named AI personalities plus the Easy 1200, Normal 1500 and Hard 1800 calibration tiers are 100% free and work offline.
+- Which bot should a beginner start with?
+- Start with Martin (800), then Elena (1100), then Nelson (1450). Each step up adds simulation budget and removes randomness. Full rules:
+- Rules
+- .
+- How does Engine Review grade moves?
+- The Rust MCTS engine computes win-equity loss per turn and grades Best, Excellent, Good, Forced, Inaccuracy, Mistake or Blunder, with accuracy and the deciding moment.
+- DuoOrb
+- DuoOrb AI lab: 7 free bots and Rust MCTS move grading.
+- Play
+- Play Now
+- Rules
+- Learn
+- Strategy Guide
+- AI &amp; Analysis
+- Game Identifier Guide
+- Platforms
+- Mobile App (Coming soon)
+- Install Web App (PWA)
+- About DuoOrb
+- © 2026 DuoOrb. All rights reserved.
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- ·
+- About
+
+---
+
+## 5. Viral Guide
+
+URL: https://duoorb.com/what-is-the-game-with-two-balls-and-walls.html
+File: `apps/mobile/public/what-is-the-game-with-two-balls-and-walls.html`
+<title>: What Is the Game with Two Balls and Walls? | Play Free on DuoOrb
+Access: NOT in header nav. Footer Learn col every page (Game Identifier Guide) · Home comparison section link. One click deeper than nav pages.
+
+### Visible text (verbatim, in page order)
+
+- What Is the Game with Two Balls and Walls? | Play Free on DuoOrb
+- DuoOrb
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Play Now
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Viral Game Guide
+- You saw the clip: Two orbs, wooden fences, and a brutal last-second block.
+- Across short-form video feeds and tabletop streams, one clip format always stops the scroll: two spheres facing off on a 9×9 grid while players rapidly drop wooden fences into the grooves between squares to build last-second mazes. That game is the classic two-orb wall duel — and
+- DuoOrb
+- brings that exact heart-pounding duel directly to your screen.
+- The Game Behind the Feed
+- Yes, this is the exact game you were searching for.
+- If you've seen trending clips of two spheres racing through wooden fence labyrinths, you have found the game! The classic tabletop duel is
+- Quoridor
+- . Known across social media as the wooden wall race or corridor duel, DuoOrb brings the authentic competitive experience straight to your browser and mobile device.
+- Read Full Rules
+- Visual Match
+- Look familiar? Here is the actual gameplay.
+- Every clip you saw online captures the exact same tension: two players navigating a maze of walls, desperate to touch the opposing baseline first.
+- The 1v1 Wall Duel
+- Place fences to deflect your opponent or advance your piece toward their goal line.
+- The Clutch Endgame
+- Down to the final wall: one precise block seals the win, while a mistake hands it away.
+- How It Works
+- The Four Simple Rules That Create Infinite Depth
+- The genius of the game is that a child can learn it in two minutes, but grandmasters study the tactics for years.
+- The Objective
+- 1. The Cross-Board Race
+- You start on your baseline; your opponent starts on the opposite side. The first piece to touch any space on the rival's starting edge wins.
+- Your Choice
+- 2. Step or Build
+- Every turn, you do only one thing: move your piece one step, OR place a 2-square wall into the board's grooves to force a detour.
+- The Leap
+- 3. Jumping Rivals
+- When you meet face-to-face with no wall between you, you can jump cleanly over your rival. If a wall blocks behind them, you leap diagonally!
+- The Catch
+- 4. No Complete Traps
+- You can make your rival's path 30 steps long, but you can never completely close all exits. At least one open path to the goal must always exist.
+- 60-Second Identification Guide
+- How to Confirm You Found the Exact Game from the Video
+- People search for this abstract strategy classic under dozens of descriptive names — from “the two marbles and wooden fences game” to “the 9×9 corridor block game.” Check these five signature mechanics against the clip you watched:
+- What You Saw in the Clip
+- Actual Game Term in DuoOrb
+- How the Mechanic Works
+- Two spheres or pawns starting at opposite ends of a square grid
+- Orbs on the 9×9 Arena
+- Blue starts on bottom center
+- (8,4)
+- and races to the top edge; Red starts on top center
+- (0,4)
+- and races to the bottom edge.
+- Players sliding flat wooden planks into slots between squares
+- 2-Square Groove Walls
+- Each player starts a 1v1 duel with 10 walls. Placing a wall takes your entire turn and permanently blocks two adjacent square edges.
+- One ball hopping straight or diagonally over the other ball
+- Straight &amp; Diagonal Jumps
+- When two orbs stand face-to-face without a wall between them, the active player leaps straight over — or diagonally if a wall blocks behind.
+- A player forced to walk all the way back across a giant zig-zag maze
+- The Golden Path Rule
+- You can never seal an opponent in completely (at least 1 open path must always exist), but you can force a 25-step detour across the board. Full rules:
+- Rules
+- .
+- Four different colored pieces racing toward the middle of the board
+- 4-Player Center Rush
+- DuoOrb's party mode where 4 players start on all four edges with 5 walls each and race to claim the single center square
+- (4,4)
+- .
+- Your First Minute
+- Try the Exact Position from the Clip
+- 0:00–0:20
+- Open the Arena
+- Tap Play Now. No download, no account — you start on your baseline with 10 walls, facing one rival orb.
+- 0:20–0:40
+- Walk Three Steps
+- March straight toward the center row. Feel how each step shortens your race while the maze stays empty.
+- 0:40–1:00
+- Drop One Wall
+- Place a horizontal wall in front of your rival and watch their shortest path number jump. That number is the whole game — master it in
+- Strategy
+- .
+- Jump Into the Arena
+- Stop watching the clips. Start playing.
+- Challenge a friend or test your wits against our AI bots. 100% free, runs instantly in your browser, or install the app on mobile.
+- Play Now
+- DuoOrb
+- The viral two-orb wall duel, identified in 60 seconds and playable free.
+- Play
+- Play Now
+- Rooms &amp; Clocks
+- Rules
+- Strategy
+- AI &amp; Analysis
+- Learn
+- Complete Rules
+- Jump Rule Masterclass
+- Viral Game Identifier
+- Platforms
+- Mobile App (Coming soon)
+- Mobile App Overview
+- Install Web App (PWA)
+- © 2026 DuoOrb. All rights reserved.
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- ·
+- About
+
+---
+
+## 6. App (Install & Store Status)
+
+URL: https://duoorb.com/app.html
+File: `apps/mobile/public/app.html`
+<title>: DuoOrb Mobile App — Tactical Wall & Orb Strategy for iOS & Android
+Access: NOT in header nav (delisted until stores live). Footer Platforms col (Mobile App Overview / Install Web App PWA / Coming soon) · See Mobile App status text links · #store-status and #ios-coming-soon anchors.
+
+### Visible text (verbatim, in page order)
+
+- DuoOrb Mobile App — Tactical Wall & Orb Strategy for iOS & Android
+- DuoOrb
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Play Now
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Mobile App & PWA Edition
+- The pure duel of wits, engineered for your phone.
+- DuoOrb transforms the timeless abstract strategy of Quoridor into a fast, fluid mobile experience. Place fences, race your orb, jump rivals, and dissect every blunder with grandmaster-level match analysis.
+- Play Now
+- Install the PWA →
+- Coming soon to Google Play and the App Store —
+- store status
+- .
+- Full cross-platform play · 100% Free to play · Web pages show page ads, matches are never interrupted by popups
+- Experience the board at your fingertips
+- Real-Time 1v1 Arena
+- Tactile wall placement controls with instant legal-move highlights and live clocks.
+- Engine Review
+- Every move graded by minimax AI: inaccuracies, blunders, and winning lines.
+- 4-Player Center Rush
+- Four orbs, shared walls, and a race to claim the contested golden center tile.
+- Honest Status
+- What Plays Today vs What Stores Will Add
+- Playable Right Now (Web App)
+- Rated duels, private friend rooms, offline-capable bots, real-time clocks, Classic / Center Rush / Race modes, pass-and-play on one screen, and full Engine Review after every match. How each works:
+- Rooms &amp; clocks
+- ·
+- AI &amp; Analysis
+- .
+- Coming with Native Stores
+- Push notifications for friend moves and room invites, haptic wall-drop feedback, home-screen launch without a browser, and background match alerts. Your guest or Google account carries ratings, history and friends over automatically.
+- Zero-Wait Mobile Access
+- How to Install DuoOrb on iOS &amp; Android Today (PWA)
+- While the native Google Play and Apple App Store packages complete pre-release preparation, you can install DuoOrb directly to your phone's home screen in ten seconds. It launches full-screen in portrait mode without browser toolbars.
+- 1. iPhone &amp; iPad (Safari)
+- Open
+- duoorb.com
+- in Safari, tap the
+- Share
+- icon at the bottom of the screen, scroll down and select
+- Add to Home Screen
+- , then tap
+- Add
+- . DuoOrb will appear on your home screen with its custom icon and standalone full-screen viewport.
+- 2. Android (Chrome / Edge)
+- Open
+- duoorb.com
+- in Chrome, tap the three-dot menu in the top corner, and select
+- Install app
+- (or
+- Add to Home screen
+- ). The web app caches core board assets locally for rapid launch and smooth touch controls.
+- 3. Cross-Platform Account Sync
+- Play immediately as an anonymous guest, or sign in with Google to lock in your rating, match history, and friend list. When the native store apps launch, your progress carries over automatically.
+- Get DuoOrb Today
+- Master the walls. Claim the grid.
+- Coming soon to Google Play and the Apple App Store. Play the free web app today — store listings will appear here at launch.
+- Play Now
+- DuoOrb
+- DuoOrb for phones: offline bots, Center Rush and engine review. Coming soon to stores — play the web app today.
+- Play
+- Play Now
+- Rooms &amp; Clocks
+- Rules
+- Strategy
+- AI &amp; Analysis
+- Learn
+- Complete Rules
+- Jump Rule Masterclass
+- Game Identifier Guide
+- Platforms
+- Mobile App (Coming soon)
+- Mobile App Overview
+- Install Web App (PWA)
+- © 2026 DuoOrb. All rights reserved.
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- ·
+- About
+
+---
+
+## 7. About
+
+URL: https://duoorb.com/about.html
+File: `apps/mobile/public/about.html`
+<title>: About DuoOrb — Tactical Grid Board Game by AS Digital
+Access: Header nav About (all pages) · Drawer · Footer Learn col + legal row · Organization publisher link in every JSON-LD block.
+
+### Visible text (verbatim, in page order)
+
+- About DuoOrb — Tactical Grid Board Game by AS Digital
+- DuoOrb
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Play Now
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- About DuoOrb
+- DuoOrb is Quoridor-style strategy: race orbs, block with walls.
+- DuoOrb by AS Digital is our take on Quoridor — the classic 9×9 duel where two orbs race across the board while players drop walls to slow each other down. It plays free right now in any web browser, with native Android and iOS apps on the way. One account, one rating, everywhere.
+- Play Now
+- Read Rules
+- Looking for the phone app?
+- See Mobile App status
+- .
+- Engineering &amp; Architecture
+- Built for Speed, Fair Play and Everyone
+- AS Digital created DuoOrb for one reason: the classic corridor duel deserved the same serious infrastructure as chess — a real rating ladder, instant friend lobbies, and an engine that teaches you after every loss. No luck mechanics, no pay-to-win, no ads inside matches. Just the duel, engineered to be fast, fair, and playable by anyone in ten languages.
+- Server Authority
+- Cheat-Proof Rules
+- Every online move, jump, clock tick and wall check is validated on our server. Cheating tools, illegal walls and sealed-board tricks get rejected before they touch your game.
+- 10 Languages
+- Global Accessibility
+- Strategy belongs to everyone. DuoOrb is localized across ten languages — including English, Arabic (with full RTL layout support and custom typography), French, German, Spanish, Turkish, and Portuguese — with high-contrast orb palettes and legal-move highlights.
+- Respectful Revenue
+- Respectful Monetization
+- Players are never interrupted mid-calculation. All seven AI personalities and all online game modes are free to play. On the web, non-intrusive page ads help fund server infrastructure, and live board matches are never interrupted by video popups.
+- Who makes it
+- By AS Digital
+- DuoOrb is built and operated by AS Digital. Questions:
+- support@duoorb.com
+- . See
+- Contact
+- ,
+- Privacy
+- ,
+- Terms
+- and
+- Cookies
+- .
+- DuoOrb
+- The modern abstract strategy board game. Play free online or download on mobile.
+- Play
+- Play Now
+- Rules
+- Learn
+- Complete Rules
+- About DuoOrb
+- Game Identifier Guide
+- Platforms
+- Mobile App (Coming soon)
+- Mobile App Overview
+- Install Web App (PWA)
+- © 2026 DuoOrb. All rights reserved.
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- ·
+- About
+
+---
+
+## 8. Privacy Policy
+
+URL: https://duoorb.com/privacy.html
+File: `apps/mobile/public/privacy.html`
+<title>: Privacy Policy — DuoOrb
+Access: Footer legal row (all pages) · Linked from About, Terms, Cookies, Contact bodies.
+
+### Visible text (verbatim, in page order)
+
+- Privacy Policy — DuoOrb
+- DuoOrb
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Play Now
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Legal
+- Privacy Policy
+- DuoOrb by AS Digital. Contact:
+- support@duoorb.com
+- .
+- 1. Who we are
+- DuoOrb is a tactical grid-strategy game by AS Digital. The app talks to our game server for accounts, matchmaking, friends, history and ratings. Auth via Supabase (Google sign-in + guest sessions). Free play on web shows Google AdSense page ads; free play in the app shows Google AdMob ads. DuoOrb Premium removes ads.
+- 2. Data we collect
+- Account identifiers (user ID, username, display name, email for Google accounts); player content (bio, avatar); game activity (matches, moves, Glicko-2 ratings, achievements); social graph (friends, blocks); premium status (no card details — via Google Play/RevenueCat); diagnostics (hashed IP, user-agent, crash logs); advertising (AdSense cookies on web, AdMob advertising ID in app, under Google's policies). No precise location, contacts, camera or microphone. No in-game chat.
+- 3. Cookies and advertising
+- Our web pages load Google AdSense, which uses cookies to serve and measure ads. You can manage ad personalization in Google's ad settings. See
+- Cookies
+- . Consent is requested where required before ads load.
+- 4. Sharing
+- Processors only: (a) Supabase for authentication (email, auth tokens via Google sign-in and guest sessions minted by our server); (b) our hosting provider for the game server and database (account, game and social rows needed to run the service); (c) Google AdSense on web and Google AdMob in the app (advertising ID, cookies and ad-interaction data, under Google's own policies); (d) Google Play Billing via RevenueCat (subscription status only — no card or payment details ever touch our servers). We never sell personal data and never share it with data brokers. Reactions during matches are ephemeral and never stored.
+- 5. Security
+- All client-server traffic uses HTTPS (TLS) and secure WebSockets. Passwords are never handled by us (Google OAuth via Supabase). Guest refresh tokens are stored only as SHA-256 hashes and rotate on every refresh; replayed tokens revoke the session.
+- 6. Retention and deletion
+- Account rows persist while the account exists. Guest sessions expire after 180 days of inactivity. Delete anytime in-app (Settings &gt; Delete account) or by emailing
+- support@duoorb.com
+- with your handle + user ID. Backups age out within 90 days. See
+- Terms
+- and
+- Contact
+- .
+- 7. Your rights
+- You can edit your display name, username, bio and avatar at any time in Settings, and request access, correction, export or deletion of your data at any time via
+- Contact
+- . Material practice changes will be noted here with a new date before taking effect.
+- 8. Children
+- Not directed at children under 13. Contact us to remove any such data.
+- 9. Changes
+- We will update this page and the in-app links when practices change. For questions or requests, see
+- Contact
+- .
+- DuoOrb
+- The modern abstract strategy board game. Play free online or download on mobile.
+- Play
+- Play Now
+- Rules
+- Learn
+- Complete Rules
+- About DuoOrb
+- Game Identifier Guide
+- Platforms
+- Mobile App (Coming soon)
+- Mobile App Overview
+- Install Web App (PWA)
+- © 2026 DuoOrb. All rights reserved.
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- ·
+- About
+
+---
+
+## 9. Terms of Service
+
+URL: https://duoorb.com/terms.html
+File: `apps/mobile/public/terms.html`
+<title>: Terms of Service — DuoOrb
+Access: Footer legal row (all pages) · Linked from About, Privacy, Contact bodies.
+
+### Visible text (verbatim, in page order)
+
+- Terms of Service — DuoOrb
+- DuoOrb
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Play Now
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Legal
+- Terms of Service
+- DuoOrb by AS Digital. Contact:
+- support@duoorb.com
+- .
+- 1. The game
+- Local AI, pass-and-play, and online ranked matches with rooms, friends and leaderboards. One universal Glicko-2 rating. No real-money gambling, no loot boxes. Web pages are ad-supported; Premium removes ads.
+- 2. Accounts
+- Guest or Google sign-in. One person, one account. 13+ only. Guest progress merges once into a signed-in account.
+- 3. Acceptable use
+- No hate, harassment, sexual content involving minors, threats, doxxing, spam or illegal content. No impersonation. We may remove violating content and suspend repeat offenders. Report via
+- Contact
+- .
+- 4. Fair play
+- Server is authoritative. Win-trading, collusion, bots/scripts and bug exploits may lead to rating resets or bans.
+- 5. Premium
+- Premium ($3.99/month or $24.99/year, varies by country) removes ads and unlocks unlimited analysis plus extras. Both plans start with a 7-day free trial, then bill automatically each period until cancelled. Billing is handled entirely by Google Play: we never receive payment details. Cancel any time in the app under Settings &gt; Premium &gt; Manage subscription (or Play Store &gt; Payments &amp; subscriptions); access continues until the end of the paid period. Refunds follow Google Play policy. Promotional prices, if offered, renew at the standard rate stated at purchase. Guests must save with Google before purchasing so Premium attaches to an account. Deleting your DuoOrb account does
+- not
+- cancel billing — cancel the subscription separately first.
+- 6. Availability and termination
+- Online features require a connection and may pause for maintenance. Guest sessions expire after 180 days. You may delete your account anytime via Settings &gt; Delete account or
+- Contact
+- ; deletion does
+- not
+- cancel a Premium subscription. We may suspend or terminate accounts that violate these terms. Termination deletes or disables access as described in the
+- Privacy Policy
+- .
+- 7. Liability
+- Provided as-is to the maximum extent permitted by law.
+- 8. Changes
+- We will update this page when practices change. Material changes will be noted here with a new date before taking effect. Questions about these terms:
+- support@duoorb.com
+- .
+- DuoOrb
+- The modern abstract strategy board game. Play free online or download on mobile.
+- Play
+- Play Now
+- Rules
+- Learn
+- Complete Rules
+- About DuoOrb
+- Game Identifier Guide
+- Platforms
+- Mobile App (Coming soon)
+- Mobile App Overview
+- Install Web App (PWA)
+- © 2026 DuoOrb. All rights reserved.
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- ·
+- About
+
+---
+
+## 10. Cookies & Ads
+
+URL: https://duoorb.com/cookies.html
+File: `apps/mobile/public/cookies.html`
+<title>: Cookies &amp; Ads — DuoOrb
+Access: Footer legal row (all pages) · Linked from About, Privacy bodies.
+
+### Visible text (verbatim, in page order)
+
+- Cookies &amp; Ads — DuoOrb
+- DuoOrb
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Play Now
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Legal
+- Cookies and ads
+- DuoOrb web pages show Google AdSense page ads. Google uses cookies to serve, measure and personalize ads. Matches themselves are never interrupted by popups.
+- Manage ads
+- Control personalization in your Google ad settings and browser cookie controls. Premium in the mobile app removes ads; web pages remain ad-supported. Questions:
+- support@duoorb.com
+- . See
+- Privacy
+- .
+- Take control in 3 steps
+- 1. Open your browser's cookie settings to block or clear third-party cookies at any time. 2. Visit Google's ad settings to switch ad personalization on or off across the web. 3. In the EEA, UK or Switzerland, re-open the consent message on any page to change your IAB TCF choices — your decision is stored for 12 months and never blocks gameplay.
+- Cookies &amp; Local Storage Used on DuoOrb.com
+- We use first-party session storage to operate the game interface and Google AdSense cookies (subject to your consent in the EEA, UK, and Switzerland) to serve, cap, and measure advertisements on our informational web pages.
+- Name
+- Provider
+- Type
+- Duration
+- Purpose
+- duoorb-played
+- duoorb.com (First-Party)
+- sessionStorage
+- Browser Session
+- Strictly necessary UI state: remembers that you dismissed the editorial welcome overlay during the current tab session.
+- sb-*-auth-token
+- Supabase Auth (First-Party)
+- localStorage
+- Persistent until logout (180d guest cap)
+- Strictly necessary authentication token that preserves your guest session or signed-in Google account across matches.
+- __gads
+- Google AdSense
+- HTTP Cookie
+- 13 Months
+- Advertising measurement: enables websites to show Google ads, measures ad interactions, and prevents the same ad from displaying too many times.
+- __gpi
+- Google AdSense
+- HTTP Cookie
+- 13 Months
+- Google Publisher Identifier: collects information on visitor behavior across ad-supported pages to optimize ad delivery and frequency capping.
+- FCNEC
+- /
+- FCCDCF
+- Google Funding Choices CMP
+- HTTP Cookie
+- 12 Months
+- Consent Management: stores your IAB TCF v2.3 and Google Consent Mode v2 privacy choices so you are not prompted on every page load.
+- DuoOrb
+- The modern abstract strategy board game. Play free online or download on mobile.
+- Play
+- Play Now
+- Rules
+- Learn
+- Complete Rules
+- About DuoOrb
+- Game Identifier Guide
+- Platforms
+- Mobile App (Coming soon)
+- Mobile App Overview
+- Install Web App (PWA)
+- © 2026 DuoOrb. All rights reserved.
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- ·
+- About
+
+---
+
+## 11. Contact
+
+URL: https://duoorb.com/contact.html
+File: `apps/mobile/public/contact.html`
+<title>: Contact DuoOrb — support@duoorb.com
+Access: Footer legal row (all pages) · Linked from About, Privacy, Terms bodies.
+
+### Visible text (verbatim, in page order)
+
+- Contact DuoOrb — support@duoorb.com
+- DuoOrb
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Play Now
+- Home
+- Rules
+- Strategy
+- AI &amp; Analysis
+- About
+- Contact
+- Contact DuoOrb
+- DuoOrb by AS Digital. Official support channel:
+- support@duoorb.com
+- . Standard inquiries and bug reports are answered within 2–3 business days; verified data export and account deletion requests are completed within 30 calendar days (typically under 7 days).
+- Accounts &amp; deletion
+- Delete or Export Data
+- Subject: “Delete my DuoOrb account”. Include your handle + user ID, or write from your linked Google address. In-app instant deletion is also available at Settings → Delete Account. See
+- Privacy
+- .
+- Fair play
+- Abuse Reports
+- Subject: “Fair Play Report”. Include the opponent handle, room code or match timestamp, and a description of suspected win-trading, collusion, or profile abuse. Block and Report are also in-app on profiles.
+- Bugs &amp; feedback
+- Bug Reports
+- Subject: “Bug Report”. Include device/browser, game mode, and a move list or screenshot if a wall or jump rendered unexpectedly.
+- Before you write
+- Checklist for a Fast Reply
+- Include your @handle and user ID (Profile → Settings shows both), the exact page or room code, and what you expected vs what happened. Screenshots of the board state resolve most reports in one reply. Standard inquiries are answered within 2–3 business days; deletion and export requests within 30 days.
+- DuoOrb
+- The modern abstract strategy board game. Play free online or download on mobile.
+- Play
+- Play Now
+- Rules
+- Learn
+- Complete Rules
+- About DuoOrb
+- Game Identifier Guide
+- Platforms
+- Mobile App (Coming soon)
+- Mobile App Overview
+- Install Web App (PWA)
+- © 2026 DuoOrb. All rights reserved.
+- Privacy
+- ·
+- Terms
+- ·
+- Cookies
+- ·
+- Contact
+- ·
+- About

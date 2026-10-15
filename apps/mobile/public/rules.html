@@ -3,25 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>How to Play DuoOrb & Quoridor — Official Illustrated Rules & Tactics</title>
-  <meta name="description" content="Master DuoOrb and Quoridor with the complete official rules guide. Illustrated diagrams for orb movement, jumping rivals, legal wall placements, and AI engine analysis." />
+  <title>How to Play DuoOrb — Complete Illustrated Rules &amp; Tactics</title>
+  <meta name="description" content="Master DuoOrb and Quoridor with the complete illustrated rules and tactical handbook. Illustrated diagrams for orb movement, jumping rivals, legal wall placements, and AI engine analysis." />
   <link rel="canonical" href="https://duoorb.com/rules.html" />
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
 
   <!-- Google AdSense -->
+  <!-- Google Consent Mode v2 Bootstrap (EEA/UK/CH Safe Default) -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('consent', 'default', {
+      'ad_storage': 'denied',
+      'ad_user_data': 'denied',
+      'ad_personalization': 'denied',
+      'analytics_storage': 'denied',
+      'regions': ['AT','BE','BG','CY','CZ','DE','DK','EE','ES','FI','FR','GB','GR','HR','HU','IE','IS','IT','LI','LT','LU','LV','MT','NL','NO','PL','PT','RO','SE','SI','SK','CH'],
+      'wait_for_update': 500
+    });
+    gtag('set', 'ads_data_redaction', true);
+    gtag('set', 'url_passthrough', false);
+  </script>
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6057010656402010" crossorigin="anonymous"></script>
 
   <!-- Open Graph -->
   <meta property="og:type" content="article" />
   <meta property="og:site_name" content="DuoOrb" />
   <meta property="og:url" content="https://duoorb.com/rules.html" />
-  <meta property="og:title" content="How to Play DuoOrb & Quoridor — Official Rules & Strategy" />
+  <meta property="og:title" content="How to Play DuoOrb & Quoridor — Complete Illustrated Rules" />
   <meta property="og:description" content="Illustrated rules guide: Learn orb steps, jumping over rivals, wall placement rules, and tactical traps." />
   <meta property="og:image" content="https://duoorb.com/og-image.png" />
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="DuoOrb Official Rules & Strategy Guide" />
+  <meta name="twitter:title" content="DuoOrb Complete Illustrated Rules Guide" />
   <meta name="twitter:description" content="Illustrated rules for DuoOrb and Quoridor tactical grid games." />
   <meta name="twitter:image" content="https://duoorb.com/og-image.png" />
 
@@ -36,6 +51,8 @@
         "@type": "HowTo",
         "name": "How to Play DuoOrb and Quoridor",
         "description": "A turn-based tactical duel where two players race to cross a 9x9 grid while placing walls to slow down the opponent.",
+        "author": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/about.html", "email": "support@duoorb.com" },
+        "publisher": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/", "logo": { "@type": "ImageObject", "url": "https://duoorb.com/icons/icon-512.png", "width": 512, "height": 512 } },
         "step": [
           {
             "@type": "HowToStep",
@@ -75,7 +92,7 @@
             "name": "Can you completely trap an opponent so they have zero moves?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. Under the official Golden Rule of Quoridor and DuoOrb, every wall placement must leave at least one open path to the opposing goal line for both players."
+              "text": "No. Under the golden path rule, every wall placement must leave at least one open path to the goal for every active player."
             }
           },
           {
@@ -98,21 +115,22 @@
   <header class="site-nav">
     <div class="container site-nav-inner">
       <a href="/" class="brand-link" aria-label="DuoOrb Home">
-        <img src="/favicon.ico" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" />
+        <img src="/icons/icon-192.png" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" />
         <span class="brand-text">DuoOrb</span>
       </a>
 
       <nav aria-label="Main Navigation">
         <ul class="nav-links">
-          <li><a href="/quoridor-online.html">Play Online</a></li>
-          <li><a href="/rules.html" class="active">Rules & Strategy</a></li>
-          <li><a href="/app.html">Mobile App</a></li>
-          <li><a href="/what-is-the-game-with-two-balls-and-walls.html">About the Game</a></li>
+          <li><a href="/">Home</a></li>
+          <li><a href="/rules.html" class="active">Rules</a></li>
+          <li><a href="/strategy.html">Strategy</a></li>
+          <li><a href="/bots-and-analysis.html">AI &amp; Analysis</a></li>
+          <li><a href="/about.html">About</a></li>
         </ul>
       </nav>
 
       <div class="nav-actions">
-        <a href="/" class="btn-pill btn-pill-primary">Play Now</a>
+        <a href="/?play=1" class="btn-pill btn-pill-primary">Play Now</a>
         <button id="mobile-nav-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false">
           <span></span>
           <span></span>
@@ -124,10 +142,11 @@
     <!-- Mobile Dropdown Navigation (Clean, strictly no icons) -->
     <div id="mobile-nav-drawer" class="mobile-nav-drawer">
       <ul class="mobile-nav-list">
-        <li><a href="/quoridor-online.html">Play Online</a></li>
-        <li><a href="/rules.html" class="active">Rules & Strategy</a></li>
-        <li><a href="/app.html">Mobile App</a></li>
-        <li><a href="/what-is-the-game-with-two-balls-and-walls.html">About the Game</a></li>
+        <li><a href="/">Home</a></li>
+        <li><a href="/rules.html" class="active">Rules</a></li>
+          <li><a href="/strategy.html">Strategy</a></li>
+          <li><a href="/bots-and-analysis.html">AI &amp; Analysis</a></li>
+        <li><a href="/about.html">About</a></li>
       </ul>
     </div>
   </header>
@@ -137,17 +156,11 @@
     <article class="section" style="padding-top: 56px; padding-bottom: 48px;">
       <div class="container" style="max-width: 820px;">
         <span class="section-tag">Rulebook & Tactical Handbook</span>
-        <h1>How to play DuoOrb and Quoridor: Complete official rules</h1>
+        <h1>How to Play DuoOrb: Complete Illustrated Rules &amp; Tactics</h1>
         <p class="lead" style="margin-top: 20px; margin-bottom: 28px;">
-          Two pieces. Twenty walls. One objective: be the first player to touch any square on the opposing baseline. Every turn presents a pivotal trade-off between advancing your own piece or lengthening your rival's route.
+          Two orbs. Twenty walls. One objective: be the first player to touch any square on the opposing baseline. Every turn presents a pivotal trade-off between advancing your own orb or lengthening your rival's route.
         </p>
 
-        <div class="hero-actions" style="margin-bottom: 40px;">
-          <a href="#movement" class="btn-pill btn-pill-ghost">Basic Moves</a>
-          <a href="#jump-rule" class="btn-pill btn-pill-ghost">Jump Rule Masterclass</a>
-          <a href="#golden-rule" class="btn-pill btn-pill-ghost">The Golden Rule</a>
-          <a href="#engine-tactics" class="btn-pill btn-pill-ghost">Engine Tactics</a>
-        </div>
       </div>
     </article>
 
@@ -165,7 +178,7 @@
           <span class="section-tag">Rule One</span>
           <h3 style="font-size: 24px; margin-bottom: 14px;">The Objective & Starting Setup</h3>
           <p style="margin-bottom: 20px;">
-            The game is played on a 9×9 grid. Player 1 (Blue) begins on the center square of row 9. Player 2 (Red) begins on the center square of row 1. In a standard 2-player match, each player receives a reserve of 10 walls. The first player to reach any square on their opponent's starting edge wins immediately.
+            The game is played on a 9×9 grid. Player 1 (Blue) begins on the center square of row 9 (<code>e9</code>). Player 2 (Red) begins on the center square of row 1 (<code>e1</code>). In a standard 2-player match, each player receives a reserve of 10 walls. The first player to reach any square on their opponent's starting edge wins immediately.
           </p>
 
           <!-- SVG Diagram 1: Setup -->
@@ -218,7 +231,7 @@
             Players take turns alternating. On your turn, you must perform exactly <strong>one</strong> of two choices:
           </p>
           <ul style="padding-left: 20px; margin-bottom: 20px; color: var(--color-slate-gray); display: flex; flex-direction: column; gap: 8px;">
-            <li><strong>Move your piece:</strong> Step one square horizontally or vertically (up, down, left, right). Diagonal moves are not allowed during standard steps.</li>
+            <li><strong>Move your orb:</strong> Step one square horizontally or vertically (up, down, left, right). Diagonal moves are not allowed during standard steps.</li>
             <li><strong>Place a wall:</strong> Position a wall into the groove between squares. Each wall spans exactly two square lengths and can be placed horizontally or vertically. Once placed, walls are permanent and cannot be moved or removed.</li>
           </ul>
         </div>
@@ -254,7 +267,7 @@
             <!-- Diagonal Jump -->
             <div style="background: #ffffff; border: 1px solid var(--color-border-hairline); border-radius: 12px; padding: 16px; text-align: center;">
               <h4 style="font-size: 15px; margin-bottom: 8px;">Case B: Diagonal Jump</h4>
-              <p style="font-size: 13px; margin-bottom: 12px;">If a wall or board edge blocks the straight square, leap diagonally to the left or right.</p>
+              <p style="font-size: 13px; margin-bottom: 12px;">Face-to-face with no wall between you? Jump straight over. Diagonal jumps are allowed only when the straight landing is blocked — by a wall, the board edge, or a third orb. Finished orbs in multiplayer modes become pass-through ghosts.</p>
               <svg viewBox="0 0 160 160" width="100%" height="140" aria-label="Diagonal jump diagram">
                 <rect x="10" y="10" width="140" height="140" rx="8" fill="#fafafb" stroke="#e2e2e5" />
                 <line x1="56" y1="10" x2="56" y2="150" stroke="#ececef" />
@@ -290,51 +303,160 @@
       </div>
     </section>
 
-    <!-- Master Tip Editorial Card (Blush Peach) -->
-    <section class="section">
+    <section class="section section-fog" id="multiplayer-variants">
       <div class="container" style="max-width: 820px;">
-        <div class="card-peach">
-          <span class="peach-tag">Tactical Wisdom</span>
-          <h2 style="margin-bottom: 14px;">Wall Parity and the Tempo Paradox</h2>
-          <p style="margin-bottom: 18px;">
-            Novice players often rush to spend their 10 walls in the opening 5 turns. This is known as the <em>Wall Depletion Trap</em>. When you run out of fences, your rival controls the board state completely and can shepherd you into a long labyrinth without resistance.
-          </p>
-          <p>
-            <strong>The Grandmaster Principle:</strong> Every wall you place should ideally accomplish two things: increase the opponent's shortest path distance by at least 2 steps, while maintaining your own escape flexibility. Always reserve 2 to 3 walls for the endgame race.
-          </p>
+        <div class="section-header">
+          <span class="section-tag">2-Player, 3-Player &amp; 4-Player Specifications</span>
+          <h2>Wall Budgets, Starting Coordinates &amp; Victory Targets</h2>
+          <p>When more than two orbs share the 9×9 board, wall budgets scale down to keep the 128-slot groove lattice open and tactical, while victory conditions shift based on the selected format. Ranked play uses the defaults below; custom private rooms may raise the budget to 15 or 99 walls per seat for sandbox play.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="editorial-table">
+            <thead>
+              <tr>
+                <th scope="col">Format ID</th>
+                <th scope="col">Active Seats</th>
+                <th scope="col">Walls per Seat</th>
+                <th scope="col">Starting Square</th>
+                <th scope="col">Goal Target</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Classic 1v1 (<code>2p</code>)</strong></td>
+                <td>2 (Blue, Red)</td>
+                <td>10 walls each</td>
+                <td>Blue <code>e9</code> · Red <code>e1</code></td>
+                <td>Blue → Rank 1 edge · Red → Rank 9 edge</td>
+              </tr>
+              <tr>
+                <td><strong>4P Center Rush (<code>4p</code>)</strong></td>
+                <td>4 (Blue, Red, Green, Yellow)</td>
+                <td>5 walls each</td>
+                <td>B <code>e9</code> · R <code>e1</code> · G <code>a5</code> · Y <code>i5</code></td>
+                <td>Exact center square <code>(4,4)</code></td>
+              </tr>
+              <tr>
+                <td><strong>2P Center Duel (<code>center2</code>)</strong></td>
+                <td>2 (Blue, Red)</td>
+                <td>10 walls each</td>
+                <td>Blue <code>e9</code> · Red <code>e1</code></td>
+                <td>Exact center square <code>(4,4)</code></td>
+              </tr>
+              <tr>
+                <td><strong>3P Center Rush (<code>center3</code>)</strong></td>
+                <td>3 (Blue, Red, Green)</td>
+                <td>6 walls each</td>
+                <td>Blue <code>e9</code> · Red <code>e1</code> · Green <code>a5</code></td>
+                <td>Exact center square <code>(4,4)</code></td>
+              </tr>
+              <tr>
+                <td><strong>Baseline Race (<code>race2–4</code>)</strong></td>
+                <td>2, 3, or 4</td>
+                <td>10 (2P), 6 (3P), 5 (4P)</td>
+                <td>Rank 9: <code>c9+g9</code> (2P), <code>b9+e9+h9</code> (3P), <code>b9+d9+f9+h9</code> (4P)</td>
+                <td>All seats race to the Rank 1 edge</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
 
-    <!-- AI Match Analysis Deep-Dive -->
-    <section class="section section-fog" id="engine-tactics">
+    <section class="section section-fog" id="clocks">
       <div class="container" style="max-width: 820px;">
         <div class="section-header">
-          <span class="section-tag">Grandmaster Analysis</span>
-          <h2>How DuoOrb Analyzes Your Decisions</h2>
-          <p>Just like modern chess platforms evaluate pawn structure and king safety, DuoOrb's engine evaluates path differential and tempo advantage.</p>
+          <span class="section-tag">Clocks</span>
+          <h2>Time Controls &amp; Fischer Increments</h2>
+          <p>Every match runs on a real clock: a starting bank of minutes plus bonus seconds after each turn. Seven presets, from 90-second bullet chaos to slow study games.</p>
         </div>
+        <div class="table-wrap">
+          <table class="editorial-table">
+            <thead>
+              <tr>
+                <th scope="col">Preset</th>
+                <th scope="col">Category</th>
+                <th scope="col">Base Time</th>
+                <th scope="col">Increment per Turn</th>
+                <th scope="col">Typical Match</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>1+0</strong></td><td>Bullet</td><td>1 Minute</td><td>+0 seconds</td><td>90–120 seconds of pure intuition.</td></tr>
+              <tr><td><strong>1+1</strong></td><td>Bullet Increment</td><td>1 Minute</td><td>+1 second</td><td>2–3 minutes, enough to survive a long endgame detour.</td></tr>
+              <tr><td><strong>3+0</strong></td><td>Blitz (Default)</td><td>3 Minutes</td><td>+0 seconds</td><td>4–6 minutes, the standard ladder format.</td></tr>
+              <tr><td><strong>3+2</strong></td><td>Blitz Increment</td><td>3 Minutes</td><td>+2 seconds</td><td>5–8 minutes for high-wall tactical battles.</td></tr>
+              <tr><td><strong>5+0</strong></td><td>Rapid</td><td>5 Minutes</td><td>+0 seconds</td><td>7–10 minutes, club standard with exact step-counting.</td></tr>
+              <tr><td><strong>5+3</strong></td><td>Rapid Increment</td><td>5 Minutes</td><td>+3 seconds</td><td>9–13 minutes for deep positional squeezing.</td></tr>
+              <tr><td><strong>10+0</strong></td><td>Classical Rapid</td><td>10 Minutes</td><td>+0 seconds</td><td>12–20 minutes, full-calculation championship pace.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
-        <div class="hero-split-grid" style="margin-bottom: 40px;">
-          <div>
-            <h3 style="margin-bottom: 14px;">Positional Path Evaluation (+0.9)</h3>
-            <p style="margin-bottom: 16px;">
-              DuoOrb's analysis engine calculates the shortest distance to the goal line for both players after every turn. When a player commands a shorter path or forces a costly detour upon their opponent, the engine highlights that positional advantage on the live evaluation bar.
-            </p>
-            <p>
-              Every turn is graded to help you learn: discover brilliant tactical defenses, identify missed shortcuts, and review mistakes with interactive step-by-step guidance.
-            </p>
+    <section class="section" id="notation">
+      <div class="container" style="max-width: 820px;">
+        <div class="section-header">
+          <span class="section-tag">Match Recording &amp; Replay Standard</span>
+          <h2>How to Read DuoOrb Algebraic Notation</h2>
+          <p>Every match played in DuoOrb is recorded in a compact, human-readable coordinate notation used by the move stepper and analysis engine.</p>
+        </div>
+        <div class="grid-3">
+          <div class="card-neutral">
+            <h3>1. Grid Coordinates</h3>
+            <p>The 9×9 board uses columns <strong>a through i</strong> (left to right) and ranks <strong>1 through 9</strong>. Each seat is prefixed by its color code: <strong>B</strong> (Blue, Seat 1), <strong>R</strong> (Red, Seat 2), <strong>G</strong> (Green, Seat 3), and <strong>Y</strong> (Yellow, Seat 4).</p>
           </div>
+          <div class="card-neutral">
+            <h3>2. Orb Steps (<code>Bd5</code>)</h3>
+            <p>An orb move combines the seat letter with the destination square. For example, <code>Bd5</code> means the Blue orb stepped (or jumped) onto column <strong>d</strong>, rank <strong>5</strong>. Similarly, <code>Re7</code> records the Red orb moving to square <strong>e7</strong>.</p>
+          </div>
+          <div class="card-neutral">
+            <h3>3. Wall Drops (<code>Hd4</code> / <code>Ve6</code>)</h3>
+            <p>Wall placements sit on the 8×8 internal intersection lattice (anchored by the top-left square of the 2×2 block the wall bisects). <code>Hd4</code> places a two-square <strong>Horizontal</strong> wall anchored at <strong>d4</strong>; <code>Ve6</code> places a <strong>Vertical</strong> wall anchored at <strong>e6</strong>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
 
-          <div class="product-artifact">
-            <div class="artifact-screen-wrap">
-              <img src="/screenshots/match-review-analysis.png" alt="DuoOrb post-match engine analysis showing +0.9 evaluation bar and inaccuracy classification" loading="lazy" width="300" height="650" />
-            </div>
-            <div class="artifact-caption">
-              <h3 style="font-size: 20px; font-family: var(--font-sans); font-weight: 600; margin-bottom: 6px;">Interactive Move Stepper</h3>
-              <p>Step backward and forward through any match to pinpoint where the advantage swung.</p>
-            </div>
+    <section class="section section-fog" id="wall-legality">
+      <div class="container" style="max-width: 820px;">
+        <div class="section-header">
+          <span class="section-tag">Instant Legality Check</span>
+          <h2>Why a Wall Drop Gets Accepted or Rejected</h2>
+          <p>Before any wall lands, the engine runs four checks in order. Learn them and you will never be surprised by a rejected placement — or miss a chance to punish one.</p>
+        </div>
+        <div class="grid-2">
+          <div class="card-neutral">
+            <h3>Checks 1–2: Stock and Geometry</h3>
+            <p>First, you must have a wall left in reserve — empty hands mean walking only. Second, the wall must sit fully inside the 8×8 intersection lattice, spanning exactly two squares horizontally or vertically.</p>
           </div>
+          <div class="card-neutral">
+            <h3>Checks 3–4: Conflicts and Paths</h3>
+            <p>Third, the wall must not duplicate, cross, or overlap an existing wall along the same groove. Fourth, the golden path rule: after placement, every active orb must still own at least one route to its goal, verified by breadth-first search.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="conceding">
+      <div class="container" style="max-width: 820px;">
+        <div class="section-header">
+          <span class="section-tag">Ending Early</span>
+          <h2>Resigning, Flagging and Multiplayer Finishes</h2>
+          <p>In 1v1, resigning or running out of time hands the win to your opponent immediately. In 3–4 player games a resignation takes the worst remaining place while the rest play on, and finished orbs become pass-through ghosts. Full notation of every finished match is kept for review — see <a href="/bots-and-analysis.html">AI &amp; Analysis</a> to learn how grades are computed.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Wall Parity lives on the Strategy page now: /strategy.html#core-heuristics -->
+
+    <section class="section section-fog" id="engine-tactics">
+      <div class="container" style="max-width: 820px;">
+        <div class="card-neutral" style="margin-bottom: 40px;">
+          <span class="section-tag">Engine Review</span>
+          <h3>See How the Engine Scores Your Moves</h3>
+          <p>Every turn graded from Best to Blunder, with accuracy and the deciding moment. <a href="/strategy.html">Master the openings &amp; wall parity →</a> <a href="/bots-and-analysis.html">Read the AI &amp; Analysis Guide →</a></p>
         </div>
 
         <!-- FAQ Grid -->
@@ -361,7 +483,7 @@
 
           <div class="faq-item">
             <h3>Can I play against AI bots to practice these rules?</h3>
-            <p>Yes! DuoOrb includes calibrated offline sparring bots: Martin (800 ELO), Elena (1100 ELO), Nelson (1450 ELO), and the full Engine AI, available in both the web and mobile app.</p>
+            <p>Yes! DuoOrb includes 7 sparring personalities rated 800–2400 plus three practice tiers — all 100% free. Full dossiers: <a href="/bots-and-analysis.html">AI &amp; Analysis</a>.</p>
           </div>
         </div>
       </div>
@@ -372,10 +494,9 @@
       <div class="container" style="max-width: 640px;">
         <span class="section-tag">Ready to Play?</span>
         <h2 style="margin-bottom: 16px;">Test your strategy against real players.</h2>
-        <p class="lead" style="margin: 0 auto 32px;">No signup needed. Jump right into a quick match in your browser or download the mobile app.</p>
+        <p class="lead" style="margin: 0 auto 32px;">No signup needed. Jump right into a quick match in your browser.</p>
         <div class="hero-actions" style="justify-content: center;">
-          <a href="/" class="btn-pill btn-pill-primary">Play Now</a>
-          <a href="/app.html" class="btn-pill btn-pill-ghost">Get Mobile App</a>
+          <a href="/?play=1" class="btn-pill btn-pill-primary">Play Now</a>
         </div>
       </div>
     </section>
@@ -387,43 +508,42 @@
       <div class="footer-top">
         <div class="footer-brand">
           <a href="/" class="brand-link" aria-label="DuoOrb Home">
-            <img src="/favicon.ico" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" />
+            <img src="/icons/icon-192.png" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" />
             <span class="brand-text">DuoOrb</span>
           </a>
-          <p>The modern abstract strategy board game inspired by Quoridor and Barricade. Play free online or download on mobile.</p>
+          <p>DuoOrb rules reference: movement, walls, jumps and the golden path rule.</p>
         </div>
 
         <div class="footer-col">
           <h4>Play</h4>
           <ul>
-            <li><a href="/">Play Now</a></li>
-            <li><a href="/quoridor-online.html">Quoridor Online</a></li>
-            <li><a href="/rules.html">Rules & Strategy</a></li>
+            <li><a href="/?play=1">Play Now</a></li>
+            <li><a href="/">Home Overview</a></li>
+            <li><a href="/rules.html#clocks">Time Controls &amp; Clocks</a></li>
           </ul>
         </div>
 
         <div class="footer-col">
-          <h4>Learn</h4>
+          <h4>Learn &amp; Master</h4>
           <ul>
             <li><a href="/rules.html">Complete Rules</a></li>
-            <li><a href="/rules.html#jump-rule">Jump Rule Masterclass</a></li>
-            <li><a href="/what-is-the-game-with-two-balls-and-walls.html">Game Identifier Guide</a></li>
+            <li><a href="/strategy.html">Strategy &amp; Openings</a></li>
+            <li><a href="/bots-and-analysis.html">AI Bots &amp; Analysis</a></li>
+            <li><a href="/#viral-guide">Two Balls &amp; Walls Game</a></li>
           </ul>
         </div>
 
         <div class="footer-col">
-          <h4>Platforms</h4>
+          <h4>Mobile &amp; Studio</h4>
           <ul>
-            <li><a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" target="_blank" rel="noopener noreferrer">Google Play Store</a></li>
-            <li><a href="/app.html">Mobile App Overview</a></li>
-            <li><a href="/app.html">Install Web App (PWA)</a></li>
+            <li><a href="/#mobile">Play on Your Phone</a></li>
+            <li><a href="/about.html">About DuoOrb &amp; AS Digital</a></li>
+            <li><a href="/contact.html">Support &amp; Contact</a></li>
           </ul>
         </div>
       </div>
 
-      <div class="footer-bottom">
-        <p>© 2026 DuoOrb. All rights reserved. Strategic grid games reimagined.</p>
-      </div>
+      <div class="footer-bottom"><p>© 2026 DuoOrb by AS Digital.</p><p><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/cookies.html">Cookies &amp; Ads</a> · <a href="/contact.html">Contact</a></p></div>
     </div>
   </footer>
 

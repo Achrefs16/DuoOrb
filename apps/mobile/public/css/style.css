@@ -274,6 +274,54 @@ p.lead {
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
+/* Legal pages: compact headings for short policy documents. */
+body.legal h1 {
+  font-size: clamp(28px, 4vw, 40px);
+}
+
+body.legal .section {
+  padding-top: 56px;
+}
+
+/* Desktop: center the primary nav links within the header bar. */
+@media (min-width: 901px) {
+  .site-nav-inner {
+    position: relative;
+  }
+  .site-nav-inner .nav-links {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
+.nav-actions {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.mobile-menu-btn {
+  flex-shrink: 0;
+  order: 99;
+}
+
+@media (max-width: 480px) {
+  .nav-actions {
+    gap: 8px;
+  }
+  .nav-actions .btn-pill {
+    height: 40px;
+    padding: 0 16px;
+    font-size: 14px;
+  }
+  /* Free row space on narrow phones: logo stays (home link), wordmark hides. */
+  .site-nav-inner .brand-text {
+    display: none;
+  }
+  .site-nav-inner .brand-link {
+    gap: 0;
+  }
+}
+
 .mobile-menu-btn.active span:nth-child(1) {
   transform: translateY(7px) rotate(45deg);
 }

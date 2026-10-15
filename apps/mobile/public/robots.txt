@@ -1,4 +1,34 @@
 User-agent: *
 Allow: /
+Disallow: /play.html
+Disallow: /app.html
+Disallow: /what-is-the-game-with-two-balls-and-walls.html
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Mediapartners-Google
+Allow: /
+
+User-agent: AdsBot-Google
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
 
 Sitemap: https://duoorb.com/sitemap.xml

@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.1",
+  "name": "DuoOrb",
+  "version": "2.0.0",
+  "publisher": {
+    "name": "AS Digital",
+    "email": "support@duoorb.com",
+    "url": "https://duoorb.com/about.html"
+  },
+  "description": "Free online 9x9 tactical grid board game featuring rated 1v1 Glicko-2 duels, 6-letter private friend rooms, 4-player Center Rush, 7 free MCTS AI bots (800-2400 rating), and Rust MCTS post-match move analysis.",
+  "resources": [
+    { "name": "DuoOrb Web Arena", "url": "https://duoorb.com/", "type": "application" },
+    { "name": "Complete Rules, Jumps & Notation", "url": "https://duoorb.com/rules.html", "type": "documentation" },
+    { "name": "Strategy, Openings & Wall Parity Guide", "url": "https://duoorb.com/strategy.html", "type": "documentation" },
+    { "name": "AI Bots (800-2400) & Rust MCTS Analysis", "url": "https://duoorb.com/bots-and-analysis.html", "type": "documentation" },
+    { "name": "Two Balls & Walls Game Guide", "url": "https://duoorb.com/what-is-the-game-with-two-balls-and-walls.html", "type": "documentation" },
+    { "name": "Play on Your Phone (PWA & Store Status)", "url": "https://duoorb.com/#mobile", "type": "documentation" },
+    { "name": "About DuoOrb & AS Digital", "url": "https://duoorb.com/about.html", "type": "about" },
+    { "name": "Privacy Policy", "url": "https://duoorb.com/privacy.html", "type": "policy" },
+    { "name": "Terms of Service", "url": "https://duoorb.com/terms.html", "type": "policy" },
+    { "name": "Cookies & AdSense Policy", "url": "https://duoorb.com/cookies.html", "type": "policy" },
+    { "name": "Contact & Support", "url": "https://duoorb.com/contact.html", "type": "support" }
+  ]
+}

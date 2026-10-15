@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DuoOrb Strategy Guide — Openings, Wall Parity & 9×9 Endgame Tactics</title>
+  <meta name="description" content="Master high-level Quoridor and DuoOrb strategy: the Central March opening, the 3-Space Rule, Wall Parity calculation, side-corridor seals, and 4-player Center Rush tactics." />
+  <link rel="canonical" href="https://duoorb.com/strategy.html" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <!-- Google Consent Mode v2 Bootstrap (EEA/UK/CH Safe Default) -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('consent', 'default', {
+      'ad_storage': 'denied',
+      'ad_user_data': 'denied',
+      'ad_personalization': 'denied',
+      'analytics_storage': 'denied',
+      'regions': ['AT','BE','BG','CY','CZ','DE','DK','EE','ES','FI','FR','GB','GR','HR','HU','IE','IS','IT','LI','LT','LU','LV','MT','NL','NO','PL','PT','RO','SE','SI','SK','CH'],
+      'wait_for_update': 500
+    });
+    gtag('set', 'ads_data_redaction', true);
+    gtag('set', 'url_passthrough', false);
+  </script>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6057010656402010" crossorigin="anonymous"></script>
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="DuoOrb" />
+  <meta property="og:url" content="https://duoorb.com/strategy.html" />
+  <meta property="og:title" content="DuoOrb Strategy Guide — Openings, Wall Parity & 9×9 Endgame Tactics" />
+  <meta property="og:description" content="Openings, wall parity math and endgame tactics for the 9x9 tactical grid duel." />
+  <meta property="og:image" content="https://duoorb.com/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="DuoOrb & Quoridor Strategy Guide" />
+  <meta name="twitter:description" content="Openings, wall parity and endgame tactics." />
+  <meta name="twitter:image" content="https://duoorb.com/og-image.png" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "headline": "DuoOrb & Quoridor Strategy Guide: Openings, Wall Parity & Endgame Calculation",
+        "url": "https://duoorb.com/strategy.html",
+        "author": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/about.html", "email": "support@duoorb.com" },
+        "publisher": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/", "logo": { "@type": "ImageObject", "url": "https://duoorb.com/icons/icon-512.png", "width": 512, "height": 512 } }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          { "@type": "Question", "name": "Does the first player have a first-move advantage?", "acceptedAnswer": { "@type": "Answer", "text": "In a pure 9x9 race with zero walls, moving first gives a 1-tempo lead. But with 10 walls each and the central jump standoff, the second player can use defensive back-walling to equalize tempo and force the first player to commit the first structural wall." } },
+          { "@type": "Question", "name": "When should I walk instead of placing a wall?", "acceptedAnswer": { "@type": "Answer", "text": "When in doubt, advance your orb. Orb steps are unlimited and permanently reduce your distance to the goal, whereas walls are capped at 10 per game." } },
+          { "@type": "Question", "name": "How do I stop losing to early wall spammers?", "acceptedAnswer": { "@type": "Answer", "text": "Do not retaliate with counter-walls. Walk the shortest route around their fences. Once their wall counter drops below 3 while you still hold 8 or more walls, use your surplus to force them back to their starting baseline." } },
+          { "@type": "Question", "name": "How can I find out which wall cost me the game?", "acceptedAnswer": { "@type": "Answer", "text": "Open Engine Review after any match. The Rust MCTS solver evaluates the win-probability change of every turn and flags the exact Deciding Moment where a premature wall or missed shortcut swung the match." } }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="site-nav">
+    <div class="container site-nav-inner">
+      <a href="/" class="brand-link" aria-label="DuoOrb Home"><img src="/icons/icon-192.png" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" /><span class="brand-text">DuoOrb</span></a>
+      <nav aria-label="Main Navigation">
+        <ul class="nav-links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/rules.html">Rules</a></li>
+          <li><a href="/strategy.html" class="active">Strategy</a></li>
+          <li><a href="/bots-and-analysis.html">AI &amp; Analysis</a></li>
+          <li><a href="/about.html">About</a></li>
+        </ul>
+      </nav>
+      <div class="nav-actions">
+        <a href="/?play=1" class="btn-pill btn-pill-primary">Play Now</a>
+        <button id="mobile-nav-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      </div>
+    </div>
+    <div id="mobile-nav-drawer" class="mobile-nav-drawer">
+      <ul class="mobile-nav-list">
+        <li><a href="/">Home</a></li>
+        <li><a href="/rules.html">Rules</a></li>
+        <li><a href="/strategy.html" class="active">Strategy</a></li>
+        <li><a href="/bots-and-analysis.html">AI &amp; Analysis</a></li>
+        <li><a href="/about.html">About</a></li>
+      </ul>
+    </div>
+  </header>
+  <main>
+    <section class="section">
+      <div class="container" style="max-width: 820px;">
+        <span class="section-tag">Grandmaster Tactical Manual</span>
+        <h1>DuoOrb Strategy Guide: Openings, Wall Parity &amp; 9×9 Endgame Calculation</h1>
+        <p class="lead" style="margin-top: 20px; margin-bottom: 28px;">The rules take sixty seconds to learn. Winning takes discipline: every turn you choose between running toward the goal or spending one of your 10 walls to slow your rival down. This guide teaches the three habits that separate beginners from club players — spending walls only when they earn two steps, keeping distance from open corridors, and saving walls for the endgame.</p>
+        <div class="hero-actions" style="margin-bottom: 16px;">
+          <a href="/?play=1" class="btn-pill btn-pill-primary">Play Now</a>
+        </div>
+      </div>
+    </section>
+    <section class="section section-fog" id="core-heuristics">
+      <div class="container" style="max-width: 820px;">
+        <div class="section-header">
+          <span class="section-tag">The Three Laws of Path Economics</span>
+          <h2>How Master Players Value a Single Wall</h2>
+          <p>Beginners place walls emotionally — dropping a fence right in front of the opponent just to force one sidestep. Strong players ask one question first: does this wall earn its turn? These three rules answer it.</p>
+        </div>
+        <div class="grid-3">
+          <div class="card-neutral">
+            <span class="section-tag">Invariant 01</span>
+            <h3>Only Spend a Wall When It Earns Two Steps</h3>
+            <p>A wall costs your whole turn plus 1 of your 10 walls. So a wall that only forces one sidestep loses you the exchange. Attack only when a wall costs your rival 2 or more extra steps — or when it completes a trap built over several turns.</p>
+          </div>
+          <div class="card-neutral">
+            <span class="section-tag">Invariant 02</span>
+            <h3>The 3-Space Proximity Rule</h3>
+            <p>Every wall covers two squares, so any existing wall or board edge near your path is a hook for a trap. Crossing the middle of the board, keep roughly three squares of distance from open side corridors — or close your own safe lane first with a defensive wall.</p>
+          </div>
+          <div class="card-neutral">
+            <span class="section-tag">Invariant 03</span>
+            <h3>Wall Parity &amp; Reserve Discipline</h3>
+            <p>Count walls like points. Holding 3 walls when your rival has none is usually a forced win: they can only walk straight ahead while you build a 15-step detour across the board. Never be the first to run out. Most beginners fall into the <em>Wall Depletion Trap</em> — burning all 10 walls in the opening turns, then watching helplessly while you dictate the maze. Always keep 2 to 3 walls back for the endgame race.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="section" id="opening-theory">
+      <div class="container" style="max-width: 820px;">
+        <div class="section-header">
+          <span class="section-tag">First 6 Plies</span>
+          <h2>Standard Opening Systems on the 9×9 Grid</h2>
+          <p>In almost all high-level games, both players spend the first three turns walking straight down the middle until their orbs meet at the center. What happens next decides the whole match.</p>
+        </div>
+        <div class="grid-2">
+          <div class="card-neutral">
+            <h3>1. The Classical Central March (3+3 Stem)</h3>
+            <p>Blue starts at <code>e9</code> and Red starts at <code>e1</code>. Both players step straight toward the center row for three consecutive turns. Why not place walls on turn 1 or turn 2? Because an early wall placed while your opponent is still on row 1 or row 2 leaves them eight open ranks to route around it effortlessly, wasting your wall for zero net detour.</p>
+            <p>Once the orbs stand one square apart in the center, tension peaks: whoever steps directly adjacent first hands the opponent a <strong>free straight jump</strong>, yielding a two-square leap in a single turn.</p>
+          </div>
+          <div class="card-neutral">
+            <h3>2. The Defensive Back-Wall &amp; Gap System</h3>
+            <p>Instead of stepping into a face-to-face jump disadvantage, master players often play a <strong>defensive horizontal wall behind their own orb</strong> (or one column offset, creating a two-square side gate). This accomplishes two strategic goals simultaneously: it passes the move initiative (forcing your opponent to step forward or spend a wall first) and it prevents your opponent from sealing your back ranks later in the mid-game.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="section section-fog" id="midgame-tactics">
+      <div class="container" style="max-width: 820px;">
+        <div class="section-header">
+          <span class="section-tag">Mid-Game &amp; Endgame Patterns</span>
+          <h2>Four Tactical Motifs Every Competitor Must Recognize</h2>
+        </div>
+        <div class="table-wrap">
+          <table class="editorial-table">
+            <thead>
+              <tr>
+                <th scope="col">Tactical Motif</th>
+                <th scope="col">Board Geometry</th>
+                <th scope="col">Execution &amp; Counterplay</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Self-Walling (Highway Locking)</strong></td>
+                <td>Placing a vertical or horizontal wall adjacent to your own path that blocks a future enemy cut-off.</td>
+                <td>Because walls cannot cross or overlap, placing a wall through a critical intersection (for example a wall like <code>Hd4</code> across your own corridor) makes it geometrically impossible for your opponent to place a perpendicular wall across that same groove.</td>
+              </tr>
+              <tr>
+                <td><strong>The Two-Side Pinch</strong></td>
+                <td>A horizontal wall skeleton spans columns b–g, leaving open passages on both the a-file (left) and i-file (right).</td>
+                <td>Never close the side your opponent is walking toward first while the far side remains open — they will simply seal your path instead. Force them to commit to one wing, or close the distant wing when you hold a tempo lead.</td>
+              </tr>
+              <tr>
+                <td><strong>Diagonal Jump Traps</strong></td>
+                <td>Two orbs stand adjacent with a wall directly behind one orb, enabling a lateral diagonal leap.</td>
+                <td>Before placing a frontal wall directly behind your own orb in a duel (a flat seal like <code>Hd4</code> is the classic), verify whether your opponent can step adjacent on the next turn and use your own wall as a springboard for a diagonal bypass.</td>
+              </tr>
+              <tr>
+                <td><strong>4-Player Center Rush Funneling</strong></td>
+                <td>Four players hold 5 walls each, all converging on tile <code>(4,4)</code>.</td>
+                <td>In <code>4p</code> Center Rush, spending walls early against one player hands a free tempo lead to the other two seats. Conserve at least 3 of your 5 walls until an opponent enters the inner 3×3 ring around <code>(4,4)</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <section class="section" id="strategy-faq">
+      <div class="container" style="max-width: 820px;">
+        <div class="section-header">
+          <span class="section-tag">Tactical Questions</span>
+          <h2>Strategy FAQ</h2>
+        </div>
+        <div class="faq-grid">
+          <div class="faq-item">
+            <h3>Does the first player have a first-move advantage?</h3>
+            <p>In a pure 9×9 race with zero walls, moving first gives a 1-tempo lead. However, because both players hold 10 walls and face the central jump standoff, the second player can use defensive back-walling to equalize tempo and force the first player to commit the first structural wall.</p>
+          </div>
+          <div class="faq-item">
+            <h3>When should I walk instead of placing a wall?</h3>
+            <p>Follow the grandmaster default rule: <em>when in doubt, advance your orb.</em> Orb steps are an unlimited resource that permanently reduce your distance to the goal, whereas walls are strictly capped at 10 per game.</p>
+          </div>
+          <div class="faq-item">
+            <h3>How do I stop losing to early wall spammers?</h3>
+            <p>If an opponent drops 5 or 6 walls in the first 8 turns, do not retaliate with counter-walls. Calmly walk the shortest available route around their fences. Once their wall counter drops below 3 while you still hold 8 or more walls, use your massive wall surplus to force them all the way back to their starting baseline.</p>
+          </div>
+          <div class="faq-item">
+            <h3>How can I find out which wall cost me the game?</h3>
+            <p>After any match in DuoOrb, open <strong>Engine Review</strong>. The Rust MCTS solver evaluates the win-probability change of every turn and flags the exact <em>Deciding Moment</em> where a premature wall or missed shortcut swung the match.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="section" style="text-align: center; padding: 80px 0;">
+      <div class="container" style="max-width: 640px;">
+        <span class="section-tag">Ready to Play?</span>
+        <h2 style="margin-bottom: 16px;">Test your strategy against real players — or our 7 free bots.</h2>
+        <p class="lead" style="margin: 0 auto 32px;">Take the openings above into the arena right now.</p>
+        <div class="hero-actions" style="justify-content: center;">
+          <a href="/?play=1" class="btn-pill btn-pill-primary">Play Now</a>
+          <a href="/bots-and-analysis.html" class="btn-pill btn-pill-ghost">Meet the AI Bots →</a>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a href="/" class="brand-link" aria-label="DuoOrb Home"><img src="/icons/icon-192.png" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" /><span class="brand-text">DuoOrb</span></a>
+          <p>DuoOrb strategy handbook: openings, wall parity and endgame calculation.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Play</h4>
+          <ul>
+            <li><a href="/?play=1">Play Now</a></li>
+            <li><a href="/">Home Overview</a></li>
+            <li><a href="/rules.html#clocks">Time Controls &amp; Clocks</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Learn &amp; Master</h4>
+          <ul>
+            <li><a href="/rules.html">Complete Rules</a></li>
+            <li><a href="/strategy.html">Strategy &amp; Openings</a></li>
+            <li><a href="/bots-and-analysis.html">AI Bots &amp; Analysis</a></li>
+            <li><a href="/#viral-guide">Two Balls &amp; Walls Game</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Mobile &amp; Studio</h4>
+          <ul>
+            <li><a href="/#mobile">Play on Your Phone</a></li>
+            <li><a href="/about.html">About DuoOrb &amp; AS Digital</a></li>
+            <li><a href="/contact.html">Support &amp; Contact</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom"><p>© 2026 DuoOrb by AS Digital.</p><p><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/cookies.html">Cookies &amp; Ads</a> · <a href="/contact.html">Contact</a></p></div>
+    </div>
+  </footer>
+  <script>
+    (function() {
+      var btn = document.getElementById('mobile-nav-toggle');
+      var drawer = document.getElementById('mobile-nav-drawer');
+      if (!btn || !drawer) return;
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var isOpen = drawer.classList.toggle('open');
+        btn.classList.toggle('active', isOpen);
+        btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+      document.addEventListener('click', function(e) {
+        if (!drawer.contains(e.target) && !btn.contains(e.target) && drawer.classList.contains('open')) {
+          drawer.classList.remove('open');
+          btn.classList.remove('active');
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DuoOrb AI Bots — Free Sparring Partners From Beginner to 2400</title>
+  <meta name="description" content="Explore DuoOrb's 7 free offline AI personalities (Martin 800 to Achref 2400) and learn how our Rust MCTS engine grades every move from Best to Blunder." />
+  <link rel="canonical" href="https://duoorb.com/bots-and-analysis.html" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <!-- Google Consent Mode v2 Bootstrap (EEA/UK/CH Safe Default) -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('consent', 'default', {
+      'ad_storage': 'denied',
+      'ad_user_data': 'denied',
+      'ad_personalization': 'denied',
+      'analytics_storage': 'denied',
+      'regions': ['AT','BE','BG','CY','CZ','DE','DK','EE','ES','FI','FR','GB','GR','HR','HU','IE','IS','IT','LI','LT','LU','LV','MT','NL','NO','PL','PT','RO','SE','SI','SK','CH'],
+      'wait_for_update': 500
+    });
+    gtag('set', 'ads_data_redaction', true);
+    gtag('set', 'url_passthrough', false);
+  </script>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6057010656402010" crossorigin="anonymous"></script>
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="DuoOrb" />
+  <meta property="og:url" content="https://duoorb.com/bots-and-analysis.html" />
+  <meta property="og:title" content="DuoOrb AI Bots &amp; Rust MCTS Engine Analysis" />
+  <meta property="og:description" content="7 free offline AI personalities from 800 to 2400 plus Rust MCTS move grading." />
+  <meta property="og:image" content="https://duoorb.com/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="DuoOrb AI Bots &amp; Rust MCTS Engine" />
+  <meta name="twitter:description" content="7 free bots, 800-2400, plus move grading math." />
+  <meta name="twitter:image" content="https://duoorb.com/og-image.png" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "TechArticle",
+        "headline": "Meet the 7 Free AI Personalities & the Rust MCTS Analysis Engine",
+        "url": "https://duoorb.com/bots-and-analysis.html",
+        "author": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/about.html", "email": "support@duoorb.com" },
+        "publisher": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/", "logo": { "@type": "ImageObject", "url": "https://duoorb.com/icons/icon-512.png", "width": 512, "height": 512 } }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          { "@type": "Question", "name": "Are DuoOrb bots free?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. All 7 named AI personalities plus the Easy 1200, Normal 1500 and Hard 1800 calibration tiers are 100% free and work offline." } },
+          { "@type": "Question", "name": "Which bot should a beginner start with?", "acceptedAnswer": { "@type": "Answer", "text": "Start with Martin (800), then Elena (1100), then Nelson (1450). Each step up adds simulation budget and removes randomness." } },
+          { "@type": "Question", "name": "How does Engine Review grade moves?", "acceptedAnswer": { "@type": "Answer", "text": "The Rust MCTS engine computes win-equity loss per turn (loss = Δq × 40) and grades Best, Excellent, Good, Forced, Inaccuracy, Mistake or Blunder, with accuracy and the deciding moment." } }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="site-nav">
+    <div class="container site-nav-inner">
+      <a href="/" class="brand-link" aria-label="DuoOrb Home"><img src="/icons/icon-192.png" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" /><span class="brand-text">DuoOrb</span></a>
+      <nav aria-label="Main Navigation">
+        <ul class="nav-links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/rules.html">Rules</a></li>
+          <li><a href="/strategy.html">Strategy</a></li>
+          <li><a href="/bots-and-analysis.html" class="active">AI &amp; Analysis</a></li>
+          <li><a href="/about.html">About</a></li>
+        </ul>
+      </nav>
+      <div class="nav-actions">
+        <a href="/?play=1" class="btn-pill btn-pill-primary">Play Now</a>
+        <button id="mobile-nav-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      </div>
+    </div>
+    <div id="mobile-nav-drawer" class="mobile-nav-drawer">
+      <ul class="mobile-nav-list">
+        <li><a href="/">Home</a></li>
+        <li><a href="/rules.html">Rules</a></li>
+        <li><a href="/strategy.html">Strategy</a></li>
+        <li><a href="/bots-and-analysis.html" class="active">AI &amp; Analysis</a></li>
+        <li><a href="/about.html">About</a></li>
+      </ul>
+    </div>
+  </header>
+  <main>
+    <section class="section">
+      <div class="container" style="max-width: 820px;">
+        <span class="section-tag">AI Sparring Partners</span>
+        <h1>Meet the 7 Free AI Sparring Partners</h1>
+        <p class="lead" style="margin-top: 20px; margin-bottom: 28px;">Stuck with no friends online? Seven sparring partners wait inside DuoOrb, from Martin — who plays like your friendly dad — up to Achref, who calculates like a machine. Every one is free, works offline, and teaches you something different. And after each match, the same engine grades every move you made.</p>
+        <div class="hero-actions" style="margin-bottom: 16px;">
+          <a href="/?play=1" class="btn-pill btn-pill-primary">Play Now</a>
+        </div>
+      </div>
+    </section>
+    <section class="section section-fog" id="bot-roster">
+      <div class="container" style="max-width: 820px;">
+        <div class="section-header">
+          <span class="section-tag">100% Free · Works Offline</span>
+          <h2>The Complete 7-Bot Personality Ladder (800 to 2400 Rating)</h2>
+          <p><strong>Reading the table:</strong> MCTS Playouts measure how many future board positions each bot calculates per turn, while Randomness controls how often a bot intentionally plays a human-like imperfect move. Higher playouts plus zero randomness means a colder, stronger opponent. Three plain sparring tiers back the roster up: <strong>Easy (1200)</strong>, <strong>Normal (1500)</strong>, and <strong>Hard (1800)</strong>.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="editorial-table">
+            <thead>
+              <tr>
+                <th scope="col">Bot Personality</th>
+                <th scope="col">Rating &amp; Tier</th>
+                <th scope="col">MCTS Playouts</th>
+                <th scope="col">Think Budget</th>
+                <th scope="col">Randomness</th>
+                <th scope="col">Signature Playing Style</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Martin</strong><br /><em>The Friendly Dad</em></td>
+                <td><strong>800</strong><br />Beginner</td>
+                <td>250 sims</td>
+                <td>40 ms</td>
+                <td>0.50 (High)</td>
+                <td>Low wall frequency (0.15). Plays for fun, advances his orb straightforwardly, and leaves clear tactical openings for newcomers learning jump rules.</td>
+              </tr>
+              <tr>
+                <td><strong>Elena</strong><br /><em>The Eager Student</em></td>
+                <td><strong>1100</strong><br />Beginner</td>
+                <td>600 sims</td>
+                <td>60 ms</td>
+                <td>0.15 (Moderate)</td>
+                <td>Moderate wall frequency (0.35). A university board-game theorist who tests early opening fences and punishes basic one-move overlooks.</td>
+              </tr>
+              <tr>
+                <td><strong>Nelson</strong><br /><em>The Aggressive Challenger</em></td>
+                <td><strong>1450</strong><br />Intermediate</td>
+                <td>1,000 sims</td>
+                <td>100 ms</td>
+                <td>0.10 (Low)</td>
+                <td>Direct, relentless pressure. Loves dropping aggressive frontal walls to disrupt your rhythm and force early corridor detours.</td>
+              </tr>
+              <tr>
+                <td><strong>Sofia</strong><br /><em>The Calm Competitor</em></td>
+                <td><strong>1650</strong><br />Intermediate</td>
+                <td>1,500 sims</td>
+                <td>150 ms</td>
+                <td>0.05 (Minimal)</td>
+                <td>Experienced club player who favors surgical, high-efficiency walls and clean tempo calculation over reckless wall races.</td>
+              </tr>
+              <tr>
+                <td><strong>Marcus</strong><br /><em>The Seasoned Master</em></td>
+                <td><strong>1900</strong><br />Master</td>
+                <td>2,200 sims</td>
+                <td>200 ms</td>
+                <td>0.00 (Zero)</td>
+                <td>Pure deterministic search. Builds suffocating multi-wall corridors and exploits wall-parity imbalances in the second half of the match.</td>
+              </tr>
+              <tr>
+                <td><strong>Viktor</strong><br /><em>The Master Analyst</em></td>
+                <td><strong>2100</strong><br />Master</td>
+                <td>3,000 sims</td>
+                <td>240 ms</td>
+                <td>0.00 (Zero)</td>
+                <td>Grandmaster theorist with deep branching calculation. Counts exact endgame step differentials and locks down side-file escape routes.</td>
+              </tr>
+              <tr>
+                <td><strong>Achref</strong><br /><em>The System Architect</em></td>
+                <td><strong>2400</strong><br />Master</td>
+                <td>3,500 sims</td>
+                <td>1,000 ms</td>
+                <td>0.00 (Zero)</td>
+                <td>The pinnacle DuoOrb architect persona. Runs full-second deep MCTS rollouts to uncover hidden counter-traps and mathematically optimal wall geometry.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <section class="section" id="engine-grading">
+      <div class="container" style="max-width: 820px;">
+        <div class="hero-split-grid">
+          <div>
+            <span class="section-tag">Post-Match Breakdown</span>
+            <h2>How Every Move Gets Graded, From Best to Blunder</h2>
+            <p style="margin-top: 16px; margin-bottom: 16px;">After each match, DuoOrb replays every turn and scores how much win chance it gained or lost you — then labels it in plain words, from Best down to Blunder:</p>
+            <ul style="padding-left: 20px; color: var(--color-slate-gray); display: flex; flex-direction: column; gap: 8px;">
+              <li><strong>Best (Loss ≤ 0.03):</strong> The mathematically optimal path step or highest-leverage wall on the board.</li>
+              <li><strong>Excellent (Loss ≤ 0.07):</strong> A near-optimal decision that preserves full positional command.</li>
+              <li><strong>Good (Loss ≤ 0.15):</strong> A solid, practical move (guaranteed whenever move accuracy retains ≥ 85% win equity).</li>
+              <li><strong>Forced:</strong> The only sensible legal response in a single-corridor sequence.</li>
+              <li><strong>Inaccuracy (Loss ≤ 0.28):</strong> A suboptimal wall or passive step that yields 1–2 steps of tempo.</li>
+              <li><strong>Mistake (Loss ≤ 0.42):</strong> A serious tactical slip that hands control of the board state to your opponent.</li>
+              <li><strong>Blunder (Loss greater than 0.42):</strong> A game-swinging error — such as sealing the wrong wing of the board or walking into a multi-wall trap.</li>
+            </ul>
+          </div>
+          <div class="product-artifact">
+            <div class="artifact-screen-wrap">
+              <img src="/screenshots/match-review-analysis.png" width="300" height="650" loading="lazy" alt="DuoOrb post-match move stepper showing MCTS win evaluation bar and move classifications" />
+            </div>
+            <div class="artifact-caption">
+              <h3>Interactive Move Stepper &amp; Deciding Moment</h3>
+              <p>Scrub through every ply of your match, inspect the live evaluation bar, and compare your move against the engine's recommended line.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="section section-fog">
+      <div class="container" style="max-width: 820px;">
+        <div class="section-header text-center">
+          <span class="section-tag">Frequently Asked Questions</span>
+          <h2>AI &amp; Analysis Questions</h2>
+        </div>
+        <div class="faq-grid">
+          <div class="faq-item">
+            <h3>Are DuoOrb bots free?</h3>
+            <p>Yes. All 7 named AI personalities plus the Easy 1200, Normal 1500 and Hard 1800 calibration tiers are 100% free and work offline.</p>
+          </div>
+          <div class="faq-item">
+            <h3>Which bot should a beginner start with?</h3>
+            <p>Start with Martin (800), then Elena (1100), then Nelson (1450). Each step up adds simulation budget and removes randomness. Full rules: <a href="/rules.html">Rules</a>.</p>
+          </div>
+          <div class="faq-item">
+            <h3>How does Engine Review grade moves?</h3>
+            <p>The Rust MCTS engine computes win-equity loss per turn and grades Best, Excellent, Good, Forced, Inaccuracy, Mistake or Blunder, with accuracy and the deciding moment.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="section" style="text-align: center; padding: 80px 0;">
+      <div class="container" style="max-width: 640px;">
+        <span class="section-tag">Your Move</span>
+        <h2 style="margin-bottom: 16px;">Challenge a sparring bot now — free, no account.</h2>
+        <p class="lead" style="margin: 0 auto 32px;">Pick from Martin (800) to Achref (2400). Start gentle, climb fast.</p>
+        <div class="hero-actions" style="justify-content: center;">
+          <a href="/?play=1" class="btn-pill btn-pill-primary">Play Now</a>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a href="/" class="brand-link" aria-label="DuoOrb Home"><img src="/icons/icon-192.png" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" /><span class="brand-text">DuoOrb</span></a>
+          <p>DuoOrb AI lab: 7 free bots and Rust MCTS move grading.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Play</h4>
+          <ul>
+            <li><a href="/?play=1">Play Now</a></li>
+            <li><a href="/">Home Overview</a></li>
+            <li><a href="/rules.html#clocks">Time Controls &amp; Clocks</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Learn &amp; Master</h4>
+          <ul>
+            <li><a href="/rules.html">Complete Rules</a></li>
+            <li><a href="/strategy.html">Strategy &amp; Openings</a></li>
+            <li><a href="/bots-and-analysis.html">AI Bots &amp; Analysis</a></li>
+            <li><a href="/#viral-guide">Two Balls &amp; Walls Game</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Mobile &amp; Studio</h4>
+          <ul>
+            <li><a href="/#mobile">Play on Your Phone</a></li>
+            <li><a href="/about.html">About DuoOrb &amp; AS Digital</a></li>
+            <li><a href="/contact.html">Support &amp; Contact</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom"><p>© 2026 DuoOrb by AS Digital.</p><p><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/cookies.html">Cookies &amp; Ads</a> · <a href="/contact.html">Contact</a></p></div>
+    </div>
+  </footer>
+  <script>
+    (function() {
+      var btn = document.getElementById('mobile-nav-toggle');
+      var drawer = document.getElementById('mobile-nav-drawer');
+      if (!btn || !drawer) return;
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var isOpen = drawer.classList.toggle('open');
+        btn.classList.toggle('active', isOpen);
+        btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+      document.addEventListener('click', function(e) {
+        if (!drawer.contains(e.target) && !btn.contains(e.target) && drawer.classList.contains('open')) {
+          drawer.classList.remove('open');
+          btn.classList.remove('active');
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
