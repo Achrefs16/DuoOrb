@@ -1180,7 +1180,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               <View style={styles.coachBubble}>
                 <View style={styles.bubblePointer} />
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <ActivityIndicator size="small" color="#69B342" />
+                  <ActivityIndicator size="small" color={theme.colors.primary} />
                   <Text style={styles.coachText}>{t('review.analyzing')}</Text>
                 </View>
               </View>
@@ -1242,8 +1242,8 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 size={20}
                 color={
                   currentStep <= 0
-                    ? THEME.colors.textMuted
-                    : THEME.colors.textSecondary
+                    ? theme.colors.textMuted
+                    : theme.colors.textSecondary
                 }
               />
             </TouchableOpacity>
@@ -1292,8 +1292,8 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 size={20}
                 color={
                   currentStep >= history.length
-                    ? THEME.colors.textMuted
-                    : THEME.colors.textSecondary
+                    ? theme.colors.textMuted
+                    : theme.colors.textSecondary
                 }
               />
             </TouchableOpacity>
@@ -1317,17 +1317,17 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 size={20}
                 color={
                   !canShowBest
-                    ? THEME.colors.textMuted
+                    ? theme.colors.textMuted
                     : showBest
-                    ? THEME.colors.primary
-                    : THEME.colors.textSecondary
+                    ? theme.colors.primary
+                    : theme.colors.textSecondary
                 }
               />
               <Text
                 style={[
                   styles.actionLabel,
-                  !canShowBest && { color: THEME.colors.textMuted },
-                  showBest && { color: THEME.colors.primary },
+                  !canShowBest && { color: theme.colors.textMuted },
+                  showBest && { color: theme.colors.primary },
                 ]}
                 numberOfLines={1}
               >
@@ -1829,13 +1829,15 @@ const createStyles = () => StyleSheet.create({
   },
   coachBubble: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.surfaceContainerLowest,
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 4,
     position: 'relative',
-    shadowColor: '#000000',
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    shadowColor: THEME.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.12,
     shadowRadius: 4,
@@ -1852,12 +1854,12 @@ const createStyles = () => StyleSheet.create({
     borderRightWidth: 8,
     borderTopColor: 'transparent',
     borderBottomColor: 'transparent',
-    borderRightColor: '#FFFFFF',
+    borderRightColor: THEME.colors.surfaceContainerLowest,
   },
   coachText: {
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
-    color: '#374151',
+    color: THEME.colors.textSecondary,
     lineHeight: 16,
   },
   verdictRow: {
@@ -1885,16 +1887,16 @@ const createStyles = () => StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '800',
-    color: '#111827',
+    color: THEME.colors.textPrimary,
   },
   evalPill: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: THEME.colors.surfaceContainer,
     borderRadius: 6,
     paddingVertical: 2,
     paddingHorizontal: 7,
   },
   evalPillText: {
-    color: '#1F2937',
+    color: THEME.colors.textPrimary,
     fontFamily: THEME.fonts.bold,
     fontSize: 12,
     fontWeight: '800',

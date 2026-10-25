@@ -189,13 +189,13 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#69B342" />
+            <ActivityIndicator size="large" color={theme.colors.primary} />
             <Text style={styles.loadingTitle}>Analyzing game...</Text>
             <Text style={styles.loadingSubtitle}>Evaluating all moves with server engine</Text>
           </View>
         ) : !review ? (
           <View style={styles.loadingContainer}>
-            <Feather name="alert-circle" size={44} color="#EF4444" style={{ marginBottom: 14 }} />
+            <Feather name="alert-circle" size={44} color={theme.colors.danger} style={{ marginBottom: 14 }} />
             <Text style={styles.loadingTitle}>Analysis Unavailable</Text>
             <Text style={[styles.loadingSubtitle, { marginBottom: 22, textAlign: 'center', paddingHorizontal: 20 }]}>
               Could not connect to the server analysis engine. Please ensure the server is online.
@@ -219,7 +219,7 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
             {/* Engine Source Badge (Server Engine) */}
             <View style={styles.engineBadgeRow}>
               <View style={[styles.enginePill, styles.enginePillServer]}>
-                <Feather name="cpu" size={13} color="#69B342" />
+                <Feather name="cpu" size={13} color={theme.colors.tertiary} />
                 <Text style={[styles.enginePillText, styles.engineTextServer]}>
                   {`Server Engine (${review?.engineVersion || 'duoorb-rust-mcts-3.0'} · 35,000 sims)`}
                 </Text>
@@ -335,17 +335,18 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
   );
 };
 
-const createStyles = () =>
-  StyleSheet.create({
+const createStyles = () => {
+  const isDark = THEME.mode === 'dark';
+  return StyleSheet.create({
     screen: {
       flex: 1,
-      backgroundColor: '#161512',
+      backgroundColor: THEME.colors.background,
       alignItems: 'center',
     },
     container: {
       flex: 1,
       width: '100%',
-      backgroundColor: '#161512',
+      backgroundColor: THEME.colors.background,
     },
     header: {
       height: 56,
@@ -354,7 +355,8 @@ const createStyles = () =>
       justifyContent: 'space-between',
       paddingHorizontal: 16,
       borderBottomWidth: 1,
-      borderBottomColor: '#262421',
+      borderBottomColor: THEME.colors.surfaceContainer,
+      backgroundColor: THEME.colors.surfaceContainerLowest,
     },
     backBtn: {
       width: 40,
@@ -366,7 +368,7 @@ const createStyles = () =>
       fontFamily: THEME.fonts.extraBold,
       fontSize: 19,
       fontWeight: '800',
-      color: '#FFFFFF',
+      color: THEME.colors.textPrimary,
       letterSpacing: 0.3,
     },
     headerSpacer: {
@@ -382,14 +384,14 @@ const createStyles = () =>
       fontFamily: THEME.fonts.bold,
       fontSize: 18,
       fontWeight: '700',
-      color: '#FFFFFF',
+      color: THEME.colors.textPrimary,
       marginTop: 18,
       marginBottom: 6,
     },
     loadingSubtitle: {
       fontFamily: THEME.fonts.regular,
       fontSize: 14,
-      color: '#A3A3A3',
+      color: THEME.colors.textMuted,
       textAlign: 'center',
     },
     scroll: {
@@ -414,7 +416,7 @@ const createStyles = () =>
       fontFamily: THEME.fonts.semiBold,
       fontSize: 15,
       fontWeight: '600',
-      color: '#A3A3A3',
+      color: THEME.colors.textMuted,
     },
     playerCol: {
       flex: 1,
@@ -424,7 +426,7 @@ const createStyles = () =>
       fontFamily: THEME.fonts.bold,
       fontSize: 14,
       fontWeight: '700',
-      color: '#FFFFFF',
+      color: THEME.colors.textPrimary,
       marginBottom: 8,
       textAlign: 'center',
       maxWidth: 100,
@@ -442,8 +444,8 @@ const createStyles = () =>
       borderColor: '#3B82F6',
     },
     oppAvatarBox: {
-      backgroundColor: '#374151',
-      borderColor: '#4B5563',
+      backgroundColor: isDark ? '#374151' : '#EDEBE5',
+      borderColor: isDark ? '#4B5563' : '#DFDDD5',
     },
     avatarInitial: {
       fontFamily: THEME.fonts.extraBold,
@@ -464,29 +466,27 @@ const createStyles = () =>
       width: 96,
       height: 48,
       borderRadius: 10,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: THEME.colors.surfaceContainerLowest,
       justifyContent: 'center',
       alignItems: 'center',
-      shadowColor: '#000000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
-      elevation: 4,
+      borderWidth: 1,
+      borderColor: THEME.colors.surfaceContainer,
+      ...THEME.shadows.card,
     },
     userAccuracyText: {
       fontFamily: THEME.fonts.extraBold,
       fontSize: 22,
       fontWeight: '900',
-      color: '#18181B',
+      color: THEME.colors.textPrimary,
       letterSpacing: -0.5,
     },
     oppAccuracyCard: {
       width: 96,
       height: 48,
       borderRadius: 10,
-      backgroundColor: '#262421',
+      backgroundColor: isDark ? '#262421' : '#EDEBE5',
       borderWidth: 1,
-      borderColor: '#3F3F46',
+      borderColor: THEME.colors.surfaceContainer,
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -494,12 +494,12 @@ const createStyles = () =>
       fontFamily: THEME.fonts.extraBold,
       fontSize: 22,
       fontWeight: '900',
-      color: '#FFFFFF',
+      color: THEME.colors.textSecondary,
       letterSpacing: -0.5,
     },
     divider: {
       height: 1,
-      backgroundColor: '#262421',
+      backgroundColor: THEME.colors.surfaceContainer,
       marginVertical: 12,
     },
     tableSection: {
@@ -510,7 +510,7 @@ const createStyles = () =>
       alignItems: 'center',
       paddingVertical: 11,
       borderBottomWidth: 1,
-      borderBottomColor: '#201E1B',
+      borderBottomColor: THEME.colors.surfaceContainer,
     },
     categoryLabelCol: {
       width: 90,
@@ -519,14 +519,14 @@ const createStyles = () =>
       fontFamily: THEME.fonts.bold,
       fontSize: 15,
       fontWeight: '700',
-      color: '#FFFFFF',
+      color: THEME.colors.textPrimary,
     },
     countText: {
       flex: 1,
       fontFamily: THEME.fonts.extraBold,
       fontSize: 16,
       fontWeight: '800',
-      color: '#FFFFFF',
+      color: THEME.colors.textPrimary,
     },
     leftCount: {
       textAlign: 'center',
@@ -551,23 +551,23 @@ const createStyles = () =>
       paddingHorizontal: 18,
       paddingTop: 12,
       paddingBottom: Platform.OS === 'ios' ? 28 : 16,
-      backgroundColor: '#161512',
+      backgroundColor: THEME.colors.surfaceContainerLowest,
       borderTopWidth: 1,
-      borderTopColor: '#262421',
+      borderTopColor: THEME.colors.surfaceContainer,
     },
     startReviewBtn: {
       height: 52,
       borderRadius: 12,
-      backgroundColor: '#69B342',
+      backgroundColor: THEME.colors.primary,
       borderBottomWidth: 3,
-      borderBottomColor: '#4A852B',
+      borderBottomColor: THEME.colors.primaryDark,
       justifyContent: 'center',
       alignItems: 'center',
-      shadowColor: '#000000',
+      shadowColor: THEME.colors.shadow,
       shadowOffset: { width: 0, height: 3 },
-      shadowOpacity: 0.35,
+      shadowOpacity: 0.25,
       shadowRadius: 5,
-      elevation: 5,
+      elevation: 4,
     },
     startReviewBtnText: {
       fontFamily: THEME.fonts.extraBold,
@@ -590,12 +590,12 @@ const createStyles = () =>
       borderWidth: 1,
     },
     enginePillServer: {
-      backgroundColor: 'rgba(105, 179, 66, 0.1)',
-      borderColor: 'rgba(105, 179, 66, 0.35)',
+      backgroundColor: THEME.colors.tertiaryLight,
+      borderColor: THEME.colors.tertiaryBorder,
     },
     enginePillLocal: {
-      backgroundColor: 'rgba(245, 158, 11, 0.1)',
-      borderColor: 'rgba(245, 158, 11, 0.4)',
+      backgroundColor: THEME.colors.warningLight,
+      borderColor: THEME.colors.warningBorder,
     },
     enginePillText: {
       fontSize: 11,
@@ -603,16 +603,16 @@ const createStyles = () =>
       fontFamily: THEME.fonts.bold,
     },
     engineTextServer: {
-      color: '#69B342',
+      color: THEME.colors.tertiary,
     },
     engineTextLocal: {
-      color: '#F59E0B',
+      color: THEME.colors.warning,
     },
     retryBtn: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: '#69B342',
+      backgroundColor: THEME.colors.primary,
       paddingVertical: 12,
       paddingHorizontal: 24,
       borderRadius: 14,
@@ -624,3 +624,4 @@ const createStyles = () =>
       fontFamily: THEME.fonts.bold,
     },
   });
+};
