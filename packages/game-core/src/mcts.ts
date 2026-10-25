@@ -238,7 +238,7 @@ function findPathBlockingWalls(
     const myAfter = getShortestDistance(actor.position, actor.goalDirection, afterWalls, st.mode);
     const selfCost = Math.max(0, (Number.isFinite(myAfter) ? myAfter : myBase + 99) - myBase);
     const netGain = delay - selfCost;
-    if (netGain > 0 || (base === 1 && after > 1)) {
+    if (netGain >= 0 || (base === 1 && after > 1)) {
       results.push({ wall: slot, delay, selfCost, netGain });
     }
   }
@@ -347,15 +347,75 @@ function probableWalls(
   }
 
   if (me) {
-          : p.goalDirection === 'RIGHT'
-      ? [
-        { row: row - 1, col, orientation: 'V' as const },
-        { row, col, orientation: 'V' as const },
-      ]
-      : [
-        { row: row - 1, col: col - 1, orientation: 'V' as const },
+    if (openingStyle === 'back_gate' || wallStyle === 'defensive_backwall') {
+      for (const w of backGateWalls(st, me)) add(w, false);
+    }
+    if (wallStyle !== 'minimal') {
+      const { row, col } = me.position;
+      for (const slot of [
+        { row: row - 1, col, orientation: 'H' as const },
+        { row, col, orientation: 'H' as const },
         { row, col: col - 1, orientation: 'V' as const },
-      ];
+        { row, col, orientation: 'V' as const },
+      ]) {
+        // applyAction() validates path preservation when this child is
+        // expanded; validating here as well doubled the BFS work.
+        add(slot, false);
+      }
+    }
+  }
+  for (const foe of st.players) {
+    if (foe.id === playerId || foe.status !== 'ACTIVE') continue;
+    const blocks = findPathBlockingWalls(st, playerId, foe, horizon);
+    for (let i = 0; i < Math.min(8, blocks.length); i++) {
+      add(blocks[i].wall, true);
+    }
+  }
+  return me ? styleOrder([...out.values()], wallStyle, me) : [...out.values()];
+}
+
+/**
+ * Deep-node wall generation. The full horizon scan is reserved for the root:
+ * running it at every expanded node made the search an order of magnitude
+ * slower than the clock budget allowed. Here we score only the four slots
+ * touching each pawn, which is enough to keep tactical blocks in the tree.
+ */
+function quickWalls(st: GameState, playerId: string): WallCandidate[] {
+  const out = new Map<string, WallCandidate>();
+  const add = (slot: WallCoord, positive: boolean): void => {
+    if (slot.row < 0 || slot.row > 7 || slot.col < 0 || slot.col > 7) return;
+    const key = `${slot.row},${slot.col},${slot.orientation}`;
+    const existing = out.get(key);
+    if (existing) {
+      existing.positive = existing.positive || positive;
+      return;
+    }
+    out.set(key, { wall: slot, positive });
+  };
+  const me = st.players.find((p) => p.id === playerId);
+  if (!me) return [];
+  const addTouch = (p: GameState['players'][number], positive: boolean): void => {
+    const { row, col } = p.position;
+    const slots =
+      p.goalDirection === 'BOTTOM'
+        ? [
+            { row, col: col - 1, orientation: 'H' as const },
+            { row, col, orientation: 'H' as const },
+          ]
+        : p.goalDirection === 'TOP'
+          ? [
+              { row: row - 1, col: col - 1, orientation: 'H' as const },
+              { row: row - 1, col, orientation: 'H' as const },
+            ]
+          : p.goalDirection === 'RIGHT'
+            ? [
+                { row: row - 1, col, orientation: 'V' as const },
+                { row, col, orientation: 'V' as const },
+              ]
+            : [
+                { row: row - 1, col: col - 1, orientation: 'V' as const },
+                { row, col: col - 1, orientation: 'V' as const },
+              ];
     for (const slot of slots) {
       add(slot, positive);
     }
@@ -367,23 +427,23 @@ function probableWalls(
     const slots =
       foe.goalDirection === 'BOTTOM'
         ? [
-          { row, col: col - 1, orientation: 'H' as const },
-          { row, col, orientation: 'H' as const },
-        ]
+            { row, col: col - 1, orientation: 'H' as const },
+            { row, col, orientation: 'H' as const },
+          ]
         : foe.goalDirection === 'TOP'
           ? [
-            { row: row - 1, col: col - 1, orientation: 'H' as const },
-            { row: row - 1, col, orientation: 'H' as const },
-          ]
+              { row: row - 1, col: col - 1, orientation: 'H' as const },
+              { row: row - 1, col, orientation: 'H' as const },
+            ]
           : foe.goalDirection === 'RIGHT'
             ? [
-              { row: row - 1, col, orientation: 'V' as const },
-              { row, col, orientation: 'V' as const },
-            ]
+                { row: row - 1, col, orientation: 'V' as const },
+                { row, col, orientation: 'V' as const },
+              ]
             : [
-              { row: row - 1, col: col - 1, orientation: 'V' as const },
-              { row, col: col - 1, orientation: 'V' as const },
-            ];
+                { row: row - 1, col: col - 1, orientation: 'V' as const },
+                { row, col: col - 1, orientation: 'V' as const },
+              ];
     for (const slot of slots) {
       // These are the two slots directly in front of the foe. At depth, treat
       // them as positive without a BFS for self-cost; the root does exact net
@@ -502,7 +562,7 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
     return {
       simulations: 0,
       immediateWinAction: null,
-      stepSimulation: () => { },
+      stepSimulation: () => {},
       finalize: () => {
         lastMctsStats = { simulations: 0, nodes: 0, elapsedMs: Date.now() - started, bestVisits: 0, bestWinRate: 0 };
         return null;
@@ -514,7 +574,7 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
     return {
       simulations: 0,
       immediateWinAction: null,
-      stepSimulation: () => { },
+      stepSimulation: () => {},
       finalize: () => {
         lastMctsStats = { simulations: 0, nodes: 0, elapsedMs: Date.now() - started, bestVisits: 0, bestWinRate: 0 };
         return null;
@@ -537,7 +597,7 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
         return {
           simulations: 0,
           immediateWinAction: { type: 'MOVE', to },
-          stepSimulation: () => { },
+          stepSimulation: () => {},
           finalize: () => ({ type: 'MOVE', to }),
         };
       }
@@ -970,11 +1030,6 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
         repetitionPenalty(state, rootMover.id, chosen.move.to) === 0;
       if (!chosenIsForward && !safeBlunder) {
         if (chosen.move?.type === 'MOVE') {
-          chosen = bestForward;
-        } else if (
-          chosen.move?.type === 'PLACE_WALL' &&
-          (clearLead || qOf(bestForward) >= bestQ - 0.12)
-        ) {
           chosen = bestForward;
         }
       }
