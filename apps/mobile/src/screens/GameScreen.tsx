@@ -312,7 +312,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [soundMuted, setSoundMuted] = useState(false);
   const [chatTrayOpen, setChatTrayOpen] = useState(false);
-  const [hintMove, setHintMove] = useState<CellCoord | null>(null);
+  const [hintAction, setHintAction] = useState<GameAction | null>(null);
+  const [hintLoading, setHintLoading] = useState(false);
+  const hintReqIdRef = useRef(0);
 
   const seatRatings = useMemo(() => {
     const map: Record<string, number> = {};
@@ -1858,28 +1860,73 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // move of ours appears immediately rather than a frame later.
   const displayState = replayState ?? boardState;
 
-  const handleHintPress = useCallback(() => {
-    if (!humanTurn || !currentPlayer) {
+  const handleHintPress = useCallback(async () => {
+    if (!humanTurn || !currentPlayer || state.status !== 'IN_PROGRESS' || hintLoading) {
       return;
     }
-    const moves = getLegalMoves(displayState, currentPlayer.id);
-    if (!moves || moves.length === 0) return;
-    let bestMove = moves[0];
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (const m of moves) {
-      const d = getShortestDistance(m, currentPlayer.goalDirection, displayState.walls, displayState.mode);
-      if (d < bestDist) {
-        bestDist = d;
-        bestMove = m;
+    const currentReqId = ++hintReqIdRef.current;
+    setHintLoading(true);
+
+    try {
+      // Grandmaster analysis: routes to Native Multi-Threaded Rust engine (50,000 sims on 8 cores)
+      const masterProfile = botById('achref')?.profile ?? AI_PROFILES.hard;
+
+      const action = await getAiMove(displayState, masterProfile, undefined, {
+        shouldCancel: () => hintReqIdRef.current !== currentReqId,
+      });
+
+      if (hintReqIdRef.current === currentReqId && action) {
+        setHintAction(action);
+        void playNotifySound();
+      }
+    } catch {
+      // Fallback: shortest-path step
+      const moves = getLegalMoves(displayState, currentPlayer.id);
+      if (moves && moves.length > 0) {
+        let bestMove = moves[0];
+        let bestDist = Number.POSITIVE_INFINITY;
+        for (const m of moves) {
+          const d = getShortestDistance(m, currentPlayer.goalDirection, displayState.walls, displayState.mode);
+          if (d < bestDist) {
+            bestDist = d;
+            bestMove = m;
+          }
+        }
+        setHintAction({ type: 'MOVE', to: bestMove });
+        void playNotifySound();
+      }
+    } finally {
+      if (hintReqIdRef.current === currentReqId) {
+        setHintLoading(false);
       }
     }
-    setHintMove(bestMove);
-    playNotifySound();
-  }, [humanTurn, currentPlayer, displayState]);
+  }, [humanTurn, currentPlayer, state.status, displayState, hintLoading]);
 
   useEffect(() => {
-    setHintMove(null);
+    hintReqIdRef.current++;
+    setHintAction(null);
+    setHintLoading(false);
   }, [state.history.length]);
+
+  const hintMark = useMemo(() => {
+    if (!hintAction) return null;
+    if (hintAction.type === 'MOVE') {
+      return {
+        from: currentPlayer?.position,
+        to: hintAction.to,
+        color: '#10B981',
+        solid: false,
+      };
+    }
+    if (hintAction.type === 'PLACE_WALL') {
+      return {
+        wall: hintAction.wall,
+        color: '#10B981',
+        solid: false,
+      };
+    }
+    return null;
+  }, [hintAction, currentPlayer?.position]);
 
   const enterReplay = () => {
     setShowGameOver(false);
@@ -2472,7 +2519,7 @@ useEffect(() => {
               viewingStep === null &&
               !(type === 'online' && online.inputLocked)
             }
-            moveMark={hintMove ? { to: hintMove, color: '#10B981', solid: false } : null}
+            moveMark={hintMark}
             moveHintColor={wallDrag ? trayColor : hintColor}
             premoveMarks={viewingStep !== null ? EMPTY_PREMOVE_MARKS : premoveMarks}
             hideDots={hideDots}
@@ -2663,12 +2710,23 @@ useEffect(() => {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.dockItem}
+              style={[styles.dockItem, (!humanTurn || hintLoading) && { opacity: 0.6 }]}
+              disabled={!humanTurn || hintLoading}
               onPress={handleHintPress}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialCommunityIcons name="lightbulb-on-outline" size={21} color={dockIconColor} />
-              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Hint</Text>
+              {hintLoading ? (
+                <ActivityIndicator size="small" color="#10B981" style={{ height: 21 }} />
+              ) : (
+                <MaterialCommunityIcons
+                  name={hintAction ? 'lightbulb-on' : 'lightbulb-on-outline'}
+                  size={21}
+                  color={hintAction ? '#10B981' : dockIconColor}
+                />
+              )}
+              <Text style={[styles.dockLabel, { color: hintAction ? '#10B981' : dockLabelColor }]}>
+                {hintLoading ? 'Thinking' : 'Hint'}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
