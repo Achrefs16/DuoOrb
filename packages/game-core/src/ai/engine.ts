@@ -205,6 +205,7 @@ export function getBestAction(
       maxRolloutPlies: profile.maxRolloutPlies,
       timeBudgetMs: timeLimit,
       wallHorizon: profile.wallHorizon,
+      isHint: Boolean((profile as any).isHint),
     });
     const st = mctsStats();
     lastSearchStats.nodes = st.nodes;
@@ -342,6 +343,7 @@ export async function getBestActionAsync(
       maxRolloutPlies: profile.maxRolloutPlies,
       timeBudgetMs: timeLimit,
       wallHorizon: profile.wallHorizon,
+      isHint: Boolean((profile as any).isHint),
     }, { shouldCancel: hooks.shouldCancel });
     const st = mctsStats();
     lastSearchStats.nodes = st.nodes;

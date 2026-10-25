@@ -18,6 +18,8 @@ export interface AiMoveOptions {
   budget?: AiProductionBudget;
   /** Cooperative cancellation for the main-thread fallback. */
   shouldCancel?: () => boolean;
+  /** Grandmaster Oracle hint mode: runs at 100,000 native sims across 8 threads. */
+  isHint?: boolean;
 }
 
 type BrowserWorker = {
@@ -155,9 +157,10 @@ export async function getAiMove(
 
   if (Platform.OS !== 'web' && isNativeAiAvailable()) {
     try {
+      const isHint = Boolean(options.isHint);
       const isHard = profile.difficulty === 'hard';
-      const nativeSims = isHard ? 50000 : Math.max(2000, (profile.simulations ?? 3500) * 3);
-      const threads = isHard ? 8 : 4;
+      const nativeSims = isHint ? 100000 : (isHard ? 50000 : Math.max(2000, (profile.simulations ?? 3500) * 3));
+      const threads = isHint ? 8 : (isHard ? 8 : 4);
       const nativeAction = await getBestActionNative(state, nativeSims, threads);
       if (nativeAction) return nativeAction;
     } catch {

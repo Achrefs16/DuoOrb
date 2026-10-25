@@ -40,6 +40,31 @@ describe('aiWorkerClient routing & native fallback', () => {
     expect(action).toEqual(sampleAction);
   });
 
+  it('routes to native module with 100,000 sims & 8 threads when isHint is true', async () => {
+    const mockGetBestActionNative = vi.fn().mockResolvedValue(sampleAction);
+    const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
+
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'ios' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: mockIsNativeAiAvailable,
+      getBestActionNative: mockGetBestActionNative,
+    }));
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(initialState, achrefProfile, 12345, { isHint: true });
+
+    expect(mockIsNativeAiAvailable).toHaveBeenCalled();
+    expect(mockGetBestActionNative).toHaveBeenCalledWith(
+      initialState,
+      100000,
+      8
+    );
+    expect(action).toEqual(sampleAction);
+  });
+
   it('routes to native module with 4 threads and scaled sims for intermediate/beginner bots', async () => {
     const mockGetBestActionNative = vi.fn().mockResolvedValue(sampleAction);
     const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);

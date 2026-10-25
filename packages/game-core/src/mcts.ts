@@ -285,12 +285,13 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
   const isLeadingRace = myDist <= minFoeDist && minFoeDist > 1;
   const isCloseRace = isRacing && myDist <= minFoeDist + 1 && minFoeDist > 1;
   const isRacingFarBehind = isRacing && minFoeDist > 1 && myDist >= minFoeDist + 3;
-  const shouldSprint = (isLeadingRace || isCloseRace || isRacingFarBehind) && !hasCriticalFoe;
-  const wallProb = shouldSprint ? 0.05 : (opts.wallMoveProb ?? 0.3);
-  const blockProb = opts.blockMoveProb ?? 0.35;
-  const configuredHorizon = opts.wallHorizon ?? 6;
+  const isHint = Boolean(opts.isHint);
+  const shouldSprint = !isHint && (isLeadingRace || isCloseRace || isRacingFarBehind) && !hasCriticalFoe;
+  const wallProb = shouldSprint ? 0.05 : (opts.wallMoveProb ?? (isHint ? 0.45 : 0.3));
+  const blockProb = opts.blockMoveProb ?? (isHint ? 0.85 : 0.35);
+  const configuredHorizon = opts.wallHorizon ?? (isHint ? 20 : 6);
   const maxOpeningPly = state.players.length * 2;
-  const isOpeningSprint = state.moveNumber <= maxOpeningPly && myDist >= 7 && minFoeDist >= 7;
+  const isOpeningSprint = !isHint && state.moveNumber <= maxOpeningPly && myDist >= 7 && minFoeDist >= 7;
   const effectiveHorizon = isOpeningSprint ? Math.min(configuredHorizon, 4) : configuredHorizon;
 
   const newNode = (

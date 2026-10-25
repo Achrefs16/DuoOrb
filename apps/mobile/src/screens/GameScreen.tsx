@@ -1868,10 +1868,32 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setHintLoading(true);
 
     try {
-      // Grandmaster analysis: routes to Native Multi-Threaded Rust engine (50,000 sims on 8 cores)
-      const masterProfile = botById('achref')?.profile ?? AI_PROFILES.hard;
+      // Super-Grandmaster Oracle Analysis: 100,000 simulations on 8 native Rust cores (or 15,000 deep search on Web)
+      // Disables sprint-forcing and explores deep tactical traps that crush opponent corridors.
+      const oracleHintProfile = {
+        difficulty: 'hard' as const,
+        engine: 'mcts' as const,
+        simulations: 15000,
+        depth: 6,
+        randomness: 0,
+        wallMoveProb: 0.45,
+        blockMoveProb: 0.85,
+        maxCandidateWalls: 24,
+        wallHorizon: 24,
+        timeBudgetMs: 2500,
+        weights: {
+          pathDifference: 18.0,
+          wallAdvantage: 3.0,
+          mobility: 1.2,
+          pathways: 1.5,
+          tightness: 2.0,
+          placement: 3.5,
+        },
+        isHint: true,
+      };
 
-      const action = await getAiMove(displayState, masterProfile, undefined, {
+      const action = await getAiMove(displayState, oracleHintProfile, undefined, {
+        isHint: true,
         shouldCancel: () => hintReqIdRef.current !== currentReqId,
       });
 
