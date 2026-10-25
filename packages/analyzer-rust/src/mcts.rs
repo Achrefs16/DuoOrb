@@ -341,13 +341,25 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
         );
         let base_dist = if dist < 0 { 99.0 } else { dist as f64 };
 
-        // Turn tempo: (i + N - current_player) % N
+        // Turn tempo: (i + N - current_player) % N, calibrated to 0.48 to break symmetric ties
         let turns_until_move = (i + n - state.current_player_index) % n;
-        let turn_tempo = 0.65 * (1.0 - (turns_until_move as f64) / (n as f64));
+        let turn_tempo = 0.48 * (1.0 - (turns_until_move as f64) / (n as f64));
 
         // Corridor width bonus (wider corridor is harder to wall off)
         let corridor_cells = (corridor.count_ones() as f64).min(12.0);
         let corridor_bonus = corridor_cells * 0.04;
+
+        // Bottleneck & Trap Risk: If this player is in a narrow corridor (single exit route)
+        // and any active opponent holds walls, they are vulnerable to a sudden multi-ply wall trap!
+        let opp_has_walls = state.players.iter().enumerate().any(|(j, opp)| {
+            j != i && opp.status != "FINISHED" && opp.walls_remaining > 0
+        });
+        let is_bottleneck = dist > 1 && (corridor.count_ones() as i32) <= dist + 1;
+        let bottleneck_penalty = if is_bottleneck && opp_has_walls {
+            1.25
+        } else {
+            0.0
+        };
 
         // Tactical 1-ply jump lookahead
         let mut jump_bonus = 0.0f64;
@@ -429,8 +441,8 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
             }
         }
 
-        let wall_bonus = (p.walls_remaining as f64 - avg_walls) * 0.25;
-        eff_dists[i] = base_dist - jump_bonus - corridor_bonus - turn_tempo - wall_bonus;
+        let wall_bonus = (p.walls_remaining as f64 - avg_walls) * 0.12;
+        eff_dists[i] = base_dist + bottleneck_penalty - jump_bonus - corridor_bonus - turn_tempo - wall_bonus;
     }
 
     if n == 2 {
@@ -538,7 +550,7 @@ pub fn run_mcts_analysis(
 
         while !tree[cur_node_idx].children.is_empty() {
             let parent_visits = tree[cur_node_idx].visits as f64;
-            let unlocked = (16.0 + 2.0 * parent_visits.powf(0.48)).floor() as usize;
+            let unlocked = (2.0 + 1.2 * parent_visits.powf(0.5)).floor() as usize;
             let limit = unlocked.min(tree[cur_node_idx].all_actions.len());
 
             if tree[cur_node_idx].children.len() < limit {
@@ -578,7 +590,7 @@ pub fn run_mcts_analysis(
 
         // Expansion
         let parent_visits = tree[cur_node_idx].visits as f64;
-        let unlocked = (16.0 + 2.0 * parent_visits.powf(0.48)).floor() as usize;
+        let unlocked = (2.0 + 1.2 * parent_visits.powf(0.5)).floor() as usize;
         let limit = unlocked.min(tree[cur_node_idx].all_actions.len());
         let mut expanded_node_idx = cur_node_idx;
 

@@ -238,7 +238,7 @@ function findPathBlockingWalls(
     const myAfter = getShortestDistance(actor.position, actor.goalDirection, afterWalls, st.mode);
     const selfCost = Math.max(0, (Number.isFinite(myAfter) ? myAfter : myBase + 99) - myBase);
     const netGain = delay - selfCost;
-    if (netGain > 0 || (base === 1 && after > 1)) {
+    if (netGain >= 0 || (base === 1 && after > 1)) {
       results.push({ wall: slot, delay, selfCost, netGain });
     }
   }
@@ -1030,11 +1030,6 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
         repetitionPenalty(state, rootMover.id, chosen.move.to) === 0;
       if (!chosenIsForward && !safeBlunder) {
         if (chosen.move?.type === 'MOVE') {
-          chosen = bestForward;
-        } else if (
-          chosen.move?.type === 'PLACE_WALL' &&
-          (clearLead || qOf(bestForward) >= bestQ - 0.12)
-        ) {
           chosen = bestForward;
         }
       }
