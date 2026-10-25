@@ -13,6 +13,7 @@ import { nameInitial } from '../displayName';
 import { ReactionDock } from './QuickReactions';
 import { PremiumBadge } from './PremiumBadge';
 import { BotAvatar } from './BotAvatar';
+import { WallIcon } from './WallIcon';
 import type { IncomingReaction } from '../network/useQuickReactions';
 import { useTranslation } from '../i18n';
 
@@ -124,6 +125,7 @@ interface InGamePlayerChipProps {
   isActive: boolean;
   timeLeft?: number;
   rating?: number;
+  countryFlag?: string;
   bonus?: number | null;
   /** Bottom (own) card hides the wall pill — the count lives in the tray. */
   hideWallsBadge?: boolean;
@@ -204,16 +206,17 @@ function avatarTint(ball: string): { bg: string; border: string; text: string } 
 }
 
 /**
- * Stitch active-match player card (duoorb_active_match_wall_inventory_1):
- * white rounded-xl card, letter avatar box tinted by player color, name +
- * rating pill + turn dot, fence wall-count pill, plain timer chip.
- * No turn border, no timer highlight — both cards always look the same.
+ * Chess.com seamless active-match player row:
+ * Clean flat row directly on the background (no bulky cards), avatar,
+ * name + inline rating in parens + flag emoji, subline with remaining walls,
+ * and high-contrast illuminated active timer box.
  */
 export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
   player,
   isActive,
   timeLeft,
   rating,
+  countryFlag,
   bonus,
   hideWallsBadge = false,
   status = null,
@@ -254,7 +257,7 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
         surface && { backgroundColor: surface.card, borderColor: surface.border },
       ]}
     >
-      {/* Left: letter avatar + name + rating + walls */}
+      {/* Left: avatar + name + rating + flag + walls */}
       <View style={styles.playerLeft}>
         <Pressable
           onPress={onPressIdentity}
@@ -293,70 +296,64 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
                 </Text>
               )}
             </Text>
-            {rating !== undefined && !hideStats && (
-              <View
-                style={[
-                  styles.ratingBadge,
-                  surface && { backgroundColor: surface.chip },
-                ]}
-              >
-                <Text style={[styles.ratingText, surface && { color: surface.subInk }]}>
-                  {Math.round(rating)}
-                </Text>
-              </View>
-            )}
-            {/* Wall inventory pill — same line as the name, like Stitch. */}
-            {!hideWallsBadge && !hideStats && (
-              <View style={[styles.wallsBadge, { borderColor: tint.border, backgroundColor: tint.bg }]}>
-                <MaterialIcons name="fence" size={14} color={ball} />
-                <Text style={[styles.wallsText, { color: ball }]}>
+
+            {isActive && <View style={[styles.turnDot, { backgroundColor: ball }]} />}
+          </View>
+
+          {/* Wall inventory + status under the name line */}
+          <View style={styles.playerSubRow}>
+            {!hideWallsBadge && !hideStats && player.wallsRemaining !== undefined && (
+              <View style={[styles.wallsInline, { borderColor: tint.border, backgroundColor: tint.bg }]}>
+                <WallIcon size={13} color={ball} />
+                <Text style={[styles.wallsInlineText, { color: ball }]}>
                   {player.wallsRemaining}
                 </Text>
               </View>
             )}
-            {isActive && <View style={[styles.turnDot, { backgroundColor: ball }]} />}
-          </View>
 
-          {/* Connection / attention state, under the name line. Replaces the
-              stats above rather than stacking on them: a card that is already
-              saying "Disconnected · 31s" has nothing useful to add with a
-              stale rating. */}
-          {status && statusIcon && tone && (
-            <View
-              style={[
-                styles.statusPill,
-                tone === 'danger' ? styles.statusPillDanger : styles.statusPillWarn,
-              ]}
-            >
-              <Feather name={statusIcon} size={11} color={THEME.colors.onPrimary} />
-              <Text style={styles.statusText} numberOfLines={1} ellipsizeMode="tail">
-                {seatStatusLabel(status, t)}
-              </Text>
-            </View>
-          )}
+            {status && statusIcon && tone && (
+              <View
+                style={[
+                  styles.statusPill,
+                  tone === 'danger' ? styles.statusPillDanger : styles.statusPillWarn,
+                ]}
+              >
+                <Feather name={statusIcon} size={11} color={THEME.colors.onPrimary} />
+                <Text style={styles.statusText} numberOfLines={1} ellipsizeMode="tail">
+                  {seatStatusLabel(status, t)}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
       </View>
 
-      {/* Right: timer chip — identical on both cards, every turn. */}
+      {/* Right: Chess.com style timer box with theme palette tokens */}
       {timeLeft !== undefined && (
         <View
           style={[
             styles.timerBox,
+            isActive ? styles.timerBoxActive : styles.timerBoxInactive,
             surface && {
-              backgroundColor: surface.chip,
-              borderColor: surface.border,
+              backgroundColor: surface.card,
+              borderColor: isActive ? THEME.colors.primary : surface.border,
             },
           ]}
         >
           <MaterialCommunityIcons
             name="timer-outline"
-            size={17}
-            color={urgent ?? surface?.subInk ?? THEME.colors.textSecondaryStrong}
+            size={16}
+            color={
+              urgent ??
+              (isActive
+                ? THEME.colors.textPrimary
+                : THEME.colors.textMuted)
+            }
           />
           <Text
             style={[
               styles.timerText,
-              surface && { color: surface.ink },
+              isActive ? styles.timerTextActive : styles.timerTextInactive,
               urgent !== null && { color: urgent },
             ]}
           >
@@ -417,6 +414,7 @@ export const PlayerStrip: React.FC<{
    */
   seatPremium?: Record<string, boolean>;
   botAvatarKeyBySeat?: Record<string, string>;
+  countryFlags?: Record<string, string>;
   /** Skin card takeover, forwarded to every card variant + the large chip. */
   surface?: HudSurface;
 }> = ({
@@ -430,6 +428,7 @@ export const PlayerStrip: React.FC<{
   seatStatus,
   seatPremium,
   botAvatarKeyBySeat,
+  countryFlags,
   reactionsBySeat,
   onReactionDone,
   onPressPlayer,
@@ -532,7 +531,7 @@ export const PlayerStrip: React.FC<{
                   )}
                   {showWalls && (
                     <View style={[styles.gridWalls, { borderColor: tint.border, backgroundColor: tint.bg }]}>
-                      <MaterialIcons name="fence" size={12} color={ball} />
+                      <WallIcon size={12} color={ball} />
                       <Text style={[styles.gridWallsText, { color: ball }]}>
                         {p.wallsRemaining}
                       </Text>
@@ -654,7 +653,7 @@ export const PlayerStrip: React.FC<{
                   )}
                   {!seat && p.wallsRemaining !== undefined && (
                     <View style={[styles.gridWalls, { borderColor: tint.border, backgroundColor: tint.bg }]}>
-                      <MaterialIcons name="fence" size={12} color={ball} />
+                      <WallIcon size={12} color={ball} />
                       <Text style={[styles.gridWallsText, { color: ball }]}>
                         {p.wallsRemaining}
                       </Text>
@@ -709,6 +708,7 @@ export const PlayerStrip: React.FC<{
             onReactionDone={onReactionDone}
             isPremium={seatPremium?.[p.id] === true}
             botAvatarKey={botAvatarKeyBySeat?.[p.id]}
+            countryFlag={countryFlags?.[p.id]}
             surface={surface}
             onPressIdentity={onPressPlayer ? () => onPressPlayer(p.id) : undefined}
           />
@@ -740,7 +740,6 @@ const createStyles = () => StyleSheet.create({
     borderColor: THEME.colors.surfaceHairline,
     paddingVertical: 5,
     paddingHorizontal: 7,
-    ...THEME.shadows.card,
   },
   compactAvatar: {
     width: 26,
@@ -867,16 +866,13 @@ const createStyles = () => StyleSheet.create({
   },
   playerCard: {
     width: '100%',
-    backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
-    padding: 10,
+    backgroundColor: 'transparent',
+    paddingVertical: 5,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    ...THEME.shadows.card,
   },
   playerLeft: {
     flexDirection: 'row',
@@ -888,7 +884,7 @@ const createStyles = () => StyleSheet.create({
   avatarBox: {
     width: 36,
     height: 36,
-    borderRadius: 4,
+    borderRadius: 6,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -923,6 +919,36 @@ const createStyles = () => StyleSheet.create({
   playerNameActive: {
     fontFamily: THEME.fonts.bold,
     fontWeight: '700',
+  },
+  ratingInline: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#9CA3AF',
+  },
+  flagEmoji: {
+    fontSize: 13,
+  },
+  playerSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  wallsInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  wallsInlineText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 10,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   ratingBadge: {
     paddingHorizontal: 6,
@@ -964,19 +990,35 @@ const createStyles = () => StyleSheet.create({
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 4,
-    backgroundColor: THEME.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    borderRadius: 6,
+    minWidth: 72,
+    height: 36,
+    justifyContent: 'center',
     flexShrink: 0,
     marginLeft: 8,
+  },
+  timerBoxInactive: {
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  timerBoxActive: {
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: THEME.colors.primary,
   },
   timerText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 15,
-    fontWeight: '700',
     fontVariant: ['tabular-nums'],
-    color: THEME.colors.onSurface,
+  },
+  timerTextInactive: {
+    color: THEME.colors.textMuted,
+    fontWeight: '600',
+  },
+  timerTextActive: {
+    color: THEME.colors.textPrimary,
+    fontWeight: '800',
   },
   bonusText: {
     fontFamily: THEME.fonts.bold,

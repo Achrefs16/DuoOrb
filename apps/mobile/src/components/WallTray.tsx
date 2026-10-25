@@ -128,14 +128,8 @@ const WallPiece: React.FC<PieceProps> = ({
             borderRadius: barRadius,
           },
           held
-            ? { backgroundColor: hexToRgba(barColor, 0.16), elevation: 0 }
-            : flatBar
-              ? { backgroundColor: barColor, elevation: 0, shadowOpacity: 0 }
-              : {
-                  ...THEME.shadows.wall,
-                  backgroundColor: barColor,
-                  shadowColor: barColor,
-                },
+            ? { backgroundColor: hexToRgba(barColor, 0.2) }
+            : { backgroundColor: barColor },
         ]}
       />
     </View>
@@ -164,10 +158,8 @@ export const WallTray: React.FC<WallTrayProps> = ({
   const trayPalette = useBoardPalette();
   const styles = useMemo(() => getTrayStyles(trayPalette), [trayPalette, theme]);
 
-  const slotW = 100 * s;
-  // Player-card height: avatar 36 + card padding 2×10 ≈ 56. The tray matches
-  // it (40 + card padding 2×8) so the inventory costs no extra vertical room.
-  const slotH = 40 * s;
+  const slotW = 68 * s;
+  const slotH = 48 * s;
 
   return (
     <View style={styles.card}>
@@ -178,8 +170,8 @@ export const WallTray: React.FC<WallTrayProps> = ({
           color={color}
           held={held === 'H'}
           disabled={inactive}
-          barW={(swapVisuals ? 7 : 30) * s}
-          barH={(swapVisuals ? 16 : 7) * s}
+          barW={(swapVisuals ? 10 : 36) * s}
+          barH={(swapVisuals ? 36 : 10) * s}
           touchW={slotW}
           touchH={slotH}
           label={swapVisuals ? 'Vertical' : 'Horizontal'}
@@ -188,8 +180,8 @@ export const WallTray: React.FC<WallTrayProps> = ({
           onDragEnd={onDragEnd}
         />
 
-        {/* Center Count Column: the number only, no caption. */}
-        <View style={[styles.countBox, { width: slotW * 0.85, height: slotH }]}>
+        {/* Center Count Column: the number only */}
+        <View style={[styles.countBox, { width: 50 * s, height: slotH }]}>
           <Text style={styles.countNumber}>{count}</Text>
         </View>
 
@@ -199,8 +191,8 @@ export const WallTray: React.FC<WallTrayProps> = ({
           color={color}
           held={held === 'V'}
           disabled={inactive}
-          barW={(swapVisuals ? 30 : 7) * s}
-          barH={(swapVisuals ? 7 : 16) * s}
+          barW={(swapVisuals ? 36 : 10) * s}
+          barH={(swapVisuals ? 10 : 36) * s}
           touchW={slotW}
           touchH={slotH}
           label={swapVisuals ? 'Horizontal' : 'Vertical'}
@@ -218,49 +210,50 @@ export const WallTray: React.FC<WallTrayProps> = ({
 const getTrayStyles = (p: BoardSkin) =>
   StyleSheet.create({
   card: {
-    backgroundColor: p.trayCard,
-    borderRadius: p.trayRadius ?? 8,
-    borderWidth: 1,
-    borderColor: p.trayHairline,
-    padding: 8,
-    ...THEME.shadows.card,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    paddingVertical: 4,
+    paddingHorizontal: 0,
     width: '100%',
   },
   grid: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    gap: 10,
     width: '100%',
   },
   pieceSlot: {
-    backgroundColor: p.trayCard,
-    borderWidth: 1,
-    borderColor: p.boardBorder,
-    borderRadius: p.traySlotRadius ?? 4,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1.5,
+    borderColor: THEME.colors.outlineVariant,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    paddingVertical: 3,
   },
-  pieceBar: {},
+  pieceBar: {
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
   pieceDisabled: {
     opacity: 0.35,
   },
   countBox: {
-    backgroundColor: p.trayPill,
-    borderWidth: 1,
-    borderColor: p.trayHairline,
-    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 3,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1.5,
+    borderColor: THEME.colors.outlineVariant,
+    borderRadius: 12,
   },
   countNumber: {
     fontFamily: THEME.fonts.extraBold,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
-    color: p.trayCount,
-    lineHeight: 18,
+    color: THEME.colors.textPrimary,
+    lineHeight: 20,
     fontVariant: ['tabular-nums'],
   },
 });

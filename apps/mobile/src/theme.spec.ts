@@ -19,21 +19,21 @@ describe('app theme mode', () => {
   });
 
   it('light entry preserves the shipping palette', () => {
-    expect(THEMES.light.colors.background).toBe('#F2F3FF');
-    expect(THEMES.light.colors.primary).toBe('#6C6FFD');
+    expect(THEMES.light.colors.background).toBe('#F5F4F0');
+    expect(THEMES.light.colors.primary).toBe('#69B342');
     expect(THEMES.light.colors.backgroundCard).toBe('#FFFFFF');
     expect(THEMES.light.colors.danger).toBe('#DC2626');
-    expect(THEMES.light.colors.textPrimary).toBe('#131B2E');
+    expect(THEMES.light.colors.textPrimary).toBe('#262421');
     expect(THEMES.light.mode).toBe('light');
   });
 
   it('dark keeps brand tokens but remaps surfaces and text', () => {
-    expect(THEMES.dark.colors.primary).toBe(THEMES.light.colors.primary);
-    expect(THEMES.dark.colors.background).toBe('#000000');
+    expect(THEMES.dark.colors.primary).toBe('#81B64C');
+    expect(THEMES.dark.colors.background).toBe('#262421');
     expect(THEMES.dark.colors.background).not.toBe(THEMES.light.colors.background);
     expect(THEMES.dark.colors.backgroundCard).not.toBe(THEMES.light.colors.backgroundCard);
     expect(THEMES.dark.colors.textPrimary).not.toBe(THEMES.light.colors.textPrimary);
-    expect(THEMES.dark.colors.danger).not.toBe(THEMES.light.colors.danger);
+    expect(THEMES.dark.colors.danger).toBe('#F87171');
     expect(THEMES.dark.mode).toBe('dark');
   });
 

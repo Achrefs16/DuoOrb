@@ -79,20 +79,34 @@ export class FriendsService {
     });
 
     return {
-      incoming: incoming.map((r) => ({
-        id: r.id,
-        fromUserId: r.fromUserId,
-        fromUsername: r.fromUser.profile?.username ?? r.fromUserId,
-        fromDisplayName: r.fromUser.profile?.displayName ?? 'Player',
-        createdAt: r.createdAt,
-      })),
-      outgoing: outgoing.map((r) => ({
-        id: r.id,
-        toUserId: r.toUserId,
-        toUsername: r.toUser.profile?.username ?? r.toUserId,
-        toDisplayName: r.toUser.profile?.displayName ?? 'Player',
-        createdAt: r.createdAt,
-      })),
+      incoming: incoming.map((r) => {
+        const p = r.fromUser.profile;
+        const isPremium =
+          Boolean(p?.isPremium) &&
+          (!p?.premiumExpiresAt || new Date(p.premiumExpiresAt).getTime() > Date.now());
+        return {
+          id: r.id,
+          fromUserId: r.fromUserId,
+          fromUsername: p?.username ?? r.fromUserId,
+          fromDisplayName: p?.displayName ?? 'Player',
+          isPremium,
+          createdAt: r.createdAt,
+        };
+      }),
+      outgoing: outgoing.map((r) => {
+        const p = r.toUser.profile;
+        const isPremium =
+          Boolean(p?.isPremium) &&
+          (!p?.premiumExpiresAt || new Date(p.premiumExpiresAt).getTime() > Date.now());
+        return {
+          id: r.id,
+          toUserId: r.toUserId,
+          toUsername: p?.username ?? r.toUserId,
+          toDisplayName: p?.displayName ?? 'Player',
+          isPremium,
+          createdAt: r.createdAt,
+        };
+      }),
     };
   }
 
@@ -167,11 +181,17 @@ export class FriendsService {
       },
     });
 
+    const fromProfile = created.fromUser.profile;
+    const isPremium =
+      Boolean(fromProfile?.isPremium) &&
+      (!fromProfile?.premiumExpiresAt || new Date(fromProfile.premiumExpiresAt).getTime() > Date.now());
+
     this.gateway?.emitToUser(targetUserId, 'friend:request_received', {
       id: created.id,
       fromUserId,
-      fromUsername: created.fromUser.profile?.username ?? fromUserId,
-      fromDisplayName: created.fromUser.profile?.displayName ?? 'Player',
+      fromUsername: fromProfile?.username ?? fromUserId,
+      fromDisplayName: fromProfile?.displayName ?? 'Player',
+      isPremium,
       createdAt: created.createdAt,
     });
 

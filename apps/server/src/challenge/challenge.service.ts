@@ -16,7 +16,8 @@ export class ChallengeService {
     timeControlMinutes: number,
     incrementSeconds = 0,
     wallsEach = 10,
-    onExpired?: (challenge: ChallengeDto) => void
+    onExpired?: (challenge: ChallengeDto) => void,
+    isPremium = false
   ): { challenge: ChallengeDto; replaced: ChallengeDto | null } {
     // One live challenge per pair — replace any stale one first.
     let replaced: ChallengeDto | null = null;
@@ -42,6 +43,7 @@ export class ChallengeService {
       wallsEach: Math.max(0, Math.min(99, Math.floor(wallsEach))),
       createdAt: now,
       expiresAt: now + CHALLENGE_TTL_MS,
+      isPremium,
     };
     this.challenges.set(challenge.id, challenge);
 

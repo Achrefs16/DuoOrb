@@ -17,6 +17,20 @@ export interface SavedGameRecord {
    * player sets a real name instead of the default 'You'.
    */
   myPlayerId?: string | null;
+  /**
+   * Seat the replay should be viewed from. For AI games this is the human;
+   * for spectator profile views the app overwrites it with the profile
+   * owner; for pass-and-play it stays null (default seat 1).
+   */
+  perspectivePlayerId?: string | null;
+  /** True only when the viewer occupied a seat in this game. */
+  isViewerSeated?: boolean;
+  endedReason?: string;
+  timeControlMinutes?: number;
+  incrementSeconds?: number;
+  botId?: string;
+  botName?: string;
+  botRating?: number;
   totalMoves: number;
   durationSeconds: number;
   initialState: GameState;
@@ -26,6 +40,7 @@ export interface SavedGameRecord {
 const STORAGE_KEY_HISTORY = '@duoorb:history:v1';
 const STORAGE_KEY_SETTINGS = '@duoorb:settings:v1';
 const STORAGE_KEY_FRIENDS = '@duoorb:friends:v1';
+const STORAGE_KEY_BOT_STARS = '@duoorb:bot-stars:v1';
 const STORAGE_KEY_ONLINE_SNAPSHOT_PREFIX = '@duoorb:online-snapshot:v1:';
 const STORAGE_KEY_MATCH_SETUP_PREFIX = '@duoorb:match-setup:v1:';
 
@@ -44,6 +59,19 @@ export interface Friend {
   addedAt: number;
 }
 
+/** 0 = not yet defeated, 3 = the clean mastery win. */
+export type BotStarCount = 0 | 1 | 2 | 3;
+
+export interface BotStarRecord {
+  botKey: string;
+  stars: BotStarCount;
+  wins: number;
+  bestMarginSteps: number;
+  updatedAt: string;
+}
+
+export type BotStarMap = Record<string, BotStarRecord>;
+
 export interface UserSettings {
   soundEnabled: boolean;
   timeControlMinutes: number; // 0 = no clock, 3, 5, 10
@@ -58,8 +86,8 @@ export interface UserSettings {
   testThink: boolean;
   /** Board surface palette: 'light' free, 'midnight' free in dark mode. */
   themeName: 'light' | 'midnight';
-  /** Premium board skin id: 'classic' free, walnut premium. */
-  boardSkinId: 'classic' | 'walnut';
+  /** Premium board skin id: 'classic' free, 'walnut', 'tactile', 'stone'. */
+  boardSkinId: 'classic' | 'walnut' | 'tactile' | 'stone';
   /** App-wide dark mode. Device flag, independent of the board theme. */
   darkMode: boolean;
   /** App language code. */
@@ -87,7 +115,9 @@ export const DEFAULT_SETTINGS: UserSettings = {
 let inMemoryHistory: SavedGameRecord[] = [];
 let inMemorySettings: UserSettings = { ...DEFAULT_SETTINGS };
 let inMemoryFriends: Friend[] = [];
+let inMemoryBotStars: BotStarMap = {};
 let friendsLoaded = false;
+let botStarsLoaded = false;
 
 /**
  * Universal storage access (Web + native).
@@ -194,6 +224,12 @@ export async function loadGameHistory(): Promise<SavedGameRecord[]> {
             playerNames: [game.winnerName || 'Player 1', 'Player 2'],
           });
         }
+        if (game.isViewerSeated === undefined) {
+          game.isViewerSeated = game.type === 'ai' && Boolean(game.myPlayerId);
+        }
+        if (game.perspectivePlayerId === undefined) {
+          game.perspectivePlayerId = game.myPlayerId ?? null;
+        }
         return game as SavedGameRecord;
       });
       inMemoryHistory.sort((a, b) => b.date - a.date);
@@ -202,6 +238,81 @@ export async function loadGameHistory(): Promise<SavedGameRecord[]> {
     console.error('Failed to load game history', e);
   }
   return inMemoryHistory;
+}
+
+function isBotStarCount(value: unknown): value is BotStarCount {
+  return value === 1 || value === 2 || value === 3;
+}
+
+function parseBotStars(raw: string | null): BotStarMap {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out: BotStarMap = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!value || typeof value !== 'object') continue;
+      const record = value as Partial<BotStarRecord>;
+      if (!isBotStarCount(record.stars)) continue;
+      out[key] = {
+        botKey: typeof record.botKey === 'string' ? record.botKey : key,
+        stars: record.stars,
+        wins:
+          typeof record.wins === 'number' && Number.isFinite(record.wins)
+            ? Math.max(0, Math.floor(record.wins))
+            : 0,
+        bestMarginSteps:
+          typeof record.bestMarginSteps === 'number' && Number.isFinite(record.bestMarginSteps)
+            ? Math.max(0, Math.floor(record.bestMarginSteps))
+            : 0,
+        updatedAt:
+          typeof record.updatedAt === 'string'
+            ? record.updatedAt
+            : typeof record.updatedAt === 'number' && Number.isFinite(record.updatedAt)
+              ? new Date(record.updatedAt).toISOString()
+              : '',
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Bot mastery records, keyed by personality id (or `difficulty:<tier>`). */
+export async function loadBotStars(): Promise<BotStarMap> {
+  if (botStarsLoaded) return inMemoryBotStars;
+  await hydrateNativeCache([STORAGE_KEY_BOT_STARS]);
+  inMemoryBotStars = parseBotStars(storage.getItem(STORAGE_KEY_BOT_STARS));
+  botStarsLoaded = true;
+  return inMemoryBotStars;
+}
+
+/**
+ * Records a win and keeps the player's best mastery. More stars are never lost
+ * by a later win, and the best lead is kept for the next grading hint.
+ */
+export async function recordBotVictoryStars(
+  botKey: string,
+  stars: BotStarCount,
+  bestMarginSteps: number
+): Promise<BotStarRecord> {
+  if (!botStarsLoaded) await loadBotStars();
+  const previous = inMemoryBotStars[botKey];
+  const next: BotStarRecord = {
+    botKey,
+    stars: previous && previous.stars > stars ? previous.stars : stars,
+    wins: (previous?.wins ?? 0) + 1,
+    bestMarginSteps: Math.max(previous?.bestMarginSteps ?? 0, Math.max(0, bestMarginSteps)),
+    updatedAt: new Date().toISOString(),
+  };
+  inMemoryBotStars = { ...inMemoryBotStars, [botKey]: next };
+  try {
+    storage.setItem(STORAGE_KEY_BOT_STARS, JSON.stringify(inMemoryBotStars));
+  } catch (e) {
+    console.error('Failed to save bot mastery', e);
+  }
+  return next;
 }
 
 export async function saveOnlineGameSnapshot(snapshot: OnlineGameSnapshot): Promise<void> {
@@ -242,7 +353,11 @@ export async function loadSettings(): Promise<UserSettings> {
       }
       // Whitelist the board skin the same way: unknown ids (downgrade,
       // corrupt store) fall back to classic instead of breaking the board.
-      if (inMemorySettings.boardSkinId !== 'walnut') {
+      if (
+        inMemorySettings.boardSkinId !== 'walnut' &&
+        inMemorySettings.boardSkinId !== 'tactile' &&
+        inMemorySettings.boardSkinId !== 'stone'
+      ) {
         inMemorySettings.boardSkinId = 'classic';
       }
       // Coerce the appearance flag the same way: anything truthy-but-not-true

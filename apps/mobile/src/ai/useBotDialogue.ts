@@ -34,6 +34,15 @@ export function useBotDialogue({
   const closeRaceDoneRef = useRef(false);
   const lastHistoryLenRef = useRef(0);
   const gameOverSpokenRef = useRef(false);
+  const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const dismiss = useCallback(() => {
+    if (autoDismissTimerRef.current) {
+      clearTimeout(autoDismissTimerRef.current);
+      autoDismissTimerRef.current = null;
+    }
+    setCurrentText(null);
+  }, []);
 
   const speak = useCallback((text: string, force = false) => {
     const now = Date.now();
@@ -42,10 +51,24 @@ export function useBotDialogue({
     }
     lastSpokenAt.current = now;
     setCurrentText(text);
+
+    if (autoDismissTimerRef.current) {
+      clearTimeout(autoDismissTimerRef.current);
+    }
+    // Auto-dismiss bot messages after 3.2 seconds so they don't linger forever
+    autoDismissTimerRef.current = setTimeout(() => {
+      setCurrentText(null);
+      autoDismissTimerRef.current = null;
+    }, 3200);
   }, []);
 
-  const dismiss = useCallback(() => {
-    setCurrentText(null);
+  // Cleanup dismiss timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoDismissTimerRef.current) {
+        clearTimeout(autoDismissTimerRef.current);
+      }
+    };
   }, []);
 
   // Reset tracking on new game

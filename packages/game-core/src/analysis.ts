@@ -98,6 +98,8 @@ export const ANALYSIS_PROFILES: Record<AnalysisProfileName, AnalysisProfile> = {
 // ---------------------------------------------------------------------------
 
 export type MoveAssessment =
+  | 'BRILLIANT'
+  | 'GREAT'
   | 'BEST'
   | 'EXCELLENT'
   | 'GOOD'
@@ -322,6 +324,8 @@ export interface GameSummary {
   accuracy: Record<string, { accuracy: number; moves: number }>;
   confidence: 'low' | 'medium' | 'high';
   totalMoves?: number;
+  brilliantMoves?: number;
+  greatMoves?: number;
   bestMoves?: number;
   excellentMoves?: number;
   goodMoves?: number;

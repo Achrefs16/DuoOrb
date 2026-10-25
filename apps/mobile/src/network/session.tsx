@@ -15,6 +15,7 @@ import {
   applyServerProfile,
   clearIdentity,
   getIdentity,
+  hydrateIdentity,
   patchIdentity,
   setIdentity,
   useIdentity,
@@ -151,6 +152,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     (async () => {
       try {
+        // SessionProvider mounts in parallel with App's own hydration on a
+        // cold start. Wait for the persisted identity before reading it, or an
+        // offline launch can overwrite the cached account with an empty one.
+        await hydrateIdentity();
+        if (cancelled) return;
+
         const supabaseSession = isSupabaseConfigured
           ? (await getSupabaseAuth().getSession().catch(() => ({ data: { session: null } }))).data
               .session
@@ -160,12 +167,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
         if (supabaseSession?.user) {
           // A signed-in account is authoritative; adopt it and load /me.
+          // Preserve server-confirmed names for the SAME account: offline
+          // boot must not blank the persisted handle before /me fails.
           setSupabaseUser(supabaseSession.user);
+          const cached = getIdentity();
+          const sameUser = cached?.userId === supabaseSession.user.id && !cached.isGuest;
+          const cachedNames = sameUser ? cached : null;
           setIdentity({
             userId: supabaseSession.user.id,
-            username: '',
+            username: cachedNames?.username ?? '',
             displayName:
-              (supabaseSession.user.user_metadata?.full_name as string | undefined) ?? 'Player',
+              cachedNames?.displayName ||
+              (supabaseSession.user.user_metadata?.full_name as string | undefined) ||
+              supabaseSession.user.email?.split('@')[0] ||
+              'Player',
             accessToken: supabaseSession.access_token,
             refreshToken: null,
             isGuest: false,
@@ -179,8 +194,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           }
           if (cancelled) return;
           if (!serverNames && isRetryable(profileError)) {
-            // Transport failed reaching /me: stay restoring with a retry
-            // screen. Going ready with empty names would strand every gate.
+            // Offline tolerance: a previously confirmed account can boot into
+            // the cached identity + cached Premium entitlement. The server
+            // remains authoritative on the next successful /me.
+            if (sameUser && cachedNames?.username) {
+              setProfile({
+                username: cachedNames.username,
+                displayName: cachedNames.displayName,
+              });
+              setBootError(null);
+              setStatus('ready');
+              return;
+            }
+            // First-ever sign-in or no confirmed handle: stay on retry.
             setBootError({ message: loadMessage(profileError), kind: kindOf(profileError) });
             return;
           }

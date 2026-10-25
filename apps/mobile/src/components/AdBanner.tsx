@@ -27,7 +27,7 @@ import { adUnitId } from '../monetization/adIds';
 
 interface AdBannerProps {
   /** Surface identity (analytics + future per-placement tuning). */
-  placement: 'home' | 'list' | 'modal';
+  placement: 'home' | 'list' | 'modal' | 'lobby' | 'setup';
 }
 
 export const AdBanner: React.FC<AdBannerProps> = ({ placement }) => {

@@ -39,6 +39,7 @@ import { ProfileSkeleton } from '../components/Skeleton';
 
 interface ProfileScreenProps {
   onOpenSettings: () => void;
+  onOpenHistory?: () => void;
   /** Opens the shared player profile for a recent match's opponent. */
   onOpenPlayerProfile?: (player: { userId: string; username: string }) => void;
 }
@@ -68,6 +69,7 @@ function formatJoinedAt(value?: string | number): string | null {
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onOpenSettings,
+  onOpenHistory,
   onOpenPlayerProfile,
 }) => {
   const styles = useStyles(createStyles);
@@ -378,6 +380,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <RatingChart data={ratingHistory} currentRating={rating1v1} />
           </View>
 
+          {/* Match History & Review Access */}
+          {onOpenHistory && (
+            <TouchableOpacity
+              style={styles.historyCardBtn}
+              activeOpacity={0.8}
+              onPress={onOpenHistory}
+              accessibilityRole="button"
+              accessibilityLabel="Match History & Review"
+            >
+              <View style={styles.historyBtnLeft}>
+                <View style={styles.historyIconCircle}>
+                  <Feather name="clock" size={18} color={THEME.colors.primary} />
+                </View>
+                <View>
+                  <Text style={styles.historyBtnTitle}>Match History & Review</Text>
+                  <Text style={styles.historyBtnSubtitle}>Replay past games and analyze evaluations</Text>
+                </View>
+              </View>
+              <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+            </TouchableOpacity>
+          )}
+
           {/* Ad slot: bottom of the page, below all actions. */}
           <AdBanner placement="list" />
 
@@ -524,7 +548,7 @@ const createStyles = () => StyleSheet.create({
   content: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 120, // Clears the floating nav overlay.
+    paddingBottom: 88, // Clears the floating nav overlay.
     maxWidth: 448,
     width: '100%',
     alignSelf: 'center',
@@ -859,5 +883,41 @@ const createStyles = () => StyleSheet.create({
     color: THEME.colors.textMuted,
     letterSpacing: 0.8,
     paddingHorizontal: 2,
+  },
+  historyCardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: THEME.colors.backgroundCard,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+    ...THEME.shadows.card,
+  },
+  historyBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  historyIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: THEME.colors.surfacePrimaryTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyBtnTitle: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 15,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  historyBtnSubtitle: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
+    marginTop: 2,
   },
 });

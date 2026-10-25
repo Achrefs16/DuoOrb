@@ -1,19 +1,56 @@
-use std::collections::HashMap;
 use rayon::prelude::*;
+use std::collections::HashMap;
 
 use crate::board::Board;
 use crate::classifier::classify_mcts_move;
 use crate::mcts::{position_seed, run_mcts_analysis};
+use crate::pathfinding::shortest_distance;
 use crate::rules::{apply_action, get_legal_moves};
 use crate::types::{
-    GameAction, GameReview, GameState, KeyLesson, MoveAnalysis, MoveAssessment,
-    RecordedAction, ReviewSummary,
+    GameAction, GameReview, GameState, KeyLesson, MoveAnalysis, MoveAssessment, RecordedAction,
+    ReviewSummary,
 };
 
-pub fn analyze_game_internal(
-    initial_state: GameState,
-    history: Vec<RecordedAction>,
-) -> GameReview {
+fn distance_or_99(state: &GameState, idx: usize, board: &Board) -> i32 {
+    match state.players.get(idx) {
+        Some(p) => {
+            let d = shortest_distance(p.position, p.goal_direction, board, &state.mode);
+            if d < 0 {
+                99
+            } else {
+                d
+            }
+        }
+        None => 99,
+    }
+}
+
+fn race_snapshot(state: &GameState, board: &Board, mover_idx: usize) -> (i32, i32) {
+    let mine = distance_or_99(state, mover_idx, board);
+    let opp = state
+        .players
+        .iter()
+        .enumerate()
+        .filter(|(idx, p)| *idx != mover_idx && p.status != "FINISHED")
+        .map(|(idx, _)| distance_or_99(state, idx, board))
+        .min()
+        .unwrap_or(mine);
+    (mine, opp)
+}
+
+/// Net race tempo of one action: (my improvement) - (opponent improvement).
+fn race_gain(state: &GameState, board: &Board, action: &GameAction, mover_idx: usize) -> i32 {
+    let (my_before, opp_before) = race_snapshot(state, board, mover_idx);
+    let mut after_board = *board;
+    if let Some(after) = apply_action(state, action, &mut after_board) {
+        let (my_after, opp_after) = race_snapshot(&after, &after_board, mover_idx);
+        (my_before - my_after) - (opp_before - opp_after)
+    } else {
+        0
+    }
+}
+
+pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedAction>) -> GameReview {
     let mut states_before = Vec::with_capacity(history.len() + 1);
     let mut current_state = initial_state.clone();
     let mut current_board = Board::from_walls(&initial_state.walls);
@@ -48,7 +85,9 @@ pub fn analyze_game_internal(
                 GameAction::PlaceWall { wall } => {
                     current_board.place_wall(wall);
                     fallback_state.walls.push(*wall);
-                    if mover_idx < fallback_state.players.len() && fallback_state.players[mover_idx].walls_remaining > 0 {
+                    if mover_idx < fallback_state.players.len()
+                        && fallback_state.players[mover_idx].walls_remaining > 0
+                    {
                         fallback_state.players[mover_idx].walls_remaining -= 1;
                     }
                 }
@@ -62,7 +101,9 @@ pub fn analyze_game_internal(
             if total_players > 0 {
                 let mut next_idx = (mover_idx + 1) % total_players;
                 let mut iterations = 0;
-                while fallback_state.players[next_idx].status == "FINISHED" && iterations < total_players {
+                while fallback_state.players[next_idx].status == "FINISHED"
+                    && iterations < total_players
+                {
                     next_idx = (next_idx + 1) % total_players;
                     iterations += 1;
                 }
@@ -89,21 +130,41 @@ pub fn analyze_game_internal(
             let mover_id = &mover.id;
 
             let legal_moves = get_legal_moves(state_before, mover_id, board_before);
-            let forced = legal_moves.len() <= 1 && mover.walls_remaining == 0;
+            let non_board_action = matches!(rec.action, GameAction::Resign | GameAction::Timeout);
+            let forced = non_board_action || (legal_moves.len() <= 1 && mover.walls_remaining == 0);
 
             let seed = position_seed(state_before, *step as i32);
-            // Deep MCTS search (1,000 simulations per ply)
+            // Deep MCTS search (1,000 adversarial simulations per ply).
             let mcts = run_mcts_analysis(state_before, board_before, &rec.action, 1000, seed);
 
             let best_q = mcts.best_q;
-            let played_q = mcts.played_q.unwrap_or(best_q.max(0.1) - 0.05);
+            // If a legacy history entry cannot be replayed, never invent a
+            // blunder: treating it as the best available keeps the review
+            // honest instead of fabricating a 0.9 swing.
+            let played_q = mcts.played_q.unwrap_or(best_q);
+            let best_gain = race_gain(state_before, board_before, &mcts.best_action, mover_idx);
+            let played_gain = race_gain(state_before, board_before, &rec.action, mover_idx);
+            let net_step_delta = (played_gain - best_gain).clamp(-32000, 32000) as i16;
 
-            let (assessment, evaluation_loss, move_acc) = classify_mcts_move(best_q, played_q, forced);
+            let (assessment, evaluation_loss, move_acc) = classify_mcts_move(
+                best_q,
+                played_q,
+                mcts.root_q,
+                mcts.gap_to_second,
+                net_step_delta,
+                forced,
+            );
 
             let eval_after = (played_q - 0.5) * 40.0;
             let win_chance_delta = played_q - best_q;
 
-            let best_opt = if assessment == MoveAssessment::Best || assessment == MoveAssessment::Forced {
+            let best_opt = if matches!(
+                assessment,
+                MoveAssessment::Brilliant
+                    | MoveAssessment::Great
+                    | MoveAssessment::Best
+                    | MoveAssessment::Forced
+            ) {
                 None
             } else {
                 Some(mcts.best_action)
@@ -136,12 +197,16 @@ pub fn analyze_game_internal(
     let mut worst_blunder_loss = 0.0;
 
     for (m, acc) in analyses_with_acc {
-        let entry = player_acc_sums.entry(m.player_id.clone()).or_insert((0.0, 0));
+        let entry = player_acc_sums
+            .entry(m.player_id.clone())
+            .or_insert((0.0, 0));
         entry.0 += acc;
         entry.1 += 1;
 
         if m.assessment == MoveAssessment::Blunder
             || m.assessment == MoveAssessment::Mistake
+            || m.assessment == MoveAssessment::Brilliant
+            || m.assessment == MoveAssessment::Great
             || m.win_chance_delta.abs() >= 0.20
         {
             critical_moments.push(m.step);
@@ -170,7 +235,9 @@ pub fn analyze_game_internal(
     } else {
         KeyLesson {
             title: "Consistent Play".to_string(),
-            detail: "Solid strategic play was maintained throughout the match without major blunders.".to_string(),
+            detail:
+                "Solid strategic play was maintained throughout the match without major blunders."
+                    .to_string(),
             move_number: None,
         }
     };
@@ -186,7 +253,7 @@ pub fn analyze_game_internal(
             key_lesson,
             confidence: "high".to_string(),
         },
-        engine_version: "duoorb-rust-mcts-2.0".to_string(),
-        analysis_version: "analysis-2.0".to_string(),
+        engine_version: "duoorb-rust-mcts-2.1".to_string(),
+        analysis_version: "analysis-2.1".to_string(),
     }
 }

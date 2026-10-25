@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { RoomInviteDto } from '@duoorb/protocol';
+import { PremiumBadge } from './PremiumBadge';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
 import { ToastAccept, ToastCard, ToastDecline, ToastOverlay } from './ui';
@@ -21,13 +22,16 @@ export const RoomInviteToast: React.FC<{
         <View style={styles.row}>
           <Feather name="user-plus" size={18} color={THEME.colors.primary} />
           <View style={styles.copy}>
-            <Text style={styles.title}>
-              {invite
-                ? invite.fromDisplayName
-                  ? t('roomToast.invited', { name: invite.fromDisplayName })
-                  : t('roomToast.invitedFriend')
-                : t('roomToast.declined')}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={styles.title}>
+                {invite
+                  ? invite.fromDisplayName
+                    ? t('roomToast.invited', { name: invite.fromDisplayName })
+                    : t('roomToast.invitedFriend')
+                  : t('roomToast.declined')}
+              </Text>
+              {invite?.isPremium && <PremiumBadge size="xs" />}
+            </View>
             {invite && <Text style={styles.sub}>{t('roomToast.sub', { code: invite.code })}</Text>}
           </View>
           {invite && (

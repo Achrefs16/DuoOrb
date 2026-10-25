@@ -17,12 +17,14 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AIDifficulty, GameMode, GameState, RecordedAction } from '@duoorb/game-core';
 import { GameSyncDto, RoomDto } from '@duoorb/protocol';
 import { GameReviewScreen } from './src/screens/GameReviewScreen';
+import { GameReviewSummaryScreen } from './src/screens/GameReviewSummaryScreen';
 import { GameScreen } from './src/screens/GameScreen';
 import { MatchSetupScreen } from './src/screens/MatchSetupScreen';
 import { OnlineMode, OnlineScreen } from './src/screens/OnlineScreen';
 import { SideChoice } from './src/screens/MatchSetupScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
+import { BotsScreen } from './src/screens/BotsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { OnboardingFlow } from './src/screens/OnboardingFlow';
 import { FriendsScreen } from './src/screens/FriendsScreen';
@@ -39,6 +41,7 @@ import { NoConnectionSection, OfflineModal } from './src/components/NoConnection
 import { ChallengeToast } from './src/components/ChallengeToast';
 import { OnlineJoinGate } from './src/components/OnlineJoinGate';
 import { RoomInviteToast } from './src/components/RoomInviteToast';
+import { InstallPromptModal } from './src/components/InstallPromptModal';
 import * as SplashScreen from 'expo-splash-screen';
 import { isPremiumActive, refreshPremium, usePremium } from './src/monetization/premium';
 import { useRoomInvites } from './src/network/useRoomInvites';
@@ -84,7 +87,7 @@ import {
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /** Minimum time the native splash stays up. Kept short and fixed. */
-const SPLASH_MIN_MS = 1500;
+const SPLASH_MIN_MS = Platform.OS === 'web' ? 300 : 1500;
 
 type SubScreen =
   | 'GAME'
@@ -93,7 +96,9 @@ type SubScreen =
   | 'SETTINGS'
   | 'ONLINE'
   | 'REVIEW'
+  | 'REVIEW_SUMMARY'
   | 'LEGAL'
+  | 'HISTORY'
   | null;
 
 /** One entry in the in-app navigation history (hardware back stack). */
@@ -131,26 +136,47 @@ interface ReplayData {
   initialState: GameState;
   history: RecordedAction[];
   perspectiveIdx: number;
+  /** True only when the viewer occupied a seat in this game. */
+  isViewerSeated?: boolean;
   /** Seat-id ratings when the entry point knows them (win/lose modal). */
   ratings?: Record<string, number>;
   /** Analysis gate key for full reviews (win/lose modal only; null = bare). */
   accessKey?: { gameId: string; historyLength: number } | null;
+  seatPremium?: Record<string, boolean>;
+  botPersonality?: { id: string; name: string; avatarKey?: string } | null;
+}
+
+/** Map a stable seat id (p1/p2/p3...) to the review rotation (0 or 180°). */
+function perspectiveIndexFor(
+  state: GameState | null | undefined,
+  seatId?: string | null
+): number {
+  if (!state || !seatId) return 0;
+  const idx = state.players.findIndex((p) => p.id === seatId);
+  return idx === 1 ? 1 : 0;
 }
 
 export default function App() {
   const { t } = useTranslation();
-  const [fontsLoaded] = useFonts({
-    Manrope_400Regular,
-    Manrope_500Medium,
-    Manrope_600SemiBold,
-    Manrope_700Bold,
-    Manrope_800ExtraBold,
-    'Tajarib-Regular': require('./assets/fonts/Tajarib-Regular.otf'),
-    'Tajarib-Medium': require('./assets/fonts/Tajarib-Medium.otf'),
-    'Tajarib-Bold': require('./assets/fonts/Tajarib-Bold.otf'),
-    'Tajarib-Black': require('./assets/fonts/Tajarib-Black.otf'),
-    'Tajarib-Light': require('./assets/fonts/Tajarib-Light.otf'),
-  });
+  // On Web, fonts are declared via @font-face in index.html with font-display: swap;
+  // Bypassing eager JS fetch on web saves >1.2MB of render-blocking font downloads upfront.
+  // On native phone builds (iOS/Android), keep loading the bundled font map so native rendering is 100% preserved.
+  const [fontsLoaded] = useFonts(
+    Platform.OS === 'web'
+      ? {}
+      : {
+          Manrope_400Regular,
+          Manrope_500Medium,
+          Manrope_600SemiBold,
+          Manrope_700Bold,
+          Manrope_800ExtraBold,
+          'Tajarib-Regular': require('./assets/fonts/Tajarib-Regular.otf'),
+          'Tajarib-Medium': require('./assets/fonts/Tajarib-Medium.otf'),
+          'Tajarib-Bold': require('./assets/fonts/Tajarib-Bold.otf'),
+          'Tajarib-Black': require('./assets/fonts/Tajarib-Black.otf'),
+          'Tajarib-Light': require('./assets/fonts/Tajarib-Light.otf'),
+        }
+  );
 
   const [currentTab, setCurrentTab] = useState<MainTab>('PLAY');
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
@@ -175,10 +201,11 @@ export default function App() {
     clock: TimeControl;
     view: OnlineMode;
     inviteName?: string | null;
-    autoMatch?: { mode: GameMode; clock: TimeControl; wallsEach: number } | null;
+    autoMatch?: { mode: GameMode; clock: TimeControl; wallsEach: number; custom?: boolean } | null;
     autoRoom?: { mode: GameMode; clock: TimeControl; wallsEach: number } | null;
     autoJoinCode?: string | null;
     initialRoom?: RoomDto | null;
+    token?: number;
   }>({
     clock: DEFAULT_TIME_CONTROL,
     view: 'quick',
@@ -206,6 +233,9 @@ export default function App() {
   const [premiumEntry, setPremiumEntry] = useState('bots');
   // Origin tracking for review screen: 'match' (post-game modal) vs 'history' (History/Profile tab).
   const [reviewOrigin, setReviewOrigin] = useState<'match' | 'history'>('match');
+  // Web PWA / Google Play Install Prompt
+  const [installModalOpen, setInstallModalOpen] = useState(false);
+  const [installForceShow, setInstallForceShow] = useState(false);
 
   /** Forward navigation: records where we came from, then moves. */
   const navigate = (tab: MainTab, sub: SubScreen) => {
@@ -267,9 +297,12 @@ export default function App() {
       dismissTo('PLAY', null);
       return;
     }
-    setSetupKind(gameConfig.type);
-    setChallengeTarget(null);
-    dismissTo(currentTab, 'SETUP');
+    if (gameConfig.challengeOrigin) {
+      dismissTo(gameConfig.challengeOrigin.tab, gameConfig.challengeOrigin.sub);
+      return;
+    }
+    // Match closed (including vs AI or Local) closes directly to the home screen.
+    dismissTo('PLAY', null);
   };
 
   /**
@@ -286,7 +319,10 @@ export default function App() {
         else dismissTo('PLAY', null);
         return;
       }
-      if (subScreen === 'GAME' || (subScreen === 'REVIEW' && !reviewBare)) {
+      if (
+        subScreen === 'GAME' ||
+        ((subScreen === 'REVIEW' || subScreen === 'REVIEW_SUMMARY') && !reviewBare)
+      ) {
         dismissMatchToOrigin();
         return;
       }
@@ -318,7 +354,16 @@ export default function App() {
     // toasts ensure-load on play.
     releaseSounds();
     dismissMatchToOrigin();
+    if (Platform.OS === 'web') {
+      setInstallForceShow(false);
+      setInstallModalOpen(true);
+    }
   };
+
+  const handleSelectBots = useCallback(() => {
+    releaseSounds();
+    dismissTo('BOTS', null);
+  }, []);
 
   // Close Review: post-match reviews (win/lose modal path) must NEVER pop
   // back to GAME — the finished screen unmounted when the review opened,
@@ -329,23 +374,30 @@ export default function App() {
   const handleCloseReview = useCallback(() => {
     if (reviewOrigin === 'match' && !reviewBare) {
       dismissMatchToOrigin();
+      if (Platform.OS === 'web') {
+        setInstallForceShow(false);
+        setInstallModalOpen(true);
+      }
       return;
     }
     goBack();
   }, [reviewOrigin, reviewBare, gameConfig, currentTab, goBack]);
 
   useEffect(() => {
+    if (Platform.OS === 'web') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (exitAsk) {
-        if (Platform.OS !== 'web') {
-          BackHandler.exitApp();
-        }
+        BackHandler.exitApp();
         return true;
       }
       // Post-match review takes the origin-dismissal path (same as its
       // header back button) — the raw stack pop would remount the finished
       // GAME screen and boot a brand-new match.
-      if (subScreen === 'REVIEW' && reviewOrigin === 'match' && !reviewBare) {
+      if (
+        (subScreen === 'REVIEW' || subScreen === 'REVIEW_SUMMARY') &&
+        reviewOrigin === 'match' &&
+        !reviewBare
+      ) {
         handleCloseReview();
         return true;
       }
@@ -649,18 +701,21 @@ export default function App() {
         clock,
         view: 'quick',
         inviteName: null,
-        autoMatch:
-          gameConfig.onlineSource === 'custom'
-            ? { mode: gameConfig.mode, clock, wallsEach: gameConfig.wallsEach ?? 10 }
-            : null,
+        autoMatch: {
+          mode: gameConfig.mode,
+          clock,
+          wallsEach: gameConfig.wallsEach ?? 10,
+          custom: gameConfig.onlineSource === 'custom',
+        },
         autoRoom: null,
         initialRoom: null,
+        token: Date.now(),
       });
       dismissTo(currentTab, 'ONLINE');
+    } else if (gameConfig.type === 'ai') {
+      dismissTo('BOTS', null);
     } else {
-      setSetupKind(gameConfig.type);
-      setChallengeTarget(null);
-      dismissTo(currentTab, 'SETUP');
+      dismissTo('PLAY', null);
     }
   };
 
@@ -729,7 +784,8 @@ export default function App() {
     history: RecordedAction[],
     perspectiveIdx = 0,
     access: { gameId: string; historyLength: number } | null = null,
-    ratings?: Record<string, number>
+    ratings?: Record<string, number>,
+    seatPremium?: Record<string, boolean>
   ) => {
     const safeInitial =
       initialState ||
@@ -737,10 +793,23 @@ export default function App() {
         gameId: access?.gameId || `game-${Date.now()}`,
         mode: '2p',
       });
-    setReplayData({ initialState: safeInitial, history: history || [], perspectiveIdx, ratings, accessKey: access });
+    const botPersonality =
+      gameConfig.type === 'ai' && gameConfig.botId
+        ? { id: gameConfig.botId, name: gameConfig.botId, avatarKey: gameConfig.botId }
+        : null;
+    setReplayData({
+      initialState: safeInitial,
+      history: history || [],
+      perspectiveIdx,
+      isViewerSeated: true,
+      ratings,
+      accessKey: access,
+      seatPremium,
+      botPersonality,
+    });
     setReviewBare(false);
     setReviewOrigin('match');
-    navigate(currentTab, 'REVIEW');
+    navigate(currentTab, 'REVIEW_SUMMARY');
   };
 
   const handleSelectGameFromHistory = (savedGame: SavedGameRecord) => {
@@ -751,10 +820,20 @@ export default function App() {
         mode: savedGame.mode || '2p',
         playerNames: [savedGame.winnerName || 'Player 1', 'Player 2'],
       });
+    const perspectiveSeat = savedGame.perspectivePlayerId ?? savedGame.myPlayerId ?? null;
+    const botPersonality =
+      savedGame.botId || savedGame.type === 'ai'
+        ? {
+            id: savedGame.botId || 'martin',
+            name: savedGame.botName || 'Martin',
+            avatarKey: savedGame.botId || 'martin',
+          }
+        : null;
     setReplayData({
       initialState,
       history: savedGame.history || [],
-      perspectiveIdx: 0,
+      perspectiveIdx: perspectiveIndexFor(initialState, perspectiveSeat),
+      isViewerSeated: savedGame.isViewerSeated ?? Boolean(savedGame.myPlayerId),
       // History/Profile replays open the bare match page (board, HUD cards,
       // step controls with speed) - no analysis panels. The key identifies
       // THIS finished game, so the bare page can offer the same one-ad
@@ -763,6 +842,7 @@ export default function App() {
         gameId: savedGame.id,
         historyLength: savedGame.history.length,
       },
+      botPersonality,
     });
     // History/Profile replays open the bare match page (board, HUD cards,
     // step controls with speed) - no analysis panels.
@@ -771,11 +851,12 @@ export default function App() {
     navigate(currentTab, 'REVIEW');
   };
 
-  // Bare replay -> full review upgrade (History/Profile Analyze path): the
-  // GameReviewScreen gate already wrote the unlock, so flipping the flag
-  // remounts into full mode (the App key includes the bare/full suffix).
+  // Bare replay -> full review upgrade (History/Profile Analyze path):
+  // flipping the flag and navigating to REVIEW_SUMMARY presents the
+  // moves & accuracy breakdown summary screen before full board review.
   const handleUpgradeReviewToFull = () => {
     setReviewBare(false);
+    navigate(currentTab, 'REVIEW_SUMMARY');
   };
 
   // Direct Analyse from History/Profile (no replay first): runs the single
@@ -788,15 +869,28 @@ export default function App() {
       gameId: savedGame.id,
       historyLength: savedGame.history.length,
     };
+    const botPersonality =
+      savedGame.botId || savedGame.type === 'ai'
+        ? {
+            id: savedGame.botId || 'martin',
+            name: savedGame.botName || 'Martin',
+            avatarKey: savedGame.botId || 'martin',
+          }
+        : null;
     setReplayData({
       initialState: savedGame.initialState,
       history: savedGame.history,
-      perspectiveIdx: 0,
+      perspectiveIdx: perspectiveIndexFor(
+        savedGame.initialState,
+        savedGame.perspectivePlayerId ?? savedGame.myPlayerId
+      ),
+      isViewerSeated: savedGame.isViewerSeated ?? Boolean(savedGame.myPlayerId),
       accessKey,
+      botPersonality,
     });
     setReviewBare(false);
     setReviewOrigin('history');
-    navigate(currentTab, 'REVIEW');
+    navigate(currentTab, 'REVIEW_SUMMARY');
     await requestAnalysisEntry(
       isPremiumActive(premium),
       accessKey.gameId,
@@ -889,7 +983,29 @@ export default function App() {
                   onOpenSetup={handleOpenSetup}
                   onOpenCustomOnline={() => handleOpenSetup('online')}
                   onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
+                  onOpenInstallPrompt={() => {
+                    setInstallForceShow(true);
+                    setInstallModalOpen(true);
+                  }}
+                  onSelectBotsTab={() => setCurrentTab('BOTS')}
+                  onOpenHistory={() => navigate(currentTab, 'HISTORY')}
                   onlineCount={onlineCount}
+                />
+              )}
+
+              {currentTab === 'BOTS' && (
+                <BotsScreen
+                  onStartGame={(cfg) => {
+                    handleStartGame({
+                      mode: cfg.mode,
+                      type: 'ai',
+                      botId: cfg.botId,
+                      sideChoice: cfg.side === 'random' ? (Math.random() < 0.5 ? 'blue' : 'red') : cfg.side,
+                      timeControl: cfg.clock,
+                      wallsEach: cfg.wallsEach,
+                    });
+                  }}
+                  onOpenSetup={() => handleOpenSetup('ai')}
                 />
               )}
 
@@ -908,20 +1024,11 @@ export default function App() {
                 />
               )}
 
-              {currentTab === 'HISTORY' && (
-                <HistoryScreen
-                  onBack={goBack}
-                  onSelectGame={handleSelectGameFromHistory}
-                  onAnalyzeGame={handleAnalyzeGameFromHistory}
-                  onQuickMatch={() => handleOpenOnline(DEFAULT_TIME_CONTROL, 'quick')}
-                  onOpenPlayerProfile={handleOpenPlayerProfile}
-                />
-              )}
-
               {currentTab === 'PROFILE' && (
                 <ProfileScreen
                   onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
                   onOpenPlayerProfile={handleOpenPlayerProfile}
+                  onOpenHistory={() => navigate(currentTab, 'HISTORY')}
                 />
               )}
             </View>
@@ -954,6 +1061,7 @@ export default function App() {
               onRematchAccepted={handleFreshOnlineGame}
               onAnalyze={handleOpenReview}
               onOpenPlayerProfile={handleOpenPlayerProfile}
+              onSelectBots={handleSelectBots}
             />
           )}
 
@@ -966,6 +1074,21 @@ export default function App() {
               onLockedBot={() => {
                 setPremiumEntry('bots');
                 setPremiumOpen(true);
+              }}
+              onOpenRooms={() => {
+                setOnlineEntry({
+                  clock: DEFAULT_TIME_CONTROL,
+                  view: 'rooms',
+                  inviteName: null,
+                  autoMatch: null,
+                  autoRoom: null,
+                  initialRoom: null,
+                });
+                navigate(currentTab, 'ONLINE');
+              }}
+              onSelectBotsTab={() => {
+                setSubScreen(null);
+                setCurrentTab('BOTS');
               }}
               onConfirm={(sel) => {
                 if (sel.vsType === 'challenge' && challengeTarget) {
@@ -1045,7 +1168,7 @@ export default function App() {
 
           {subScreen === 'ONLINE' && (
             <OnlineScreen
-              key={`${onlineEntry.clock.id}-${onlineEntry.view}-${onlineEntry.inviteName ?? ''}-${onlineEntry.autoJoinCode ?? ''}`}
+              key={`${onlineEntry.clock.id}-${onlineEntry.view}-${onlineEntry.inviteName ?? ''}-${onlineEntry.autoJoinCode ?? ''}-${onlineEntry.token ?? 0}`}
               initialClock={onlineEntry.clock}
               initialView={onlineEntry.view}
               inviteName={onlineEntry.inviteName}
@@ -1070,21 +1193,46 @@ export default function App() {
             />
           )}
 
+          {subScreen === 'REVIEW_SUMMARY' && replayData && (
+            <GameReviewSummaryScreen
+              key={`summary-${replayData.initialState?.gameId || 'review'}-${replayData.history?.length || 0}`}
+              initialState={replayData.initialState}
+              history={replayData.history}
+              perspectiveIdx={replayData.perspectiveIdx}
+              onBack={handleCloseReview}
+              onStartReview={() => navigate(currentTab, 'REVIEW')}
+              botPersonality={replayData.botPersonality}
+            />
+          )}
+
           {subScreen === 'REVIEW' && replayData && (
             <GameReviewScreen
               key={`${replayData.initialState?.gameId || 'review'}-${replayData.history?.length || 0}-${reviewBare ? 'bare' : 'full'}`}
               initialState={replayData.initialState}
               history={replayData.history}
               perspectiveIdx={replayData.perspectiveIdx}
-              onBack={handleCloseReview}
+              isViewerSeated={replayData.isViewerSeated !== false}
+              onBack={goBack}
               bare={reviewBare}
               ratings={replayData.ratings}
               accessKey={replayData.accessKey ?? null}
+              seatPremium={replayData.seatPremium}
+              botPersonality={replayData.botPersonality}
               onUpgradeToFull={handleUpgradeReviewToFull}
               onOpenPremium={() => {
                 setPremiumEntry('analysis');
                 setPremiumOpen(true);
               }}
+            />
+          )}
+
+          {subScreen === 'HISTORY' && (
+            <HistoryScreen
+              onBack={goBack}
+              onSelectGame={handleSelectGameFromHistory}
+              onAnalyzeGame={handleAnalyzeGameFromHistory}
+              onQuickMatch={() => handleOpenOnline(DEFAULT_TIME_CONTROL, 'quick')}
+              onOpenPlayerProfile={handleOpenPlayerProfile}
             />
           )}
 
@@ -1170,6 +1318,16 @@ export default function App() {
       </SessionProvider>
       <AppToast />
       <OfflineModal />
+      {Platform.OS === 'web' && (
+        <InstallPromptModal
+          visible={installModalOpen}
+          forceShow={installForceShow}
+          onClose={() => {
+            setInstallModalOpen(false);
+            setInstallForceShow(false);
+          }}
+        />
+      )}
     </SafeAreaView>
     </SafeAreaProvider>
   );

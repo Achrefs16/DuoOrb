@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOT_ROSTER, botById, createInitialState } from '@duoorb/game-core';
+import { BOT_ROSTER, botById } from '@duoorb/game-core';
 
 describe('Bot Personas & Dialogue System', () => {
   it('every bot personality in BOT_ROSTER has all dialogue events populated', () => {
@@ -31,9 +31,11 @@ describe('Bot Personas & Dialogue System', () => {
     expect(martin?.tier).toBe('beginner');
     expect(martin?.elo).toBe(800);
 
-    // Alias test
-    const pipAlias = botById('pip');
-    expect(pipAlias?.name).toBe('Martin');
+    // Pip is a canonical roster member, not an alias for Martin.
+    const pip = botById('pip');
+    expect(pip?.name).toBe('Pip');
+    expect(pip?.tier).toBe('beginner');
+    expect(pip?.elo).toBe(950);
 
     const viktor = botById('viktor');
     expect(viktor).not.toBeNull();

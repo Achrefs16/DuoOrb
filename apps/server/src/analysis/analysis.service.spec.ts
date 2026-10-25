@@ -39,7 +39,8 @@ describe('AnalysisService', () => {
     expect(review.totalMoves).toBe(4);
     expect(review.moveAnalyses.length).toBe(4);
     expect(review.summary).toBeDefined();
-    expect(review.engineVersion).toBe('duoorb-rust-mcts-2.0');
+    expect(review.engineVersion).toBe('duoorb-rust-mcts-2.1');
+    expect(review.analysisVersion).toBe('analysis-2.1');
   });
 
   it('serves cached review when present in database', async () => {
@@ -57,6 +58,7 @@ describe('AnalysisService', () => {
         findUnique: vi.fn().mockResolvedValue({
           gameId: 'test-game',
           reviewData: cachedReview,
+          analysisVersion: 'analysis-2.1',
         }),
       },
     };
@@ -67,6 +69,21 @@ describe('AnalysisService', () => {
     expect(mockPrisma.gameAnalysis.findUnique).toHaveBeenCalledWith({
       where: { gameId: 'test-game' },
     });
+  });
+
+  it('rejects a stale cached review instead of serving it', async () => {
+    const service = new AnalysisService({
+      isConnected: true,
+      gameAnalysis: {
+        findUnique: vi.fn().mockResolvedValue({
+          gameId: 'old-game',
+          reviewData: { analysisVersion: 'analysis-2.0', moveAnalyses: [] },
+          analysisVersion: 'analysis-2.0',
+        }),
+      },
+    } as any);
+
+    await expect(service.getCachedReview('old-game')).rejects.toThrow(/outdated/);
   });
 
   it('gracefully handles missing initialState (synthesizes state from history)', async () => {
@@ -81,6 +98,42 @@ describe('AnalysisService', () => {
     const review = await service.reviewGame(undefined, []);
     expect(review).toBeDefined();
     expect(review.totalMoves).toBe(0);
-    expect(review.engineVersion).toBe('duoorb-rust-mcts-2.0');
+    expect(review.engineVersion).toBe('duoorb-rust-mcts-2.1');
+    expect(review.analysisVersion).toBe('analysis-2.1');
+  });
+
+  it('invalidates analysis-2.0 cache entries and replaces them', async () => {
+    const staleReview: any = {
+      gameId: 'stale-game',
+      totalMoves: 2,
+      moveAnalyses: [],
+      summary: { confidence: 'high' },
+      engineVersion: 'duoorb-rust-mcts-2.0',
+      analysisVersion: 'analysis-2.0',
+    };
+    const upsert = vi.fn().mockResolvedValue({});
+    const mockPrisma: any = {
+      isConnected: true,
+      gameAnalysis: {
+        findUnique: vi.fn().mockResolvedValue({
+          gameId: 'stale-game',
+          reviewData: staleReview,
+          analysisVersion: 'analysis-2.0',
+        }),
+        upsert,
+      },
+      game: {
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
+    };
+
+    const service = new AnalysisService(mockPrisma);
+    const review = await service.reviewGame(undefined, [], 'stale-game', '2p');
+
+    expect(review.analysisVersion).toBe('analysis-2.1');
+    expect(upsert).toHaveBeenCalledTimes(1);
+    const write = upsert.mock.calls[0][0];
+    expect(write.update.analysisVersion).toBe('analysis-2.1');
+    expect(write.update.reviewData.analysisVersion).toBe('analysis-2.1');
   });
 });

@@ -1,7 +1,7 @@
 import Purchases from 'react-native-purchases';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { getIdentity } from '../network/auth';
-import { refreshPremium } from './premium';
+import { ingestMe, refreshPremium } from './premium';
 import { track } from './analytics';
 
 /**
@@ -175,8 +175,14 @@ export async function purchasePlan(plan: PremiumPlan): Promise<PurchaseOutcome> 
   try {
     await ensureConfigured();
     const { customerInfo } = await Purchases.purchasePackage(plan.rcPackage);
-    const active = customerInfo.entitlements.active[ENTITLEMENT_ID] != null;
-    if (active) {
+    const entitlement = customerInfo.entitlements.active[ENTITLEMENT_ID];
+    if (entitlement) {
+      // Store truth lands before the server webhook. Paint Premium now and
+      // let the asynchronous /me sync reconcile expiry moments later.
+      ingestMe({
+        isPremium: true,
+        premiumExpiresAt: entitlement.expirationDate ?? null,
+      });
       track('purchase_completed', { plan: plan.id });
       if (plan.trialLine) track('trial_started', { plan: plan.id });
       // M1: the webhook usually lands seconds AFTER the receipt validates.
@@ -207,8 +213,12 @@ export async function restorePremium(): Promise<PurchaseOutcome> {
   try {
     await ensureConfigured();
     const customerInfo = await Purchases.restorePurchases();
-    const active = customerInfo.entitlements.active[ENTITLEMENT_ID] != null;
-    if (active) {
+    const entitlement = customerInfo.entitlements.active[ENTITLEMENT_ID];
+    if (entitlement) {
+      ingestMe({
+        isPremium: true,
+        premiumExpiresAt: entitlement.expirationDate ?? null,
+      });
       track('restored', {});
       void syncPremiumAfterPurchase();
       return { status: 'done' };

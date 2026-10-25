@@ -184,11 +184,24 @@ export function getBestAction(
     const production = budget ?? productionBudget(profile, state.mode);
     const defaultSims = profile.difficulty === 'easy' ? 300 : profile.difficulty === 'normal' ? 800 : 2000;
     const sims = profile.simulations ?? defaultSims;
-    const isExplicitDeterministic = randomSeed !== undefined;
-    const rawLimit = budget?.timeMs ?? (isExplicitDeterministic ? undefined : production.timeMs);
-    const timeLimit = isBlitz ? Math.min(rawLimit ?? 250, 250) : rawLimit;
+    // Small deterministic searches finish well inside the clock, so let them
+    // run to the simulation count instead of truncating on a wall-clock edge.
+    // That keeps seeded tools/replays reproducible while still bounding the
+    // large live searches (and every multi-thousand bot search) by time.
+    // 4-player searches stay time-bounded (the per-move budget regression is
+    // measured there). Smaller 2P/3P searches run to their count so repeated
+    // package calls are reproducible instead of truncating on a clock edge.
+    const deterministicSims = state.players.length < 4 && sims <= 800;
+    const rawLimit =
+      budget?.timeMs ??
+      (randomSeed !== undefined || deterministicSims ? undefined : production.timeMs);
+    // Leave headroom for the final expansion + selection work so an observed
+    // move never lands past the 250ms blitz promise.
+    const timeLimit = isBlitz ? Math.min(rawLimit ?? 220, 220) : rawLimit;
     const action = mctsBestAction(state, {
       simulations: sims,
+      // Live callers (the mobile screen) pass a fresh seed per turn. Defaulting
+      // to the position keeps the package API reproducible for tests/tools.
       seed: randomSeed ?? positionSeed(state, currentPlayer.index),
       wallMoveProb: profile.wallMoveProb ?? (profile.difficulty === 'easy' ? 0.2 : 0.35),
       blockMoveProb: profile.blockMoveProb ?? 0.35,
@@ -196,6 +209,21 @@ export function getBestAction(
       maxRolloutPlies: profile.maxRolloutPlies,
       timeBudgetMs: timeLimit,
       wallHorizon: profile.wallHorizon,
+      blunderRate:
+        profile.blunderRate ??
+        (profile.difficulty === 'easy' ? 0.28 : profile.difficulty === 'normal' ? 0.05 : 0),
+      missDefenseProb:
+        profile.missDefenseProb ??
+        (profile.difficulty === 'easy' ? 0.3 : 0),
+      naiveWallProb:
+        profile.naiveWallProb ??
+        (profile.difficulty === 'easy' ? 0.35 : profile.difficulty === 'normal' ? 0.06 : 0),
+      softmaxTemp: profile.softmaxTemp ?? 0.18,
+      varietyWindow:
+        profile.varietyWindow ??
+        (profile.difficulty === 'easy' ? 0.1 : profile.difficulty === 'normal' ? 0.05 : 0.025),
+      wallStyle: profile.wallStyle ?? 'balanced',
+      openingStyle: profile.openingStyle ?? 'mixed',
     });
     const st = mctsStats();
     lastSearchStats.nodes = st.nodes;
@@ -320,15 +348,34 @@ export async function getBestActionAsync(
     const sims = profile.simulations ?? defaultSims;
     const baseBudget = hooks.budget?.timeMs ?? profile.timeBudgetMs;
     const timeLimit = isBlitz ? Math.min(baseBudget ?? 250, 250) : baseBudget;
+    // Live async callers get entropy so two matches cannot play identically.
+    // Explicit seeds (tests, replays) stay deterministic.
+    const liveSeed =
+      randomSeed ?? ((Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0);
     const action = await mctsBestActionAsync(state, {
       simulations: sims,
-      seed: randomSeed ?? (profile.randomness <= 0 ? positionSeed(state, currentPlayer.index) : undefined),
+      seed: liveSeed,
       wallMoveProb: profile.wallMoveProb ?? (profile.difficulty === 'easy' ? 0.2 : 0.35),
       blockMoveProb: profile.blockMoveProb ?? 0.35,
       uctConst: profile.uctConst ?? 0.4,
       maxRolloutPlies: profile.maxRolloutPlies,
       timeBudgetMs: timeLimit,
       wallHorizon: profile.wallHorizon,
+      blunderRate:
+        profile.blunderRate ??
+        (profile.difficulty === 'easy' ? 0.28 : profile.difficulty === 'normal' ? 0.05 : 0),
+      missDefenseProb:
+        profile.missDefenseProb ??
+        (profile.difficulty === 'easy' ? 0.3 : 0),
+      naiveWallProb:
+        profile.naiveWallProb ??
+        (profile.difficulty === 'easy' ? 0.35 : profile.difficulty === 'normal' ? 0.06 : 0),
+      softmaxTemp: profile.softmaxTemp ?? 0.18,
+      varietyWindow:
+        profile.varietyWindow ??
+        (profile.difficulty === 'easy' ? 0.1 : profile.difficulty === 'normal' ? 0.05 : 0.025),
+      wallStyle: profile.wallStyle ?? 'balanced',
+      openingStyle: profile.openingStyle ?? 'mixed',
     }, { shouldCancel: hooks.shouldCancel });
     const st = mctsStats();
     lastSearchStats.nodes = st.nodes;

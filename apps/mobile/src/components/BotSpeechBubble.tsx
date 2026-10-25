@@ -109,7 +109,7 @@ export const BotSpeechBubble: React.FC<BotSpeechBubbleProps> = memo(
           accessibilityRole="text"
           accessibilityLabel={`${botName ?? 'Bot'} says: ${text}`}
         >
-          {/* Tail pointing down at the bot's card, like a reaction bubble. */}
+          {/* Tail pointing down at the bot's avatar in the strip below. */}
           <View style={[styles.tail, { borderTopColor: botColor }]} />
           <View
             style={[
@@ -118,12 +118,10 @@ export const BotSpeechBubble: React.FC<BotSpeechBubbleProps> = memo(
             ]}
           />
 
-          {botName && (
-            <Text style={[styles.botLabel, { color: botColor }]} numberOfLines={1}>
-              {botName}
-            </Text>
-          )}
-          <Text style={[styles.speechText, surface && { color: surface.ink }]}>
+          <Text
+            style={[styles.speechText, surface && { color: surface.ink }]}
+            numberOfLines={2}
+          >
             {text}
           </Text>
         </Pressable>
@@ -136,48 +134,31 @@ BotSpeechBubble.displayName = 'BotSpeechBubble';
 
 const createStyles = () =>
   StyleSheet.create({
-    // Same overlay slot as the top reaction dock: floats over the bot's
-    // card, costs zero layout, never covers the board. box-none so only
-    // the bubble itself is tappable (dismiss).
+    // Floats in the empty space of the 56px top header bar, above the bot's
+    // HUD strip. box-none so only the bubble itself is tappable (dismiss).
     container: {
       position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      minHeight: 52,
-      justifyContent: 'center',
-      alignItems: 'center',
-      zIndex: 200,
+      top: -44,
+      left: 52,
+      right: 48,
+      alignItems: 'flex-start',
+      zIndex: 60,
     },
     bubble: {
-      backgroundColor: THEME.colors.backgroundCard,
+      flexDirection: 'row',
+      alignItems: 'center',
+      maxWidth: '100%',
+      paddingVertical: 7,
+      paddingHorizontal: 12,
       borderRadius: 14,
-      borderWidth: 1.5,
-      paddingVertical: 9,
-      paddingHorizontal: 14,
-      maxWidth: '92%',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.22,
-      shadowRadius: 10,
-      elevation: 7,
+      borderWidth: 1,
+      borderColor: 'rgba(0, 0, 0, 0.08)',
+      backgroundColor: '#FFFFFF',
     },
     tail: {
       position: 'absolute',
-      bottom: -8,
-      left: 28,
-      width: 0,
-      height: 0,
-      borderLeftWidth: 7,
-      borderRightWidth: 7,
-      borderTopWidth: 8,
-      borderLeftColor: 'transparent',
-      borderRightColor: 'transparent',
-    },
-    tailInner: {
-      position: 'absolute',
-      bottom: -5,
-      left: 29,
+      bottom: -7,
+      left: 24,
       width: 0,
       height: 0,
       borderLeftWidth: 6,
@@ -185,19 +166,26 @@ const createStyles = () =>
       borderTopWidth: 7,
       borderLeftColor: 'transparent',
       borderRightColor: 'transparent',
+      borderTopColor: '#E2E8F0',
     },
-    botLabel: {
-      fontSize: 10,
-      fontWeight: '700',
-      fontFamily: THEME.fonts.bold,
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
-      marginBottom: 2,
+    tailInner: {
+      position: 'absolute',
+      bottom: -5,
+      left: 25,
+      width: 0,
+      height: 0,
+      borderLeftWidth: 5,
+      borderRightWidth: 5,
+      borderTopWidth: 6,
+      borderLeftColor: 'transparent',
+      borderRightColor: 'transparent',
+      borderTopColor: '#FFFFFF',
     },
     speechText: {
-      fontSize: 13,
-      lineHeight: 18,
-      fontFamily: THEME.fonts.medium,
-      color: THEME.colors.textPrimary,
+      fontSize: 11.5,
+      lineHeight: 15,
+      fontFamily: THEME.fonts.semiBold,
+      fontWeight: '600',
+      color: '#161512',
     },
   });

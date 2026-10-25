@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   __resetAdProviderForTests,
+  lastRewardedShownAt,
   MockDenyingProvider,
   MockGrantingProvider,
   setAdProvider,
@@ -49,5 +50,23 @@ describe('ads provider boundary', () => {
     });
     const res = await showRewarded('analysis');
     expect(res).toEqual({ earned: false, error: 'error' });
+  });
+
+  it('only stamps the rewarded shield when a view is actually earned', async () => {
+    setAdProvider(MockDenyingProvider);
+    await showRewarded('analysis');
+    expect(lastRewardedShownAt()).toBeNull();
+
+    setAdProvider({
+      async showRewarded() {
+        throw new Error('no fill');
+      },
+    });
+    await showRewarded('undo');
+    expect(lastRewardedShownAt()).toBeNull();
+
+    setAdProvider(MockGrantingProvider);
+    await showRewarded('undo');
+    expect(lastRewardedShownAt()).not.toBeNull();
   });
 });

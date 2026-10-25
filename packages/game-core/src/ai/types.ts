@@ -2,6 +2,21 @@ import type { CellCoord, GameAction, GameState, WallCoord } from '../types.js';
 
 export type AIDifficulty = 'easy' | 'normal' | 'hard';
 
+export type BotWallStyle =
+  | 'balanced'
+  | 'horizontal_barricade'
+  | 'vertical_corridor'
+  | 'defensive_backwall'
+  | 'flank_trap'
+  | 'minimal';
+
+export type BotOpeningStyle =
+  | 'center_march'
+  | 'wing_drift'
+  | 'early_fence'
+  | 'back_gate'
+  | 'mixed';
+
 export interface AIProfile {
   difficulty: AIDifficulty;
   depth: number;
@@ -23,6 +38,18 @@ export interface AIProfile {
   blockMoveProb?: number;
   maxRolloutPlies?: number;
   wallHorizon?: number;
+  /** Chance per turn to deliberately make a human-like suboptimal choice. */
+  blunderRate?: number;
+  /** Chance to ignore a one-step loss threat (Beginner personalities). */
+  missDefenseProb?: number;
+  /** Chance to keep a decorative wall with no positive race gain. */
+  naiveWallProb?: number;
+  /** Root softmax sampling temperature (lower = sharper). */
+  softmaxTemp?: number;
+  /** Allowed Q drop when sampling equally strong root moves. */
+  varietyWindow?: number;
+  wallStyle?: BotWallStyle;
+  openingStyle?: BotOpeningStyle;
 }
 
 export interface AiWallTuning {

@@ -20,22 +20,45 @@ export interface RewardedResult {
   error?: string;
 }
 
+export type RewardedPlacement = 'analysis' | 'undo';
+
 export interface AdProvider {
-  showRewarded(placement: string): Promise<RewardedResult>;
-  preloadRewarded?(placement: string): void;
+  showRewarded(placement: RewardedPlacement): Promise<RewardedResult>;
+  preloadRewarded?(placement: RewardedPlacement): void;
 }
 
+/**
+ * App-wide, retention-safe ad pacing. Every number is tunable here so the
+ * algorithm can be retuned without touching screens or the SDK boundary.
+ *
+ * Principles:
+ * - Never interrupt a live match, never fire on Rematch.
+ * - Only show after positive/neutral transitions, never after a loss streak.
+ * - Stand down for 3 minutes after a voluntary rewarded view.
+ * - The first completed win of the first session is eligible, because the
+ *   player has already invested time and chosen to continue.
+ */
 export const ADS_CONFIG = {
-  /** Rewarded placements currently offered. 'analysis' = full game analysis. */
-  rewardedPlacements: ['analysis'] as const,
-  // Interstitial defaults (P6 placement sign-off O1–O3 still pending; the
-  // manager enforces whatever ships here — no code changes to retune).
+  /** Rewarded placements currently offered. */
+  rewardedPlacements: ['analysis', 'undo'] as const,
   interstitialEnabled: true,
-  interstitialMinGames: 2,
-  interstitialMaxPerDay: 3,
-  interstitialMinGapSec: 180,
-  interstitialMinGameSec: 60,
-  skipFirstSession: true,
+  /** Eligible after the 1st completed win. */
+  interstitialMinGames: 1,
+  /** Post-loss interstitials wait for a 2nd completed game. */
+  interstitialMinGamesAfterLoss: 2,
+  interstitialMaxPerDay: 8,
+  /** 75s cooldown while the player is in the high-dopamine win state. */
+  interstitialWinGapSec: 75,
+  /** 150s cooldown on neutral transitions. */
+  interstitialNeutralGapSec: 150,
+  /** 3-minute immunity after watching a rewarded video. */
+  interstitialRewardedShieldSec: 180,
+  /** Skip instant resigns/aborts; quick real matches still count. */
+  interstitialMinGameSec: 20,
+  /** Tilt protection: never show on a 2+ loss streak. */
+  maxConsecutiveLossesForAd: 1,
+  /** The first completed win is eligible, even in session one. */
+  skipFirstSession: false,
 } as const;
 
 const UnavailableProvider: AdProvider = {
@@ -80,7 +103,7 @@ export function __resetAdProviderForTests(): void {
 }
 
 /** Best-effort warm-up; safe to call before any show. Never throws. */
-export function preloadRewarded(placement: string): void {
+export function preloadRewarded(placement: RewardedPlacement): void {
   try {
     provider.preloadRewarded?.(placement);
   } catch {
@@ -93,11 +116,15 @@ export function preloadRewarded(placement: string): void {
  * early-close/no-fill/SDK errors come back as `{ earned: false, error }`
  * so callers can render the right row (E10/E11).
  */
-export async function showRewarded(placement: string): Promise<RewardedResult> {
-  lastRewardedAtMs = Date.now();
+export async function showRewarded(placement: RewardedPlacement): Promise<RewardedResult> {
   try {
     const res = await provider.showRewarded(placement);
-    if (res && res.earned === true) return { earned: true };
+    if (res && res.earned === true) {
+      // Only a completed view earns the interstitial shield. A failed load or
+      // early close must never suppress ads for the next three minutes.
+      lastRewardedAtMs = Date.now();
+      return { earned: true };
+    }
     return { earned: false, error: res?.error ?? 'dismissed' };
   } catch {
     return { earned: false, error: 'error' };

@@ -17,7 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { THEME, useStyles } from '../theme';
-import { TIME_CONTROLS, TimeControl } from '../timeControls';
+import { TIME_CONTROLS, TimeControl, NO_TIMER_CONTROL } from '../timeControls';
+import { MatchOptionsPicker, WallsChoice } from '../components/MatchOptionsPicker';
 import { GameMode, playerCountForMode } from '@duoorb/game-core';
 import { RoomDto } from '@duoorb/protocol';
 import { MatchType, modeLabel, resolveMode } from '../matchModes';
@@ -25,12 +26,15 @@ import { useMatchmaking } from '../network/useMatchmaking';
 import type { MatchedOpponent } from '../network/useMatchmaking';
 import type { GameSyncDto } from '@duoorb/protocol';
 import { OnlineJoinGate } from '../components/OnlineJoinGate';
+import { AdBanner } from '../components/AdBanner';
 import { runWhenOnline } from '../components/NoConnection';
 import { useRooms } from '../network/useRooms';
 import { api } from '../network/apiClient';
 import { useIdentity } from '../network/auth';
 import { nameInitial, resolveName } from '../displayName';
 import { useTranslation } from '../i18n';
+import { PremiumBadge } from '../components/PremiumBadge';
+import { usePremium, isPremiumActive } from '../monetization/premium';
 
 export type OnlineMode = 'quick' | 'rooms';
 
@@ -47,7 +51,8 @@ const MmSeat: React.FC<{
   avatar: React.ReactNode;
   avatarStyle: object;
   letterStyle?: object;
-}> = ({ tag, name, rating, avatar, avatarStyle, letterStyle }) => {
+  isPremium?: boolean;
+}> = ({ tag, name, rating, avatar, avatarStyle, letterStyle, isPremium }) => {
   const styles = useStyles(createStyles);
   return (
   <View style={styles.mmPlayerCol}>
@@ -59,9 +64,12 @@ const MmSeat: React.FC<{
       )}
     </View>
     <Text style={styles.mmPlayerTag}>{tag}</Text>
-    <Text style={styles.mmPlayerName} numberOfLines={1}>
-      {name}
-    </Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+      <Text style={styles.mmPlayerName} numberOfLines={1}>
+        {name}
+      </Text>
+      {isPremium && <PremiumBadge size="xs" />}
+    </View>
     <View style={styles.mmRatingPill}>
       <Text style={styles.mmRatingText}>{rating}</Text>
     </View>
@@ -75,7 +83,7 @@ interface OnlineScreenProps {
   initialView: OnlineMode;
   inviteName?: string | null;
   /** Custom Online Match config: enter ranked matchmaking for this exact setup. */
-  autoMatch?: { mode: GameMode; clock: TimeControl; wallsEach: number } | null;
+  autoMatch?: { mode: GameMode; clock: TimeControl; wallsEach: number; custom?: boolean } | null;
   /** Custom Online Match config: create this room immediately on entry. */
   autoRoom?: { mode: GameMode; clock: TimeControl; wallsEach: number } | null;
   /** Room Invite Link: auto-join room code immediately on entry. */
@@ -114,6 +122,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const premium = usePremium();
   const [view] = useState<OnlineMode>(initialView);
   const [clock, setClock] = useState<TimeControl>(initialClock);
   // Snapshot the entry config on mount, like view/clock above. The one-shot
@@ -127,7 +136,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   const matchPlayerCount = playerCountForMode(matchConfig.mode);
   const [roomKind, setRoomKind] = useState<MatchType>('classic');
   const [roomCount, setRoomCount] = useState<2 | 3 | 4>(2);
-  const [wallsCount, setWallsCount] = useState<10 | 15 | 'unlimited'>(10);
+  const [wallsCount, setWallsCount] = useState<WallsChoice>(10);
   const roomType: GameMode = resolveMode(roomKind, roomCount);
   const [roomCodeInput, setRoomCodeInput] = useState<string>('');
   // Keeps the Join Room input visible above the Android keyboard: the
@@ -304,7 +313,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
         mode: matchConfig.mode,
         clock: matchConfig.clock,
         wallsEach: matchConfig.wallsEach,
-        custom: !!autoMatch,
+        custom: autoMatch?.custom ?? false,
       });
       findMatch(matchConfig.mode, matchConfig.clock, matchConfig.wallsEach);
       // One-shot entry consumed: returning here later must stay idle.
@@ -323,7 +332,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       foundGame.gameId,
       spec?.mode ?? matchConfig.mode,
       spec?.clock ?? matchConfig.clock,
-      spec ? (spec.custom ? 'custom' : 'quick') : autoMatch ? 'custom' : 'quick',
+      spec ? (spec.custom ? 'custom' : 'quick') : (autoMatch?.custom ? 'custom' : 'quick'),
       null,
       sync
     );
@@ -497,7 +506,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
   const [showRoomSetup, setShowRoomSetup] = useState(false);
   const [setupKind, setSetupKind] = useState<MatchType>('classic');
   const [setupCount, setSetupCount] = useState<2 | 3 | 4>(2);
-  const [setupWalls, setSetupWalls] = useState<10 | 15 | 'unlimited'>(10);
+  const [setupWalls, setSetupWalls] = useState<WallsChoice>(10);
   const [setupClock, setSetupClock] = useState<TimeControl>(initialClock);
   const [setupSaving, setSetupSaving] = useState(false);
 
@@ -514,11 +523,13 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       setSetupKind('race');
       setSetupCount(m === 'race4' ? 4 : m === 'race3' ? 3 : 2);
     }
-    setSetupWalls(activeRoom.wallsEach >= 99 ? 'unlimited' : activeRoom.wallsEach === 15 ? 15 : 10);
+    setSetupWalls(activeRoom.wallsEach >= 99 ? 99 : activeRoom.wallsEach === 15 ? 15 : 10);
     setSetupClock(
-      TIME_CONTROLS.find(
-        (tc) => tc.minutes === activeRoom.timeControlMinutes && tc.incrementSeconds === activeRoom.incrementSeconds
-      ) ?? TIME_CONTROLS[0]
+      activeRoom.timeControlMinutes === 0
+        ? NO_TIMER_CONTROL
+        : TIME_CONTROLS.find(
+            (tc) => tc.minutes === activeRoom.timeControlMinutes && tc.incrementSeconds === activeRoom.incrementSeconds
+          ) ?? TIME_CONTROLS[0]
     );
     setShowRoomSetup(true);
   }, [activeRoom, isHost]);
@@ -531,7 +542,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
         mode: resolveMode(setupKind, setupCount),
         timeControlMinutes: setupClock.minutes,
         incrementSeconds: setupClock.incrementSeconds ?? 0,
-        wallsEach: setupWalls === 'unlimited' ? 99 : setupWalls,
+        wallsEach: setupWalls,
       });
       if (res.success) setShowRoomSetup(false);
     } finally {
@@ -606,9 +617,12 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 </Text>
               </View>
               <Text style={styles.mmPlayerTag}>{t('leaderboard.you')}</Text>
-              <Text style={styles.mmPlayerName} numberOfLines={1}>
-                {resolveName(identity?.displayName ?? '', 'You')}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                <Text style={styles.mmPlayerName} numberOfLines={1}>
+                  {resolveName(identity?.displayName ?? '', 'You')}
+                </Text>
+                {isPremiumActive(premium) && <PremiumBadge size="xs" />}
+              </View>
               <View style={styles.mmRatingPill}>
                 <Text style={styles.mmRatingText}>
                   {myRating !== null ? myRating : '—'}
@@ -643,13 +657,16 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               <Text style={styles.mmPlayerTag}>
                 {isMatched ? t('online.ready').toUpperCase() : 'OPEN'}
               </Text>
-              <Text style={styles.mmPlayerName} numberOfLines={1}>
-                {foundGame?.opponents[0]
-                  ? foundGame.opponents[0].displayName
-                  : isMatched
-                  ? t('history.opponent')
-                  : t('online.waitingPlayer')}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                <Text style={styles.mmPlayerName} numberOfLines={1}>
+                  {foundGame?.opponents[0]
+                    ? foundGame.opponents[0].displayName
+                    : isMatched
+                    ? t('history.opponent')
+                    : t('online.waitingPlayer')}
+                </Text>
+                {foundGame?.opponents[0]?.isPremium && <PremiumBadge size="xs" />}
+              </View>
               <View style={styles.mmRatingPill}>
                 <Text style={styles.mmRatingText}>
                   {foundGame?.opponents[0]
@@ -670,6 +687,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               avatar={nameInitial(identity?.displayName ?? '')}
               avatarStyle={styles.mmAvatarYouSm}
               letterStyle={styles.mmAvatarLetterSmYou}
+              isPremium={isPremiumActive(premium)}
             />
             {Array.from(
               { length: matchPlayerCount - 1 },
@@ -704,6 +722,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 }
                 avatarStyle={styles.mmAvatarSlotSm}
                 letterStyle={styles.mmAvatarLetterSm}
+                isPremium={opp?.isPremium}
               />
             ))}
           </View>
@@ -793,7 +812,16 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       ? 'Center Rush'
       : 'Race';
   const lobbyClock = activeRoom
-    ? `${activeRoom.timeControlMinutes}+${activeRoom.incrementSeconds}`
+    ? activeRoom.timeControlMinutes === 0
+      ? 'No Timer'
+      : activeRoom.incrementSeconds > 0
+      ? `${activeRoom.timeControlMinutes}+${activeRoom.incrementSeconds}`
+      : `${activeRoom.timeControlMinutes} min`
+    : '';
+  const lobbyWalls = activeRoom
+    ? activeRoom.wallsEach >= 99
+      ? '∞ Walls'
+      : `${activeRoom.wallsEach} Walls`
     : '';
   const lobbyOccupied = activeRoom?.slots.filter((s) => s.userId !== null).length ?? 0;
 
@@ -848,21 +876,32 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             {/* Config summary card */}
             <View style={styles.lobbySummary}>
               <View style={styles.lobbySummaryIcon}>
-                <Feather name="compass" size={22} color={THEME.colors.primary} />
+                <MaterialCommunityIcons
+                  name={
+                    lobbyModeName === 'Race'
+                      ? 'flag-checkered'
+                      : lobbyModeName === 'Center Rush'
+                      ? 'bullseye-arrow'
+                      : 'sword-cross'
+                  }
+                  size={22}
+                  color={THEME.colors.primary}
+                />
               </View>
               <View style={styles.lobbySummaryText}>
                 <Text style={styles.lobbySummaryTitle}>{lobbyModeName}</Text>
                 <Text style={styles.lobbySummarySub}>
-                  {activeRoom.slots.length} Players · {lobbyClock}
+                  {activeRoom.slots.length} Players · {lobbyClock} ({lobbyWalls})
                 </Text>
               </View>
               {isHost && (
                 <TouchableOpacity
                   style={styles.lobbySetupBtn}
+                  activeOpacity={0.8}
                   onPress={openRoomSetup}
                   accessibilityLabel="Change room setup"
                 >
-                  <Feather name="sliders" size={16} color={THEME.colors.primary} />
+                  <Feather name="sliders" size={15} color={THEME.colors.textPrimary} />
                   <Text style={styles.lobbySetupText}>{t('online.setup')}</Text>
                 </TouchableOpacity>
               )}
@@ -915,6 +954,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                             {slot.displayName}
                             {isMe ? ` ${t('gameover.you')}` : ''}
                           </Text>
+                          {slot.isPremium && <PremiumBadge size="xs" />}
                           {slot.isHost && (
                             <View style={styles.hostBadge}>
                               <MaterialCommunityIcons name="crown" size={11} color={THEME.colors.primaryDark} />
@@ -1028,6 +1068,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               </TouchableOpacity>
             )}
             {!!roomError && <Text style={styles.errorText}>{roomError}</Text>}
+            <AdBanner placement="lobby" />
           </>
         ) : (
           /* CREATE & JOIN CARDS: join-by-code first, room setup below. */
@@ -1069,104 +1110,41 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
             {/* Create Room Card */}
             <View style={styles.rmCard}>
-              {/* Mode Selection */}
-              <View style={styles.rmSection}>
-                <Text style={styles.rmLabel}>{t('online.mode')}</Text>
-                <View style={styles.rmTrack}>
-                  {(
-                    [
-                      { id: 'classic', label: 'Classic' },
-                      { id: 'center', label: 'Center Rush' },
-                      { id: 'race', label: 'Race' },
-                    ] as const
-                  ).map((m) => (
-                    <TouchableOpacity
-                      key={m.id}
-                      style={[styles.rmOpt, roomKind === m.id && styles.rmOptActive]}
-                      onPress={() => setRoomKind(m.id)}
-                    >
-                      <Text style={[styles.rmOptText, roomKind === m.id && styles.rmOptTextActive]}>
-                        {m.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+              <View style={styles.rmHeaderRow}>
+                <MaterialCommunityIcons name="plus-circle-outline" size={20} color={THEME.colors.primary} />
+                <Text style={styles.rmLabel}>{t('online.createRoom')}</Text>
               </View>
 
-              {/* Dynamic Player Count */}
-              {roomKind !== 'classic' && (
-                <View style={styles.rmSection}>
-                  <Text style={styles.rmLabel}>{t('online.players')}</Text>
-                  <View style={styles.rmTrack}>
-                    {([2, 3, 4] as const).map((n) => (
-                      <TouchableOpacity
-                        key={n}
-                        style={[styles.rmOpt, roomCount === n && styles.rmOptActive]}
-                        onPress={() => setRoomCount(n)}
-                      >
-                        <Text style={[styles.rmOptText, roomCount === n && styles.rmOptTextActive]}>
-                          {n} Players
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              {/* Time Control */}
-              <View style={styles.rmSection}>
-                <Text style={styles.rmLabel}>{t('online.timeControl')}</Text>
-                <View style={styles.rmTrack}>
-                  {TIME_CONTROLS.slice(0, 3).map((tc) => (
-                    <TouchableOpacity
-                      key={tc.id}
-                      style={[styles.rmOpt, clock.id === tc.id && styles.rmOptActive]}
-                      onPress={() => setClock(tc)}
-                    >
-                      <Text style={[styles.rmOptText, clock.id === tc.id && styles.rmOptTextActive]}>
-                        {tc.short}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {/* Walls Setting */}
-              <View style={styles.rmSection}>
-                <Text style={styles.rmLabel}>{t('online.walls')}</Text>
-                <View style={styles.rmTrack}>
-                  {([10, 15, 'unlimited'] as const).map((w) => (
-                    <TouchableOpacity
-                      key={w}
-                      style={[styles.rmOpt, wallsCount === w && styles.rmOptActive]}
-                      onPress={() => setWallsCount(w)}
-                    >
-                      <Text style={[styles.rmOptText, wallsCount === w && styles.rmOptTextActive]}>
-                        {w === 'unlimited' ? 'Unlimited ∞' : `${w} Walls`}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
+              <MatchOptionsPicker
+                mode={roomKind}
+                onModeChange={setRoomKind}
+                playerCount={roomCount}
+                onPlayerCountChange={setRoomCount}
+                walls={wallsCount}
+                onWallsChange={setWallsCount}
+                clock={clock}
+                onClockChange={setClock}
+              />
 
               {/* Create Room Button */}
               <TouchableOpacity
-                style={styles.rmCta}
+                style={[styles.rmCta, roomLoading && styles.btnDisabled]}
                 activeOpacity={0.88}
                 disabled={roomLoading}
                 onPress={() =>
                   runWhenOnline(() =>
-                    createRoom(roomType, clock, wallsCount === 'unlimited' ? 99 : wallsCount)
+                    createRoom(roomType, clock, wallsCount)
                   )
                 }
               >
                 {roomLoading ? (
-                  <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
+                  <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <Text style={styles.rmCtaText}>{t('online.createRoom')}</Text>
                 )}
               </TouchableOpacity>
             </View>
+            <AdBanner placement="lobby" />
           </>
         )}
       </ScrollView>
@@ -1271,7 +1249,10 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
           <View style={styles.sheetCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('online.roomSetup')}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Feather name="sliders" size={18} color={THEME.colors.primary} />
+                <Text style={styles.modalTitle}>{t('online.roomSetup')}</Text>
+              </View>
               <TouchableOpacity style={styles.sheetClose} onPress={() => setShowRoomSetup(false)}>
                 <Feather name="x" size={20} color={THEME.colors.textMuted} />
               </TouchableOpacity>
@@ -1279,82 +1260,25 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             <Text style={styles.quickAddSub}>
               {t('online.roomSetupSub')}
             </Text>
-            {/* Mode — same segmented control as the create form. */}
-            <View style={styles.rmSection}>
-              <Text style={styles.rmLabel}>{t('online.mode')}</Text>
-              <View style={styles.rmTrack}>
-                {(
-                  [
-                    { id: 'classic', label: 'Classic' },
-                    { id: 'center', label: 'Center Rush' },
-                    { id: 'race', label: 'Race' },
-                  ] as const
-                ).map((m) => (
-                  <TouchableOpacity
-                    key={m.id}
-                    style={[styles.rmOpt, setupKind === m.id && styles.rmOptActive]}
-                    onPress={() => setSetupKind(m.id)}
-                  >
-                    <Text style={[styles.rmOptText, setupKind === m.id && styles.rmOptTextActive]}>
-                      {m.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-            {/* Players — hidden for Classic, which is always head-to-head. */}
-            {setupKind !== 'classic' && (
-              <View style={styles.rmSection}>
-                <Text style={styles.rmLabel}>{t('online.players')}</Text>
-                <View style={styles.rmTrack}>
-                  {([2, 3, 4] as const).map((n) => (
-                    <TouchableOpacity
-                      key={n}
-                      style={[styles.rmOpt, setupCount === n && styles.rmOptActive]}
-                      onPress={() => setSetupCount(n)}
-                    >
-                      <Text style={[styles.rmOptText, setupCount === n && styles.rmOptTextActive]}>
-                        {n} Players
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-            {/* Time Control */}
-            <View style={styles.rmSection}>
-              <Text style={styles.rmLabel}>{t('online.timeControl')}</Text>
-              <View style={styles.rmTrack}>
-                {TIME_CONTROLS.slice(0, 3).map((tc) => (
-                  <TouchableOpacity
-                    key={tc.id}
-                    style={[styles.rmOpt, setupClock.id === tc.id && styles.rmOptActive]}
-                    onPress={() => setSetupClock(tc)}
-                  >
-                    <Text style={[styles.rmOptText, setupClock.id === tc.id && styles.rmOptTextActive]}>
-                      {tc.short}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-            {/* Walls */}
-            <View style={styles.rmSection}>
-              <Text style={styles.rmLabel}>{t('online.walls')}</Text>
-              <View style={styles.rmTrack}>
-                {([10, 15, 'unlimited'] as const).map((w) => (
-                  <TouchableOpacity
-                    key={w}
-                    style={[styles.rmOpt, setupWalls === w && styles.rmOptActive]}
-                    onPress={() => setSetupWalls(w)}
-                  >
-                    <Text style={[styles.rmOptText, setupWalls === w && styles.rmOptTextActive]}>
-                      {w === 'unlimited' ? 'Unlimited ∞' : `${w} Walls`}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+
+            <ScrollView
+              style={styles.modalSetupScroll}
+              contentContainerStyle={styles.modalSetupContent}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+            >
+              <MatchOptionsPicker
+                mode={setupKind}
+                onModeChange={setSetupKind}
+                playerCount={setupCount}
+                onPlayerCountChange={setSetupCount}
+                walls={setupWalls}
+                onWallsChange={setSetupWalls}
+                clock={setupClock}
+                onClockChange={setSetupClock}
+              />
+            </ScrollView>
+
             <TouchableOpacity
               style={[styles.rmCta, styles.sheetSaveBtn, setupSaving && styles.btnDisabled]}
               activeOpacity={0.88}
@@ -1362,7 +1286,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               onPress={() => void saveRoomSetup()}
             >
               {setupSaving ? (
-                <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <Text style={styles.rmCtaText}>{t('online.saveSetup')}</Text>
               )}
@@ -1491,25 +1415,27 @@ const createStyles = () => StyleSheet.create({
   lobbySetupBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: THEME.colors.surfacePrimaryTint,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfacePrimaryTintBorder,
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 2.5,
+    borderColor: 'transparent',
+    borderBottomWidth: 3,
+    borderBottomColor: THEME.colors.secondaryBevel,
   },
   lobbySetupText: {
-    fontFamily: THEME.fonts.semiBold,
+    fontFamily: THEME.fonts.extraBold,
     fontSize: 13,
-    fontWeight: '600',
-    color: THEME.colors.primary,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
   },
   lobbySummarySub: {
-    fontFamily: THEME.fonts.medium,
+    fontFamily: THEME.fonts.bold,
     fontSize: 12,
-    fontWeight: '500',
-    color: THEME.colors.textSecondaryStrong,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
     marginTop: 2,
   },
   slotsHeader: {
@@ -1778,25 +1704,40 @@ const createStyles = () => StyleSheet.create({
     color: THEME.colors.primary,
     fontWeight: '600',
   },
+  rmHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
+  modalSetupScroll: {
+    maxHeight: 460,
+    width: '100%',
+  },
+  modalSetupContent: {
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+  },
   rmCta: {
     width: '100%',
     backgroundColor: THEME.colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 10,
+    borderBottomWidth: 4,
+    borderBottomColor: THEME.colors.primaryBevel,
+    height: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    marginTop: 6,
   },
   rmCtaText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 14,
-    fontWeight: '700',
-    color: THEME.colors.onPrimary,
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
-  // Breathing room between the last sheet section (walls) and Save Setup.
-  // Scoped to the sheet so the create form's tighter stacking is untouched.
   sheetSaveBtn: {
-    marginTop: 16,
+    marginTop: 12,
   },
   rmJoinRow: {
     flexDirection: 'row',

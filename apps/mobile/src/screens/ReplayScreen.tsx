@@ -15,6 +15,8 @@ interface ReplayScreenProps {
   initialState: GameState;
   history: RecordedAction[];
   perspectiveIdx?: number;
+  /** False when the viewer is watching a match they did not play. */
+  isViewerSeated?: boolean;
   onBack: () => void;
   onAnalyze?: () => void;
 }
@@ -23,6 +25,7 @@ export const ReplayScreen: React.FC<ReplayScreenProps> = ({
   initialState,
   history,
   perspectiveIdx = 0,
+  isViewerSeated = true,
   onBack,
   onAnalyze,
 }) => {
@@ -38,6 +41,9 @@ export const ReplayScreen: React.FC<ReplayScreenProps> = ({
         initialState.mode === '2p' && perspectiveIdx === 1 ? 1 : 0
       )
   );
+  const bottomIdx =
+    initialState.mode === '2p' && perspectiveIdx === 1 ? 1 : 0;
+  const bottomPlayer = initialState.players[bottomIdx];
 
   return (
     <View style={styles.container}>
@@ -79,6 +85,13 @@ export const ReplayScreen: React.FC<ReplayScreenProps> = ({
             flipAnim={flip}
           />
         </Animated.View>
+      </View>
+
+      <View style={styles.seatRow}>
+        <Text style={styles.seatName} numberOfLines={1}>
+          {bottomPlayer?.displayName ?? ''}
+          {isViewerSeated && bottomPlayer ? ` ${t('gameover.you')}` : ''}
+        </Text>
       </View>
 
       <View style={styles.controlsRow}>
@@ -147,6 +160,16 @@ const createStyles = () => StyleSheet.create({
   boardWrap: {
     flex: 1,
     justifyContent: 'center',
+  },
+  seatRow: {
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  seatName: {
+    fontFamily: THEME.fonts.bold,
+    color: THEME.colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
   },
   controlsRow: {
     flexDirection: 'row',

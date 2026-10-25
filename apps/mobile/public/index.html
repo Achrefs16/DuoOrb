@@ -25,6 +25,16 @@
       gtag('set', 'url_passthrough', false);
     </script>
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6057010656402010" crossorigin="anonymous"></script>
+    <script>
+      window.adsbygoogle = window.adsbygoogle || [];
+      window.adBreak = window.adConfig = function (o) {
+        window.adsbygoogle.push(o);
+      };
+      window.adConfig({
+        preloadAdBreaks: 'on',
+        sound: 'on',
+      });
+    </script>
 
     <!-- PWA & Mobile Web Manifest -->
     <link rel="manifest" href="/manifest.json" />
@@ -241,21 +251,30 @@
 
     <style id="expo-reset">
       html {
-        height: 100%;
+        min-height: 100%;
         background-color: #F2F3FF;
       }
       body {
-        height: 100%;
         margin: 0;
         padding: 0;
-        overflow: hidden;
+        min-height: 100%;
         background-color: #F2F3FF;
         font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+      body:not(.duoorb-playing) {
+        overflow-y: auto;
+        height: auto;
+      }
+      body.duoorb-playing {
+        overflow: hidden;
+        height: 100%;
+        width: 100%;
+        position: fixed;
         overscroll-behavior: none;
         -webkit-user-select: none;
         user-select: none;
-        -webkit-tap-highlight-color: transparent;
       }
       html[lang="ar"],
       html[dir="rtl"],
@@ -412,6 +431,10 @@
       </div>
     </div>
     <style>
+      @keyframes splashFailSafe {
+        0%, 85% { opacity: 1; pointer-events: auto; }
+        100% { opacity: 0; pointer-events: none; visibility: hidden; }
+      }
       #duoorb-splash {
         position: fixed;
         inset: 0;
@@ -420,6 +443,7 @@
         align-items: center;
         justify-content: center;
         background-color: #F2F3FF;
+        animation: splashFailSafe 2.8s ease forwards;
       }
       .duoorb-splash-inner {
         display: flex;
@@ -757,56 +781,50 @@
       </footer>
     </div>
     <style>
-      #duoorb-home { position: fixed; inset: 0; z-index: 9000; overflow-y: auto; background: var(--color-paper-white, #fff); scroll-padding-top: 84px; }
-      #duoorb-home.hidden { display: none; }
+      #duoorb-home {
+        position: relative;
+        z-index: 9000;
+        min-height: 100vh;
+        background: var(--color-paper-white, #fff);
+        scroll-padding-top: 84px;
+      }
+      body.duoorb-playing #duoorb-home,
+      #duoorb-home.hidden {
+        display: none !important;
+      }
       #duoorb-home [id] { scroll-margin-top: 84px; }
       #duoorb-home, #duoorb-home * { -webkit-user-select: text; user-select: text; }
-      #duoorb-webnav { position: fixed; z-index: 8000; display: none; background: rgba(255,255,255,0.96); border: 1px solid rgba(23,25,28,0.08); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-      body:not(.duoorb-in-menu) #duoorb-webnav-toggle,
-      body:not(.duoorb-in-menu) #duoorb-webnav { display: none !important; }
-      #duoorb-webnav a { text-decoration: none; font-size: 13px; font-weight: 500; color: #454c5b; padding: 8px 12px; border-radius: 10px; white-space: nowrap; }
-      #duoorb-webnav a:hover { background: #f2f2f3; color: #17191c; }
-      #duoorb-webnav .duoorb-webnav-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #7d8595; padding: 2px 12px 6px; }
-      #duoorb-webnav-toggle { position: fixed; top: 10px; right: 58px; z-index: 8001; display: none; width: 36px; height: 36px; border-radius: 10px; border: 1px solid rgba(23,25,28,0.08); background: #ffffff; color: #17191c; font-size: 17px; line-height: 1; cursor: pointer; align-items: center; justify-content: center; }
-      @media (min-width: 1100px) {
-        #duoorb-webnav.visible { display: flex; flex-direction: column; align-items: stretch; gap: 2px; left: 24px; top: 50%; transform: translateY(-50%); min-width: 176px; border-radius: 16px; padding: 10px 8px; }
-        #duoorb-webnav-toggle { display: none !important; }
+      body:not(.duoorb-playing) #root {
+        display: none !important;
       }
-      @media (max-width: 1099px) {
-        #duoorb-webnav-toggle.visible { display: flex; }
-        #duoorb-webnav.open { display: flex; flex-direction: column; align-items: stretch; gap: 2px; top: 56px; left: 0; right: 0; border-radius: 0; border-left: none; border-right: none; padding: 8px 12px 12px; }
-        #duoorb-webnav.open a { font-size: 15px; padding: 10px 12px; }
-        #duoorb-webnav .duoorb-webnav-label { display: none; }
-      }
-      @media (min-width: 600px) and (max-width: 1099px) {
-        #duoorb-webnav-toggle { right: calc(50% - min(210px, 24vh) + 58px); }
-      }
-      @media (min-width: 600px) and (max-aspect-ratio: 13/10) and (max-width: 1099px) {
-        #duoorb-webnav-toggle { right: calc(50% - min(290px, 46vw) + 58px); }
-      }
-      @media (min-width: 768px) and (max-width: 1099px) and (min-aspect-ratio: 13/10) {
-        #duoorb-webnav-toggle { right: calc(50% - min(270px, 34vh) + 58px); }
+      body.duoorb-playing #root {
+        display: flex !important;
       }
     </style>
-    <!-- Web site menu: left sidebar rail on wide screens, top-bar menu on mobile web. Web-only; the native app is untouched. -->
-    <nav id="duoorb-webnav" aria-label="Site">
-      <span class="duoorb-webnav-label">Explore</span><a href="/">Home</a><a href="/?play=1">Play</a><a href="/rules.html">Rules</a><a href="/strategy.html">Strategy</a><a href="/bots-and-analysis.html">AI &amp; Analysis</a><a href="/about.html">About</a>
-    </nav>
-    <button id="duoorb-webnav-toggle" aria-label="Open site menu" aria-expanded="false">☰</button>
     <script>
       (function() {
+        // PWA deferred prompt & Service Worker
+        window.__duoorbDeferredPrompt = null;
+        window.addEventListener('beforeinstallprompt', function (e) {
+          e.preventDefault();
+          window.__duoorbDeferredPrompt = e;
+          window.dispatchEvent(new CustomEvent('duoorb:install-ready'));
+        });
+
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', function () {
+            navigator.serviceWorker.register('/sw.js').catch(function () {});
+          });
+        }
+
         function showGame() {
           var home = document.getElementById('duoorb-home');
-          var nav = document.getElementById('duoorb-webnav');
-          var fab = document.getElementById('duoorb-webnav-toggle');
           if (home) {
             home.style.display = 'none';
             home.classList.add('hidden');
             home.setAttribute('aria-hidden', 'true');
           }
           document.body.classList.add('duoorb-playing');
-          if (nav) nav.classList.add('visible');
-          if (fab) fab.classList.add('visible');
           try { history.replaceState({ duoorbPlay: 1 }, '', '/'); } catch (e) {}
         }
         function roomInUrl() { try { return /[?&](room|join|play)(=|&|$)/i.test(location.search); } catch (e) { return false; } }
@@ -816,35 +834,6 @@
           e.preventDefault();
           showGame();
         });
-        var fab = document.getElementById('duoorb-webnav-toggle');
-        var sitenav = document.getElementById('duoorb-webnav');
-        if (fab && sitenav) fab.addEventListener('click', function(e) {
-          e.stopPropagation();
-          var open = sitenav.classList.toggle('open');
-          fab.setAttribute('aria-expanded', open ? 'true' : 'false');
-        });
-        document.addEventListener('click', function(e) {
-          if (sitenav && sitenav.classList.contains('open') && fab && !sitenav.contains(e.target) && !fab.contains(e.target)) {
-            sitenav.classList.remove('open');
-            fab.setAttribute('aria-expanded', 'false');
-          }
-        });
-        // State-aware chrome: show the site menu only on game menu screens
-        // (history.state.sub == null). Inside matches/setup/review it hides
-        // completely so nothing floats over the board. Web-only; game untouched.
-        function syncNavVisibility() {
-          var sub = null;
-          try { sub = (window.history.state && window.history.state.sub) || null; } catch (e) {}
-          var inMenu = !sub;
-          document.body.classList.toggle('duoorb-in-menu', inMenu);
-          if (!inMenu && sitenav) {
-            sitenav.classList.remove('open');
-            if (fab) fab.setAttribute('aria-expanded', 'false');
-          }
-        }
-        window.addEventListener('popstate', syncNavVisibility);
-        setInterval(syncNavVisibility, 500);
-        syncNavVisibility();
         var btn = document.getElementById('mobile-nav-toggle');
         var drawer = document.getElementById('mobile-nav-drawer');
         if (btn && drawer) btn.addEventListener('click', function(e) {
@@ -853,7 +842,10 @@
           btn.classList.toggle('active', open);
           btn.setAttribute('aria-expanded', open ? 'true' : 'false');
         });
-        if (roomInUrl()) showGame();
+        var isStandalone =
+          (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+          window.navigator.standalone === true;
+        if (roomInUrl() || isStandalone) showGame();
         // Fragment links landing inside the overlay (e.g. /#mobile): the boot
         // splash + webfont/image layout shifts can strand the initial scroll,
         // so re-assert it after load. Same-page # links scroll the overlay.

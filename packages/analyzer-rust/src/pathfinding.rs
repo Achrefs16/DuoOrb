@@ -68,14 +68,15 @@ pub fn shortest_distance(from: CellCoord, goal: GoalDirection, board: &Board, mo
                 row: cur_cell.row + dr,
                 col: cur_cell.col + dc,
             };
-            if next.row >= 0 && next.row < BOARD_SIZE && next.col >= 0 && next.col < BOARD_SIZE {
-                if !board.is_blocked(cur_cell, next) {
-                    let next_idx = cell_index(next);
-                    if dist[next_idx] == -1 {
-                        dist[next_idx] = cur_dist + 1;
-                        queue[tail] = next_idx as u8;
-                        tail += 1;
-                    }
+            if (0..BOARD_SIZE).contains(&next.row)
+                && (0..BOARD_SIZE).contains(&next.col)
+                && !board.is_blocked(cur_cell, next)
+            {
+                let next_idx = cell_index(next);
+                if dist[next_idx] == -1 {
+                    dist[next_idx] = cur_dist + 1;
+                    queue[tail] = next_idx as u8;
+                    tail += 1;
                 }
             }
         }
@@ -84,7 +85,12 @@ pub fn shortest_distance(from: CellCoord, goal: GoalDirection, board: &Board, mo
     -1 // unreachable
 }
 
-pub fn shortest_path(from: CellCoord, goal: GoalDirection, board: &Board, mode: &str) -> Option<Vec<CellCoord>> {
+pub fn shortest_path(
+    from: CellCoord,
+    goal: GoalDirection,
+    board: &Board,
+    mode: &str,
+) -> Option<Vec<CellCoord>> {
     if is_goal_cell(from, goal, mode) {
         return Some(vec![]);
     }
@@ -117,15 +123,16 @@ pub fn shortest_path(from: CellCoord, goal: GoalDirection, board: &Board, mode: 
                 row: cur_cell.row + dr,
                 col: cur_cell.col + dc,
             };
-            if next.row >= 0 && next.row < BOARD_SIZE && next.col >= 0 && next.col < BOARD_SIZE {
-                if !board.is_blocked(cur_cell, next) {
-                    let next_idx = cell_index(next);
-                    if !visited[next_idx] {
-                        visited[next_idx] = true;
-                        parent[next_idx] = cur_idx as u8;
-                        queue[tail] = next_idx as u8;
-                        tail += 1;
-                    }
+            if (0..BOARD_SIZE).contains(&next.row)
+                && (0..BOARD_SIZE).contains(&next.col)
+                && !board.is_blocked(cur_cell, next)
+            {
+                let next_idx = cell_index(next);
+                if !visited[next_idx] {
+                    visited[next_idx] = true;
+                    parent[next_idx] = cur_idx as u8;
+                    queue[tail] = next_idx as u8;
+                    tail += 1;
                 }
             }
         }

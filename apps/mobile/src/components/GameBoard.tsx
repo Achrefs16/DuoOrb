@@ -73,11 +73,12 @@ interface GameBoardProps {
   rotationDeg?: number;
   /** Reports the computed square board size (for drag-drop mapping). */
   onMetricsChange?: (boardSize: number) => void;
-  /**
-   * Explicit square size. When provided, the board fills the measured free
+  /** Explicit square size. When provided, the board fills the measured free
    * area (e.g. large tablets) instead of the default phone-oriented cap.
    */
   size?: number;
+  /** Explicit frame corner radius (default 0 for sharp square corners matching Chess.com). */
+  borderRadius?: number;
 }
 
 /** Inner padding between the rim and the cell grid. */
@@ -106,9 +107,13 @@ const ACTIVE_SCALE = 1.15;
 const ACTIVE_PULSE = 1.04; // gentle breathing on top of the growth
 
 /** Board geometry shared with the drag-drop drop logic. */
-export function boardMetrics(boardSize: number, rim = 0): { cell: number; gap: number } {
+export function boardMetrics(
+  boardSize: number,
+  rim = 0,
+  gapOverride?: number
+): { cell: number; gap: number } {
   const content = boardSize - rim * 2 - BOARD_PAD * 2;
-  const gap = Math.max(5, Math.round(content * 0.018));
+  const gap = gapOverride ?? Math.max(5, Math.round(content * 0.018));
   const cell = (content - (BOARD_SIZE - 1) * gap) / BOARD_SIZE;
   return { cell, gap };
 }
@@ -121,9 +126,10 @@ export function nearestWallSlot(
   boardSize: number,
   x: number,
   y: number,
-  rim = 0
+  rim = 0,
+  gapOverride?: number
 ): { row: number; col: number } {
-  const { cell, gap } = boardMetrics(boardSize, rim);
+  const { cell, gap } = boardMetrics(boardSize, rim, gapOverride);
   // Touch points are outer-box relative (rim included); the grid origin is
   // rim + pad from the outer edge.
   const origin = rim + BOARD_PAD;
@@ -274,6 +280,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   rotationDeg = 0,
   onMetricsChange,
   size,
+  borderRadius = 0,
 }) => {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [measuredWidth, setMeasuredWidth] = useState(0);
@@ -294,7 +301,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   // Rim-aware grid: thick frames shrink the playable field instead of
   // clipping it. Classic rim is 0 — geometry untouched.
   const rim = boardRim(skin.frameBorderWidth);
-  const { cell: CELL, gap: GAP } = boardMetrics(boardSize, rim);
+  const { cell: CELL, gap: GAP } = boardMetrics(boardSize, rim, skin.cellGap);
   // Fence corner radius in px: capsule fills the wall thickness, a number
   // draws sharp rectangles (walnut 0). One helper so placed, preview,
   // queued and analysis walls always match.
@@ -441,7 +448,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
             backgroundColor: skin.boardBackground,
             borderColor: skin.boardBorder,
             borderWidth: skin.frameBorderWidth,
-            borderRadius: skin.frameRadius,
+            borderRadius: borderRadius,
           },
         ]}
       >
@@ -474,7 +481,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                   bottom: inset,
                   borderWidth: 1,
                   borderColor: skin.frameInnerBorder,
-                  borderRadius: Math.max(0, skin.frameRadius - inset),
+                  borderRadius: Math.max(0, borderRadius - inset),
                 }}
               />
             );
@@ -658,10 +665,8 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                   width: rect.width,
                   height: rect.height,
                   backgroundColor: wallFill,
-                  // Flat/neutral fences lie on the wood: no glow, no shadow.
-                  ...(skin.wallStyle === 'glow'
-                    ? { shadowColor: ball }
-                    : { shadowOpacity: 0, elevation: 0 }),
+                  shadowOpacity: 0,
+                  elevation: 0,
                   borderRadius: wallRadiusFor(rect.width, rect.height),
                 },
               ]}
@@ -698,30 +703,32 @@ const GameBoardView: React.FC<GameBoardProps> = ({
 
         {/* Wall intersection hints — visual only, not touchable.
             Walls are placed exclusively by dragging inventory pieces. */}
-        {Array.from({ length: 8 }).map((_, r) =>
+        {skin.wallSlot !== 'transparent' &&
+          (skin.wallSlotSize ?? 3) > 0 &&
+          Array.from({ length: 8 }).map((_, r) =>
             Array.from({ length: 8 }).map((_, c) => {
               const top = BOARD_PAD + (r + 1) * CELL + r * GAP - 7;
               const left = BOARD_PAD + (c + 1) * CELL + c * GAP - 7;
-            return (
-              <View
-                key={`slot-${r}-${c}`}
-                pointerEvents="none"
-                style={[styles.wallSlotTouchArea, { top, left }]}
-              >
+              return (
                 <View
-                  style={[
-                    styles.wallSlotPoint,
-                    {
-                      width: skin.wallSlotSize ?? 3,
-                      height: skin.wallSlotSize ?? 3,
-                      backgroundColor: skin.wallSlot,
-                    },
-                  ]}
-                />
-              </View>
-            );
-          })
-        )}
+                  key={`slot-${r}-${c}`}
+                  pointerEvents="none"
+                  style={[styles.wallSlotTouchArea, { top, left }]}
+                >
+                  <View
+                    style={[
+                      styles.wallSlotPoint,
+                      {
+                        width: skin.wallSlotSize ?? 3,
+                        height: skin.wallSlotSize ?? 3,
+                        backgroundColor: skin.wallSlot,
+                      },
+                    ]}
+                  />
+                </View>
+              );
+            })
+          )}
 
         {/* Animated orbs — no labels, color identity only. Finished players
             are off the board, so no orb remains on a freed goal cell. */}
@@ -832,7 +839,6 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                     height: orbDiameter,
                     borderRadius: 9999,
                     backgroundColor: ball,
-                    shadowColor: ball,
                     borderWidth: skin.orbRimWidth ?? 0,
                     borderColor: skin.orbRim ?? 'transparent',
                     transform: [
@@ -843,12 +849,14 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                   },
                 ]}
               >
-                <View
-                  style={[
-                    styles.orbHighlight,
-                    { backgroundColor: `rgba(255, 255, 255, ${skin.orbHighlightOpacity ?? 0.45})` },
-                  ]}
-                />
+                {(skin.orbHighlightOpacity ?? 0.45) > 0 && (
+                  <View
+                    style={[
+                      styles.orbHighlight,
+                      { backgroundColor: `rgba(255, 255, 255, ${skin.orbHighlightOpacity ?? 0.45})` },
+                    ]}
+                  />
+                )}
               </Animated.View>
               )}
             </Animated.View>
@@ -1006,7 +1014,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
 
         {/* Review: classification badge (?? / ? / ?! / !) on the destination */}
         {badgeMark && (
-          <View
+          <Animated.View
             pointerEvents="none"
             style={{
               position: 'absolute',
@@ -1021,6 +1029,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
               backgroundColor: badgeMark.color,
               alignItems: 'center',
               justifyContent: 'center',
+              transform: [{ rotate: orbCounterRotation }],
             }}
           >
             <Text
@@ -1033,7 +1042,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
             >
               {badgeMark.glyph}
             </Text>
-          </View>
+          </Animated.View>
         )}
 
         {/* Review: best-move arrow (piece moves; best walls use altMark) */}
@@ -1183,7 +1192,6 @@ const getBoardStyles = () =>
     position: 'relative',
     overflow: 'hidden',
     alignSelf: 'center',
-    ...THEME.shadows.card,
   },
   cell: {
     position: 'absolute',
@@ -1197,11 +1205,6 @@ const getBoardStyles = () =>
   crown: {
     backgroundColor: THEME.colors.player4Amber,
     transform: [{ rotate: '45deg' }],
-    shadowColor: THEME.colors.player4Amber,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 6,
-    elevation: 4,
     opacity: 0.9,
   },
   orbWrap: {
@@ -1215,7 +1218,6 @@ const getBoardStyles = () =>
   orb: {
     justifyContent: 'center',
     alignItems: 'center',
-    ...THEME.shadows.orb,
     position: 'relative',
     overflow: 'hidden',
   },
@@ -1230,7 +1232,6 @@ const getBoardStyles = () =>
   placedWall: {
     position: 'absolute',
     overflow: 'hidden',
-    ...THEME.shadows.wall,
     zIndex: 10,
   },
   previewWall: {

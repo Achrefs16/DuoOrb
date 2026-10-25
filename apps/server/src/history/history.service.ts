@@ -86,6 +86,10 @@ export class HistoryService {
               avatarUrl: opponentPlayer.user.profile?.avatarUrl,
               ratingBefore: opponentPlayer.ratingBefore,
               ratingAfter: opponentPlayer.ratingAfter,
+              isPremium:
+                Boolean(opponentPlayer.user.profile?.isPremium) &&
+                (!opponentPlayer.user.profile?.premiumExpiresAt ||
+                  new Date(opponentPlayer.user.profile.premiumExpiresAt).getTime() > Date.now()),
             }
           : null,
       };
@@ -157,6 +161,10 @@ export class HistoryService {
         ratingAfter: p.ratingAfter,
         isWinner: p.isWinner,
         placement: p.placement,
+        isPremium:
+          Boolean(p.user.profile?.isPremium) &&
+          (!p.user.profile?.premiumExpiresAt ||
+            new Date(p.user.profile.premiumExpiresAt).getTime() > Date.now()),
       })),
       moves: game.moves.map((m) => ({
         sequence: m.sequence,

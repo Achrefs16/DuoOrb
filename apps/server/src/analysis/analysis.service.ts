@@ -13,6 +13,9 @@ import {
 export class AnalysisService {
   private readonly logger = new Logger(AnalysisService.name);
 
+  /** Bump together with the Rust `review.analysis_version`. */
+  private static readonly ANALYSIS_VERSION = 'analysis-2.1';
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -41,9 +44,20 @@ export class AnalysisService {
         const cached = await this.prisma.gameAnalysis.findUnique({
           where: { gameId },
         });
-        if (cached && cached.reviewData) {
+        if (
+          cached &&
+          cached.reviewData &&
+          cached.analysisVersion === AnalysisService.ANALYSIS_VERSION
+        ) {
           this.logger.debug(`Cache hit for game review: ${gameId}`);
           return cached.reviewData as unknown as GameReview;
+        }
+        if (cached && cached.reviewData) {
+          // Stale "everything is a blunder" review (analysis-2.0): recompute
+          // now and let the upsert below replace both the JSON and version.
+          this.logger.debug(
+            `Stale analysis cache for ${gameId} (${cached.analysisVersion}); recomputing`
+          );
         }
       } catch (err: any) {
         this.logger.warn(`Failed reading analysis cache for ${gameId}: ${err.message}`);
@@ -152,13 +166,15 @@ export class AnalysisService {
           where: { gameId },
           create: {
             gameId,
-            engineVersion: review.engineVersion ?? 'duoorb-rust-1.0',
-            analysisVersion: review.analysisVersion ?? 'analysis-1.0',
+            engineVersion: review.engineVersion ?? 'duoorb-rust-2.1',
+            analysisVersion: AnalysisService.ANALYSIS_VERSION,
             totalMoves: review.totalMoves,
             winnerId: review.winnerId ?? null,
             reviewData: review as any,
           },
           update: {
+            engineVersion: review.engineVersion ?? 'duoorb-rust-2.1',
+            analysisVersion: AnalysisService.ANALYSIS_VERSION,
             reviewData: review as any,
           },
         })
@@ -184,6 +200,14 @@ export class AnalysisService {
 
     if (!record || !record.reviewData) {
       throw new NotFoundException(`No analysis found for game ${gameId}`);
+    }
+
+    // Never serve a cached "everything is a blunder" 2.0 review. The client
+    // will fall back to POST /review, which recomputes and replaces this row.
+    if (record.analysisVersion !== AnalysisService.ANALYSIS_VERSION) {
+      throw new NotFoundException(
+        `Analysis for game ${gameId} is outdated; request a fresh review`
+      );
     }
 
     return record.reviewData as unknown as GameReview;

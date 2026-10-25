@@ -91,6 +91,8 @@ export interface FriendRequestItemDto {
   fromUsername: string;
   toUserId: string;
   createdAt: number;
+  fromDisplayName?: string;
+  isPremium?: boolean;
 }
 
 export interface LeaderboardEntryDto {
@@ -163,6 +165,7 @@ export interface GameHistoryItemDto {
     avatarUrl?: string;
     ratingBefore: number | null;
     ratingAfter: number | null;
+    isPremium?: boolean;
   } | null;
 }
 

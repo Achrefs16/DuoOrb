@@ -44,6 +44,9 @@ export const MoveTimeline: React.FC<MoveTimelineProps> = ({
 
 function timelineColor(a: MoveAssessment): string {
   switch (a) {
+    case 'BRILLIANT':
+    case 'GREAT':
+      return assessmentColor(a);
     case 'BEST':
       return THEME.colors.assessmentBest;
     case 'EXCELLENT':

@@ -9,6 +9,7 @@ export interface MatchedOpponent {
   userId: string;
   displayName: string;
   rating: number;
+  isPremium?: boolean;
 }
 
 interface UseMatchmakingOptions {

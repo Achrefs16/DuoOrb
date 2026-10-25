@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   getMatchSetupDraft,
+  recordBotVictoryStars,
   sanitizeMatchSetupDraft,
   saveMatchSetupDraft,
 } from './gameStorage';
@@ -63,5 +64,23 @@ describe('match setup drafts', () => {
     expect(getMatchSetupDraft('ai')).toEqual({ botId: 'nox', difficulty: 'hard' });
     expect(getMatchSetupDraft('local')).toEqual({ side: 'red' });
     expect(getMatchSetupDraft('online')).toEqual({});
+  });
+});
+
+describe('bot star mastery', () => {
+  it('keeps the best star rating and counts every win', async () => {
+    const first = await recordBotVictoryStars('test-bot', 1, 1);
+    expect(first.stars).toBe(1);
+    expect(first.wins).toBe(1);
+
+    const second = await recordBotVictoryStars('test-bot', 3, 4);
+    expect(second.stars).toBe(3);
+    expect(second.wins).toBe(2);
+    expect(second.bestMarginSteps).toBe(4);
+
+    const third = await recordBotVictoryStars('test-bot', 2, 2);
+    expect(third.stars).toBe(3);
+    expect(third.wins).toBe(3);
+    expect(third.bestMarginSteps).toBe(4);
   });
 });

@@ -31,6 +31,11 @@ export interface PremiumMe {
 
 const PREMIUM_CACHE_KEY = '@duoorb:premium:v1';
 
+/** Normal offline trust window for a server-confirmed entitlement. */
+const OFFLINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+/** Hard ceiling on how long a cached paid window is trusted without /me. */
+const MAX_OFFLINE_EXPIRY_TRUST_MS = 35 * 24 * 60 * 60 * 1000;
+
 const EMPTY: PremiumState = {
   isPremium: false,
   premiumExpiresAt: null,
@@ -60,11 +65,30 @@ function coerce(me: PremiumMe): Pick<PremiumState, 'isPremium' | 'premiumExpires
   return { isPremium: me.isPremium === true, premiumExpiresAt: rawExpiry };
 }
 
-/** Effective flag: a cached `true` past expiry reads as `false`. */
+/**
+ * Effective flag: a cached `true` past expiry reads as `false`.
+ *
+ * Offline trust is deliberately bounded: an explicit future expiry is good
+ * for at most 35 days after the last successful `/me`, while a lifetime /
+ * no-expiry entitlement survives 7 days. This keeps a stolen cache from
+ * granting Premium forever without ever re-checking the server.
+ */
 export function isPremiumActive(s: PremiumState = current): boolean {
   if (!s.isPremium) return false;
-  if (!s.premiumExpiresAt) return true;
-  return new Date(s.premiumExpiresAt).getTime() > Date.now();
+  const now = Date.now();
+  if (s.premiumExpiresAt) {
+    const until = Date.parse(s.premiumExpiresAt);
+    if (!Number.isFinite(until) || until <= now) return false;
+  }
+  if (s.syncedAt != null) {
+    const age = now - s.syncedAt;
+    if (age > MAX_OFFLINE_EXPIRY_TRUST_MS) return false;
+    if (!s.premiumExpiresAt && age > OFFLINE_GRACE_MS) return false;
+  }
+  // A legacy cache without syncedAt is trusted only while its explicit
+  // expiry says so (never indefinitely for a missing expiry).
+  if (s.syncedAt == null && !s.premiumExpiresAt) return false;
+  return true;
 }
 
 /** Fold a `/me` response into state + cache. Never throws. */

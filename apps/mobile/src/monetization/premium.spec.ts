@@ -98,4 +98,44 @@ describe('premium state', () => {
     expect(s.isPremium).toBe(false);
     expect(s.loading).toBe(false);
   });
+
+  it('trusts a future paid window for up to 35 days offline', () => {
+    const now = Date.now();
+    expect(
+      isPremiumActive({
+        isPremium: true,
+        premiumExpiresAt: new Date(now + 20 * 86400000).toISOString(),
+        syncedAt: now - 8 * 86400000,
+        loading: false,
+      })
+    ).toBe(true);
+    expect(
+      isPremiumActive({
+        isPremium: true,
+        premiumExpiresAt: new Date(now + 60 * 86400000).toISOString(),
+        syncedAt: now - 36 * 86400000,
+        loading: false,
+      })
+    ).toBe(false);
+  });
+
+  it('limits a no-expiry entitlement to the 7-day grace window', () => {
+    const now = Date.now();
+    expect(
+      isPremiumActive({
+        isPremium: true,
+        premiumExpiresAt: null,
+        syncedAt: now - 8 * 86400000,
+        loading: false,
+      })
+    ).toBe(false);
+    expect(
+      isPremiumActive({
+        isPremium: true,
+        premiumExpiresAt: null,
+        syncedAt: now - 6 * 86400000,
+        loading: false,
+      })
+    ).toBe(true);
+  });
 });

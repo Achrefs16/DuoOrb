@@ -37,64 +37,38 @@ vi.mock('../network/apiClient', () => ({
 }));
 
 /**
- * Per-game analysis unlocks (MONETIZATION.md P3.1): one ad view = one game,
- * rematches re-gate, stale entries prune (E13/E24).
+ * Analysis access tests: Game analysis is free for all players (no subscription or ad required).
  */
-describe('analysis unlocks', () => {
+describe('analysis access', () => {
   beforeEach(() => {
     store.clear();
   });
 
-  it('locks by default, unlocks after marking', async () => {
-    expect(await isAnalysisUnlocked('g1', 40)).toBe(false);
+  it('is always unlocked for all games and history lengths', async () => {
+    expect(await isAnalysisUnlocked('g1', 40)).toBe(true);
+    expect(await isAnalysisUnlocked('g2', 10)).toBe(true);
     await markAnalysisUnlocked('g1', 40);
     expect(await isAnalysisUnlocked('g1', 40)).toBe(true);
   });
 
-  it('scopes the unlock to the exact game + history length (E13)', async () => {
-    await markAnalysisUnlocked('g1', 40);
-    expect(await isAnalysisUnlocked('g1', 41)).toBe(false);
-    expect(await isAnalysisUnlocked('g2', 40)).toBe(false);
-    expect(unlockKey('g1', 40)).not.toBe(unlockKey('g1', 41));
-  });
-
-  it('prunes entries older than 30 days (E24)', async () => {
-    await markAnalysisUnlocked('old', 10);
-    store.set(
-      [...store.keys()].find((k) => k.includes('old'))!,
-      JSON.stringify({ u: 1, t: Date.now() - 31 * 24 * 3600 * 1000 })
-    );
-    await markAnalysisUnlocked('fresh', 10);
-    await pruneAnalysisUnlocks();
-    expect(await isAnalysisUnlocked('old', 10)).toBe(false);
-    expect(await isAnalysisUnlocked('fresh', 10)).toBe(true);
-  });
-
-  it('resolves the premium > unlocked > locked priority', () => {
+  it('resolves access to unlocked for free users and premium for subscribers', () => {
     expect(resolveAccess(true, false)).toBe('premium');
     expect(resolveAccess(true, true)).toBe('premium');
     expect(resolveAccess(false, true)).toBe('unlocked');
-    expect(resolveAccess(false, false)).toBe('locked');
+    expect(resolveAccess(false, false)).toBe('unlocked');
   });
 
-  it('grants one free analysis per day, then locks (D4)', async () => {
-    expect(FREE_ANALYSES_PER_DAY).toBe(1);
+  it('grants free analysis without spending quotas or locking behind ads', async () => {
+    expect(FREE_ANALYSES_PER_DAY).toBe(Infinity);
     expect(await getFreeAnalysesUsedToday()).toBe(0);
-    // First game of the day: daily entry, unlock written.
-    expect(await requestAnalysisEntry(false, 'g1', 40)).toBe('daily');
-    expect(await isAnalysisUnlocked('g1', 40)).toBe(true);
-    expect(await getFreeAnalysesUsedToday()).toBe(1);
-    // Re-opening the same game stays free without spending again (E13).
     expect(await requestAnalysisEntry(false, 'g1', 40)).toBe('unlocked');
-    expect(await getFreeAnalysesUsedToday()).toBe(1);
-    // Second game the same day: quota spent -> ad gate.
-    expect(await requestAnalysisEntry(false, 'g2', 40)).toBe('locked');
-    expect(await consumeFreeAnalysis()).toBe(false);
+    expect(await requestAnalysisEntry(false, 'g2', 10)).toBe('unlocked');
+    expect(await requestAnalysisEntry(false, 'g3', 50)).toBe('unlocked');
+    expect(await consumeFreeAnalysis()).toBe(true);
   });
 
-  it('premium never touches the daily quota', async () => {
+  it('grants premium status for premium subscribers', async () => {
     expect(await requestAnalysisEntry(true, 'g9', 10)).toBe('premium');
-    expect(await getFreeAnalysesUsedToday()).toBe(0);
   });
 
   it('day keys roll over by local calendar date', () => {

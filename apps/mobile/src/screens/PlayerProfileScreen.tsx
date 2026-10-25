@@ -340,6 +340,12 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
             mode: replay.mode,
             playerNames: replay.players.map((p: any) => p.displayName),
           });
+          const owner = replay.players.find((p: any) => p.userId === userId);
+          const viewer = identity?.userId
+            ? replay.players.find((p: any) => p.userId === identity.userId)
+            : undefined;
+          const ownerSeatId = owner ? `p${owner.playerIndex + 1}` : null;
+          const viewerSeatId = viewer ? `p${viewer.playerIndex + 1}` : null;
           const record: SavedGameRecord = {
             id: replay.gameId,
             date: new Date(replay.endedAt).getTime(),
@@ -347,6 +353,12 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
             type: 'online',
             winnerId: replay.winnerId,
             winnerName: replay.players.find((p: any) => p.isWinner)?.displayName ?? 'Winner',
+            myPlayerId: viewerSeatId,
+            perspectivePlayerId: viewerSeatId ?? ownerSeatId ?? 'p1',
+            isViewerSeated: viewerSeatId != null,
+            endedReason: replay.endedReason ?? 'GOAL',
+            timeControlMinutes: replay.timeControlMinutes,
+            incrementSeconds: replay.incrementSeconds,
             totalMoves: replay.moves.length,
             durationSeconds: Math.floor(
               (new Date(replay.endedAt).getTime() - new Date(replay.startedAt || replay.endedAt).getTime()) / 1000
@@ -838,14 +850,17 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                           </Text>
                         </View>
                         <View>
-                          <Text style={styles.matchModeText}>
-                            vs {opp}
-                            {oppRating !== undefined && oppRating !== null ? (
-                              <Text style={isViewer ? styles.ownRatingBlue : styles.oppRatingMuted}>
-                                {' '}({Math.round(oppRating)})
-                              </Text>
-                            ) : null}
-                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Text style={styles.matchModeText}>
+                              vs {opp}
+                              {oppRating !== undefined && oppRating !== null ? (
+                                <Text style={isViewer ? styles.ownRatingBlue : styles.oppRatingMuted}>
+                                  {' '}({Math.round(oppRating)})
+                                </Text>
+                              ) : null}
+                            </Text>
+                            {match.opponent?.isPremium && <PremiumBadge size="xs" />}
+                          </View>
                           <Text style={styles.matchDateText}>
                             {clockDisplayName(match)}
                             {match.isRanked ? ` · ${delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} pts` : ''}

@@ -23,11 +23,13 @@ import { isPremiumActive, usePremium } from '../monetization/premium';
  * `classic` with no error and no blank surface.
  */
 
-export type BoardSkinId = 'classic' | 'walnut';
+export type BoardSkinId = 'classic' | 'walnut' | 'tactile' | 'stone';
 
 export const BOARD_SKIN_IDS: readonly BoardSkinId[] = [
   'classic',
   'walnut',
+  'tactile',
+  'stone',
 ];
 
 /** Board-surface tokens (kept so existing palette call sites typecheck). */
@@ -72,6 +74,8 @@ export interface BoardSkin extends BoardPalette {
   /** Cell silhouette + checker second tone. */
   cellRadius: number;
   cellAlt?: string;
+  /** Inter-cell spacing / channel width override (defaults to ~1.8% of board area). */
+  cellGap?: number;
   /** Painted tile bevel: lighter top/left edge, darker bottom/right edge. */
   cellBevelLight?: string;
   cellBevelDark?: string;
@@ -210,13 +214,119 @@ export const WALNUT_SKIN: BoardSkin = {
   hudChip: '#F5E6C8',
 };
 
+/**
+ * Tactile 3D — Rounded squircle porcelain tiles on warm stone gutters,
+ * neutral capsule clay walls, 3D glossy spheres, NO intersection dots.
+ */
+export const TACTILE_BOARD: BoardPalette = {
+  boardBackground: '#E8E5DC',
+  boardBorder: '#D8D4C8',
+  cell: '#F6F4EE',
+  cellBorder: '#E6E2D8',
+  wallSlot: 'transparent',
+  trayCard: '#FFFFFF',
+  trayHairline: '#E2DED6',
+  trayPill: '#F6F4EE',
+  trayCount: '#1E293B',
+};
+
+export const TACTILE_SKIN: BoardSkin = {
+  ...TACTILE_BOARD,
+  id: 'tactile',
+  premiumOnly: false,
+  boardBackground: '#E8E5DC',
+  boardBorder: '#D8D4C8',
+  cell: '#F6F4EE',
+  cellBorder: '#E6E2D8',
+  cellBevelLight: '#FFFFFF',
+  cellBevelDark: '#D8D4C8',
+  cellRadius: 9,
+  frameRadius: 14,
+  frameBorderWidth: 4,
+  frameInnerBorder: '#E5E1D7',
+  frameSheen: false,
+  wallRadius: 'capsule',
+  wallStyle: 'neutral',
+  neutralWall: '#7D7666',
+  neutralWallEdge: '#9B9482',
+  wallSlot: 'transparent',
+  wallSlotSize: 0,
+  orbStyle: 'gloss',
+  orbShadow: true,
+  orbHighlightOpacity: 0.65,
+  orbRimWidth: 0,
+  trayRadius: 10,
+  traySlotRadius: 6,
+  hudCard: '#FFFFFF',
+  hudBorder: '#E2DED6',
+  hudInk: '#1E293B',
+  hudSubInk: '#64748B',
+  hudChip: '#F6F4EE',
+};
+
+/**
+ * Warm Stone Chess — Soft inset checkerboard in warm ivory & stone.
+ * Light cells #F7F6F2, dark cells #EDEBE5, stone groove #E8E6DF.
+ * Reduced corner radius (2px), tight gaps (3px), no glass effect, no dots.
+ */
+export const STONE_BOARD: BoardPalette = {
+  boardBackground: '#E8E6DF',
+  boardBorder: '#D4D0C5',
+  cell: '#F7F6F2',
+  cellBorder: '#DFDDD5',
+  wallSlot: 'transparent',
+  trayCard: '#FFFFFF',
+  trayHairline: '#E2DED6',
+  trayPill: '#F7F6F2',
+  trayCount: '#1E293B',
+};
+
+export const STONE_SKIN: BoardSkin = {
+  ...STONE_BOARD,
+  id: 'stone',
+  premiumOnly: false,
+  boardBackground: '#E8E6DF',
+  boardBorder: '#D4D0C5',
+  cell: '#F7F6F2',
+  cellAlt: '#EDEBE5',
+  cellBorder: '#DFDDD5',
+  cellRadius: 2,
+  cellGap: 3,
+  frameRadius: 8,
+  frameBorderWidth: 3,
+  frameInnerBorder: '#DDD9CF',
+  frameSheen: false,
+  wallRadius: 2,
+  wallStyle: 'neutral',
+  neutralWall: '#8A8474',
+  neutralWallEdge: '#5C5648',
+  wallSlot: 'transparent',
+  wallSlotSize: 0,
+  orbStyle: 'gloss',
+  orbShadow: false,
+  orbHighlightOpacity: 0,
+  orbRimWidth: 0,
+  trayRadius: 8,
+  traySlotRadius: 4,
+  hudCard: '#FFFFFF',
+  hudBorder: '#E2DED6',
+  hudInk: '#1E293B',
+  hudSubInk: '#64748B',
+  hudChip: '#F7F6F2',
+};
+
 export const BOARD_SKINS: Record<BoardSkinId, BoardSkin> = {
   classic: CLASSIC_LIGHT_SKIN,
   walnut: WALNUT_SKIN,
+  tactile: TACTILE_SKIN,
+  stone: STONE_SKIN,
 };
 
 export function parseBoardSkinId(raw: unknown): BoardSkinId {
-  return raw === 'walnut' ? raw : 'classic';
+  if (raw === 'walnut') return 'walnut';
+  if (raw === 'tactile') return 'tactile';
+  if (raw === 'stone' || raw === 'chess') return 'stone';
+  return 'classic';
 }
 
 /**
@@ -281,13 +391,14 @@ export function resolveBoardSkin(
   premiumActive: boolean,
   mode: BoardThemeName
 ): BoardSkin {
-  if (id !== 'classic' && !skinsUnlocked(premiumActive)) {
-    return mode === 'midnight' ? CLASSIC_MIDNIGHT_SKIN : CLASSIC_LIGHT_SKIN;
-  }
   if (id === 'classic') {
     return mode === 'midnight' ? CLASSIC_MIDNIGHT_SKIN : CLASSIC_LIGHT_SKIN;
   }
-  return BOARD_SKINS[id];
+  const skin = BOARD_SKINS[id] ?? CLASSIC_LIGHT_SKIN;
+  if (skin.premiumOnly && !skinsUnlocked(premiumActive)) {
+    return mode === 'midnight' ? CLASSIC_MIDNIGHT_SKIN : CLASSIC_LIGHT_SKIN;
+  }
+  return skin;
 }
 
 /**

@@ -31,6 +31,8 @@ interface RewardSheetProps {
   /** Paywall entry (P7): unlimited analysis with no ads. */
   onPremium: () => void;
   onClose: () => void;
+  /** Copy variant: analysis unlock (default) or the offline +3 Undo offer. */
+  variant?: 'analysis' | 'undo';
 }
 
 export const RewardSheet: React.FC<RewardSheetProps> = ({
@@ -40,9 +42,11 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
   onWatch,
   onPremium,
   onClose,
+  variant = 'analysis',
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const isUndo = variant === 'undo';
 
   const getErrorCopy = (err: string): string => {
     switch (err) {
@@ -61,25 +65,33 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
     <View style={styles.backdrop}>
       <View style={styles.card}>
         <View style={styles.titleRow}>
-          <Feather name="lock" size={18} color={THEME.colors.primary} />
-          <Text style={styles.title}>{t('reward.title')}</Text>
+          <Feather
+            name={isUndo ? 'rotate-ccw' : 'lock'}
+            size={18}
+            color={THEME.colors.primary}
+          />
+          <Text style={styles.title}>
+            {isUndo ? t('undoSheet.title') : t('reward.title')}
+          </Text>
         </View>
         <Text style={styles.copy}>
-          {t('reward.copy')}
+          {isUndo ? t('undoSheet.copy') : t('reward.copy')}
         </Text>
         <TouchableOpacity
           style={[styles.watchButton, busy && styles.watchButtonBusy]}
           onPress={onWatch}
           disabled={busy}
           accessibilityRole="button"
-          accessibilityLabel={t('reward.watchA11y')}
+          accessibilityLabel={isUndo ? t('undoSheet.watchA11y') : t('reward.watchA11y')}
         >
           {busy ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <>
               <Feather name="play" size={16} color="#FFFFFF" />
-              <Text style={styles.watchText}>{t('reward.watch')}</Text>
+              <Text style={styles.watchText}>
+                {isUndo ? t('undoSheet.watch') : t('reward.watch')}
+              </Text>
             </>
           )}
         </TouchableOpacity>

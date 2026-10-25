@@ -2,6 +2,7 @@ import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { ChallengeDto } from '@duoorb/protocol';
+import { PremiumBadge } from './PremiumBadge';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
 import { modeLabel } from '../matchModes';
@@ -85,9 +86,12 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
                 </Text>
               </View>
               <View style={styles.meta}>
-                <Text style={styles.title} numberOfLines={1}>
-                  {incoming.fromDisplayName}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={styles.title} numberOfLines={1}>
+                    {incoming.fromDisplayName}
+                  </Text>
+                  {incoming.isPremium && <PremiumBadge size="xs" />}
+                </View>
                 <Text style={styles.sub}>{t('challengeToast.wantsToPlay')}</Text>
               </View>
               <View style={styles.swords}>

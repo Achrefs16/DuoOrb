@@ -366,6 +366,9 @@ export class UsersService {
 
     return profiles.map((p) => {
       const r = p.user.ratings[0];
+      const isPremium =
+        Boolean(p.isPremium) &&
+        (!p.premiumExpiresAt || new Date(p.premiumExpiresAt).getTime() > Date.now());
       return {
         id: p.userId,
         username: p.username,
@@ -373,6 +376,7 @@ export class UsersService {
         avatarUrl: p.avatarUrl,
         rating: r?.rating ?? 1500,
         isOnline: p.isOnline,
+        isPremium,
       };
     });
   }

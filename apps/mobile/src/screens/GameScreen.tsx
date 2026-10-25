@@ -16,26 +16,28 @@ import {
   boardOf,
   createInitialState,
   forfeitMatch,
-  getBestActionAsync,
   getLegalMoves,
   getLegalMovesFrom,
+  getShortestDistance,
   isLegalWallPlacement,
   playerCountForMode,
   rebuildStateAtStep,
   routeOf,
 } from '@duoorb/game-core';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import type { GameSyncDto } from '@duoorb/protocol';
 import { GameBoard, boardRim, isInsideBoard, nearestWallSlot } from '../components/GameBoard';
 import { PlayerStrip, type SeatStatus } from '../components/GameHud';
 import { GameOverModal } from '../components/GameOverModal';
+import { analyzeMatchLocal } from '../analysis/localReview';
+import { reviewCacheKey, cacheReview } from './GameReviewScreen';
 import { PlayerProfileScreen } from './PlayerProfileScreen';
 import { SideChoice } from './MatchSetupScreen';
 import { WallTray } from '../components/WallTray';
 import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playNotifySound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
 import { toast } from '../components/AppToast';
-import { SavedGameRecord, loadOnlineGameSnapshot, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
-import { THEME, playerColor, useStyles, wallPreviewColor } from '../theme';
+import { SavedGameRecord, loadOnlineGameSnapshot, recordBotVictoryStars, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
+import { THEME, hexToRgba, playerColor, useStyles, useTheme, wallPreviewColor } from '../theme';
 import { CLOCK_ENABLED, DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
 import { useQuickReactions, groupReactionsBySeat } from '../network/useQuickReactions';import { ReactionDock, ReactionTray } from '../components/QuickReactions';
@@ -48,13 +50,44 @@ import { socketManager } from '../network/socket';
 import { RewardSheet } from '../components/RewardSheet';
 import { PremiumSheet } from '../components/PremiumSheet';
 import { useBotDialogue } from '../ai/useBotDialogue';
+import { cancelAiSearch, getAiMove } from '../ai/aiWorkerClient';
 import { BotSpeechBubble } from '../components/BotSpeechBubble';
 import { isPremiumActive, refreshPremium, usePremium } from '../monetization/premium';
 import { preloadRewarded, showRewarded } from '../monetization/ads';
 import { markAnalysisUnlocked, requestAnalysisEntry } from '../monetization/analysisAccess';
-import { showInterstitialIfDue } from '../monetization/interstitial';
+import { recordGameFinished, showInterstitialIfDue } from '../monetization/interstitial';
+import { preloadInterstitial } from '../monetization/adsNative';
 import { ensureSessionRecorded } from '../monetization/realAds';
+import { canUndoAiTurn, findUndoTargetStep } from '../lib/undo';
 import { useTranslation } from '../i18n';
+import { BotAvatar } from '../components/BotAvatar';
+import { SmoothStar } from '../components/SmoothStar';
+import { WallIcon } from '../components/WallIcon';
+import { setSfxMuted } from '../audio/sfx';
+
+function formatTimer(seconds?: number): string {
+  if (seconds === undefined || seconds <= 0) return '0:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
+function countryFlagFor(name?: string, botId?: string | null): string {
+  if (botId === 'martin') return '🇺🇸';
+  if (botId === 'pip') return '🇬🇧';
+  if (botId === 'elias') return '🇩🇪';
+  if (botId === 'bram') return '🇳🇱';
+  if (botId === 'nelson') return '🇸🇪';
+  if (botId === 'vex') return '🇯🇵';
+  if (botId === 'jamal') return '🇫🇷';
+  if (botId === 'marcus') return '🇮🇹';
+  if (botId === 'viktor') return '🇷🇺';
+  if (botId === 'achref') return '🇹🇳';
+  const lower = name?.toLowerCase() ?? '';
+  if (lower.includes('achref')) return '🇹🇳';
+  if (lower.includes('martin')) return '🇺🇸';
+  return '🌐';
+}
 
 interface GameScreenProps {
   mode: GameMode;
@@ -83,10 +116,13 @@ interface GameScreenProps {
     initialState: GameState,
     history: any[],
     perspectiveIdx: number,
-    access: { gameId: string; historyLength: number }
+    access: { gameId: string; historyLength: number },
+    ratings?: Record<string, number>,
+    seatPremium?: Record<string, boolean>
   ) => void;
   /** Opens the shared player profile for a seat that has an account behind it. */
   onOpenPlayerProfile?: (player: { userId: string; username: string }) => void;
+  onSelectBots?: () => void;
   wallsEach?: number;
 }
 
@@ -202,6 +238,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   onNewGame,
   onRematchAccepted,
   onAnalyze,
+  onSelectBots,
   // Accepted for API compatibility (App passes it) but intentionally
   // unused: opponent profiles open as an in-game overlay so this screen
   // never unmounts mid-match. See profilePlayer.
@@ -210,6 +247,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const identity = useIdentity();
   const { t } = useTranslation();
+  const theme = useTheme();
+  const isDark = theme.mode === 'dark';
+  const dockIconColor = THEME.colors.textPrimary;
+  const dockLabelColor = THEME.colors.textSecondary;
+  const dockDisabledColor = THEME.colors.textMuted;
 
   const online = useOnlineGame({
     gameId: onlineGameId || '',
@@ -266,6 +308,49 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
     return map;
   }, [type, personality, humanIdx, state.players]);
+
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [soundMuted, setSoundMuted] = useState(false);
+  const [chatTrayOpen, setChatTrayOpen] = useState(false);
+  const [hintMove, setHintMove] = useState<CellCoord | null>(null);
+
+  const seatRatings = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (let i = 0; i < state.players.length; i++) {
+      const p = state.players[i];
+      if (type === 'ai') {
+        if (i === humanIdx) {
+          map[p.id] = (identity as any)?.rating ?? 1200;
+        } else {
+          map[p.id] = personality?.elo ?? 400;
+        }
+      } else if (type === 'online') {
+        if (i === humanIdx) {
+          map[p.id] = (identity as any)?.rating ?? 1200;
+        } else {
+          map[p.id] = 1150;
+        }
+      }
+    }
+    return map;
+  }, [state.players, type, humanIdx, identity, personality]);
+
+  const seatCountryFlags = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (let i = 0; i < state.players.length; i++) {
+      const p = state.players[i];
+      if (type === 'ai') {
+        if (i === humanIdx) {
+          map[p.id] = countryFlagFor(p.displayName);
+        } else {
+          map[p.id] = countryFlagFor(personality?.name, personality?.id);
+        }
+      } else {
+        map[p.id] = countryFlagFor(p.displayName);
+      }
+    }
+    return map;
+  }, [state.players, type, humanIdx, personality]);
 
   // Cached last-known online state keeps the finished/live board visible
   // during reconnects. The server still replaces it on the next sync.
@@ -333,6 +418,43 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
   const [showGameOver, setShowGameOver] = useState<boolean>(false);
+  const [botStarsEarned, setBotStarsEarned] = useState<1 | 2 | 3 | null>(null);
+  const [localMoveCounts, setLocalMoveCounts] = useState<{ best: number; excellent: number; good: number } | null>(null);
+
+  useEffect(() => {
+    if (state.status !== 'COMPLETED' || state.history.length === 0) {
+      setLocalMoveCounts(null);
+      return;
+    }
+    let cancelled = false;
+    const myId =
+      type === 'online'
+        ? online.myPlayerId
+        : type === 'ai'
+        ? state.players[humanIdx]?.id
+        : state.players[0]?.id;
+
+    void analyzeMatchLocal(initialState, state.history, {
+      budgetMs: 15,
+      isCancelled: () => cancelled,
+    }).then((review) => {
+      if (cancelled) return;
+      const key = reviewCacheKey(state.gameId, state.history.length);
+      cacheReview(key, review);
+
+      const userMoves = review.moveAnalyses.filter((m) => m.playerId === myId);
+      const best = userMoves.filter((m) => m.assessment === 'BEST').length;
+      const excellent = userMoves.filter((m) => m.assessment === 'EXCELLENT').length;
+      const good = userMoves.filter((m) => m.assessment === 'GOOD').length;
+      setLocalMoveCounts({ best, excellent, good });
+    }).catch(() => {
+      if (!cancelled) setLocalMoveCounts({ best: 0, excellent: 0, good: 0 });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.status, state.gameId, state.history, initialState, type, humanIdx, online.myPlayerId]);
   // Rewarded-analysis gate (MONETIZATION.md P3.2): the GameOverModal Analyze
   // row funnels through handleAnalyzePress below — premium/unlocked go
   // straight to review, everyone else gets this sheet (one ad = this game).
@@ -355,6 +477,17 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [rewardOpen, setRewardOpen] = useState(false);
   const [rewardBusy, setRewardBusy] = useState(false);
   const [rewardError, setRewardError] = useState<string | null>(null);
+  // Offline AI undo economy: one free undo for Premium, otherwise a rewarded
+  // video grants three credits. `undosUsedRef` belongs to the 3-star mastery
+  // rating (Phase 3) and resets per match.
+  const [undoCredits, setUndoCredits] = useState(0);
+  const [undoSheetOpen, setUndoSheetOpen] = useState(false);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [undoError, setUndoError] = useState<string | null>(null);
+  const undosUsedRef = useRef(0);
+  // One interstitial decision per finished match, never per button press.
+  const interstitialFiredRef = useRef(false);
+  const resultRecordedRef = useRef<string | null>(null);
   // Paywall entry routing (P7.2): this screen only ever sells from analysis.
   const [premiumOpen, setPremiumOpen] = useState(false);
   const [premiumSource, setPremiumSource] = useState('analysis');
@@ -406,11 +539,23 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setReplaying(false);
     setPremoveQueue([]);
     setPremoveSel(null);
+    setBotStarsEarned(null);
+    interstitialFiredRef.current = false;
+    resultRecordedRef.current = null;
+    undosUsedRef.current = 0;
     // Fresh clocks, fresh warnings: the 30s crossing refs belong to the old
     // game — without this a rematch (same mount) never warns (I4).
     warned30Ref.current = false;
     lastMySecsRef.current = null;
   }, [type, onlineGameId]);
+
+  // Warm the video units while the player is still on the board. The
+  // interstitial must be ready before the result modal appears; undo is only
+  // relevant in AI games.
+  useEffect(() => {
+    void preloadInterstitial();
+    if (type === 'ai') preloadRewarded('undo');
+  }, [type, state.gameId]);
 
   const [timers, setTimers] = useState<Record<string, number>>(() => {
     const defaultSec = timeControl.minutes * 60;
@@ -420,6 +565,17 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
     return initialTimers;
   });
+  // Exact milliseconds for local/AI clocks. The visible `timers` state only
+  // changes when the displayed second changes; elapsed time is measured from
+  // Date.now(), so backgrounding or a slow JS frame can never freeze a clock.
+  const remainingMsRef = useRef<Record<string, number>>(
+    Object.fromEntries(
+      initialState.players.map((p) => [p.id, timeControl.minutes * 60_000])
+    )
+  );
+  const lastClockTickAtRef = useRef<number>(0);
+  const clockTimeoutRef = useRef(false);
+  const activeClockIdRef = useRef<string | null>(null);
 
   // Sync clocks from server
   useEffect(() => {
@@ -462,6 +618,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       const inc = effectiveIncrement(timeControl, incrementEnabled);
       if (inc <= 0) return;
       if (action.type !== 'MOVE' && action.type !== 'PLACE_WALL') return;
+      remainingMsRef.current[moverId] =
+        (remainingMsRef.current[moverId] ?? 0) + inc * 1000;
       setTimers((prev) => ({ ...prev, [moverId]: (prev[moverId] ?? 0) + inc }));
       setLastBonus({ playerId: moverId, amount: inc });
     },
@@ -577,17 +735,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const maxContainerWidth = Platform.OS === 'web' ? (isTabletScreen ? 580 : 420) : windowWidth;
   const effectiveWidth = Math.min(windowWidth, maxContainerWidth);
 
-  // Board size, unified for 2p and 4p: the measured container width (never
-  // the window — desktop web CSS squeezes the column below it) capped by
-  // the leftover height so short windows shrink instead of clipping.
-  // Phones measure anchor == effectiveWidth - 24, so 2p is pixel-identical.
+  // Board size, unified for 2p and 4p: full screen width edge-to-edge (effectiveWidth),
+  // capped only by vertical space on extremely short devices like Chess.com.
   const measuredBoardSize = Math.max(
     200,
     Math.floor(
       Math.min(
-        effectiveWidth - 24,
+        effectiveWidth,
         anchorW > 0 ? anchorW : Number.POSITIVE_INFINITY,
-        windowHeight - topH - bottomH - 26
+        windowHeight - topH - bottomH - 8
       )
     )
   );
@@ -763,6 +919,41 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, premoveQueue]);
 
+  // Settle the outgoing player's clock the instant a turn ends. The 200ms
+  // interval below does the visible countdown, but a move can land between
+  // ticks — this closes that gap so no player gains or loses a free slice.
+  useEffect(() => {
+    if (type === 'online') return;
+    const activeId = state.players[state.currentPlayerIndex]?.id ?? null;
+    const previousId = activeClockIdRef.current;
+    if (undoSheetOpen || undoBusy) {
+      // The reward sheet/ad freezes both sides. Sync the turn pointer without
+      // charging the player who was on move when the sheet opened.
+      if (activeId !== previousId) {
+        activeClockIdRef.current = activeId;
+        lastClockTickAtRef.current = Date.now();
+      }
+      return;
+    }
+    if (previousId && previousId !== activeId) {
+      const now = Date.now();
+      const elapsed = Math.max(0, now - lastClockTickAtRef.current);
+      const before = remainingMsRef.current[previousId];
+      if (elapsed > 0 && before !== undefined) {
+        const after = Math.max(0, before - elapsed);
+        remainingMsRef.current[previousId] = after;
+        const nextSec = Math.ceil(after / 1000);
+        setTimers((prev) =>
+          prev[previousId] === nextSec ? prev : { ...prev, [previousId]: nextSec }
+        );
+      }
+    }
+    if (activeId !== previousId) {
+      activeClockIdRef.current = activeId;
+      lastClockTickAtRef.current = Date.now();
+    }
+  }, [state.currentPlayerIndex, state.moveNumber, state.status, state.players, type, undoSheetOpen, undoBusy]);
+
   // Clock countdown (offline only; online clocks are server-synchronized).
   // TESTING: CLOCK_ENABLED=false disables the countdown entirely, so no match
   // can be lost on time. See timeControls.ts.
@@ -770,20 +961,43 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (type === 'online') return;
     if (!CLOCK_ENABLED) return;
     if (state.status !== 'IN_PROGRESS') return;
+    // The undo reward sheet/ad is a system pause: never let a player lose on
+    // time while they are watching a video they chose to watch.
+    if (undoSheetOpen || undoBusy) {
+      lastClockTickAtRef.current = Date.now();
+      return;
+    }
+    lastClockTickAtRef.current = Date.now();
     const interval = setInterval(() => {
-      setTimers((prev) => {
-        const activeId = stateRef.current.players[stateRef.current.currentPlayerIndex].id;
-        const currentRemaining = prev[activeId] ?? 0;
-        if (currentRemaining <= 1) {
-          const res = applyAction(stateRef.current, { type: 'TIMEOUT' });
-          if (res.success) setState(res.state);
-          return { ...prev, [activeId]: 0 };
-        }
-        return { ...prev, [activeId]: currentRemaining - 1 };
-      });
-    }, 1000);
+      if (clockTimeoutRef.current) return;
+      const live = stateRef.current;
+      if (live.status !== 'IN_PROGRESS') return;
+      const active = live.players[live.currentPlayerIndex];
+      if (!active) return;
+      const now = Date.now();
+      const elapsed = Math.max(0, now - lastClockTickAtRef.current);
+      lastClockTickAtRef.current = now;
+      if (activeClockIdRef.current !== active.id) {
+        // The settle effect normally runs first; if the tick won the race,
+        // charge nothing to the new player for the previous turn's tail.
+        activeClockIdRef.current = active.id;
+        return;
+      }
+      const before = remainingMsRef.current[active.id] ?? 0;
+      const after = Math.max(0, before - elapsed);
+      remainingMsRef.current[active.id] = after;
+      const nextSec = Math.ceil(after / 1000);
+      setTimers((prev) =>
+        prev[active.id] === nextSec ? prev : { ...prev, [active.id]: nextSec }
+      );
+      if (after <= 0) {
+        clockTimeoutRef.current = true;
+        const res = applyAction(live, { type: 'TIMEOUT' });
+        if (res.success) setState(res.state);
+      }
+    }, 200);
     return () => clearInterval(interval);
-  }, [state.status, type]);
+  }, [state.status, type, undoSheetOpen, undoBusy]);
 
   // AI turn — logic untouched, presentation only.
   // NOTE: isAiThinking is intentionally NOT used as a scheduling guard here:
@@ -813,8 +1027,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           const isBlitzMatch =
             Boolean(timeControl?.id.includes('blitz')) ||
             Boolean(timeControl?.id.includes('bullet')) ||
-            (timeControl !== undefined && timeControl.minutes <= 3);
-          const aiAction = await getBestActionAsync(live, profile, undefined, {
+            (timeControl !== undefined && timeControl.minutes < 3);
+          const aiAction = await getAiMove(live, profile, undefined, {
             shouldCancel: () => cancelled,
             budget: isBlitzMatch ? { timeMs: 250, maxDepth: 4 } : undefined,
           });
@@ -839,6 +1053,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      cancelAiSearch();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, state, aiDifficulty]);
@@ -914,13 +1129,70 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (state.status === 'COMPLETED' && !showGameOver) {
       setShowGameOver(true);
       void playGameEndSound();
-      // Warm the rewarded unit while the user reads the result — the Analyze
-      // gate later shows instantly instead of loading then.
+      // Warm every video unit while the user reads the result — the Analysis
+      // and Undo gates later show instantly instead of loading then.
       preloadRewarded('analysis');
+      if (type === 'ai') preloadRewarded('undo');
+      void preloadInterstitial();
       setFinishModal(null);
       setPremoveQueue([]);
       setPremoveSel(null);
       const winner = state.players.find((p) => p.id === state.winnerId);
+      const humanSeatId =
+        type === 'ai'
+          ? state.players[humanIdx]?.id
+          : type === 'online'
+          ? online.myPlayerId
+          : state.players[0]?.id;
+      const effectiveWon =
+        type === 'local'
+          ? true
+          : Boolean(state.winnerId && humanSeatId && state.winnerId === humanSeatId);
+
+      // 3-star mastery: a clean win (no Undo) and a healthy lead outrank a
+      // grind. The bot keeps the best rating ever earned; losses never lower it.
+      if (type === 'ai' && effectiveWon && humanSeatId) {
+        const me = state.players.find((p) => p.id === humanSeatId);
+        const foes = state.players.filter((p) => p.id !== humanSeatId);
+        const oppDist = foes.length
+          ? Math.min(
+              ...foes.map((p) =>
+                getShortestDistance(p.position, p.goalDirection, state.walls, state.mode)
+              )
+            )
+          : 0;
+        const myWalls = me?.wallsRemaining ?? 0;
+        const undos = undosUsedRef.current;
+        let stars: 1 | 2 | 3 = 1;
+        if (undos === 0 && (oppDist >= 2 || myWalls >= 2)) stars = 2;
+        if (undos === 0 && (oppDist >= 3 || (oppDist >= 2 && myWalls >= 3))) stars = 3;
+        setBotStarsEarned(stars);
+        void recordBotVictoryStars(
+          personality?.id ?? `difficulty:${aiDifficulty}`,
+          stars,
+          oppDist
+        );
+      } else {
+        setBotStarsEarned(null);
+      }
+
+      const gameSec = Math.max(0, Math.floor((Date.now() - state.startedAt) / 1000));
+      const myPlayerId =
+        type === 'ai'
+          ? state.players[humanIdx]?.id ?? null
+          : type === 'online'
+            ? online.myPlayerId
+            : null;
+      // Record once, at completion — never at exit. The exit decision later
+      // reads this count, so New Match and Close Match cannot double count.
+      if (resultRecordedRef.current !== state.gameId) {
+        resultRecordedRef.current = state.gameId;
+        void recordGameFinished({
+          userWon: effectiveWon,
+          gameSec,
+          gameId: state.gameId,
+        });
+      }
       const record: SavedGameRecord = {
         id: state.gameId,
         date: Date.now(),
@@ -931,9 +1203,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         winnerName: winner?.displayName ?? 'Nobody',
         // Who "you" are, by seat id. History decides WIN/LOSS from this, so a
         // real display name can never flip a win into a loss again.
-        myPlayerId: type === 'ai' ? state.players[humanIdx]?.id ?? null : null,
+        myPlayerId,
+        perspectivePlayerId: myPlayerId,
+        isViewerSeated: type !== 'local' && myPlayerId != null,
+        endedReason: 'GOAL',
+        timeControlMinutes: timeControl?.minutes,
+        incrementSeconds: timeControl
+          ? effectiveIncrement(timeControl, incrementEnabled ?? true)
+          : undefined,
+        botId: personality?.id,
+        botName: personality?.name,
+        botRating: personality?.elo,
         totalMoves: state.history.length,
-        durationSeconds: Math.floor((Date.now() - state.startedAt) / 1000),
+        durationSeconds: gameSec,
         initialState,
         history: state.history,
       };
@@ -1127,7 +1409,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       pt.boardSize,
       pt.x,
       pt.y,
-      boardRim(skin.frameBorderWidth)
+      boardRim(skin.frameBorderWidth),
+      skin.cellGap
     );
     const candidate: WallCoord = {
       row: slot.row,
@@ -1213,6 +1496,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setReplaying(false);
     setPremoveQueue([]);
     setPremoveSel(null);
+    interstitialFiredRef.current = false;
+    resultRecordedRef.current = null;
+    undosUsedRef.current = 0;
     const fresh = createInitialState({
       mode,
       playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You', personality?.name ?? null),
@@ -1224,8 +1510,17 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     // Fresh clocks — never carry leftover time into the new match.
     const full = timeControl.minutes * 60;
     const reset: Record<string, number> = {};
-    for (const p of fresh.players) reset[p.id] = full;
+    const resetMs: Record<string, number> = {};
+    for (const p of fresh.players) {
+      reset[p.id] = full;
+      resetMs[p.id] = full * 1000;
+    }
     setTimers(reset);
+    remainingMsRef.current = resetMs;
+    lastClockTickAtRef.current = Date.now();
+    activeClockIdRef.current = fresh.players[fresh.currentPlayerIndex]?.id ?? null;
+    clockTimeoutRef.current = false;
+    setBotStarsEarned(null);
   };
 
   // Seat-relative placement: each side keeps its own players for the whole
@@ -1236,17 +1531,38 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // games, the first player otherwise. Nobody's clock ever swaps sides.
   const seatIdx = type === 'online' ? activeHumanIdx : type === 'ai' ? humanIdx : 0;
 
+  // Premium badges, keyed by seat (P5.2): the sync's frozen premium list mapped
+  // through the same seat→account inversion. AI/local tables have no accounts
+  // behind seats — no badges, by construction.
+  const seatPremium = useMemo<Record<string, boolean>>(() => {
+    if (type !== 'online') return {};
+    const premium = new Set(online.premiumUserIds ?? []);
+    if (premium.size === 0) return {};
+    const map: Record<string, boolean> = {};
+    for (const [seatId, userId] of Object.entries(online.playerUserIds ?? {})) {
+      if (premium.has(userId)) map[seatId] = true;
+    }
+    return map;
+  }, [type, online.playerUserIds, online.premiumUserIds]);
+
   // Rewarded-analysis gate (MONETIZATION.md P3.2): the access key identifies
   // THIS finished game — state.gameId is fresh per mount and per rematch, so
   // every completed game gates separately while re-opens stay free (E13).
   const openReview = useCallback(() => {
     setRewardOpen(false);
     setShowGameOver(false);
-    onAnalyze(initialState, state.history, seatIdx, {
-      gameId: state.gameId,
-      historyLength: state.history.length,
-    });
-  }, [initialState, state.history, state.gameId, seatIdx, onAnalyze]);
+    onAnalyze(
+      initialState,
+      state.history,
+      seatIdx,
+      {
+        gameId: state.gameId,
+        historyLength: state.history.length,
+      },
+      undefined,
+      seatPremium
+    );
+  }, [initialState, state.history, state.gameId, seatIdx, onAnalyze, seatPremium]);
 
   const handleAnalyzePress = useCallback(async () => {
     setShowGameOver(false);
@@ -1298,6 +1614,94 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       ? state.winnerId === online.myPlayerId
       : state.winnerId === state.players[humanIdx]?.id
     : false;
+
+  /**
+   * Single post-match video decision. New Match and Close Match share it so a
+   * player can never see two interstitials for one result. Rematch never
+   * calls it. Navigation happens after the decision either way.
+   */
+  const maybeShowPostMatchVideoAd = useCallback(
+    async (trigger: 'new_match' | 'close_match') => {
+      if (!isCompleted || interstitialFiredRef.current) return;
+      interstitialFiredRef.current = true;
+      const gameSec = Math.max(
+        0,
+        Math.round((Date.now() - state.startedAt) / 1000)
+      );
+      const effectiveWon = type === 'local' ? true : Boolean(userWon);
+      const premiumNow = isPremiumActive(premiumState);
+      const sessions = await ensureSessionRecorded().catch(() => 0);
+      await showInterstitialIfDue({
+        isPremium: premiumNow,
+        sessions: typeof sessions === 'number' ? sessions : 0,
+        userWon: effectiveWon,
+        gameSec,
+        trigger,
+      });
+    },
+    [isCompleted, state.startedAt, type, userWon, premiumState]
+  );
+
+  // Undo is an AI-only courtesy: rewind your last move (and every AI reply
+  // after it) back to your turn. Premium is unlimited; free players spend one
+  // credit per undo, or watch a rewarded video for three.
+  const undoAvailable = canUndoAiTurn({
+    isAiGame: type === 'ai',
+    completed: isCompleted,
+    isAiThinking,
+    currentPlayerIndex: state.currentPlayerIndex,
+    humanSeatIndex: humanIdx,
+    historyLength: state.history.length,
+    humanSeatActive: state.players[humanIdx]?.status === 'ACTIVE',
+  });
+
+  const executeUndoMove = useCallback((): boolean => {
+    const live = stateRef.current;
+    if (type !== 'ai' || isAiThinking) return false;
+    if (live.status !== 'IN_PROGRESS') return false;
+    if (live.currentPlayerIndex !== humanIdx) return false;
+    if (live.history.length < 2) return false;
+    const humanId = live.players[humanIdx]?.id;
+    if (!humanId) return false;
+    // Rewind to before your last action, not merely two plies: in 3P/4P AI
+    // tables several bots may have replied since your turn.
+    const targetStep = findUndoTargetStep(live.history, humanId);
+    if (targetStep < 0) return false;
+    try {
+      const rewound = rebuildStateAtStep(initialState, live.history, targetStep);
+      const next = { ...rewound, history: live.history.slice(0, targetStep) };
+      setState(next);
+      stateRef.current = next;
+      setPremoveQueue([]);
+      setPremoveSel(null);
+      undosUsedRef.current += 1;
+      return true;
+    } catch {
+      return false;
+    }
+  }, [type, isAiThinking, humanIdx, initialState]);
+
+  const handleUndoPress = useCallback(() => {
+    if (!undoAvailable) return;
+    executeUndoMove();
+  }, [undoAvailable, executeUndoMove]);
+
+  const handleUndoWatch = useCallback(async () => {
+    setUndoBusy(true);
+    setUndoError(null);
+    const res = await showRewarded('undo');
+    if (res.earned) {
+      // Grant three credits, then spend one only if the undo actually ran
+      // (the match could have ended while the video was playing).
+      const ok = executeUndoMove();
+      setUndoCredits((c) => c + (ok ? 2 : 3));
+      setUndoSheetOpen(false);
+    } else {
+      setUndoError(res.error ?? 'dismissed');
+    }
+    setUndoBusy(false);
+  }, [executeUndoMove]);
+
   // Quick reactions: the dock is visible in live online matches AND in 2p
   // AI games; the sending tray is online-only. In AI games the USER sends
   // nothing — the engine taunts through the dock itself (see below), and its
@@ -1361,9 +1765,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     reactions.echo(kind);
   };
 
-  // No Resign anywhere near a finished match — and never in local games.
+  // Resign is available in ongoing online and AI bot matches.
   const canResign =
-    !isCompleted && type !== 'local' && !mySeatFinished && !myAiFinished;
+    !isCompleted && (type === 'online' || type === 'ai') && !mySeatFinished;
 
   // Manual deps are intentional (React Compiler is not enabled; see the
   // note on creditIncrement): back routing must see fresh props.
@@ -1394,8 +1798,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       leaveFinishedAndHome();
       return;
     }
-    if (isCompleted || type === 'local' || myAiFinished) {
-      onHome();
+    // Ongoing or completed AI/local games directly exit without resign dialog.
+    if (isCompleted || type === 'local' || type === 'ai' || myAiFinished) {
+      if (isCompleted) {
+        void maybeShowPostMatchVideoAd('close_match').finally(onHome);
+      } else {
+        onHome();
+      }
       return;
     }
     if (mySeatFinished) {
@@ -1403,14 +1812,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       return;
     }
     setResignOpen(true);
-  }, [isCompleted, type, myAiFinished, onHome, mySeatFinished, leaveFinishedAndHome, online.joinError, online.gameState, online.myPlayerId]);
+  }, [isCompleted, type, myAiFinished, onHome, mySeatFinished, leaveFinishedAndHome, maybeShowPostMatchVideoAd, online.joinError, online.gameState, online.myPlayerId]);
 
   // ---- In-match replay (finished games only) ----
   // Reconstructs the opening position from the mode + final names, then
   // replays the actual stored moves with the existing replay function.
   const replayBase: GameState | null = useMemo(() => {
-    if (!isCompleted) return null;
     if (type === 'local' || type === 'ai') return initialState;
+    if (initialState) return initialState;
     const anchor = state.players[0];
     const placed = state.history.filter(
       (h) => h.action.type === 'PLACE_WALL' && h.playerId === anchor?.id
@@ -1420,7 +1829,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       playerNames: state.players.map((p) => p.displayName),
       wallsEach: (anchor?.wallsRemaining ?? 10) + placed,
     });
-  }, [isCompleted, type, initialState, state.mode, state.players, state.history]);
+  }, [type, initialState, state.mode, state.players, state.history]);
   const totalSteps = state.history.length;
   // Reconstruction can throw if the local history diverged (missed
   // broadcast) — fall back to the live final board instead of crashing.
@@ -1436,6 +1845,29 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // Otherwise online play renders the optimistic board, so an unconfirmed
   // move of ours appears immediately rather than a frame later.
   const displayState = replayState ?? boardState;
+
+  const handleHintPress = useCallback(() => {
+    if (!humanTurn || !currentPlayer) {
+      return;
+    }
+    const moves = getLegalMoves(displayState, currentPlayer.id);
+    if (!moves || moves.length === 0) return;
+    let bestMove = moves[0];
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const m of moves) {
+      const d = getShortestDistance(m, currentPlayer.goalDirection, displayState.walls, displayState.mode);
+      if (d < bestDist) {
+        bestDist = d;
+        bestMove = m;
+      }
+    }
+    setHintMove(bestMove);
+    playNotifySound();
+  }, [humanTurn, currentPlayer, displayState]);
+
+  useEffect(() => {
+    setHintMove(null);
+  }, [state.history.length]);
 
   const enterReplay = () => {
     setShowGameOver(false);
@@ -1456,6 +1888,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // leave/resign routing. Always handled here while a match screen is
   // mounted, so App's generic pop never fires underneath a game.
   useEffect(() => {
+    if (Platform.OS === 'web') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (profilePlayer) {
         setProfilePlayer(null);
@@ -1641,19 +2074,7 @@ const groupedReactions = useMemo(() => {
   return groupReactionsBySeat(reactions.incoming, userIdToSeat);
 }, [type, reactions.incoming, online.playerUserIds]);
 
-// Premium badges, keyed by seat (P5.2): the sync's frozen premium list mapped
-// through the same seat→account inversion. AI/local tables have no accounts
-// behind seats — no badges, by construction.
-const seatPremium = useMemo<Record<string, boolean>>(() => {
-  if (type !== 'online') return {};
-  const premium = new Set(online.premiumUserIds ?? []);
-  if (premium.size === 0) return {};
-  const map: Record<string, boolean> = {};
-  for (const [seatId, userId] of Object.entries(online.playerUserIds ?? {})) {
-    if (premium.has(userId)) map[seatId] = true;
-  }
-  return map;
-}, [type, online.playerUserIds, online.premiumUserIds]);
+
 
 // Seat miss: sync arrived but neither your id nor name matches a seat
 // (changed identity mid-flow). Never silently play as someone else — the
@@ -1771,7 +2192,8 @@ useEffect(() => {
         pt.boardSize,
         pt.x,
         pt.y,
-        boardRim(skin.frameBorderWidth)
+        boardRim(skin.frameBorderWidth),
+        skin.cellGap
       );
       dragSlotRaw = { row: s.row, col: s.col, orientation: wallDrag.orientation };
     }
@@ -1870,46 +2292,119 @@ useEffect(() => {
           setTopH((prev) => (Math.abs(prev - height) > 1 ? height : prev));
         }}
       >
-      {/* Stitch header: white bar reaching the screen top. Back resigns an
-          active match, frees a finished seat, or closes a finished/local one. */}
+      {/* Chess.com top header: Back, title, and settings/connection */}
       <View style={styles.header}>
-        <View style={styles.headerInner}>
-          <TouchableOpacity
-            onPress={handleBackPress}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityLabel="Go back"
-          >
-            <Feather name="chevron-left" size={24} color={hudSurface?.ink ?? THEME.colors.onSurface} />
-          </TouchableOpacity>
+        <TouchableOpacity
+          onPress={handleBackPress}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityLabel="Go back"
+        >
+          <Feather name="chevron-left" size={24} color={THEME.colors.textPrimary} />
+        </TouchableOpacity>
+
+        <View style={styles.headerCenterBrand}>
+          <View style={[styles.headerOrbDot, { backgroundColor: THEME.colors.primary }]} />
+          <Text style={styles.headerTitle}>
+            DuoOrb
+          </Text>
+        </View>
+
+        <View style={styles.headerRight}>
+          {type === 'online' ? (
+            <View style={styles.connStatusWrap}>
+              <Feather
+                name={online.connStatus === 'connected' ? 'wifi' : 'wifi-off'}
+                size={18}
+                color={online.connStatus === 'connected' ? THEME.colors.tertiary : THEME.colors.error}
+              />
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={() => setOptionsOpen(true)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityLabel="Game options"
+            >
+              <Feather name="settings" size={20} color={THEME.colors.textSecondary} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
-      {/* Opponent card(s). Turn ring + timer highlight show whose move it is. */}
-      {/* Strips ignore touches while a wall is dragged over them. */}
-      {/* Multiplayer splits 2 up / 2 down in a grid; 1v1 keeps full cards. */}
-      {/* Their reaction dock floats over the card, out of layout. */}
+
+      {/* Opponent Zone: Bot Cutout + Speech Bubble + Top Right Stats for AI, or PlayerStrip for online/local */}
       <View style={styles.sideWrap}>
-      {type === 'ai' && botDialogue.text && (
-        <BotSpeechBubble
-          text={botDialogue.text}
-          botName={botDialogue.botName}
-          botColor={botDialogue.botColor}
-          onDismiss={botDialogue.dismiss}
-          surface={hudSurface}
-        />
-      )}
       {reactionsVisible && (
         <ReactionDock items={groupedReactions.fallback} side="top" onDone={reactions.dismiss} surface={hudSurface} />
       )}
-      <View
-        pointerEvents={wallDrag ? 'none' : 'auto'}
-        style={[
-          styles.topStripWrap,
-          isMultiplayer ? { width: measuredBoardSize, alignSelf: 'center' } : null,
-        ]}
-      >
+      {type === 'ai' && personality ? (
+        (() => {
+          const botPlayer = state.players.find((_, i) => i !== humanIdx);
+          const isBotActive = state.currentPlayerIndex !== humanIdx;
+          const botBall = botPlayer ? playerColor(1 - humanIdx, botPlayer.color) : personality.color;
+          const botTimer = botPlayer ? timers?.[botPlayer.id] : undefined;
+
+          return (
+            <View style={styles.botHeroRow}>
+              {/* Bot cutout on left */}
+              <View style={styles.botAvatarWrap}>
+                <BotAvatar avatarKey={personality.avatarKey} color={botBall} size={58} noBg />
+              </View>
+
+              {/* Bot Speech Bubble in center */}
+              {botDialogue.text ? (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={botDialogue.dismiss}
+                  style={styles.botSpeechBubble}
+                >
+                  <View style={styles.bubbleTail} />
+                  <Text style={styles.botSpeechText} numberOfLines={2}>
+                    {botDialogue.text}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={{ flex: 1 }} />
+              )}
+
+              {/* Bot stats on top right: remaining walls + clock (stacked in one column) */}
+              {botPlayer && (
+                <View style={styles.botHeroRightStats}>
+                  <View style={styles.statWallsChip}>
+                    <WallIcon size={14} color={botBall} />
+                    <Text style={styles.statWallsText}>
+                      {botPlayer.wallsRemaining}
+                    </Text>
+                  </View>
+
+                  {botTimer !== undefined && (
+                    <View style={[styles.matchTimerBox, isBotActive && styles.matchTimerBoxActive]}>
+                      <MaterialCommunityIcons
+                        name="timer-outline"
+                        size={14}
+                        color={isBotActive ? THEME.colors.primary : THEME.colors.textMuted}
+                      />
+                      <Text style={[styles.matchTimerText, isBotActive && styles.matchTimerTextActive]}>
+                        {formatTimer(botTimer)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          );
+        })()
+      ) : (
+        <View
+          pointerEvents={wallDrag ? 'none' : 'auto'}
+          style={[
+            styles.topStripWrap,
+            isMultiplayer ? { width: measuredBoardSize, alignSelf: 'center' } : null,
+          ]}
+        >
           <PlayerStrip
             state={topStripState}
             timers={timers}
+            ratings={seatRatings}
+            countryFlags={seatCountryFlags}
             compact
             grid={splitActive}
             bonus={lastBonus}
@@ -1921,7 +2416,8 @@ useEffect(() => {
             onPressPlayer={handleOpponentPress}
             surface={hudSurface}
           />
-      </View>
+        </View>
+      )}
       </View>
       </View>
 
@@ -1958,16 +2454,15 @@ useEffect(() => {
             legalMoves={viewingStep !== null ? EMPTY_CELL_LIST : legalMoves}
             previewWall={null}
             selectedCell={viewingStep !== null ? null : selectedCellMemo}
-            // `inputLocked` closes the board for the frame between sending a move and
-            // the server confirming it. Without it a second tap in that window
-            // submits a move for a turn the server has not handed over.
             interactive={
               (humanTurn || canPremove) &&
               !wallDrag &&
               viewingStep === null &&
               !(type === 'online' && online.inputLocked)
             }
-            moveHintColor={wallDrag ? trayColor : hintColor}            premoveMarks={viewingStep !== null ? EMPTY_PREMOVE_MARKS : premoveMarks}
+            moveMark={hintMove ? { to: hintMove, color: '#10B981', solid: false } : null}
+            moveHintColor={wallDrag ? trayColor : hintColor}
+            premoveMarks={viewingStep !== null ? EMPTY_PREMOVE_MARKS : premoveMarks}
             hideDots={hideDots}
             queuedWalls={viewingStep !== null ? EMPTY_QUEUED_WALLS : queuedWallEntries}
             onQueuedWallPress={canPremove && viewingStep === null ? handleQueuedWallPress : undefined}
@@ -1980,8 +2475,7 @@ useEffect(() => {
           </Animated.View>
         </View>
 
-        {/* Bottom: your card + wall inventory + resign — packed right under
-            the board like the Stitch page, no stretched gaps. */}
+        {/* Bottom: your card + wall inventory */}
         <View
           style={styles.bottomBar}
           onLayout={(e) => {
@@ -1989,11 +2483,53 @@ useEffect(() => {
             setBottomH((prev) => (Math.abs(prev - height) > 1 ? height : prev));
           }}
         >
-          {bottomStripState && (
+          {type === 'ai' ? (
+            (() => {
+              const humanPlayer = state.players[humanIdx];
+              if (!humanPlayer) return null;
+
+              const isHumanActive = state.currentPlayerIndex === humanIdx;
+              const humanBall = playerColor(humanIdx, humanPlayer.color);
+              const humanTimer = timers?.[humanPlayer.id];
+
+              return (
+                <View style={styles.humanPlayerRow}>
+                  {/* Human Identity (Left) */}
+                  <View style={styles.humanIdentityLeft}>
+                    <View style={[styles.humanAvatarDot, { backgroundColor: humanBall }]}>
+                      <Text style={styles.humanAvatarInitial}>
+                        {(humanPlayer.displayName || 'Y').charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={styles.humanPlayerName} numberOfLines={1}>
+                      {humanPlayer.displayName || 'You'}
+                    </Text>
+                    {isHumanActive && <View style={[styles.botTurnDot, { backgroundColor: humanBall }]} />}
+                  </View>
+
+                  {/* Human Clock (Right) */}
+                  {humanTimer !== undefined && (
+                    <View style={[styles.matchTimerBox, isHumanActive && styles.matchTimerBoxActive]}>
+                      <MaterialCommunityIcons
+                        name="timer-outline"
+                        size={15}
+                        color={isHumanActive ? THEME.colors.primary : THEME.colors.textMuted}
+                      />
+                      <Text style={[styles.matchTimerText, isHumanActive && styles.matchTimerTextActive]}>
+                        {formatTimer(humanTimer)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })()
+          ) : bottomStripState ? (
             <View pointerEvents={wallDrag ? 'none' : 'auto'}>
               <PlayerStrip
                 state={bottomStripState}
                 timers={timers}
+                ratings={seatRatings}
+                countryFlags={seatCountryFlags}
                 bonus={lastBonus}
                 hideWallsBadge={!splitActive}
                 grid={splitActive}
@@ -2007,11 +2543,10 @@ useEffect(() => {
                 surface={hudSurface}
               />
             </View>
-          )}
-          {/* Fixed slot: the inventory stays visible every turn (inert off-turn). */}
+          ) : null}
+          {/* Fixed slot: the inventory stays visible every turn */}
           {!isCompleted && (
             <View style={styles.traySlot}>
-              {/* Your reaction bubbles float over the inventory — never over the board. */}
               {reactionsVisible && (
                 <ReactionDock
                   items={reactions.outgoing}
@@ -2025,7 +2560,7 @@ useEffect(() => {
                 color={trayColor}
                 count={trayPlayer.wallsRemaining}
                 held={wallDrag?.orientation ?? null}
-                disabled={!(humanTurn || (canPremove && queueOn))}
+                disabled={!(humanTurn || (canPremove && queueOn)) || viewingStep !== null}
                 swapVisuals={swapWallVisuals}
                 onDragStart={handleTrayStart}
                 onDragMove={handleTrayMove}
@@ -2034,133 +2569,239 @@ useEffect(() => {
               )}
             </View>
           )}
-          {/* Quick-reaction sending row sits directly under the inventory,
-              above Resign — live online + 2p AI sparring. A tap sends (online)
-              and flies its emoji out of the button into the bubble above your
-              card. AI games have no socket, so the fly-and-land is the whole
-              effect there. */}
-          {(socketLive || aiSparring) && matchLive && (
+          {(socketLive || aiSparring) && matchLive && chatTrayOpen && (
             <ReactionTray onSend={handleReactionSend} surface={hudSurface} />
           )}
-          {/* Finished match: replay controls step through the stored moves
-              on this same board — no separate replay page. */}
-          {isCompleted && !showGameOver && (
-            <View style={styles.replayBar}>
-              <View style={styles.replayRow}>
-                <TouchableOpacity
-                  style={[styles.replayBtn, (viewingStep ?? totalSteps) <= 0 && styles.replayBtnDisabled]}
-                  disabled={(viewingStep ?? totalSteps) <= 0}
-                  onPress={() => {
-                    setReplaying(false);
-                    setViewingStep(0);
-                  }}
-                  accessibilityLabel="First move"
-                >
-                  <Feather name="chevrons-left" size={18} color={THEME.colors.onSurface} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.replayBtn, (viewingStep ?? totalSteps) <= 0 && styles.replayBtnDisabled]}
-                  disabled={(viewingStep ?? totalSteps) <= 0}
-                  onPress={() => {
-                    setReplaying(false);
-                    setViewingStep((s) => Math.max(0, (s ?? totalSteps) - 1));
-                  }}
-                  accessibilityLabel="Previous move"
-                >
-                  <Feather name="chevron-left" size={18} color={THEME.colors.onSurface} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.replayBtn}
-                  onPress={() => {
-                    if (replaying) {
-                      setReplaying(false);
-                    } else if ((viewingStep ?? totalSteps) >= totalSteps) {
-                      setViewingStep(0);
-                      setReplaying(true);
-                    } else {
-                      setReplaying(true);
-                    }
-                  }}
-                  accessibilityLabel={replaying ? 'Pause replay' : 'Play replay'}
-                >
-                  <Feather name={replaying ? 'pause' : 'play'} size={18} color={THEME.colors.onSurface} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.replayBtn, (viewingStep ?? totalSteps) >= totalSteps && styles.replayBtnDisabled]}
-                  disabled={(viewingStep ?? totalSteps) >= totalSteps}
-                  onPress={() => {
-                    setReplaying(false);
-                    setViewingStep((s) => Math.min(totalSteps, (s ?? totalSteps) + 1));
-                  }}
-                  accessibilityLabel="Next move"
-                >
-                  <Feather name="chevron-right" size={18} color={THEME.colors.onSurface} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.replayBtn, (viewingStep ?? totalSteps) >= totalSteps && styles.replayBtnDisabled]}
-                  disabled={(viewingStep ?? totalSteps) >= totalSteps}
-                  onPress={() => {
-                    setReplaying(false);
-                    setViewingStep(totalSteps);
-                  }}
-                  accessibilityLabel="Last move"
-                >
-                  <Feather name="chevrons-right" size={18} color={THEME.colors.onSurface} />
-                </TouchableOpacity>
-                <Text style={styles.replayStep}>
-                  {(viewingStep ?? totalSteps)} / {totalSteps}
-                </Text>
-              </View>
-              {viewingStep !== null && (
-                <TouchableOpacity style={styles.replayLive} onPress={exitReplay}>
-                  <Text style={styles.replayLiveText}>{t('game.backToFinalBoard')}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-          {!isCompleted && canResign && (
-            <View style={styles.resignRow}>
-              <TouchableOpacity
-                style={[
-                  styles.resignButton,
-                  hudSurface && {
-                    backgroundColor: hudSurface.card,
-                    borderColor: hudSurface.border,
-                  },
-                ]}
-                onPress={() => setResignOpen(true)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                accessibilityLabel={t('game.resign')}
-              >
-                <Feather name="flag" size={17} color={hudSurface?.ink ?? THEME.colors.textSecondaryStrong} />
-                <Text style={[styles.resignText, hudSurface && { color: hudSurface.ink }]}>
-                  {t('game.resign')}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          {!isCompleted && !canResign && type === 'online' && mySeatFinished && (
-            <View style={styles.resignRow}>
-              <TouchableOpacity
-                style={[
-                  styles.resignButton,
-                  hudSurface && {
-                    backgroundColor: hudSurface.card,
-                    borderColor: hudSurface.border,
-                  },
-                ]}
-                onPress={leaveFinishedAndHome}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                accessibilityLabel={t('game.leave')}
-              >
-                <Feather name="log-out" size={17} color={hudSurface?.ink ?? THEME.colors.textSecondaryStrong} />
-                <Text style={[styles.resignText, hudSurface && { color: hudSurface.ink }]}>
-                  {t('game.leave')}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
         </View>
+      </View>
+
+      {/* Chess.com style bottom action dock */}
+      <View style={styles.bottomDock}>
+        {isCompleted ? (
+          <>
+            <TouchableOpacity
+              style={styles.dockItem}
+              onPress={() => setOptionsOpen(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons name="format-list-bulleted" size={21} color={dockIconColor} />
+              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.dockItem}
+              onPress={() => setShowGameOver(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons name="file-document-outline" size={21} color={dockIconColor} />
+              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Summary</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.dockReviewBtn}
+              onPress={() => void handleAnalyzePress()}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <SmoothStar size={15} color="#FFFFFF" />
+              <Text style={styles.dockReviewText}>Review</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dockItem, (viewingStep ?? totalSteps) <= 0 && styles.dockItemDisabled]}
+              disabled={(viewingStep ?? totalSteps) <= 0}
+              onPress={() => {
+                setReplaying(false);
+                const cur = viewingStep ?? totalSteps;
+                if (cur > 0) setViewingStep(cur - 1);
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
+              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dockItem, viewingStep === null && styles.dockItemDisabled]}
+              disabled={viewingStep === null}
+              onPress={() => {
+                setReplaying(false);
+                if (viewingStep !== null) {
+                  if (viewingStep < totalSteps - 1) {
+                    setViewingStep(viewingStep + 1);
+                  } else {
+                    setViewingStep(null);
+                  }
+                }
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
+              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
+            </TouchableOpacity>
+          </>
+        ) : type === 'ai' ? (
+          <>
+            <TouchableOpacity
+              style={styles.dockItem}
+              onPress={() => setOptionsOpen(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons name="format-list-bulleted" size={21} color={dockIconColor} />
+              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.dockItem}
+              onPress={handleHintPress}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons name="lightbulb-on-outline" size={21} color={dockIconColor} />
+              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Hint</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.dockItem}
+              disabled={!undoAvailable}
+              onPress={handleUndoPress}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons name="undo-variant" size={21} color={undoAvailable ? dockIconColor : dockDisabledColor} />
+              <Text style={[styles.dockLabel, { color: undoAvailable ? dockLabelColor : dockDisabledColor }]}>
+                Undo
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dockItem, (viewingStep ?? totalSteps) <= 0 && styles.dockItemDisabled]}
+              disabled={(viewingStep ?? totalSteps) <= 0}
+              onPress={() => {
+                setReplaying(false);
+                const cur = viewingStep ?? totalSteps;
+                if (cur > 0) setViewingStep(cur - 1);
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
+              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dockItem, viewingStep === null && styles.dockItemDisabled]}
+              disabled={viewingStep === null}
+              onPress={() => {
+                setReplaying(false);
+                if (viewingStep !== null) {
+                  if (viewingStep < totalSteps - 1) {
+                    setViewingStep(viewingStep + 1);
+                  } else {
+                    setViewingStep(null);
+                  }
+                }
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
+              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
+            </TouchableOpacity>
+          </>
+        ) : type === 'online' ? (
+          <>
+            <TouchableOpacity
+              style={styles.dockItem}
+              onPress={() => setOptionsOpen(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons name="format-list-bulleted" size={21} color={dockIconColor} />
+              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.dockItem}
+              onPress={() => setChatTrayOpen((v) => !v)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons name="message-text-outline" size={21} color={chatTrayOpen ? THEME.colors.primary : dockIconColor} />
+              <Text style={[styles.dockLabel, { color: chatTrayOpen ? THEME.colors.primary : dockLabelColor }]}>Chat</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dockItem, (viewingStep ?? totalSteps) <= 0 && styles.dockItemDisabled]}
+              disabled={(viewingStep ?? totalSteps) <= 0}
+              onPress={() => {
+                setReplaying(false);
+                const cur = viewingStep ?? totalSteps;
+                if (cur > 0) setViewingStep(cur - 1);
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
+              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dockItem, viewingStep === null && styles.dockItemDisabled]}
+              disabled={viewingStep === null}
+              onPress={() => {
+                setReplaying(false);
+                if (viewingStep !== null) {
+                  if (viewingStep < totalSteps - 1) {
+                    setViewingStep(viewingStep + 1);
+                  } else {
+                    setViewingStep(null);
+                  }
+                }
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
+              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <TouchableOpacity
+              style={styles.dockItem}
+              onPress={() => setOptionsOpen(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons name="format-list-bulleted" size={21} color={dockIconColor} />
+              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dockItem, (viewingStep ?? totalSteps) <= 0 && styles.dockItemDisabled]}
+              disabled={(viewingStep ?? totalSteps) <= 0}
+              onPress={() => {
+                setReplaying(false);
+                const cur = viewingStep ?? totalSteps;
+                if (cur > 0) setViewingStep(cur - 1);
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
+              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dockItem, viewingStep === null && styles.dockItemDisabled]}
+              disabled={viewingStep === null}
+              onPress={() => {
+                setReplaying(false);
+                if (viewingStep !== null) {
+                  if (viewingStep < totalSteps - 1) {
+                    setViewingStep(viewingStep + 1);
+                  } else {
+                    setViewingStep(null);
+                  }
+                }
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
+              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {/* Stitch resign confirm: dimmed overlay, white card, red icon. */}
@@ -2207,6 +2848,202 @@ useEffect(() => {
         </SafeAreaView>
       </Modal>
 
+      {/* Chess.com style In-Game Options Modal */}
+      <Modal visible={optionsOpen} transparent animationType="fade" onRequestClose={() => setOptionsOpen(false)}>
+        <SafeAreaView style={styles.optionsOverlay} edges={['top', 'bottom']}>
+          <View style={styles.optionsCard}>
+            <View style={styles.optionsHeader}>
+              <Text style={styles.optionsTitle}>Match Options</Text>
+              <TouchableOpacity onPress={() => setOptionsOpen(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Feather name="x" size={20} color={THEME.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.optionsList}>
+              {type === 'ai' ? (
+                isCompleted ? (
+                  <>
+                    <TouchableOpacity
+                      style={styles.optionRow}
+                      onPress={() => {
+                        setOptionsOpen(false);
+                        handleRematch();
+                      }}
+                    >
+                      <View style={styles.optionRowLeft}>
+                        <Feather name="refresh-cw" size={20} color={THEME.colors.primary} />
+                        <Text style={[styles.optionRowText, { color: THEME.colors.primary }]}>Rematch</Text>
+                      </View>
+                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.optionRow}
+                      onPress={() => {
+                        setOptionsOpen(false);
+                        if (onSelectBots) {
+                          onSelectBots();
+                        } else {
+                          onNewGame();
+                        }
+                      }}
+                    >
+                      <View style={styles.optionRowLeft}>
+                        <MaterialCommunityIcons name="robot-outline" size={20} color={THEME.colors.textPrimary} />
+                        <Text style={styles.optionRowText}>Play vs Different Bot</Text>
+                      </View>
+                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.optionRow}
+                      onPress={() => {
+                        setOptionsOpen(false);
+                        void maybeShowPostMatchVideoAd('close_match').finally(onHome);
+                      }}
+                    >
+                      <View style={styles.optionRowLeft}>
+                        <Feather name="log-out" size={20} color={THEME.colors.textSecondary} />
+                        <Text style={styles.optionRowText}>Exit Match</Text>
+                      </View>
+                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={styles.optionRow}
+                      onPress={() => {
+                        setOptionsOpen(false);
+                        handleRematch();
+                      }}
+                    >
+                      <View style={styles.optionRowLeft}>
+                        <Feather name="rotate-ccw" size={20} color={THEME.colors.textPrimary} />
+                        <Text style={styles.optionRowText}>Restart</Text>
+                      </View>
+                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                    </TouchableOpacity>
+
+                    {canResign && (
+                      <TouchableOpacity
+                        style={styles.optionRow}
+                        onPress={() => {
+                          setOptionsOpen(false);
+                          setResignOpen(true);
+                        }}
+                      >
+                        <View style={styles.optionRowLeft}>
+                          <Feather name="flag" size={20} color={THEME.colors.error} />
+                          <Text style={[styles.optionRowText, { color: THEME.colors.error }]}>Resign Match</Text>
+                        </View>
+                        <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                      style={styles.optionRow}
+                      onPress={() => {
+                        setOptionsOpen(false);
+                        if (onSelectBots) {
+                          onSelectBots();
+                        } else {
+                          onNewGame();
+                        }
+                      }}
+                    >
+                      <View style={styles.optionRowLeft}>
+                        <MaterialCommunityIcons name="robot-outline" size={20} color={THEME.colors.textPrimary} />
+                        <Text style={styles.optionRowText}>Play vs Different Bot</Text>
+                      </View>
+                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.optionRow}
+                      onPress={() => {
+                        setOptionsOpen(false);
+                        onHome();
+                      }}
+                    >
+                      <View style={styles.optionRowLeft}>
+                        <Feather name="log-out" size={20} color={THEME.colors.textSecondary} />
+                        <Text style={styles.optionRowText}>Exit to Menu</Text>
+                      </View>
+                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                    </TouchableOpacity>
+                  </>
+                )
+              ) : (
+                <>
+                  {isCompleted && (
+                    <>
+                      <TouchableOpacity
+                        style={styles.optionRow}
+                        onPress={() => {
+                          setOptionsOpen(false);
+                          handleRematch();
+                        }}
+                      >
+                        <View style={styles.optionRowLeft}>
+                          <Feather name="refresh-cw" size={20} color={THEME.colors.primary} />
+                          <Text style={[styles.optionRowText, { color: THEME.colors.primary }]}>Rematch</Text>
+                        </View>
+                        <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.optionRow}
+                        onPress={() => {
+                          setOptionsOpen(false);
+                          void maybeShowPostMatchVideoAd('new_match').finally(onNewGame);
+                        }}
+                      >
+                        <View style={styles.optionRowLeft}>
+                          <Feather name="play" size={20} color={THEME.colors.textPrimary} />
+                          <Text style={styles.optionRowText}>New Game</Text>
+                        </View>
+                        <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                      </TouchableOpacity>
+                    </>
+                  )}
+
+                  {!isCompleted && canResign && (
+                    <TouchableOpacity
+                      style={styles.optionRow}
+                      onPress={() => {
+                        setOptionsOpen(false);
+                        setResignOpen(true);
+                      }}
+                    >
+                      <View style={styles.optionRowLeft}>
+                        <Feather name="flag" size={20} color={THEME.colors.error} />
+                        <Text style={[styles.optionRowText, { color: THEME.colors.error }]}>Resign Match</Text>
+                      </View>
+                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    style={styles.optionRow}
+                    onPress={() => {
+                      setOptionsOpen(false);
+                      handleBackPress();
+                    }}
+                  >
+                    <View style={styles.optionRowLeft}>
+                      <Feather name="log-out" size={20} color={THEME.colors.textSecondary} />
+                      <Text style={styles.optionRowText}>{isCompleted ? 'Exit Match' : 'Exit to Menu'}</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
       {/* Held wall follows the finger — wears the skin like tray/ghost:
           sharp rectangle on walnut, capsule elsewhere. */}
       {wallDrag && chipStyle && (
@@ -2220,8 +3057,10 @@ useEffect(() => {
               width: chipStyle.width,
               height: chipStyle.height,
               borderRadius:
-                skin.wallStyle === 'neutral'
-                  ? 0
+                skin.wallRadius === 'capsule'
+                  ? Math.min(chipStyle.width, chipStyle.height) / 2
+                  : typeof skin.wallRadius === 'number'
+                  ? skin.wallRadius
                   : Math.min(chipStyle.width, chipStyle.height) / 2,
               backgroundColor:
                 skin.wallStyle === 'neutral' && skin.neutralWall
@@ -2289,6 +3128,13 @@ useEffect(() => {
       <GameOverModal
         visible={showGameOver}
         state={state}
+        initialState={initialState}
+        type={type}
+        moveCounts={localMoveCounts}
+        onOpenPremium={() => {
+          setPremiumSource('gameover');
+          setPremiumOpen(true);
+        }}
         endReason={type === 'online' ? online.gameEndedResult?.reason ?? null : null}
         isRanked={type === 'online'}
         botPersonality={personality}
@@ -2302,6 +3148,8 @@ useEffect(() => {
             : topList[0]?.displayName || 'Opponent'
         }
         isWinner={userWon}
+        botStarsEarned={type === 'ai' ? botStarsEarned : null}
+        botStarHint={botStarsEarned !== null && botStarsEarned < 3 ? t('gameover.starHint') : null}
         myPlayerId={
           type === 'online'
             ? online.myPlayerId
@@ -2310,10 +3158,14 @@ useEffect(() => {
             : null
         }
         onRematch={handleRematch}
-        showNewGame={type === 'online' && onlineSource !== 'room'}
+        showNewGame={(type === 'online' && onlineSource !== 'room') || type === 'ai'}
         onNewGame={() => {
           setShowGameOver(false);
-          onNewGame();
+          if (type === 'ai' && onSelectBots) {
+            onSelectBots();
+          } else {
+            void maybeShowPostMatchVideoAd('new_match').finally(onNewGame);
+          }
         }}
         onReplay={enterReplay}
         opponentUserId={opponentAccountForResult?.userId ?? null}
@@ -2330,25 +3182,7 @@ useEffect(() => {
         onAnalyze={handleAnalyzePress}
         onHome={() => {
           setShowGameOver(false);
-          onHome();
-          // Win-only interstitial on result exit (never on open — rematch /
-          // replay / analyze stay uninterrupted). Fire-and-forget after
-          // navigation; every rule (win, caps, gaps, recency) lives inside.
-          const gameSec = Math.max(
-            0,
-            Math.floor((Date.now() - state.startedAt) / 1000)
-          );
-          const premiumNow = isPremiumActive(premiumState);
-          void ensureSessionRecorded()
-            .catch(() => 0)
-            .then((sessions) =>
-              showInterstitialIfDue({
-                isPremium: premiumNow,
-                sessions: typeof sessions === 'number' ? sessions : 0,
-                userWon,
-                gameSec,
-              })
-            );
+          void maybeShowPostMatchVideoAd('close_match').finally(onHome);
         }}
         onClose={() => setShowGameOver(false)}
       />
@@ -2366,6 +3200,23 @@ useEffect(() => {
         }}
         onClose={() => {
           if (!rewardBusy) setRewardOpen(false);
+        }}
+      />
+      <RewardSheet
+        visible={undoSheetOpen}
+        busy={undoBusy}
+        error={undoError}
+        variant="undo"
+        onWatch={handleUndoWatch}
+        onPremium={() => {
+          if (undoBusy) return;
+          setUndoSheetOpen(false);
+          setUndoError(null);
+          setPremiumSource('undo');
+          setPremiumOpen(true);
+        }}
+        onClose={() => {
+          if (!undoBusy) setUndoSheetOpen(false);
         }}
       />
       <PremiumSheet
@@ -2448,28 +3299,285 @@ const createStyles = () => StyleSheet.create({
     flex: 1,
     backgroundColor: THEME.colors.background,
     paddingTop: 0,
-    paddingBottom: 8,
-    paddingHorizontal: 12,
-    justifyContent: 'flex-start',
+    paddingBottom: 0,
+    paddingHorizontal: 0,
+    justifyContent: 'space-between',
     // No text selection anywhere while dragging walls around the board.
     userSelect: 'none',
     ...(Platform.OS === 'web' ? { overflowY: 'auto' as any } : {}),
   },
-  // Same bar every other page uses: 56 tall, 16 of horizontal padding, the
-  // lowest surface with a container hairline under it.
   header: {
-    height: 56,
-    backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceContainer,
-    marginHorizontal: -12,
+    height: 48,
+    backgroundColor: THEME.colors.background,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: THEME.colors.outlineVariant,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
   },
+  headerCenterBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  headerOrbDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  headerTitle: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 16,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+    letterSpacing: 0.3,
+  },
+  headerRight: {
+    minWidth: 28,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  connStatusWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   headerInner: {
-    // Touch target stays ≥44 via the button's hitSlop.
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  botHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    gap: 8,
+    minHeight: 66,
+  },
+  botAvatarWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  botSpeechBubble: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    marginHorizontal: 6,
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  bubbleTail: {
+    position: 'absolute',
+    left: -7,
+    top: '50%',
+    marginTop: -6,
+    width: 0,
+    height: 0,
+    borderTopWidth: 6,
+    borderBottomWidth: 6,
+    borderRightWidth: 8,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderRightColor: '#FFFFFF',
+  },
+  botSpeechText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 11.5,
+    lineHeight: 15,
+    fontWeight: '600',
+    color: '#161512',
+  },
+  botHeroRightStats: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 4,
+    flexShrink: 0,
+  },
+  statWallsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 68,
+    height: 25,
+    borderRadius: 6,
+    backgroundColor: THEME.colors.surfaceMuted,
+    gap: 4,
+  },
+  statWallsText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+    fontVariant: ['tabular-nums'],
+  },
+  matchTimerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 68,
+    height: 25,
+    borderRadius: 6,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    gap: 4,
+  },
+  matchTimerBoxActive: {
+    borderColor: THEME.colors.primary,
+  },
+  matchTimerText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.colors.textMuted,
+    fontVariant: ['tabular-nums'],
+  },
+  matchTimerTextActive: {
+    color: THEME.colors.textPrimary,
+    fontWeight: '800',
+  },
+  humanPlayerRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  humanIdentityLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    minWidth: 0,
+  },
+  humanAvatarDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  humanAvatarInitial: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  humanPlayerName: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+    maxWidth: 120,
+  },
+  botTurnDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  bottomDock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    height: 52,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: THEME.colors.outlineVariant,
+    backgroundColor: THEME.colors.surface,
+    paddingHorizontal: 8,
+  },
+  dockItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 54,
+    gap: 2,
+  },
+  dockItemDisabled: {
+    opacity: 0.35,
+  },
+  dockLabel: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 10,
+    fontWeight: '600',
+    color: THEME.colors.textSecondary,
+  },
+  dockReviewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: THEME.colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  dockReviewText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  optionsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  optionsCard: {
+    backgroundColor: THEME.colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: THEME.colors.outlineVariant,
+    padding: 20,
+    width: '100%',
+    maxWidth: 340,
+  },
+  optionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.colors.outlineVariant,
+  },
+  optionsTitle: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 16,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+  },
+  optionsList: {
+    gap: 8,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: THEME.colors.surfaceMuted,
+  },
+  optionRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  optionRowText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 14,
+    fontWeight: '600',
+    color: THEME.colors.textPrimary,
   },
   topChrome: {
     // No inset padding here: the app-level SafeAreaView owns the safe area.
@@ -2481,6 +3589,8 @@ const createStyles = () => StyleSheet.create({
   // Anchors the opponent's floating reaction dock to their card.
   sideWrap: {
     position: 'relative',
+    overflow: 'visible',
+    zIndex: 30,
   },
   boardWrap: {
     flex: 1,
@@ -2513,6 +3623,7 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     width: '100%',
+    gap: 8,
     paddingBottom: 8,
   },
   resignButton: {
@@ -2528,6 +3639,25 @@ const createStyles = () => StyleSheet.create({
     borderWidth: 1,
     borderColor: THEME.colors.surfaceHairline,
   },
+  resignButtonHalf: {
+    flex: 1,
+    width: 'auto',
+  },
+  undoButton: {
+    flex: 1,
+    width: 'auto',
+    backgroundColor: THEME.colors.surfacePrimaryTint,
+    borderColor: THEME.colors.surfacePrimaryTintBorder,
+  },
+  undoButtonDisabled: {
+    opacity: 0.45,
+  },
+  undoText: {
+    fontFamily: THEME.fonts.semiBold,
+    color: THEME.colors.primary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   resignText: {
     fontFamily: THEME.fonts.medium,
     color: THEME.colors.textSecondaryStrong,
@@ -2542,15 +3672,14 @@ const createStyles = () => StyleSheet.create({
     padding: 16,
   },
   resignCard: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: THEME.colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: THEME.colors.boardBorder,
+    borderColor: THEME.colors.outlineVariant,
     padding: 24,
     maxWidth: 320,
     width: '100%',
     alignItems: 'center',
-    ...THEME.shadows.modal,
   },
   resignIconCircle: {
     width: 56,
@@ -2564,15 +3693,14 @@ const createStyles = () => StyleSheet.create({
     marginBottom: 16,
   },
   finishCard: {
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: THEME.colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: THEME.colors.boardBorder,
+    borderColor: THEME.colors.outlineVariant,
     padding: 24,
     width: '100%',
     maxWidth: 320,
     alignItems: 'center',
-    ...THEME.shadows.modal,
   },
   finishIconCircle: {
     width: 58,
@@ -2683,7 +3811,6 @@ const createStyles = () => StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 8,
     gap: 4,
-    ...THEME.shadows.card,
   },
   replayRow: {
     flexDirection: 'row',
@@ -2725,6 +3852,31 @@ const createStyles = () => StyleSheet.create({
     fontWeight: '600',
     color: THEME.colors.textSecondaryStrong,
   },
+  replayActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: 2,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: THEME.colors.surfaceHairline,
+  },
+  replayActionBtn: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 6,
+  },
+  replayActionText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.colors.onSurface,
+  },
   disabled: {
     opacity: 0.4,
   },
@@ -2732,7 +3884,6 @@ const createStyles = () => StyleSheet.create({
     position: 'absolute',
     zIndex: 50,
     transform: [{ scale: 1.06 }],
-    ...THEME.shadows.wall,
   },
   centerContent: {
     justifyContent: 'center',
@@ -2759,7 +3910,6 @@ const createStyles = () => StyleSheet.create({
     borderColor: THEME.colors.surfacePrimaryTintBorder,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    ...THEME.shadows.card,
   },
   rematchToastText: { flex: 1, fontFamily: THEME.fonts.semiBold, fontSize: 13, color: THEME.colors.inverseLabel },
   rematchDeclineBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.surfaceMuted },

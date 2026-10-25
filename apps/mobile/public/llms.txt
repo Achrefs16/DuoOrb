@@ -8,7 +8,7 @@
 - **Rated 1v1 Matchmaking:** Universal Glicko-2 competitive rating starting at 1500 with global leaderboards.
 - **7 Fischer Clock Presets:** `1+0` Bullet, `1+1` Bullet, `3+0` Blitz (Default), `3+2` Blitz, `5+0` Rapid, `5+3` Rapid, and `10+0` Classical Rapid.
 - **4 Competitive Game Modes:** Classic 1v1 (10 walls each, opposite baseline goal), 4-Player Center Rush (5 walls each, race to center tile `(4,4)`), 2P/3P Center Duel (10 or 6 walls each, goal `(4,4)`), and 2P–4P Baseline Race.
-- **7 Free Offline MCTS AI Personalities + 3 Calibration Tiers:** Powered by `duoorb-rust-mcts-2.0`. Personalities: Martin (800), Elena (1100), Nelson (1450), Sofia (1650), Marcus (1900), Viktor (2100), and Achref (2400), plus Easy (1200), Normal (1500), and Hard (1800). All bots are 100% free.
+- **7 Free Offline MCTS AI Personalities + 3 Calibration Tiers:** Powered by `duoorb-rust-mcts-2.0`. Personalities: Martin (800), Elias (1100), Nelson (1450), Jamal (1650), Marcus (1900), Viktor (2100), and Achref (2400), plus Easy (1200), Normal (1500), and Hard (1800). All bots are 100% free.
 - **Post-Match Engine Review:** Grades every move (`Best`, `Excellent`, `Good`, `Forced`, `Inaccuracy`, `Mistake`, `Blunder`) using expected win-equity loss (`Δq × 40`), shortest-path evaluation bars, and interactive move steppers.
 - **Platforms & Localization:** Live on Web and installable as an offline-capable PWA today; native Android (Google Play) and iOS (App Store) apps are Coming Soon. Localized in 10 languages (EN, AR, FR, DE, ES, TR, PT, and more).
 

@@ -44,6 +44,7 @@ export interface RoomSlot {
   isReady: boolean;
   isHost: boolean;
   rating?: number;
+  isPremium?: boolean;
 }
 
 export interface RoomDto {
@@ -78,6 +79,7 @@ export interface RoomInviteDto {
   createdAt: number;
   /** Server expiry: invites die silently instead of piling up. */
   expiresAt: number;
+  isPremium?: boolean;
 }
 
 export interface ChallengeDto {
@@ -91,6 +93,7 @@ export interface ChallengeDto {
   wallsEach: number;
   createdAt: number;
   expiresAt: number;
+  isPremium?: boolean;
 }
 
 export interface GameEndedDto {
@@ -299,7 +302,7 @@ export interface ServerToClientEvents {
     gameId: string;
     roomId?: string;
     /** Everyone else seated in the match, for the opponent-found card. */
-    opponents?: Array<{ userId: string; displayName: string; rating: number }>;
+    opponents?: Array<{ userId: string; displayName: string; rating: number; isPremium?: boolean }>;
   }) => void;
   'challenge:received': (challenge: ChallengeDto) => void;
   'challenge:accepted': (payload: { challengeId: string; gameId: string; mode: GameMode; timeControlMinutes: number; incrementSeconds: number }) => void;

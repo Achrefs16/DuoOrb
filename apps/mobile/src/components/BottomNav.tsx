@@ -3,10 +3,11 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
-
 import { useTranslation } from '../i18n';
 
-export type MainTab = 'PLAY' | 'FRIENDS' | 'LEADERBOARD' | 'HISTORY' | 'PROFILE';
+export type MainTab = 'PLAY' | 'BOTS' | 'FRIENDS' | 'LEADERBOARD' | 'PROFILE';
+
+export const BOTTOM_NAV_HEIGHT = 58;
 
 interface BottomNavProps {
   currentTab: MainTab;
@@ -17,7 +18,8 @@ interface BottomNavProps {
 interface TabItem {
   id: MainTab;
   label: string;
-  icon: keyof typeof Feather.glyphMap;
+  featherIcon?: keyof typeof Feather.glyphMap;
+  mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
@@ -27,23 +29,24 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const bottomInset = insets.bottom;
+
   const tabs: TabItem[] = [
-    { id: 'PLAY', label: t('nav.play'), icon: 'grid' },
-    { id: 'FRIENDS', label: t('nav.friends'), icon: 'users' },
-    { id: 'LEADERBOARD', label: t('nav.leaderboard'), icon: 'award' },
-    { id: 'HISTORY', label: t('nav.history'), icon: 'clock' },
-    { id: 'PROFILE', label: t('nav.profile'), icon: 'user' },
+    { id: 'PLAY', label: t('nav.play') || 'Home', featherIcon: 'home' },
+    { id: 'BOTS', label: 'Bots', mciIcon: 'robot-outline' },
+    { id: 'FRIENDS', label: t('nav.friends') || 'Friends', featherIcon: 'users' },
+    { id: 'LEADERBOARD', label: t('nav.leaderboard') || 'Leaderboard', mciIcon: 'trophy-outline' },
+    { id: 'PROFILE', label: t('nav.profile') || 'Profile', featherIcon: 'user' },
   ];
-  // Floating pill: the container is transparent so the page background shows
-  // around the bar, and the bar floats above the bottom safe-area inset.
-  const bottomInset = useSafeAreaInsets().bottom;
 
   return (
-    <View style={[styles.container, { bottom: bottomInset + 20 }]}>
-      <View style={styles.navBar}>
+    <View style={[styles.dockedBar, { paddingBottom: bottomInset, height: BOTTOM_NAV_HEIGHT + bottomInset }]}>
+      <View style={styles.tabBarInner}>
         {tabs.map((tab) => {
           const isActive = currentTab === tab.id;
           const showBadge = tab.id === 'FRIENDS' && friendRequestsCount > 0;
+          const iconColor = isActive ? THEME.colors.primary : THEME.colors.textMuted;
 
           return (
             <TouchableOpacity
@@ -53,21 +56,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               onPress={() => onSelectTab(tab.id)}
               accessibilityLabel={tab.label}
               accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
             >
-              <View style={[styles.iconContainer, isActive && styles.iconContainerActive]}>
-                {tab.id === 'LEADERBOARD' ? (
-                  <MaterialCommunityIcons
-                    name="trophy-outline"
-                    size={20}
-                    color={isActive ? THEME.colors.onPrimary : THEME.colors.textMuted}
-                  />
-                ) : (
-                  <Feather
-                    name={tab.icon}
-                    size={20}
-                    color={isActive ? THEME.colors.onPrimary : THEME.colors.textMuted}
-                  />
-                )}
+              <View style={styles.iconWrapper}>
+                {tab.featherIcon ? (
+                  <Feather name={tab.featherIcon} size={22} color={iconColor} />
+                ) : tab.mciIcon ? (
+                  <MaterialCommunityIcons name={tab.mciIcon} size={22} color={iconColor} />
+                ) : null}
+
                 {showBadge && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>
@@ -76,6 +73,17 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                   </View>
                 )}
               </View>
+
+              <Text
+                style={[
+                  styles.tabLabel,
+                  { color: iconColor },
+                  isActive && styles.tabLabelActive,
+                ]}
+                numberOfLines={1}
+              >
+                {tab.label}
+              </Text>
             </TouchableOpacity>
           );
         })}
@@ -84,72 +92,70 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   );
 };
 
-const createStyles = () => StyleSheet.create({
-  // Overlay: floats above page content instead of pushing it up, so lists
-  // scroll underneath the pill. Tab screens carry matching bottom padding.
-  container: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    backgroundColor: 'transparent',
-    zIndex: 5,
-    elevation: 5,
-  },
-  navBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    maxWidth: 480,
-    width: '100%',
-    alignSelf: 'center',
-    backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: 30,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
-    paddingVertical: 6,
-    paddingHorizontal: 6,
-    shadowColor: '#101828',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  tabButton: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 2,
-  },
-  iconContainer: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-  },
-  iconContainerActive: {
-    backgroundColor: THEME.colors.primary,
-    borderRadius: 18,
-  },
-  badge: {
-    position: 'absolute',
-    top: -4,
-    right: 0,
-    backgroundColor: THEME.colors.danger,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    paddingHorizontal: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: THEME.colors.surfaceHairline,
-  },
-  badgeText: {
-    fontFamily: THEME.fonts.extraBold,
-    color: THEME.colors.onPrimary,
-    fontSize: 9,
-    fontWeight: '800',
-  },
-});
+const createStyles = () =>
+  StyleSheet.create({
+    dockedBar: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: THEME.colors.background,
+      borderTopWidth: 0,
+      justifyContent: 'center',
+      zIndex: 20,
+    },
+    tabBarInner: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-around',
+      maxWidth: 580,
+      width: '100%',
+      alignSelf: 'center',
+      paddingHorizontal: 8,
+    },
+    tabButton: {
+      flex: 1,
+      height: '100%',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingVertical: 4,
+    },
+    iconWrapper: {
+      position: 'relative',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 32,
+      height: 26,
+    },
+    tabLabel: {
+      fontFamily: THEME.fonts.medium,
+      fontSize: 10.5,
+      letterSpacing: 0.1,
+      marginTop: 2,
+    },
+    tabLabelActive: {
+      fontFamily: THEME.fonts.bold,
+      fontWeight: '700',
+    },
+    badge: {
+      position: 'absolute',
+      top: -3,
+      right: -8,
+      backgroundColor: THEME.colors.danger,
+      borderRadius: 9,
+      minWidth: 16,
+      height: 16,
+      paddingHorizontal: 3.5,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 1.5,
+      borderColor: THEME.colors.backgroundCard,
+    },
+    badgeText: {
+      fontFamily: THEME.fonts.extraBold,
+      color: '#FFFFFF',
+      fontSize: 9,
+      fontWeight: '800',
+    },
+  });

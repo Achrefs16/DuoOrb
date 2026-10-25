@@ -41,6 +41,7 @@ interface SocketUserInfo {
    * ids are the capability); Google JWTs are cryptographically verified.
    */
   verified: boolean;
+  isPremium?: boolean;
 }
 
 /** The six quick-reaction kinds. Mirrors the mobile `ReactionKind` union. */
@@ -219,17 +220,31 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // become identity, presence, or matchmaking state.
     const effectiveId = userId ?? earlyId;
 
-    // Fetch the universal rating if DB is available
+    let isPremium = false;
+    // Fetch the universal rating and premium status if DB is available
     if (this.prisma.isConnected && verified) {
       try {
-        const ratingRecord = await this.prisma.rating.findUnique({
-          where: { userId: effectiveId },
-        });
+        const [ratingRecord, profileRecord] = await Promise.all([
+          this.prisma.rating.findUnique({
+            where: { userId: effectiveId },
+          }),
+          this.prisma.profile.findUnique({
+            where: { userId: effectiveId },
+            select: { isPremium: true, premiumExpiresAt: true },
+          }),
+        ]);
         if (ratingRecord) {
           rating = Math.round(ratingRecord.rating);
         }
+        if (profileRecord) {
+          isPremium = Boolean(
+            profileRecord.isPremium &&
+              (!profileRecord.premiumExpiresAt ||
+                profileRecord.premiumExpiresAt.getTime() > Date.now())
+          );
+        }
       } catch (err: any) {
-        this.logger.warn(`Rating lookup failed for ${effectiveId}: ${err?.message}`);
+        this.logger.warn(`Rating/Profile lookup failed for ${effectiveId}: ${err?.message}`);
       }
     }
 
@@ -238,7 +253,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       if (client.disconnected) {
         return;
       }
-      const userInfo: SocketUserInfo = { userId: effectiveId, displayName, rating, verified };
+      const userInfo: SocketUserInfo = { userId: effectiveId, displayName, rating, verified, isPremium };
       this.socketUserMap.set(client.id, userInfo);
       this.userSocketMap.delete(earlyId);
       // Single controlling session: if a different LIVE socket already spoke
@@ -397,17 +412,21 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       if (!profile) return;
       // Same canonical field as handleConnection: username, not displayName.
       const name = profile.username || profile.displayName;
+      const isPremium = Boolean(
+        profile.isPremium &&
+          (!profile.premiumExpiresAt || profile.premiumExpiresAt.getTime() > Date.now())
+      );
       const mapped = this.socketUserMap.get(client.id);
-      if (mapped && mapped.displayName !== name) {
-        this.socketUserMap.set(client.id, { ...mapped, displayName: name });
-        // A rename must reach the game in progress, not just the next one. The
-        // game state holds its own copy of player names and had no way to be
-        // updated, so a rename mid-game stayed invisible until the rematch.
-        this.gameService.setPlayerName(user.userId, name);
-        this.server.to(user.userId).emit('game:playerRenamed', {
-          userId: user.userId,
-          displayName: name,
-        });      }
+      if (mapped && (mapped.displayName !== name || mapped.isPremium !== isPremium)) {
+        this.socketUserMap.set(client.id, { ...mapped, displayName: name, isPremium });
+        if (mapped.displayName !== name) {
+          this.gameService.setPlayerName(user.userId, name);
+          this.server.to(user.userId).emit('game:playerRenamed', {
+            userId: user.userId,
+            displayName: name,
+          });
+        }
+      }
       this.matchmakingService.updateDisplayName(user.userId, name);
       const roomIds = this.roomService.refreshDisplayName(user.userId, name);
       for (const roomId of roomIds) {
@@ -598,6 +617,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     targetSocket.emit('room:inviteReceived', {
       ...result.invite,
       fromDisplayName: user.displayName,
+      isPremium: user.isPremium ?? false,
     });
     return { success: true };
   }
@@ -941,7 +961,8 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
               .get(sid)
               ?.emit('challenge:expired', { challengeId: expired.id });
         }
-      }
+      },
+      user.isPremium ?? false
     );
     if (replaced) {
       const sid = this.userSocketMap.get(replaced.fromUserId);
@@ -1152,11 +1173,16 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       // from this instead of a blank connecting page. Emitted to the live
       // socket (not the pre-sweep snapshot) so a reconnected seat still
       // hears its match.
-      const seats = created.users.map((u) => ({
-        userId: u.userId,
-        displayName: u.displayName,
-        rating: u.rating.rating ?? 1500,
-      }));
+      const seats = created.users.map((u) => {
+        const liveSid = this.userSocketMap.get(u.userId);
+        const info = liveSid ? this.socketUserMap.get(liveSid) : undefined;
+        return {
+          userId: u.userId,
+          displayName: u.displayName,
+          rating: u.rating.rating ?? 1500,
+          isPremium: info?.isPremium ?? false,
+        };
+      });
       for (const player of players) {
         const liveSid = this.userSocketMap.get(player.userId);
         if (!liveSid) continue;
@@ -1923,7 +1949,11 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         if (!s.userId) return s;
         const socketId = this.userSocketMap.get(s.userId);
         const info = socketId ? this.socketUserMap.get(socketId) : undefined;
-        return { ...s, rating: info?.rating ?? this.userRatingCache.get(s.userId) ?? 1500 };
+        return {
+          ...s,
+          rating: info?.rating ?? this.userRatingCache.get(s.userId) ?? 1500,
+          isPremium: info?.isPremium ?? false,
+        };
       }),
     };
   }

@@ -8,7 +8,10 @@ pub const WALL_ADVANTAGE_WEIGHT: f64 = 1.5;
 
 pub fn evaluate_state(state: &GameState, active_player_id: &str, board: &Board) -> f64 {
     if state.status == "COMPLETED" {
-        let is_winner = state.players.iter().any(|p| p.id == active_player_id && p.status == "FINISHED");
+        let is_winner = state
+            .players
+            .iter()
+            .any(|p| p.id == active_player_id && p.status == "FINISHED");
         return if is_winner { WIN_SCORE } else { -WIN_SCORE };
     }
 
@@ -25,7 +28,11 @@ pub fn evaluate_state(state: &GameState, active_player_id: &str, board: &Board) 
         return WIN_SCORE;
     }
 
-    let opponents: Vec<_> = state.players.iter().filter(|p| p.id != active_player_id).collect();
+    let opponents: Vec<_> = state
+        .players
+        .iter()
+        .filter(|p| p.id != active_player_id)
+        .collect();
     if opponents.is_empty() {
         return 0.0;
     }

@@ -19,8 +19,15 @@ import { NoConnectionSection } from '../components/NoConnection';
 import { kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
 import { HistorySkeleton } from '../components/Skeleton';
 import { MatchResultModal } from '../components/MatchResultModal';
+import { PremiumBadge } from '../components/PremiumBadge';
 import { AdBanner } from '../components/AdBanner';
 import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
+import {
+  combineHistorySummary,
+  deviceHistoryGames,
+  mapLocalGameToHistoryItem,
+  mergeHistoryItems,
+} from '../lib/historyMerge';
 import { useTranslation } from '../i18n';
 
 interface HistoryScreenProps {
@@ -50,6 +57,8 @@ let historyCache: {
   total: number;
   summary: { total: number; wins: number; losses: number } | null;
   liveRating: number | null;
+  serverLoaded: number;
+  serverTotal: number;
 } | null = null;
 
 export const HistoryScreen: React.FC<HistoryScreenProps> = ({
@@ -70,6 +79,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   const [liveRating, setLiveRating] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const offsetRef = useRef(0);
+  const serverTotalRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
   // Guests keep their device games but never the server list: no online
@@ -104,65 +114,39 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
       const r = meRes?.ratings?.CLASSIC_1V1?.rating;
       const roundedRating = typeof r === 'number' ? Math.round(r) : null;
       if (roundedRating !== null) setLiveRating(roundedRating);
-        if (serverRes && serverRes.games.length > 0) {
-          const sorted = [...serverRes.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime());
-          setGames(sorted);
-          offsetRef.current = serverRes.games.length;
-          setTotal(serverRes.total);
-          setSummary(serverRes.summary ?? null);
-          historyCache = { guest: isGuest, games: sorted, localGames: savedLocal, total: serverRes.total, summary: serverRes.summary ?? null, liveRating: roundedRating };
-        } else if (isGuest || !serverError) {
-          // Device games: guests (server list skipped by design) or a server
-          // list that came back empty. Honestly unrated.
-          // WIN/LOSS comes from seat ids, never display names: matching
-          // winnerName against 'You' marked every win as a loss the moment
-          // the player set a real display name. Local pass-and-play has no
-          // single "you", so those render neutral (DRAW) under the winner.
-          const mapped: GameHistoryItemDto[] = savedLocal.map((lg) => {
-            const isAi = !!lg.myPlayerId;
-            const iWon = isAi && lg.winnerId === lg.myPlayerId;
-            const aiSeat = isAi
-              ? lg.initialState.players.find((p) => p.id !== lg.myPlayerId)
-              : undefined;
-            return {
-              gameId: lg.id,
-              mode: lg.mode,
-              status: 'COMPLETED',
-              isRanked: false,
-              timeControlMinutes: 3,
-              incrementSeconds: 2,
-              outcome: (isAi ? (iWon ? 'WIN' : 'LOSS') : 'DRAW') as 'WIN' | 'LOSS' | 'DRAW',
-              endedAt: new Date(lg.date).toISOString(),
-              durationMs: (lg.durationSeconds || 0) * 1000,
-              myRating: { before: null, after: null, delta: 0 },
-              opponent: {
-                // Empty on purpose: a device-local game has no account behind the
-                // opponent, and the result modal keys the View Profile action off
-                // this id. 'local' would open a profile for a user that is not one.
-                userId: '',
-                username: isAi ? aiSeat?.displayName ?? 'AI' : lg.winnerName,
-                displayName: isAi ? aiSeat?.displayName ?? 'AI' : lg.winnerName,
-                ratingBefore: null,
-                ratingAfter: null,
-              },
-            };
-          });
-        setGames(mapped);
-        offsetRef.current = mapped.length;
-        setTotal(mapped.length);
-        // Stats below must come from this list, never a stale server summary.
-        setSummary(null);
-        historyCache = { guest: isGuest, games: mapped, localGames: savedLocal, total: mapped.length, summary: null, liveRating: roundedRating };
-        } else {
-          // Nothing anywhere: full error screen with retry (first load only -
-          // a silent refresh keeps the list it failed to replace).
-          if (!silent) {
-            setLoadError({
-              message: loadMessage(serverError ?? undefined),
-              kind: kindOf(serverError ?? undefined),
-            });
-          }
-        }
+
+      // Unified history: every device game (AI + pass-and-play) stays visible
+      // beside the server's online list. Server rows win identity ties, so a
+      // locally cached online record can never duplicate the canonical one.
+      const device = deviceHistoryGames(savedLocal);
+      const localItems = device.map(mapLocalGameToHistoryItem);
+      const serverGames = serverRes?.games ?? [];
+      const merged = mergeHistoryItems(serverGames, localItems);
+      setGames(merged);
+      offsetRef.current = serverGames.length;
+      serverTotalRef.current = serverRes?.total ?? 0;
+      setTotal((serverRes?.total ?? 0) + device.length);
+      setSummary(combineHistorySummary(serverRes?.summary, savedLocal));
+
+      // Only a completely empty first load becomes a full error page. With
+      // even one device game we stay on the list (offline AI history works).
+      if (!isGuest && serverError && merged.length === 0 && !silent) {
+        setLoadError({
+          message: loadMessage(serverError),
+          kind: kindOf(serverError),
+        });
+      }
+
+      historyCache = {
+        guest: isGuest,
+        games: merged,
+        localGames: savedLocal,
+        total: (serverRes?.total ?? 0) + device.length,
+        summary: combineHistorySummary(serverRes?.summary, savedLocal),
+        liveRating: roundedRating,
+        serverLoaded: serverGames.length,
+        serverTotal: serverRes?.total ?? 0,
+      };
     } catch {
       if (!silent) setLoadError({ message: undefined, kind: 'UNKNOWN' });
     } finally {
@@ -175,22 +159,29 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   // row; the footer button stays enabled for retry.
   const loadMore = useCallback(async () => {
     if (loadingMore || isGuest) return;
+    if (offsetRef.current >= serverTotalRef.current) return;
     setLoadingMore(true);
     try {
       const serverRes = await api.getMyHistory(PAGE_SIZE, offsetRef.current);
       if (serverRes) {
-        setGames((prev) =>
-          [...prev, ...serverRes.games].sort((a, b) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
-        );
+        setGames((prev) => mergeHistoryItems(serverRes.games, prev));
         offsetRef.current += serverRes.games.length;
-        setTotal(serverRes.total);
+        serverTotalRef.current = serverRes.total;
+        setTotal(serverRes.total + deviceHistoryGames(localGames).length);
+        if (historyCache && historyCache.guest === isGuest) {
+          historyCache = {
+            ...historyCache,
+            serverLoaded: offsetRef.current,
+            serverTotal: serverRes.total,
+          };
+        }
       }
     } catch (e) {
       toast.show(loadMessage(e) ?? t('history.loadFailed'));
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, isGuest, t]);
+  }, [loadingMore, isGuest, localGames, t]);
 
   useEffect(() => {
     // Instant restore, silent refresh. Static chrome (header, filters)
@@ -201,7 +192,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
       setTotal(historyCache.total);
       setSummary(historyCache.summary);
       setLiveRating(historyCache.liveRating);
-      offsetRef.current = historyCache.games.length;
+      offsetRef.current = historyCache.serverLoaded;
+      serverTotalRef.current = historyCache.serverTotal;
       setLoading(false);
       fetchHistory(true);
     } else {
@@ -230,6 +222,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
             mode: replay.mode,
             playerNames: replay.players.map((p: any) => p.displayName),
           });
+          const viewer = identity?.userId
+            ? replay.players.find((p: any) => p.userId === identity.userId)
+            : undefined;
+          const viewerSeatId = viewer ? `p${viewer.playerIndex + 1}` : null;
           const record: SavedGameRecord = {
             id: replay.gameId,
             date: new Date(replay.endedAt).getTime(),
@@ -237,6 +233,12 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
             type: 'online',
             winnerId: replay.winnerId,
             winnerName: replay.players.find((p: any) => p.isWinner)?.displayName ?? 'Winner',
+            myPlayerId: viewerSeatId,
+            perspectivePlayerId: viewerSeatId ?? 'p1',
+            isViewerSeated: viewerSeatId != null,
+            endedReason: replay.endedReason ?? 'GOAL',
+            timeControlMinutes: replay.timeControlMinutes,
+            incrementSeconds: replay.incrementSeconds,
             totalMoves: replay.moves.length,
             durationSeconds: Math.floor(
               (new Date(replay.endedAt).getTime() - new Date(replay.startedAt || replay.endedAt).getTime()) / 1000
@@ -343,12 +345,15 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
         </View>
 
         <View style={styles.matchRowMeta}>
-          <Text style={styles.matchRowOpponent} numberOfLines={1}>
-            {t('gameover.vs', { name: opponentName })}
-            {opponentRating !== undefined && opponentRating !== null ? (
-              <Text style={styles.matchRowOppRating}> ({Math.round(opponentRating)})</Text>
-            ) : null}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Text style={styles.matchRowOpponent} numberOfLines={1}>
+              {t('gameover.vs', { name: opponentName })}
+              {opponentRating !== undefined && opponentRating !== null ? (
+                <Text style={styles.matchRowOppRating}> ({Math.round(opponentRating)})</Text>
+              ) : null}
+            </Text>
+            {item.opponent?.isPremium && <PremiumBadge size="xs" />}
+          </View>
           <Text style={styles.matchRowMode}>
             {item.isRanked ? t('history.ranked') : t('history.practice')} · {modeDisplayName(item.mode)}
             {pts}
@@ -379,7 +384,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           message={loadError.message}
           onRetry={() => void fetchHistory()}
         />
-      ) : isConnected === false ? (
+      ) : isConnected === false && games.length === 0 ? (
         <NoConnectionSection kind="offline" onRetry={() => void fetchHistory()} />
       ) : (
         <FlatList
@@ -544,7 +549,7 @@ const createStyles = () => StyleSheet.create({
   },
   rowsContent: {
     paddingHorizontal: 16,
-    paddingBottom: 120, // Clears the floating nav overlay.
+    paddingBottom: 88, // Clears the floating nav overlay.
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',

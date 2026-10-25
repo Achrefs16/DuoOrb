@@ -1,5 +1,5 @@
 use crate::board::{Board, BOARD_SIZE};
-use crate::pathfinding::{has_path_to_goal};
+use crate::pathfinding::{has_path_to_goal, is_goal_cell};
 use crate::types::{CellCoord, GameAction, GameState, PlayerState, WallCoord};
 
 #[inline(always)]
@@ -9,7 +9,9 @@ pub fn is_cell_within_board(c: CellCoord) -> bool {
 
 #[inline(always)]
 pub fn get_player_at(cell: CellCoord, players: &[PlayerState]) -> Option<&PlayerState> {
-    players.iter().find(|p| p.status != "FINISHED" && p.position == cell)
+    players
+        .iter()
+        .find(|p| p.status != "FINISHED" && p.position == cell)
 }
 
 const ORTHOGONAL_DIRS: [(i8, i8); 4] = [
@@ -59,7 +61,8 @@ pub fn get_legal_moves(state: &GameState, player_id: &str, board: &Board) -> Vec
 
             let is_straight_oob = !is_cell_within_board(straight_behind);
             let is_straight_blocked = board.is_blocked(neighbor, straight_behind);
-            let is_straight_occupied = !is_straight_oob && get_player_at(straight_behind, &state.players).is_some();
+            let is_straight_occupied =
+                !is_straight_oob && get_player_at(straight_behind, &state.players).is_some();
 
             if !is_straight_oob && !is_straight_blocked && !is_straight_occupied {
                 legal.push(straight_behind);
@@ -83,7 +86,12 @@ pub fn get_legal_moves(state: &GameState, player_id: &str, board: &Board) -> Vec
     legal
 }
 
-pub fn is_legal_wall_placement(state: &GameState, player_id: &str, wall: &WallCoord, board: &Board) -> bool {
+pub fn is_legal_wall_placement(
+    state: &GameState,
+    player_id: &str,
+    wall: &WallCoord,
+    board: &Board,
+) -> bool {
     let player = match state.players.iter().find(|p| p.id == player_id) {
         Some(p) => p,
         None => return false,
@@ -102,17 +110,21 @@ pub fn is_legal_wall_placement(state: &GameState, player_id: &str, wall: &WallCo
     spec_board.place_wall(wall);
 
     for p in &state.players {
-        if p.status == "ACTIVE" {
-            if !has_path_to_goal(p.position, p.goal_direction, &spec_board, &state.mode) {
-                return false;
-            }
+        if p.status == "ACTIVE"
+            && !has_path_to_goal(p.position, p.goal_direction, &spec_board, &state.mode)
+        {
+            return false;
         }
     }
 
     true
 }
 
-pub fn apply_action(state: &GameState, action: &GameAction, board: &mut Board) -> Option<GameState> {
+pub fn apply_action(
+    state: &GameState,
+    action: &GameAction,
+    board: &mut Board,
+) -> Option<GameState> {
     let mut next_state = state.clone();
     let mover_idx = state.current_player_index;
     let mover = &state.players[mover_idx];
@@ -125,6 +137,24 @@ pub fn apply_action(state: &GameState, action: &GameAction, board: &mut Board) -
                 return None;
             }
             next_state.players[mover_idx].position = *to;
+            // Goal completion is a rules concern, not a per-seat special case:
+            // 1v1 ends immediately; 3P/4P continues until N-1 players finish.
+            if is_goal_cell(
+                *to,
+                next_state.players[mover_idx].goal_direction,
+                &next_state.mode,
+            ) {
+                next_state.players[mover_idx].status = "FINISHED".to_string();
+                let total = next_state.players.len();
+                let finished = next_state
+                    .players
+                    .iter()
+                    .filter(|p| p.status == "FINISHED")
+                    .count();
+                if total <= 2 || finished >= total.saturating_sub(1) {
+                    next_state.status = "COMPLETED".to_string();
+                }
+            }
         }
         GameAction::PlaceWall { wall } => {
             if !is_legal_wall_placement(state, &mover_id, wall, board) {
@@ -153,4 +183,77 @@ pub fn apply_action(state: &GameState, action: &GameAction, board: &mut Board) -
     next_state.current_player_index = next_idx;
 
     Some(next_state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_action;
+    use crate::board::Board;
+    use crate::types::{CellCoord, GameAction, GameState, GoalDirection, PlayerState};
+
+    fn seat(id: &str, row: i8, col: i8, goal: GoalDirection) -> PlayerState {
+        PlayerState {
+            id: id.to_string(),
+            index: 0,
+            display_name: id.to_string(),
+            position: CellCoord { row, col },
+            walls_remaining: 10,
+            goal_direction: goal,
+            status: "ACTIVE".to_string(),
+        }
+    }
+
+    #[test]
+    fn three_player_goal_keeps_the_match_running() {
+        let state = GameState {
+            game_id: "3p".to_string(),
+            mode: "4p".to_string(),
+            current_player_index: 0,
+            players: vec![
+                seat("p1", 3, 4, GoalDirection::Center),
+                seat("p2", 0, 0, GoalDirection::Center),
+                seat("p3", 8, 8, GoalDirection::Center),
+            ],
+            walls: vec![],
+            status: "IN_PROGRESS".to_string(),
+        };
+        let mut board = Board::new();
+        let next = apply_action(
+            &state,
+            &GameAction::Move {
+                to: CellCoord { row: 4, col: 4 },
+            },
+            &mut board,
+        )
+        .expect("center goal move must be legal");
+        assert_eq!(next.players[0].status, "FINISHED");
+        assert_eq!(next.status, "IN_PROGRESS");
+        assert_eq!(next.current_player_index, 1);
+    }
+
+    #[test]
+    fn two_player_goal_completes_immediately() {
+        let state = GameState {
+            game_id: "2p".to_string(),
+            mode: "2p".to_string(),
+            current_player_index: 0,
+            players: vec![
+                seat("p1", 7, 4, GoalDirection::Bottom),
+                seat("p2", 1, 4, GoalDirection::Top),
+            ],
+            walls: vec![],
+            status: "IN_PROGRESS".to_string(),
+        };
+        let mut board = Board::new();
+        let next = apply_action(
+            &state,
+            &GameAction::Move {
+                to: CellCoord { row: 8, col: 4 },
+            },
+            &mut board,
+        )
+        .expect("goal move must be legal");
+        assert_eq!(next.players[0].status, "FINISHED");
+        assert_eq!(next.status, "COMPLETED");
+    }
 }

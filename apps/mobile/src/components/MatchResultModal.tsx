@@ -6,6 +6,7 @@ import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
 import { modeDisplayName } from '../matchModes';
 import { GameHistoryItemDto } from '../network/apiClient';
+import { PremiumBadge } from './PremiumBadge';
 
 interface MatchResultModalProps {
   /** The match to show. Null keeps the modal closed. */
@@ -69,10 +70,13 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
               <Text style={styles.outcome}>
                 {isDraw ? t('result.draw') : isWin ? t('result.victory') : t('result.defeat')}
               </Text>
-              <Text style={styles.vs}>
-                {t('gameover.vs', { name: opp })}
-                {oppRating !== undefined && oppRating !== null ? ` · ${Math.round(oppRating)}` : ''}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                <Text style={styles.vs}>
+                  {t('gameover.vs', { name: opp })}
+                  {oppRating !== undefined && oppRating !== null ? ` · ${Math.round(oppRating)}` : ''}
+                </Text>
+                {opponent?.isPremium && <PremiumBadge size="xs" />}
+              </View>
 
               <View style={styles.rows}>
                 <View style={styles.row}>

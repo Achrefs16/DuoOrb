@@ -255,7 +255,7 @@ const createStyles = () =>
     },
     legalLink: {
       fontFamily: THEME.fonts.semiBold,
-      color: THEME.colors.primary,
+      color: THEME.colors.primaryDark,
       textDecorationLine: 'underline',
     },
   });

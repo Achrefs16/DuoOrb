@@ -14,6 +14,10 @@ export const AnalysisBadge: React.FC<{ assessment: MoveAssessment }> = ({
   const color = assessmentColor(assessment);
   const labelKey = (() => {
     switch (assessment) {
+      case 'BRILLIANT':
+        return 'assessment.brilliant';
+      case 'GREAT':
+        return 'assessment.great';
       case 'BEST':
         return 'assessment.best';
       case 'EXCELLENT':

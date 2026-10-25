@@ -1,13 +1,13 @@
 {
-  "name": "DuoOrb — Tactical Grid Game",
+  "name": "DuoOrb — Tactical Board & Wall Strategy Game",
   "short_name": "DuoOrb",
   "description": "Tactical 1v1 Grid Board Game. Outsmart opponents, place strategic walls, and race to the goal.",
-  "start_url": "/",
+  "start_url": "/?play=1",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#FAFAFB",
-  "theme_color": "#FFFFFF",
+  "background_color": "#070B14",
+  "theme_color": "#070B14",
   "icons": [
     {
       "src": "/icons/icon-192.png",

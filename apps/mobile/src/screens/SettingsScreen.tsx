@@ -785,6 +785,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             [
               { id: 'classic', title: t('settings.boardClassic'), desc: t('settings.boardClassicDesc') },
               { id: 'walnut', title: t('settings.boardWalnut'), desc: t('settings.boardWalnutDesc') },
+              { id: 'tactile', title: t('settings.boardTactile'), desc: t('settings.boardTactileDesc') },
+              { id: 'stone', title: t('settings.boardStone'), desc: t('settings.boardStoneDesc') },
             ] as Array<{ id: BoardSkinId; title: string; desc: string }>
           ).map((option, index) => {
             const skin = BOARD_SKINS[option.id];

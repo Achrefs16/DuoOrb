@@ -9,8 +9,8 @@ pub mod review;
 pub mod rules;
 pub mod types;
 
-use napi_derive::napi;
 use crate::types::{GameState, RecordedAction};
+use napi_derive::napi;
 
 #[napi]
 pub fn analyze_game_sync(initial_state_json: String, history_json: String) -> napi::Result<String> {
@@ -25,6 +25,9 @@ pub fn analyze_game_sync(initial_state_json: String, history_json: String) -> na
 }
 
 #[napi]
-pub async fn analyze_game_async(initial_state_json: String, history_json: String) -> napi::Result<String> {
+pub async fn analyze_game_async(
+    initial_state_json: String,
+    history_json: String,
+) -> napi::Result<String> {
     analyze_game_sync(initial_state_json, history_json)
 }

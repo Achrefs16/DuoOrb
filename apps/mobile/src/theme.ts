@@ -32,21 +32,16 @@ const hexToRgba = (hex: string, alpha: number): string => {
  * Changing `PRIMARY_COLOR` automatically updates all primary buttons, active
  * navigation tabs, selected chips, container tints, focus outlines, and orb #1.
  */
-export const PRIMARY_COLOR = '#6C6FFD'; // DuoOrb primary (vivid indigo)
+export const PRIMARY_COLOR = '#69B342'; // Chess.com tactile green
 
 // Supporting Player Hues
 const PLAYER_CORAL = '#E5484D';
 const PLAYER_GREEN = '#0E9F6E';
 const PLAYER_AMBER = '#D9930D';
+const PLAYER_BLUE = '#3B82F6';
 
 /**
  * The Slate ramp the app actually uses, as tokens.
- *
- * These existed only as hex literals inside 28 files (#FFFFFF x99, #F1F5F9
- * x49, #64748B x48 …) while the semantic tokens below already described the
- * same colours. Naming them here is what lets a future palette remap the whole
- * ramp by editing this one file. Values are unchanged — a token that resolved
- * to a different colour would be a design change, not a refactor.
  */
 const SLATE = {
   0: '#FFFFFF',
@@ -76,17 +71,16 @@ const BLUE = {
 /** Shared raised-surface / control fills used by toasts, cards and buttons. */
 const SURFACE = {
   /** Neutral fill for secondary controls, pills and pressed states. */
-  muted: SLATE[100],
+  muted: '#EAE8E1',
   /** Hairline divider and card outline. */
-  hairline: SLATE[200],
+  hairline: '#DFDDD5',
   /** Toast/near-white tint behind primary iconography. */
-  primaryTint: BLUE[50],
-  primaryTintBorder: BLUE[200],
+  primaryTint: '#F4F9EE',
+  primaryTintBorder: '#C2E4A3',
   /**
-   * Card-level primary border. Distinct from primaryTintBorder by one step
-   * (BLUE[100] vs BLUE[200]) — collapsing them was a real colour change.
+   * Card-level primary border.
    */
-  primaryTintBorderSoft: BLUE[100],
+  primaryTintBorderSoft: '#D8F0C2',
 } as const;
 
 /**
@@ -184,17 +178,17 @@ export function buildTheme(
   const fonts = getFonts(lang);
   const primaryLight = hexToRgba(primary, 0.12);
   const primaryMedium = hexToRgba(primary, 0.22);
-  // Light: deep indigo for pressed states + text-on-light. Dark: light
-  // indigo so accents read on dark surfaces.
-  const primaryDark = dark ? '#A5A8FF' : '#5457C5';
-  // Surface ramp previously hardcoded in SURFACE (light values preserved).
-  const surfaceMuted = dark ? '#2C2C33' : SURFACE.muted;
-  const surfaceHairline = dark ? '#3D3D45' : SURFACE.hairline;
-  const surfacePrimaryTint = dark ? hexToRgba(primary, 0.18) : SURFACE.primaryTint;
-  const surfacePrimaryTintBorder = dark ? hexToRgba(primary, 0.45) : SURFACE.primaryTintBorder;
+  // Chess.com tactile green lip / bevel
+  const primaryDark = dark ? '#5D8C30' : '#4E8C2F';
+  const primaryBevel = dark ? '#5D8C30' : '#4E8C2F';
+  const secondaryBevel = dark ? '#22201E' : '#D0CEC4';
+  const surfaceMuted = dark ? '#3B3834' : '#EAE8E1';
+  const surfaceHairline = dark ? '#45423E' : '#DFDDD5';
+  const surfacePrimaryTint = dark ? hexToRgba(primary, 0.18) : '#F4F9EE';
+  const surfacePrimaryTintBorder = dark ? hexToRgba(primary, 0.45) : '#C2E4A3';
   const surfacePrimaryTintBorderSoft = dark
     ? hexToRgba(primary, 0.28)
-    : SURFACE.primaryTintBorderSoft;
+    : '#D8F0C2';
 
   return {
     mode,
@@ -207,45 +201,46 @@ export function buildTheme(
       fontFamilyExtraBold: fonts.extraBold,
     },
     colors: {
-      // 1. Primary Brand Tokens (Changeable in one place)
+      // 1. Primary Brand Tokens (Chess.com tactile green)
       primary,
       primaryLight,
       primaryMedium,
       primaryDark,
+      primaryBevel,
+      secondaryBevel,
       primaryContainer: primary,
       onPrimary: '#FFFFFF',
-      onPrimaryContainer: '#EEEFFF',
+      onPrimaryContainer: '#FFFFFF',
       accent: primary,
       accentCyan: primary,
 
-      // 1b. Raw ramp. Referenced by name so a second theme can remap the
-      //     whole scale; the semantic tokens below are the ones to use.
+      // 1b. Raw ramp.
       slate: SLATE,
       blue: BLUE,
 
-      // 2. Stitch Surface & Container Hierarchy
-      background: dark ? '#000000' : '#F2F3FF',
-      backgroundCard: dark ? '#3E3E45' : '#FFFFFF',
-      backgroundElevated: dark ? '#2A2A31' : '#FFFFFF',
-      surface: dark ? '#24242A' : '#E8ECF3',
-      surfaceBright: dark ? '#2C2C33' : '#E8ECF3',
-      surfaceDim: dark ? '#000000' : '#D2D9F4',
-      surfaceContainerLowest: dark ? '#3F3F46' : '#FFFFFF',
-      surfaceContainerLow: dark ? '#0A0A0C' : '#F2F3FF',
-      surfaceContainer: dark ? '#29292F' : '#EAEDFF',
-      surfaceContainerHigh: dark ? '#2E2E35' : '#E2E7FF',
-      surfaceContainerHighest: dark ? '#36363E' : '#DAE2FD',
-      inverseSurface: dark ? '#FFFFFF' : '#131B2E',
-      inverseOnSurface: dark ? '#0B0B0E' : '#EEF0FF',
+      // 2. Stitch Surface & Container Hierarchy (Warm Alabaster / Crisp White)
+      background: dark ? '#262421' : '#F5F4F0',
+      backgroundCard: dark ? '#312E2B' : '#FFFFFF',
+      backgroundElevated: dark ? '#3A3734' : '#FFFFFF',
+      surface: dark ? '#312E2B' : '#EDEAE4',
+      surfaceBright: dark ? '#3B3834' : '#F0EEE7',
+      surfaceDim: dark ? '#262421' : '#DFDDD5',
+      surfaceContainerLowest: dark ? '#312E2B' : '#FFFFFF',
+      surfaceContainerLow: dark ? '#262421' : '#F5F4F0',
+      surfaceContainer: dark ? '#3B3834' : '#EDEBE5',
+      surfaceContainerHigh: dark ? '#45423E' : '#E5E3DC',
+      surfaceContainerHighest: dark ? '#4F4C47' : '#DFDDD5',
+      inverseSurface: dark ? '#FFFFFF' : '#262421',
+      inverseOnSurface: dark ? '#262421' : '#FFFFFF',
 
       // 3. Typography & Text Hierarchy
-      textPrimary: dark ? '#FFFFFF' : '#131B2E',
-      textSecondary: dark ? '#C9C9D1' : '#434655',
-      textMuted: dark ? '#A9A9B3' : '#737686',
-      onSurface: dark ? '#FFFFFF' : '#131B2E',
-      onSurfaceVariant: dark ? '#C9C9D1' : '#434655',
-      outline: dark ? '#82828C' : '#737686',
-      outlineVariant: dark ? '#3D3D45' : '#C3C6D7',
+      textPrimary: dark ? '#FFFFFF' : '#262421',
+      textSecondary: dark ? '#C3C2C0' : '#52504C',
+      textMuted: dark ? '#989795' : '#7D7A75',
+      onSurface: dark ? '#FFFFFF' : '#262421',
+      onSurfaceVariant: dark ? '#C3C2C0' : '#52504C',
+      outline: dark ? '#45423E' : '#DFDDD5',
+      outlineVariant: dark ? '#3B3834' : '#EAE8E1',
 
       // 4. Secondary (Opponent / Player 2 Accent)
       secondary: PLAYER_CORAL,
@@ -253,13 +248,13 @@ export function buildTheme(
       secondaryBorder: dark ? '#7A2E33' : '#FECACA',
       onSecondary: '#FFFFFF',
 
-      // 5. Tertiary / Success (Quick Match, Wins, Online)
-      tertiary: dark ? '#4ADE80' : '#16A34A',
-      tertiaryContainer: dark ? '#14532D' : '#007F36',
-      tertiaryLight: dark ? '#0C2B1A' : '#E8F8EE',
-      tertiaryBorder: dark ? '#166534' : '#BBF7D0',
-      onTertiary: dark ? '#052E16' : '#FFFFFF',
-      success: dark ? '#4ADE80' : '#15803D',
+      // 5. Tertiary / Success (Tactile Green)
+      tertiary: dark ? '#81B64C' : '#69B342',
+      tertiaryContainer: dark ? '#243C16' : '#E8F5DF',
+      tertiaryLight: dark ? '#1B2E10' : '#F2F9ED',
+      tertiaryBorder: dark ? '#3D6823' : '#BEE29E',
+      onTertiary: '#FFFFFF',
+      success: dark ? '#81B64C' : '#69B342',
 
       // 6. Warnings, Errors & Alerts
       warning: dark ? '#FBBF24' : '#B45309',
@@ -270,25 +265,22 @@ export function buildTheme(
       dangerLight: dark ? '#3B1518' : '#FEE2E2',
       dangerBorder: dark ? '#7F1D1D' : '#FECACA',
 
-      // 7. Players
-      player1: primary,
+      // 7. Players (P1 Tactical Blue stays distinct from Green UI chrome)
+      player1: dark ? '#60A5FA' : '#3B82F6',
       player2: PLAYER_CORAL,
       player3: PLAYER_GREEN,
       player4: PLAYER_AMBER,
-      playerColors: [primary, PLAYER_CORAL, PLAYER_GREEN, PLAYER_AMBER] as string[],
+      playerColors: [dark ? '#60A5FA' : '#3B82F6', PLAYER_CORAL, PLAYER_GREEN, PLAYER_AMBER] as string[],
 
-      // 8. Board Game Engine Surfaces (Preserved Board)
-      //     NOTE: the match board itself renders from useBoardPalette
-      //     (premium-gated), never from these. boardBorder doubles as the
-      //     generic card hairline, so it alone follows the mode.
-      boardBackground: '#FFFFFF',
-      boardBorder: dark ? '#3D3D45' : '#CBD5E1',
-      cell: '#F1F5F9',
-      cellBorder: '#E2E8F0',
-      cellHover: '#E2E8F0',
-      cellLegalMove: hexToRgba(primary, 0.10),
+      // 8. Board Game Engine Surfaces
+      boardBackground: dark ? '#262421' : '#FFFFFF',
+      boardBorder: dark ? '#45423E' : '#DFDDD5',
+      cell: dark ? '#312E2B' : '#F1F0EB',
+      cellBorder: dark ? '#3B3834' : '#E5E3DC',
+      cellHover: dark ? '#3B3834' : '#E5E3DC',
+      cellLegalMove: hexToRgba(primary, 0.12),
       cellLegalDot: primary,
-      cellLastMove: hexToRgba(primary, 0.08),
+      cellLastMove: hexToRgba(primary, 0.10),
 
       // 9. Walls
       wallSlot: 'rgba(100, 116, 139, 0.30)',
@@ -301,9 +293,9 @@ export function buildTheme(
       wallPreviewInactiveOpacity: 0.22,
 
       // 10. Match Outcomes
-      win: '#15803D',
-      winBg: '#F0FDF4',
-      winBorder: '#BBF7D0',
+      win: '#69B342',
+      winBg: '#F2F9ED',
+      winBorder: '#BEE29E',
       loss: '#DC2626',
       lossBg: '#FEF2F2',
       lossBorder: '#FECACA',
@@ -312,7 +304,7 @@ export function buildTheme(
       drawBorder: '#E2E8F0',
 
       // 11. Live Status Indicators
-      statusOnline: dark ? '#4ADE80' : '#16A34A',
+      statusOnline: dark ? '#81B64C' : '#69B342',
       statusPlaying: primary,
       statusOffline: '#94A3B8',
 
@@ -324,8 +316,6 @@ export function buildTheme(
       shadow: 'rgba(15, 23, 42, 0.08)',
 
       // 14. Shared component fills
-      //     These were duplicated as hex inside toasts, cards, buttons and
-      //     pills. Every light value is identical to the literal it replaced.
       surfaceMuted,
       surfaceHairline,
       surfacePrimaryTint,
@@ -334,24 +324,24 @@ export function buildTheme(
       /** Text/icon colour on a dark or saturated fill. */
       onSurfaceInverse: SLATE[0],
       /** Ink for notice pills, dots, titles and inverse button labels. */
-      inverseLabel: dark ? '#FFFFFF' : SLATE[900],
-      /** Secondary body text on light surfaces (was #64748B = SLATE[500]). */
-      textSecondaryStrong: dark ? '#BCBCC4' : SLATE[500],
-      /** Neutral icon + label colour (was #475569 = SLATE[600]). */
-      textOnMuted: dark ? '#C6C6CE' : SLATE[600],
-      /** Chart stroke, deeper than `primary` in light so lines read on white. */
-      chartStroke: dark ? '#7C8CFF' : BLUE[300],
-      chartInk: dark ? '#E9EBF3' : BLUE[900],
+      inverseLabel: dark ? '#FFFFFF' : '#262421',
+      /** Secondary body text on light surfaces. */
+      textSecondaryStrong: dark ? '#C3C2C0' : '#52504C',
+      /** Neutral icon + label colour. */
+      textOnMuted: dark ? '#989795' : '#7D7A75',
+      /** Chart stroke. */
+      chartStroke: dark ? '#81B64C' : '#69B342',
+      chartInk: dark ? '#E9EBF3' : '#262421',
 
       // 15. Engine assessment markers (analysisUi.ts + review screen)
       assessmentBest: '#0D9488',
       assessmentExcellent: '#059669',
-      assessmentGood: '#16A34A',
+      assessmentGood: '#69B342',
       assessmentInaccuracy: '#D97706',
       assessmentBlunder: '#EA580C',
       /** Alert-toned marks on the board. */
       playerPink: '#F43F5E',
-      playerGreenBright: '#22C55E',
+      playerGreenBright: '#69B342',
       playerMint: '#34D399',
       player4Amber: '#D9A62E',
       /** Third-party brand colour (Google sign-in). Never themed. */
@@ -360,10 +350,10 @@ export function buildTheme(
       warningBorder: dark ? '#7A5A10' : '#FDE68A',
       neutralStone: dark ? '#3A3A42' : '#D6D3D1',
       /** Hairline between list rows. */
-      dividerSoft: dark ? '#2C2C33' : '#EEF1F6',
-      successLight: dark ? '#0C2B1A' : '#ECFDF5',
-      /** Green avatar tint. Distinct from `winBg` (#F0FDF4) by one step. */
-      successTint: dark ? '#123B28' : '#DCFCE7',
+      dividerSoft: dark ? '#3B3834' : '#EDEBE5',
+      successLight: dark ? '#1B2E10' : '#F2F9ED',
+      /** Green avatar tint. */
+      successTint: dark ? '#243C16' : '#E8F5DF',
       shadowBlack: '#000',
     },
     radius: {
@@ -409,11 +399,11 @@ export function buildTheme(
     },
     shadows: {
       card: {
-        shadowColor: '#0F172A',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 6,
-        elevation: 2,
+        shadowColor: 'transparent',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0,
+        shadowRadius: 0,
+        elevation: 0,
       },
       modal: {
         shadowColor: '#0F172A',
@@ -470,7 +460,7 @@ export function buildTheme(
  */
 export const THEMES = {
   light: buildTheme(PRIMARY_COLOR, 'light'),
-  dark: buildTheme(PRIMARY_COLOR, 'dark'),
+  dark: buildTheme('#81B64C', 'dark'),
 } as const;
 
 export type ThemeName = keyof typeof THEMES;

@@ -1,4 +1,4 @@
-import { setAdProvider, type AdProvider, type RewardedResult } from './ads';
+import { setAdProvider, type AdProvider, type RewardedPlacement, type RewardedResult } from './ads';
 
 /**
  * Web twin of `adsNative.ts` (MONETIZATION.md P6 / Web AdSense).
@@ -21,7 +21,7 @@ class WebAdSenseProvider implements AdProvider {
     // Best-effort pre-warm for Google H5 Games Ads
   }
 
-  showRewarded(placement: string): Promise<RewardedResult> {
+  showRewarded(placement: RewardedPlacement): Promise<RewardedResult> {
     if (typeof window === 'undefined') {
       return Promise.resolve({ earned: false, error: 'unavailable' });
     }
@@ -73,6 +73,11 @@ export function installRealAds(): boolean {
 
 export function getBannerLib(): null {
   return null;
+}
+
+/** Web preload is a no-op until AdSense H5 ad breaks are available. */
+export function preloadInterstitial(): Promise<boolean> {
+  return Promise.resolve(false);
 }
 
 export function showInterstitial(): Promise<boolean> {

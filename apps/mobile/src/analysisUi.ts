@@ -5,52 +5,65 @@ import { THEME } from './theme';
 /** Restrained assessment colors — only markers use them, never whole screens. */
 export function assessmentColor(a?: MoveAssessment): string {
   switch (a) {
+    case 'BRILLIANT':
+      return '#1BACA6';
+    case 'GREAT':
+      return '#2563EB';
     case 'BEST':
-      return THEME.colors.assessmentBest;
+      return '#69B342';
     case 'EXCELLENT':
-      return THEME.colors.assessmentExcellent;
+      return '#78B833';
     case 'GOOD':
-      return THEME.colors.assessmentGood;
+      return '#3B82F6';
     case 'INACCURACY':
-      return THEME.colors.assessmentInaccuracy;
+      return '#F59E0B';
     case 'MISTAKE':
-      return THEME.colors.assessmentBlunder;
+      return '#EA580C';
     case 'BLUNDER':
-      return THEME.colors.danger;
+      return '#DC2626';
+    case 'FORCED':
+      return '#6B7280';
     default:
-      return THEME.colors.assessmentGood;
+      return '#2563EB';
   }
 }
 
 /** Engine alternative markers always use teal to contrast actual-move marks. */
-export const ENGINE_TEAL = THEME.colors.assessmentBest;
+export const ENGINE_TEAL = '#69B342';
 
 /**
  * Chess-style classification glyphs for the review board + coach line:
- * blunder ??, mistake ?, inaccuracy ?!, best ★ (white star). Lesser moves
- * show none. The star renders through the system font fallback.
+ * Brilliant !!, Great !, Best ★, Excellent ✓, Inaccuracy ?!, Mistake ?, Blunder ??
  */
 export function assessmentGlyph(a?: MoveAssessment): string {
   switch (a) {
-    case 'BLUNDER':
-      return '??';
-    case 'MISTAKE':
-      return '?';
-    case 'INACCURACY':
-      return '?!';
+    case 'BRILLIANT':
+      return '!!';
+    case 'GREAT':
+      return '!';
     case 'BEST':
       return '★';
+    case 'EXCELLENT':
+      return '✓';
+    case 'GOOD':
+      return '👍';
+    case 'INACCURACY':
+      return '?!';
+    case 'MISTAKE':
+      return '?';
+    case 'BLUNDER':
+      return '??';
+    case 'FORCED':
+      return '□';
     default:
       return '';
   }
 }
 
 /**
- * Badge fill per assessment. Best moves get a green star badge; everything
- * else wears its assessment color.
+ * Badge fill per assessment matching Chess.com colors.
  */
 export function assessmentBadgeColor(a?: MoveAssessment): string {
-  if (a === 'BEST') return THEME.colors.success;
   return assessmentColor(a);
 }
 
@@ -58,6 +71,8 @@ export function assessmentBadgeColor(a?: MoveAssessment): string {
 export function assessmentVerdictKey(
   a?: MoveAssessment
 ):
+  | 'review.verdictBrilliant'
+  | 'review.verdictGreat'
   | 'review.verdictBest'
   | 'review.verdictExcellent'
   | 'review.verdictGood'
@@ -65,6 +80,10 @@ export function assessmentVerdictKey(
   | 'review.verdictMistake'
   | 'review.verdictBlunder' {
   switch (a) {
+    case 'BRILLIANT':
+      return 'review.verdictBrilliant';
+    case 'GREAT':
+      return 'review.verdictGreat';
     case 'BEST':
       return 'review.verdictBest';
     case 'EXCELLENT':

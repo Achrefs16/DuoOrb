@@ -75,9 +75,12 @@ const PodiumSpot: React.FC<{
           </LinearGradient>
         )}
       </View>
-      <Text style={styles.spotName} numberOfLines={1}>
-        {name}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, maxWidth: '100%' }}>
+        <Text style={styles.spotName} numberOfLines={1}>
+          {name}
+        </Text>
+        {entry.isPremium && <PremiumBadge size="xs" />}
+      </View>
       {isMe && (
         <View style={styles.youPill}>
           <Text style={styles.youPillText}>{t('leaderboard.you')}</Text>
@@ -743,7 +746,7 @@ const createStyles = () => StyleSheet.create({
   listContent: {
     paddingHorizontal: 20,
     paddingTop: 8,
-    paddingBottom: 120, // Clears the floating nav overlay.
+    paddingBottom: 88, // Clears the floating nav overlay.
     maxWidth: 460,
     width: '100%',
     alignSelf: 'center',

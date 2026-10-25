@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import {
   setAdProvider,
   type AdProvider,
+  type RewardedPlacement,
   type RewardedResult,
 } from './ads';
 import { adUnitId } from './adIds';
@@ -23,7 +24,12 @@ import { track } from './analytics';
 // the lazy require, so no importable type exists.
 type Sdk = any;
 
+// Test seam only: production always resolves the real native module. Lets the
+// pacing/preload contract run under Node without a device or native binary.
+let sdkOverride: Sdk | null = null;
+
 function loadSdk(): Sdk | null {
+  if (sdkOverride) return sdkOverride;
   if (Platform.OS === 'web') return null;
   // iOS has no AdMob app registered yet (no iosAppId in app.json): the native
   // SDK crashes on initialize() without one. Stay dark on iOS until the iOS
@@ -40,6 +46,24 @@ function loadSdk(): Sdk | null {
 }
 
 let readyPromise: Promise<boolean> | null = null;
+
+/**
+ * AdMob content-rating policy. DuoOrb is a 13+ tactical game, and most mobile
+ * gaming video creatives are rated PG/T; requesting only `G` produced
+ * NO_FILL on video units while banners still filled. Kept pure so the policy
+ * is unit-testable without the native SDK.
+ */
+export function buildAdRequestConfiguration(sdk: Sdk): {
+  maxAdContentRating: unknown;
+  tagForChildDirectedTreatment: boolean;
+  tagForUnderAgeOfConsent: boolean;
+} {
+  return {
+    maxAdContentRating: sdk.MaxAdContentRating.T,
+    tagForChildDirectedTreatment: false,
+    tagForUnderAgeOfConsent: false,
+  };
+}
 
 export function ensureAdsReady(): Promise<boolean> {
   if (!readyPromise) {
@@ -58,7 +82,7 @@ export function ensureAdsReady(): Promise<boolean> {
         }
         sdk
           .mobileAds()
-          .setRequestConfiguration({ maxAdContentRating: sdk.MaxAdContentRating.G });
+          .setRequestConfiguration(buildAdRequestConfiguration(sdk));
         await sdk.mobileAds().initialize();
         return true;
       } catch {
@@ -97,21 +121,21 @@ class RealRewardedProvider implements AdProvider {
     void this.ensureLoaded().catch(() => {});
   }
 
-  showRewarded(): Promise<RewardedResult> {
+  showRewarded(placement: RewardedPlacement): Promise<RewardedResult> {
     if (this.inflight) return this.inflight;
-    this.inflight = this.run().finally(() => {
+    this.inflight = this.run(placement).finally(() => {
       this.inflight = null;
     });
     return this.inflight;
   }
 
-  private async run(): Promise<RewardedResult> {
+  private async run(placement: RewardedPlacement): Promise<RewardedResult> {
     try {
       const ready = await ensureAdsReady();
       if (!ready) return { earned: false, error: 'unavailable' };
       const loaded = await this.ensureLoaded();
       if (!loaded) return { earned: false, error: 'unavailable' };
-      return await this.present();
+      return await this.present(placement);
     } catch {
       return { earned: false, error: 'error' };
     }
@@ -172,7 +196,7 @@ class RealRewardedProvider implements AdProvider {
     }
   }
 
-  private present(): Promise<RewardedResult> {
+  private present(placement: RewardedPlacement): Promise<RewardedResult> {
     return new Promise((resolve) => {
       let earned = false;
       let settled = false;
@@ -198,7 +222,7 @@ class RealRewardedProvider implements AdProvider {
       try {
         this.ad.addAdEventListener(this.sdk.RewardedAdEventType.EARNED_REWARD, () => {
           earned = true;
-          track('reward_completed', { placement: 'analysis' });
+          track('reward_completed', { placement });
         });
         this.ad.addAdEventListener(this.sdk.AdEventType.CLOSED, () => {
           finish(earned ? { earned: true } : { earned: false, error: 'dismissed' });
@@ -217,11 +241,78 @@ class RealRewardedProvider implements AdProvider {
 }
 
 /**
- * Win-only interstitial (result-modal exit). Singleton instance, one show at
- * a time: a second call while showing resolves false instead of stacking.
+ * Win-only interstitial (result-modal exit). One show at a time: a second
+ * call while showing resolves false instead of stacking. The creative is
+ * preloaded during the match, so an eligible exit shows it immediately
+ * instead of waiting 2–6s for VAST buffering.
+ *
  * Returns true when an ad actually presented (CLOSED after show).
  */
 let interstitialInflight: Promise<boolean> | null = null;
+// Untyped by necessity: created through the lazily required native SDK.
+let preloadedInterstitial: any | null = null;
+let preloadingInterstitialPromise: Promise<boolean> | null = null;
+const INTERSTITIAL_GRACE_MS = 2_000;
+
+/** Warms the next interstitial while the user is still playing. */
+export function preloadInterstitial(): Promise<boolean> {
+  if (preloadedInterstitial?.loaded) return Promise.resolve(true);
+  if (preloadingInterstitialPromise) return preloadingInterstitialPromise;
+  preloadingInterstitialPromise = runPreloadInterstitial().finally(() => {
+    preloadingInterstitialPromise = null;
+  });
+  return preloadingInterstitialPromise;
+}
+
+async function runPreloadInterstitial(): Promise<boolean> {
+  try {
+    const ready = await ensureAdsReady();
+    if (!ready) return false;
+    const sdk = loadSdk();
+    if (!sdk || typeof sdk.InterstitialAd === 'undefined') return false;
+    const ad = sdk.InterstitialAd.createForAdRequest(adUnitId('interstitial'));
+    return await new Promise<boolean>((resolve) => {
+      let settled = false;
+      const unsubs: (() => void)[] = [];
+      const timer = setTimeout(() => finish(false), LOAD_TIMEOUT_MS);
+      const cleanup = () => {
+        clearTimeout(timer);
+        unsubs.forEach((u) => {
+          try {
+            u();
+          } catch {
+            // Listener teardown is best-effort.
+          }
+        });
+      };
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (ok) {
+          preloadedInterstitial = ad;
+          resolve(true);
+          return;
+        }
+        try {
+          ad.destroy?.();
+        } catch {
+          // Teardown hygiene only.
+        }
+        resolve(false);
+      };
+      try {
+        unsubs.push(ad.addAdEventListener(sdk.AdEventType.LOADED, () => finish(true)));
+        unsubs.push(ad.addAdEventListener(sdk.AdEventType.ERROR, () => finish(false)));
+        ad.load();
+      } catch {
+        finish(false);
+      }
+    });
+  } catch {
+    return false;
+  }
+}
 
 export function showInterstitial(): Promise<boolean> {
   if (interstitialInflight) return interstitialInflight;
@@ -235,48 +326,23 @@ async function runInterstitial(): Promise<boolean> {
   try {
     const ready = await ensureAdsReady();
     if (!ready) return false;
-    const sdk = loadSdk();
-    if (!sdk || typeof sdk.InterstitialAd === 'undefined') return false;
-    const ad = sdk.InterstitialAd.createForAdRequest(adUnitId('interstitial'));
-    const loaded = await new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => resolve(false), LOAD_TIMEOUT_MS);
-      const unsubs: (() => void)[] = [];
-      const cleanup = () => {
-        clearTimeout(timer);
-        unsubs.forEach((u) => {
-          try {
-            u();
-          } catch {
-            // Listener teardown is best-effort.
-          }
-        });
-      };
-      try {
-        unsubs.push(
-          ad.addAdEventListener(sdk.AdEventType.LOADED, () => {
-            cleanup();
-            resolve(true);
-          })
-        );
-        unsubs.push(
-          ad.addAdEventListener(sdk.AdEventType.ERROR, () => {
-            cleanup();
-            resolve(false);
-          })
-        );
-      } catch {
-        cleanup();
-        resolve(false);
-        return;
-      }
-      try {
-        ad.load();
-      } catch {
-        cleanup();
-        resolve(false);
-      }
-    });
-    if (!loaded) return false;
+
+    if (!preloadedInterstitial?.loaded) {
+      // Short grace cap: a cold ad must never stall navigation or surface on
+      // a different screen. The background preload keeps warming regardless.
+      let graceTimer: ReturnType<typeof setTimeout> | null = null;
+      const loaded = await Promise.race([
+        preloadInterstitial(),
+        new Promise<boolean>((resolve) => {
+          graceTimer = setTimeout(() => resolve(false), INTERSTITIAL_GRACE_MS);
+        }),
+      ]);
+      if (graceTimer) clearTimeout(graceTimer);
+      if (!loaded || !preloadedInterstitial?.loaded) return false;
+    }
+
+    const ad = preloadedInterstitial;
+    preloadedInterstitial = null;
     const shown = await new Promise<boolean>((resolve) => {
       let settled = false;
       const finish = (ok: boolean) => {
@@ -290,18 +356,42 @@ async function runInterstitial(): Promise<boolean> {
         resolve(ok);
       };
       try {
-        ad.addAdEventListener(sdk.AdEventType.CLOSED, () => finish(true));
-        ad.addAdEventListener(sdk.AdEventType.ERROR, () => finish(false));
+        ad.addAdEventListener(sdkEvent('CLOSED'), () => finish(true));
+        ad.addAdEventListener(sdkEvent('ERROR'), () => finish(false));
         void Promise.resolve(ad.show()).catch(() => finish(false));
       } catch {
         finish(false);
       }
     });
-    if (shown) track('interstitial_shown', { placement: 'result-exit' });
+    if (shown) {
+      track('interstitial_shown', { placement: 'result-exit' });
+      // Warm the next match's creative immediately after this one closes.
+      void preloadInterstitial();
+    }
     return shown;
   } catch {
     return false;
   }
+}
+
+/** Resolve an AdEventType constant without leaking the SDK type upward. */
+function sdkEvent(name: 'LOADED' | 'ERROR' | 'CLOSED'): unknown {
+  const sdk = loadSdk();
+  return sdk?.AdEventType?.[name];
+}
+
+/** Test seam: reset module-level ad instances without touching the SDK. */
+export function __resetAdsNativeForTests(): void {
+  readyPromise = null;
+  interstitialInflight = null;
+  preloadedInterstitial = null;
+  preloadingInterstitialPromise = null;
+  sdkOverride = null;
+}
+
+/** Test seam: inject a fake SDK so preload/show can run under Node. */
+export function __setAdsSdkForTests(sdk: Sdk | null): void {
+  sdkOverride = sdk;
 }
 
 /**
@@ -314,7 +404,11 @@ export function installRealAds(): boolean {
     const sdk = loadSdk();
     if (!sdk) return false;
     setAdProvider(new RealRewardedProvider(sdk, adUnitId('rewarded')));
-    void ensureAdsReady().catch(() => {});
+    void ensureAdsReady()
+      .then((ok) => {
+        if (ok) void preloadInterstitial();
+      })
+      .catch(() => {});
     return true;
   } catch {
     return false;

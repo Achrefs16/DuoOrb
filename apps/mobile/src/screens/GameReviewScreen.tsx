@@ -19,6 +19,7 @@ import {
 } from '../components/AnalysisPanels';
 import { TryAgainPanel } from '../components/TryAgainPanel';
 import { WinGraph } from '../components/WinGraph';
+import { PremiumBadge } from '../components/PremiumBadge';
 import { GameBoard } from '../components/GameBoard';
 import {
   playGoalSound,
@@ -47,12 +48,23 @@ import {
 } from '../monetization/analysisAccess';
 import { isPremiumActive, usePremium } from '../monetization/premium';
 import { api } from '../network/apiClient';
+import { analyzeMatchLocal } from '../analysis/localReview';
 import { useTranslation } from '../i18n';
+import { BotAvatar } from '../components/BotAvatar';
+import {
+  fetchOrComputeReview,
+  reviewCacheKey,
+  cacheReview,
+  getCachedReview,
+} from '../analysis/reviewLoader';
+export { reviewCacheKey, cacheReview };
 
 interface GameReviewScreenProps {
   initialState: GameState;
   history: RecordedAction[];
   perspectiveIdx?: number;
+  /** False for a spectator replay (e.g. another player's profile). */
+  isViewerSeated?: boolean;
   onBack: () => void;
   /**
    * Bare match page: board, HUD cards and step controls only. Hides the
@@ -81,27 +93,12 @@ interface GameReviewScreenProps {
   onUpgradeToFull?: () => void;
   /** Paywall entry for the upgrade sheet's premium row. */
   onOpenPremium?: () => void;
+  /** Seat IDs that are Premium */
+  seatPremium?: Record<string, boolean>;
+  botPersonality?: { id: string; name: string; avatarKey?: string } | null;
 }
 
-/**
- * Full-review cache by game. Reopening a just-seen review skips the
- * multi-second recompute entirely. Capped: analysis objects are heavy.
- */
-const REVIEW_CACHE = new Map<string, GameReview>();
-const REVIEW_CACHE_LIMIT = 5;
 
-function reviewCacheKey(gameId: string, historyLength: number): string {
-  return `${gameId}:${historyLength}`;
-}
-
-function cacheReview(key: string, review: GameReview): void {
-  REVIEW_CACHE.set(key, review);
-  while (REVIEW_CACHE.size > REVIEW_CACHE_LIMIT) {
-    const oldest = REVIEW_CACHE.keys().next();
-    if (oldest.done) break;
-    REVIEW_CACHE.delete(oldest.value);
-  }
-}
 
 function actionsEqual(
   a: { type: string; to?: { row: number; col: number }; wall?: { row: number; col: number; orientation: string } } | null | undefined,
@@ -125,13 +122,17 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   initialState,
   history,
   perspectiveIdx = 0,
+  isViewerSeated = true,
   onBack,
   bare = false,
   ratings,
   accessKey = null,
   onUpgradeToFull,
   onOpenPremium,
+  seatPremium,
+  botPersonality,
 }) => {
+  const coachAvatarKey = botPersonality?.avatarKey || 'martin';
   const styles = useStyles(createStyles);
   const theme = useTheme();
   const { t } = useTranslation();
@@ -193,24 +194,29 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const premium = usePremium();
   const upgradeBusyRef = useRef(false);
 
-  // Chess-style full review controls (UI only — analysis data untouched).
-  // showLine: engine-best overlay on the board (arrow for moves, ghost for
-  // walls). isolateBest (Best button): hides the played move, best only.
-  const [showLine, setShowLine] = useState(true);
-  const [isolateBest, setIsolateBest] = useState(false);
+  // Full review controls (UI only — analysis data untouched).
+  // showBest: reveals the best move arrow and target on the board when tapped on a wrong move.
+  const [showBest, setShowBest] = useState(false);
+
+  // Reset showBest when stepping to another move
+  useEffect(() => {
+    setShowBest(false);
+  }, [currentStep]);
 
   // Bare replay Analyze tap: single gate (premium unlimited, unlocked
   // free, else the free daily when available) — 'locked' opens the sheet
   // instead. Re-opening an upgraded game is free — the unlock key is per
   // gameId:historyLength (E13).
   const handleAnalyzeUpgrade = async () => {
-    if (!accessKey || !onUpgradeToFull || upgradeBusyRef.current) return;
+    if (!onUpgradeToFull || upgradeBusyRef.current) return;
     upgradeBusyRef.current = true;
     try {
+      const gId = accessKey?.gameId ?? initialState?.gameId ?? `game-${Date.now()}`;
+      const hLen = accessKey?.historyLength ?? history.length;
       const entry = await requestAnalysisEntry(
         isPremiumActive(premium),
-        accessKey.gameId,
-        accessKey.historyLength
+        gId,
+        hLen
       );
       if (entry === 'locked') {
         setRewardError(null);
@@ -280,39 +286,36 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     // One deferred task for both paths (even a cache hit goes through it):
     // setState never runs synchronously in this effect body, and the board
     // paints before any of this lands.
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       if (cancelled) return;
-      const cached = REVIEW_CACHE.get(key);
+      const cached = getCachedReview(key);
       if (cached) {
         if (!cancelled) setReview(cached);
         return;
       }
 
-      // Request deep MCTS analysis from the backend server (sole source of truth)
-      try {
-        const safeInitial =
-          initialState && Array.isArray(initialState.players) && initialState.players.length > 0
-            ? initialState
-            : createInitialState({
-                gameId: effectiveGameId,
-                mode: '2p',
-              });
-        const serverReview = await api.requestGameReview(safeInitial, history, effectiveGameId);
-        if (cancelled) return;
-        if (serverReview && Array.isArray(serverReview.moveAnalyses)) {
-          cacheReview(key, serverReview);
-          setReview(serverReview);
-          return;
-        }
-      } catch (err) {
-        console.warn('Server analysis request failed:', err);
+      const safeInitial =
+        initialState && Array.isArray(initialState.players) && initialState.players.length > 0
+          ? initialState
+          : createInitialState({
+              gameId: effectiveGameId,
+              mode: '2p',
+            });
+
+      const res = await fetchOrComputeReview(safeInitial, history, effectiveGameId, {
+        isCancelled: () => cancelled,
+        offlineTitle: t('review.offlineTitle'),
+        offlineBody: t('review.offlineBody'),
+      });
+      if (!cancelled && res) {
+        setReview(res);
       }
     }, 0);
     return () => {
       cancelled = true;
-      clearTimeout(t);
+      clearTimeout(timer);
     };
-  }, [bare, initialState, history, access]);
+  }, [bare, initialState, history, access, t]);
 
   const [isPlaying, setIsPlaying] = useState(false);
   // Playback speed, cycled 1x -> 1.5x -> 2x -> 1x by a single button.
@@ -458,18 +461,20 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     return null;
   }, [bare, currentAnalysis, markColor, preMoveState]);
 
+  const canShowBest = !!currentAnalysis && bestDiffers;
+
   const altMark = useMemo(() => {
     // Bare replay: no engine-best squares either. Best piece moves render
     // as the review arrow now — the ghost/hollow stays walls-only.
     if (bare) return null;
-    if (!showAlt || !currentAnalysis?.bestAction) return null;
+    if (!showBest || !currentAnalysis?.bestAction) return null;
     const ba = currentAnalysis.bestAction;
     if (ba.type === 'MOVE') return null;
     if (ba.type === 'PLACE_WALL') {
       return { wall: ba.wall, color: THEME.colors.chartStroke };
     }
     return null;
-  }, [bare, showAlt, currentAnalysis, theme]);
+  }, [bare, showBest, currentAnalysis, theme]);
 
   // Classification badge (?? / ? / ?! / !) pinned on the destination.
   const badgeMark = useMemo(() => {
@@ -490,7 +495,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
 
   // Best-move arrow: mover's origin -> engine destination (piece moves).
   const bestArrow = useMemo(() => {
-    if (bare || !showLine || !currentAnalysis?.bestAction) return null;
+    if (bare || !showBest || !currentAnalysis?.bestAction) return null;
     const ba = currentAnalysis.bestAction;
     if (ba.type !== 'MOVE') return null;
     const origin = preMoveState.players.find(
@@ -499,7 +504,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     if (!origin) return null;
     if (origin.row === ba.to.row && origin.col === ba.to.col) return null;
     return { from: origin, to: ba.to, color: ENGINE_TEAL };
-  }, [bare, showLine, currentAnalysis, preMoveState]);
+  }, [bare, showBest, currentAnalysis, preMoveState]);
 
   // Eval bar inputs: viewer's win chance + eval at the current step.
   // Histories are per-step; entries at/below the step win, latest fallback.
@@ -632,8 +637,10 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const stripAssessment = (step: number) =>
     step === 0 ? null : review?.moveAnalyses[step - 1]?.assessment ?? null;
 
-  const opponentPlayer = currentState.players[1] || currentState.players[0];
-  const userPlayer = currentState.players[0];
+  const bottomIdx = currentState.players.length > 1 && perspectiveIdx === 1 ? 1 : 0;
+  const topIdx = bottomIdx === 1 ? 0 : 1;
+  const opponentPlayer = currentState.players[topIdx] || currentState.players[0];
+  const userPlayer = currentState.players[bottomIdx];
 
   return (
     <View style={styles.screen}>
@@ -683,7 +690,10 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 </Text>
               </View>
               <View style={styles.hudMeta}>
-                <Text style={styles.hudName} numberOfLines={1}>{opponentPlayer.displayName}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={styles.hudName} numberOfLines={1}>{opponentPlayer.displayName}</Text>
+                  {seatPremium?.[opponentPlayer.id] && <PremiumBadge size="xs" />}
+                </View>
                 <View style={styles.hudTagRow}>
                   {ratings?.[opponentPlayer.id] !== undefined && (
                     <Text style={styles.ratingText}>{ratings[opponentPlayer.id]}</Text>
@@ -750,7 +760,15 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 </Text>
               </View>
               <View style={styles.hudMeta}>
-                <Text style={styles.hudName} numberOfLines={1}>{userPlayer.displayName} {t('gameover.you')}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={styles.hudName} numberOfLines={1}>
+                    {userPlayer.displayName}
+                    {isViewerSeated ? ` ${t('gameover.you')}` : ''}
+                  </Text>
+                  {(isViewerSeated ? isPremiumActive(premium) : seatPremium?.[userPlayer.id]) && (
+                    <PremiumBadge size="xs" />
+                  )}
+                </View>
                 <View style={styles.hudTagRow}>
                   {ratings?.[userPlayer.id] !== undefined && (
                     <Text style={styles.ratingText}>{ratings[userPlayer.id]}</Text>
@@ -886,7 +904,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         {/* Bare -> full upgrade (History/Profile Analyze path): same gate as
             the win/lose modal — premium/dev/unlocked go straight to review,
             locked gets the one-ad sheet. Dev builds never see the sheet. */}
-        {bare && accessKey && onUpgradeToFull && (
+        {bare && onUpgradeToFull && (
         <TouchableOpacity
           style={[styles.upgradeBtn, access === 'checking' && styles.btnDisabled]}
           onPress={handleAnalyzeUpgrade}
@@ -1070,15 +1088,14 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             </View>
           </View>
 
-          {/* Coach: one verdict + one sentence. */}
+          {/* Coach: bot avatar + speech bubble with pointer */}
           {currentAnalysis ? (
             <View style={styles.coachCard}>
-              <View style={[styles.coachAvatar, { backgroundColor: moverColor }]}>
-                <Text style={styles.coachAvatarText}>
-                  {(moverName.charAt(0) || '•').toUpperCase()}
-                </Text>
+              <View style={styles.coachAvatarWrapper}>
+                <BotAvatar avatarKey={coachAvatarKey} size={64} noBg />
               </View>
-              <View style={styles.coachMain}>
+              <View style={styles.coachBubble}>
+                <View style={styles.bubblePointer} />
                 <View style={styles.verdictRow}>
                   {assessmentGlyph(currentAnalysis.assessment) !== '' && (
                     <View
@@ -1096,7 +1113,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                       </Text>
                     </View>
                   )}
-                  <Text style={styles.verdictText}>
+                  <Text style={styles.verdictText} numberOfLines={1}>
                     {t('review.verdictIsA', {
                       label: shortMoveLabel(
                         currentAnalysis.playedAction ?? (currentAnalysis as any).action,
@@ -1122,14 +1139,17 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             </View>
           ) : review && currentStep === 0 ? (
             <View style={styles.coachCard}>
-              <View style={[styles.coachAvatar, { backgroundColor: viewerColor }]}>
-                <Feather name="play" size={18} color="#FFFFFF" />
+              <View style={styles.coachAvatarWrapper}>
+                <BotAvatar avatarKey={coachAvatarKey} size={64} noBg />
               </View>
-              <View style={styles.coachMain}>
+              <View style={styles.coachBubble}>
+                <View style={styles.bubblePointer} />
                 <View style={styles.verdictRow}>
-                  <Text style={styles.verdictText}>
-                    {review.accuracies?.p1 != null
-                      ? `${review.accuracies.p1}% vs ${review.accuracies.p2 ?? 50}%`
+                  <Text style={styles.verdictText} numberOfLines={1}>
+                    {review.accuracies?.[bottomIdx === 0 ? 'p1' : 'p2'] != null
+                      ? `${review.accuracies[bottomIdx === 0 ? 'p1' : 'p2']}% vs ${
+                          review.accuracies?.[bottomIdx === 0 ? 'p2' : 'p1'] ?? 50
+                        }%`
                       : t('review.matchReview')}
                   </Text>
                   <View style={styles.evalPill}>
@@ -1143,8 +1163,16 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             </View>
           ) : (
             <View style={styles.coachCard}>
-              <ActivityIndicator size="small" color={THEME.colors.primary} />
-              <Text style={styles.coachText}>{t('review.analyzing')}</Text>
+              <View style={styles.coachAvatarWrapper}>
+                <BotAvatar avatarKey={coachAvatarKey} size={64} noBg />
+              </View>
+              <View style={styles.coachBubble}>
+                <View style={styles.bubblePointer} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator size="small" color="#69B342" />
+                  <Text style={styles.coachText}>{t('review.analyzing')}</Text>
+                </View>
+              </View>
             </View>
           )}
         </View>
@@ -1170,10 +1198,10 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 previewWall={null}
                 selectedCell={null}
                 interactive={false}
-                moveMark={isolateBest ? null : moveMark}
-                altMark={showLine ? altMark : null}
-                badgeMark={isolateBest ? null : badgeMark}
-                bestArrow={showLine ? bestArrow : null}
+                moveMark={moveMark}
+                altMark={altMark}
+                badgeMark={badgeMark}
+                bestArrow={bestArrow}
                 flipAnim={flip}
                 size={measuredBoardSize}
               />
@@ -1210,8 +1238,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             </TouchableOpacity>
             {stripSteps.map((s) => {
               const a = stripAssessment(s);
-              const bad = a === 'MISTAKE' || a === 'BLUNDER';
               const active = s === currentStep;
+              const glyph = a ? assessmentGlyph(a) : null;
+              const badgeColor = a ? assessmentBadgeColor(a) : null;
               return (
                 <TouchableOpacity
                   key={s}
@@ -1227,7 +1256,16 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                   >
                     {s === 0 ? 'Start' : `${s} · ${stripLabel(s)}`}
                   </Text>
-                  {bad && <View style={styles.stripBad} />}
+                  {badgeColor && glyph ? (
+                    <View
+                      style={[
+                        styles.stripBadgeMini,
+                        { backgroundColor: badgeColor },
+                      ]}
+                    >
+                      <Text style={styles.stripBadgeMiniText}>{glyph}</Text>
+                    </View>
+                  ) : null}
                 </TouchableOpacity>
               );
             })}
@@ -1250,45 +1288,26 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Action bar: Show / Best / Next. */}
+          {/* Action bar: Best / Next (matching Chess.com) */}
           <View style={styles.actionBar}>
             <TouchableOpacity
-              style={[styles.actionBtn, showLine && styles.actionBtnActive]}
-              onPress={() => setShowLine((v) => !v)}
+              style={[
+                styles.actionBtn,
+                !canShowBest && styles.actionBtnDisabled,
+                showBest && styles.actionBtnActive,
+              ]}
+              disabled={!canShowBest}
+              onPress={() => setShowBest((v) => !v)}
               accessibilityRole="button"
-              accessibilityLabel="Show engine line"
-            >
-              <Feather
-                name="eye"
-                size={18}
-                color={
-                  showLine ? THEME.colors.primary : THEME.colors.textSecondary
-                }
-              />
-              <Text
-                style={[
-                  styles.actionLabel,
-                  showLine && { color: THEME.colors.primary },
-                ]}
-                numberOfLines={1}
-              >
-                {t('review.show')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, isolateBest && styles.actionBtnActive]}
-              onPress={() => {
-                setIsolateBest((v) => !v);
-                setShowLine(true);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Isolate best move"
+              accessibilityLabel="Show best move"
             >
               <Feather
                 name="star"
-                size={18}
+                size={20}
                 color={
-                  isolateBest
+                  !canShowBest
+                    ? THEME.colors.textMuted
+                    : showBest
                     ? THEME.colors.primary
                     : THEME.colors.textSecondary
                 }
@@ -1296,13 +1315,15 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               <Text
                 style={[
                   styles.actionLabel,
-                  isolateBest && { color: THEME.colors.primary },
+                  !canShowBest && { color: THEME.colors.textMuted },
+                  showBest && { color: THEME.colors.primary },
                 ]}
                 numberOfLines={1}
               >
                 {t('review.best')}
               </Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               style={[
                 styles.nextBtn,
@@ -1780,52 +1801,72 @@ const createStyles = () => StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
-  // Coach card: avatar disc + verdict row + one-sentence explanation.
+  // Coach card: bot avatar wrapper + speech bubble with left pointer.
   coachCard: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: THEME.radius.lg,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceContainer,
-    padding: 12,
-    ...THEME.shadows.card,
-  },
-  coachAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 2,
+    marginVertical: 4,
   },
-  coachAvatarText: {
-    color: '#FFFFFF',
-    fontFamily: THEME.fonts.bold,
-    fontSize: 18,
-    fontWeight: '800',
+  coachAvatarWrapper: {
+    width: 64,
+    height: 64,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
   },
-  coachMain: {
+  coachBubble: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     gap: 4,
+    position: 'relative',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  bubblePointer: {
+    position: 'absolute',
+    left: -7,
+    top: 18,
+    width: 0,
+    height: 0,
+    borderTopWidth: 6,
+    borderBottomWidth: 6,
+    borderRightWidth: 8,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderRightColor: '#FFFFFF',
+  },
+  coachText: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    color: '#374151',
+    lineHeight: 16,
   },
   verdictRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 6,
   },
   glyphBadge: {
-    minWidth: 24,
-    height: 24,
-    paddingHorizontal: 5,
-    borderRadius: 12,
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 4,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
   glyphText: {
     color: '#FFFFFF',
     fontFamily: THEME.fonts.bold,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
   verdictText: {
@@ -1833,24 +1874,19 @@ const createStyles = () => StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '800',
-    color: THEME.colors.textPrimary,
+    color: '#111827',
   },
   evalPill: {
-    backgroundColor: THEME.colors.textPrimary,
+    backgroundColor: '#F3F4F6',
     borderRadius: 6,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
+    paddingVertical: 2,
+    paddingHorizontal: 7,
   },
   evalPillText: {
-    color: THEME.colors.inverseOnSurface,
+    color: '#1F2937',
     fontFamily: THEME.fonts.bold,
     fontSize: 12,
     fontWeight: '800',
-  },
-  coachText: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: THEME.colors.textSecondary,
   },
   // Board takes all free space between coach and strip.
   fullBoardWrap: {
@@ -1906,6 +1942,20 @@ const createStyles = () => StyleSheet.create({
     borderRadius: 4,
     backgroundColor: THEME.colors.danger,
   },
+  stripBadgeMini: {
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  stripBadgeMiniText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+    fontFamily: THEME.fonts.bold,
+  },
   // Bottom action bar: Show / Best / Retry + Next CTA.
   actionBar: {
     flexDirection: 'row',
@@ -1922,6 +1972,9 @@ const createStyles = () => StyleSheet.create({
   },
   actionBtnActive: {
     backgroundColor: THEME.colors.surfaceContainer,
+  },
+  actionBtnDisabled: {
+    opacity: 0.35,
   },
   actionLabel: {
     fontSize: 11,

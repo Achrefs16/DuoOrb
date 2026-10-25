@@ -453,7 +453,10 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                             </Text>
                           </View>
                           <View style={styles.requestMeta}>
-                            <Text style={styles.requestUsername}>{req.fromUsername}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Text style={styles.requestUsername}>{req.fromUsername}</Text>
+                              {req.isPremium && <PremiumBadge size="xs" />}
+                            </View>
                             <Text style={styles.requestSub}>{t('friends.incomingRequest')}</Text>
                           </View>
                         </View>
@@ -645,7 +648,10 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                           </Text>
                         </View>
                         <View>
-                          <Text style={styles.searchUsername}>{resolveName(user)}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Text style={styles.searchUsername}>{resolveName(user)}</Text>
+                            {user.isPremium && <PremiumBadge size="xs" />}
+                          </View>
                           <Text style={styles.searchHandle}>@{user.username}</Text>
                         </View>
                       </View>
@@ -767,7 +773,7 @@ const createStyles = () => StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 120, // Clears the floating nav overlay.
+    paddingBottom: 88, // Clears the floating nav overlay.
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',

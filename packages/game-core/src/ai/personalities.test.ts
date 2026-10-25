@@ -9,7 +9,8 @@ import { BOT_ROSTER, botById, botLadder, botsByTier } from './personalities.js';
  * fresh board — a mistyped weight or depth must fail here, not mid-match.
  */
 describe('bot roster data', () => {
-  it('has unique ids and names', () => {
+  it('has ten unique ids and names', () => {
+    expect(BOT_ROSTER).toHaveLength(10);
     const ids = BOT_ROSTER.map((b) => b.id);
     expect(new Set(ids).size).toBe(ids.length);
     const names = BOT_ROSTER.map((b) => b.name);
@@ -24,9 +25,9 @@ describe('bot roster data', () => {
     }
   });
 
-  it('marks every roster entry premium with full presentation, bio, quote, dialogue + banter', () => {
+  it('marks every roster entry free with full presentation, bio, quote, dialogue + banter', () => {
     for (const b of BOT_ROSTER) {
-      expect(b.premium).toBe(true);
+      expect(b.premium).toBe(false);
       expect(b.name.trim().length).toBeGreaterThan(0);
       expect(b.title.trim().length).toBeGreaterThan(0);
       expect(['beginner', 'intermediate', 'master']).toContain(b.tier);
@@ -80,8 +81,17 @@ describe('bot roster data', () => {
   });
 
   it('resolves by id and misses cleanly', () => {
+    expect(botById('martin')?.name).toBe('Martin');
+    expect(botById('pip')?.name).toBe('Pip');
+    expect(botById('elias')?.name).toBe('Elias');
+    expect(botById('elena')?.name).toBe('Elias');
+    expect(botById('bram')?.name).toBe('Bram');
     expect(botById('nelson')?.name).toBe('Nelson');
-    expect(botById('vex')?.name).toBe('Nelson');
+    expect(botById('vex')?.name).toBe('Vex');
+    expect(botById('jamal')?.name).toBe('Jamal');
+    expect(botById('sofia')?.name).toBe('Jamal');
+    expect(botById('marcus')?.name).toBe('Marcus');
+    expect(botById('viktor')?.name).toBe('Viktor');
     expect(botById('achref')?.name).toBe('Achref');
     expect(botById('architect')?.name).toBe('Achref');
     expect(botById('nope')).toBeNull();
@@ -96,7 +106,7 @@ describe('bot roster engines', () => {
       playerNames: ['You', 'Bot'],
     });
     for (const b of BOT_ROSTER) {
-      const action = getBestAction(state, b.profile, 42);
+      const action = getBestAction(state, b.profile);
       expect(action, `${b.id} returned no move`).not.toBeNull();
     }
   }, 15_000);

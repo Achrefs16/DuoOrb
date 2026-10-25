@@ -88,7 +88,6 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
 
   const bullets = [
     t('premium.bulletAds'),
-    t('premium.bulletAnalysis'),
     t('premium.bulletMidnight'),
     t('premium.bulletCrown'),
   ];

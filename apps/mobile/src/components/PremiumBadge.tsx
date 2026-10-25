@@ -10,14 +10,24 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export const PREMIUM_GOLD = '#D9A62E';
 
-const PremiumBadgeInner: React.FC<{ size?: number }> = ({ size = 13 }) => (
-  <MaterialCommunityIcons
-    name="crown"
-    size={size}
-    color={PREMIUM_GOLD}
-    accessibilityRole="image"
-    accessibilityLabel="Premium member"
-  />
-);
+const SIZE_MAP: Record<string, number> = {
+  xs: 11,
+  sm: 13,
+  md: 16,
+  lg: 20,
+};
+
+const PremiumBadgeInner: React.FC<{ size?: number | 'xs' | 'sm' | 'md' | 'lg' }> = ({ size = 13 }) => {
+  const pixelSize = typeof size === 'number' ? size : (SIZE_MAP[size] ?? 13);
+  return (
+    <MaterialCommunityIcons
+      name="crown"
+      size={pixelSize}
+      color={PREMIUM_GOLD}
+      accessibilityRole="image"
+      accessibilityLabel="Premium member"
+    />
+  );
+};
 
 export const PremiumBadge = memo(PremiumBadgeInner);

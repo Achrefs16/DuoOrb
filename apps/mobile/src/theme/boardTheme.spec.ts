@@ -64,6 +64,9 @@ describe('board theme', () => {
 
   it('parses unknown skin ids to classic (E23)', () => {
     expect(parseBoardSkinId('walnut')).toBe('walnut');
+    expect(parseBoardSkinId('tactile')).toBe('tactile');
+    expect(parseBoardSkinId('stone')).toBe('stone');
+    expect(parseBoardSkinId('chess')).toBe('stone');
     expect(parseBoardSkinId('classic')).toBe('classic');
     expect(parseBoardSkinId('glacier')).toBe('classic');
     expect(parseBoardSkinId('arena')).toBe('classic');
@@ -87,18 +90,38 @@ describe('board theme', () => {
     // Free / lapsed: fall back to classic in the current appearance.
     expect(resolveBoardSkin('walnut', false, 'light')).toBe(CLASSIC_LIGHT_SKIN);
     expect(resolveBoardSkin('walnut', false, 'midnight')).toBe(CLASSIC_MIDNIGHT_SKIN);
+    // Tactile is unlocked for everyone (premiumOnly: false)
+    expect(resolveBoardSkin('tactile', false, 'light')).toBe(BOARD_SKINS.tactile);
+    expect(resolveBoardSkin('tactile', false, 'midnight')).toBe(BOARD_SKINS.tactile);
+    // Stone is unlocked for everyone (premiumOnly: false)
+    expect(resolveBoardSkin('stone', false, 'light')).toBe(BOARD_SKINS.stone);
+    expect(resolveBoardSkin('stone', false, 'midnight')).toBe(BOARD_SKINS.stone);
   });
 
   it('every skin carries the full palette surface', () => {
     const paletteKeys = Object.keys(LIGHT_BOARD).sort();
-    for (const skin of [WALNUT_SKIN, CLASSIC_MIDNIGHT_SKIN]) {
+    for (const skin of [WALNUT_SKIN, BOARD_SKINS.tactile, BOARD_SKINS.stone, CLASSIC_MIDNIGHT_SKIN]) {
       for (const key of paletteKeys) {
         const value = (skin as unknown as Record<string, unknown>)[key];
         expect(typeof value).toBe('string');
         expect((value as string).length).toBeGreaterThan(0);
       }
     }
-    expect(Object.keys(BOARD_SKINS).sort()).toEqual(['classic', 'walnut']);
+    expect(Object.keys(BOARD_SKINS).sort()).toEqual(['classic', 'stone', 'tactile', 'walnut']);
+  });
+
+  it('stone skin has light/dark checker cells, tight gaps, and no glass effect', () => {
+    const stone = BOARD_SKINS.stone;
+    expect(stone.cell).toBe('#F7F6F2');
+    expect(stone.cellAlt).toBe('#EDEBE5');
+    expect(stone.boardBackground).toBe('#E8E6DF');
+    expect(stone.cellRadius).toBe(2);
+    expect(stone.cellGap).toBe(3);
+    expect(stone.orbHighlightOpacity).toBe(0);
+    expect(stone.orbShadow).toBe(false);
+    expect(stone.wallSlot).toBe('transparent');
+    expect(stone.wallSlotSize).toBe(0);
+    expect(stone.premiumOnly).toBe(false);
   });
 
   it('walnut takes over the whole page with a physical-game finish', () => {

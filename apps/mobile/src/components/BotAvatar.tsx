@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Image, ImageSourcePropType, StyleSheet, View } from 'react-native';
 import Svg, {
   Circle,
   Defs,
@@ -10,6 +10,16 @@ import Svg, {
   Stop,
 } from 'react-native-svg';
 import { THEME, useStyles } from '../theme';
+import martinPng from '../../assets/bots/martin.png';
+import pipPng from '../../assets/bots/pip.png';
+import eliasPng from '../../assets/bots/elias.png';
+import bramPng from '../../assets/bots/bram.png';
+import nelsonPng from '../../assets/bots/nelson.png';
+import vexPng from '../../assets/bots/vex.png';
+import jamalPng from '../../assets/bots/jamal.png';
+import marcusPng from '../../assets/bots/marcus.png';
+import viktorPng from '../../assets/bots/viktor.png';
+import achrefPng from '../../assets/bots/achref.png';
 
 export type BotAvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
@@ -26,6 +36,8 @@ interface BotAvatarProps {
   color?: string;
   size?: BotAvatarSize | number;
   showGlow?: boolean;
+  noBg?: boolean;
+  selected?: boolean;
   style?: object;
 }
 
@@ -33,7 +45,7 @@ interface BotAvatarProps {
  * 1. Martin: The Friendly Dad (800 ELO)
  * Cozy green knit sweater, round tortoiseshell glasses, warm friendly dad smile.
  */
-const MartinPortrait: React.FC<{ size: number }> = ({ size }) => (
+const MartinPortrait: React.FC<{ size: number; noBg?: boolean }> = ({ size, noBg }) => (
   <Svg width={size} height={size} viewBox="0 0 100 100">
     <Defs>
       <LinearGradient id="martinBg" x1="0" y1="0" x2="1" y2="1">
@@ -46,7 +58,7 @@ const MartinPortrait: React.FC<{ size: number }> = ({ size }) => (
       </LinearGradient>
     </Defs>
     {/* Square background */}
-    <Rect width="100" height="100" rx="16" fill="url(#martinBg)" />
+    {!noBg && <Rect width="100" height="100" rx="16" fill="url(#martinBg)" />}
 
     {/* Cozy green sweater */}
     <Path d="M 16 100 C 20 72 34 68 50 68 C 66 68 80 72 84 100 Z" fill="#047857" />
@@ -99,7 +111,7 @@ const MartinPortrait: React.FC<{ size: number }> = ({ size }) => (
  * 2. Elena: The Eager Student (1100 ELO)
  * College student, high dark ponytail, bright hazel eyes, amber varsity jacket.
  */
-const ElenaPortrait: React.FC<{ size: number }> = ({ size }) => (
+const ElenaPortrait: React.FC<{ size: number; noBg?: boolean }> = ({ size, noBg }) => (
   <Svg width={size} height={size} viewBox="0 0 100 100">
     <Defs>
       <LinearGradient id="elenaBg" x1="0" y1="0" x2="1" y2="1">
@@ -111,7 +123,7 @@ const ElenaPortrait: React.FC<{ size: number }> = ({ size }) => (
         <Stop offset="100%" stopColor="#FBCBA8" />
       </LinearGradient>
     </Defs>
-    <Rect width="100" height="100" rx="16" fill="url(#elenaBg)" />
+    {!noBg && <Rect width="100" height="100" rx="16" fill="url(#elenaBg)" />}
 
     {/* Ponytail swinging to side */}
     <Path d="M 64 28 C 78 24 88 38 86 56 C 82 50 78 42 70 36 Z" fill="#292524" />
@@ -165,7 +177,7 @@ const ElenaPortrait: React.FC<{ size: number }> = ({ size }) => (
  * 3. Nelson: The Aggressive Challenger (1450 ELO)
  * Cocky athletic guy, messy spiky dark hair, raised eyebrow, purple athletic hoodie.
  */
-const NelsonPortrait: React.FC<{ size: number }> = ({ size }) => (
+const NelsonPortrait: React.FC<{ size: number; noBg?: boolean }> = ({ size, noBg }) => (
   <Svg width={size} height={size} viewBox="0 0 100 100">
     <Defs>
       <LinearGradient id="nelsonBg" x1="0" y1="0" x2="1" y2="1">
@@ -177,7 +189,7 @@ const NelsonPortrait: React.FC<{ size: number }> = ({ size }) => (
         <Stop offset="100%" stopColor="#E4A682" />
       </LinearGradient>
     </Defs>
-    <Rect width="100" height="100" rx="16" fill="url(#nelsonBg)" />
+    {!noBg && <Rect width="100" height="100" rx="16" fill="url(#nelsonBg)" />}
 
     {/* Purple Athletic Hoodie */}
     <Path d="M 16 100 C 20 72 34 68 50 68 C 66 68 80 72 84 100 Z" fill="#7C3AED" />
@@ -224,7 +236,7 @@ const NelsonPortrait: React.FC<{ size: number }> = ({ size }) => (
  * 4. Sofia: The Calm Competitor (1650 ELO)
  * Elegant wavy auburn hair, composed sapphire eyes, tailored teal blazer.
  */
-const SofiaPortrait: React.FC<{ size: number }> = ({ size }) => (
+const SofiaPortrait: React.FC<{ size: number; noBg?: boolean }> = ({ size, noBg }) => (
   <Svg width={size} height={size} viewBox="0 0 100 100">
     <Defs>
       <LinearGradient id="sofiaBg" x1="0" y1="0" x2="1" y2="1">
@@ -236,7 +248,7 @@ const SofiaPortrait: React.FC<{ size: number }> = ({ size }) => (
         <Stop offset="100%" stopColor="#F8C8B4" />
       </LinearGradient>
     </Defs>
-    <Rect width="100" height="100" rx="16" fill="url(#sofiaBg)" />
+    {!noBg && <Rect width="100" height="100" rx="16" fill="url(#sofiaBg)" />}
 
     {/* Wavy hair behind shoulders */}
     <Path d="M 24 46 C 22 66 26 80 30 92 C 34 76 30 58 28 46 Z" fill="#78350F" />
@@ -289,7 +301,7 @@ const SofiaPortrait: React.FC<{ size: number }> = ({ size }) => (
  * 5. Marcus: The Seasoned Strategist (1900 ELO)
  * Short dark hair touched with silver at temples, neat beard, calculating gaze, crimson collared shirt.
  */
-const MarcusPortrait: React.FC<{ size: number }> = ({ size }) => (
+const MarcusPortrait: React.FC<{ size: number; noBg?: boolean }> = ({ size, noBg }) => (
   <Svg width={size} height={size} viewBox="0 0 100 100">
     <Defs>
       <LinearGradient id="marcusBg" x1="0" y1="0" x2="1" y2="1">
@@ -301,7 +313,7 @@ const MarcusPortrait: React.FC<{ size: number }> = ({ size }) => (
         <Stop offset="100%" stopColor="#C69C7B" />
       </LinearGradient>
     </Defs>
-    <Rect width="100" height="100" rx="16" fill="url(#marcusBg)" />
+    {!noBg && <Rect width="100" height="100" rx="16" fill="url(#marcusBg)" />}
 
     {/* Crimson Collared Shirt */}
     <Path d="M 16 100 C 20 72 34 68 50 68 C 66 68 80 72 84 100 Z" fill="#991B1B" />
@@ -352,7 +364,7 @@ const MarcusPortrait: React.FC<{ size: number }> = ({ size }) => (
  * 6. Viktor: The Grandmaster Theorist (2100 ELO)
  * Sleek swept-back silver hair, modern rectangular glasses, dark charcoal turtleneck, deep intellectual gaze.
  */
-const ViktorPortrait: React.FC<{ size: number }> = ({ size }) => (
+const ViktorPortrait: React.FC<{ size: number; noBg?: boolean }> = ({ size, noBg }) => (
   <Svg width={size} height={size} viewBox="0 0 100 100">
     <Defs>
       <LinearGradient id="viktorBg" x1="0" y1="0" x2="1" y2="1">
@@ -364,7 +376,7 @@ const ViktorPortrait: React.FC<{ size: number }> = ({ size }) => (
         <Stop offset="100%" stopColor="#EAD0BC" />
       </LinearGradient>
     </Defs>
-    <Rect width="100" height="100" rx="16" fill="url(#viktorBg)" />
+    {!noBg && <Rect width="100" height="100" rx="16" fill="url(#viktorBg)" />}
 
     {/* Charcoal Turtleneck */}
     <Path d="M 18 100 C 22 74 34 68 50 68 C 66 68 78 74 82 100 Z" fill="#1E293B" />
@@ -409,14 +421,207 @@ const ViktorPortrait: React.FC<{ size: number }> = ({ size }) => (
   </Svg>
 );
 
-/** Maps aliases and legacy IDs to canonical bot IDs */
+/**
+ * 7. Pip: The Curious Sprinter (1050 ELO)
+ * Messy copper hair, freckles, teal running jacket and an eager grin.
+ */
+const PipPortrait: React.FC<{ size: number; noBg?: boolean }> = ({ size, noBg }) => (
+  <Svg width={size} height={size} viewBox="0 0 100 100">
+    <Defs>
+      <LinearGradient id="pipBg" x1="0" y1="0" x2="1" y2="1">
+        <Stop offset="0%" stopColor="#2DD4BF" />
+        <Stop offset="100%" stopColor="#115E59" />
+      </LinearGradient>
+      <LinearGradient id="pipSkin" x1="0" y1="0" x2="0" y2="1">
+        <Stop offset="0%" stopColor="#FBD5B5" />
+        <Stop offset="100%" stopColor="#EFB990" />
+      </LinearGradient>
+    </Defs>
+    {!noBg && <Rect width="100" height="100" rx="16" fill="url(#pipBg)" />}
+    <Path d="M 16 100 C 20 74 34 69 50 69 C 66 69 80 74 84 100 Z" fill="#0F766E" />
+    <Path d="M 34 100 L 50 82 L 66 100" stroke="#14B8A6" strokeWidth="3" fill="none" />
+    <Rect x="43" y="59" width="14" height="12" rx="4" fill="url(#pipSkin)" />
+    <Circle cx="69" cy="48" r="4.5" fill="url(#pipSkin)" />
+    <Circle cx="31" cy="48" r="4.5" fill="url(#pipSkin)" />
+    <Circle cx="50" cy="46" r="21.5" fill="url(#pipSkin)" />
+    <Path
+      d="M 27 42 C 22 21 38 12 51 14 C 67 12 78 24 72 43 C 68 30 62 25 50 26 C 38 25 32 31 27 42 Z"
+      fill="#B45309"
+    />
+    <Path d="M 30 28 Q 38 18 48 21" stroke="#F59E0B" strokeWidth="3" strokeLinecap="round" fill="none" />
+    <Path d="M 34 38 Q 41 35 47 38" stroke="#92400E" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+    <Path d="M 53 38 Q 59 35 66 38" stroke="#92400E" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+    <Circle cx="41" cy="44" r="2.7" fill="#0F766E" />
+    <Circle cx="59" cy="44" r="2.7" fill="#0F766E" />
+    <Circle cx="42" cy="43" r="1" fill="#FFFFFF" />
+    <Circle cx="60" cy="43" r="1" fill="#FFFFFF" />
+    <Circle cx="37" cy="53" r="1" fill="#C2410C" opacity="0.7" />
+    <Circle cx="43" cy="56" r="1" fill="#C2410C" opacity="0.7" />
+    <Circle cx="58" cy="56" r="1" fill="#C2410C" opacity="0.7" />
+    <Circle cx="64" cy="53" r="1" fill="#C2410C" opacity="0.7" />
+    <Path d="M 50 46 L 49 51 L 52 51" stroke="#D99A6C" strokeWidth="1.6" strokeLinecap="round" fill="none" />
+    <Path d="M 43 58 Q 50 65 57 58" stroke="#9A3412" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+  </Svg>
+);
+
+/**
+ * 8. Bram: The Bricklayer (1250 ELO)
+ * Broad jaw, knitted beanie, stubble and a sturdy work jacket.
+ */
+const BramPortrait: React.FC<{ size: number; noBg?: boolean }> = ({ size, noBg }) => (
+  <Svg width={size} height={size} viewBox="0 0 100 100">
+    <Defs>
+      <LinearGradient id="bramBg" x1="0" y1="0" x2="1" y2="1">
+        <Stop offset="0%" stopColor="#F59E0B" />
+        <Stop offset="100%" stopColor="#78350F" />
+      </LinearGradient>
+      <LinearGradient id="bramSkin" x1="0" y1="0" x2="0" y2="1">
+        <Stop offset="0%" stopColor="#E7BE9B" />
+        <Stop offset="100%" stopColor="#CE9A72" />
+      </LinearGradient>
+    </Defs>
+    {!noBg && <Rect width="100" height="100" rx="16" fill="url(#bramBg)" />}
+    <Path d="M 13 100 C 18 73 33 66 50 66 C 67 66 82 73 87 100 Z" fill="#1E3A5F" />
+    <Path d="M 37 68 L 50 80 L 63 68" stroke="#3B82F6" strokeWidth="3" fill="none" />
+    <Rect x="43" y="58" width="14" height="12" rx="4" fill="url(#bramSkin)" />
+    <Circle cx="27" cy="48" r="5" fill="url(#bramSkin)" />
+    <Circle cx="73" cy="48" r="5" fill="url(#bramSkin)" />
+    <Circle cx="50" cy="47" r="23" fill="url(#bramSkin)" />
+    <Path
+      d="M 25 40 C 24 20 37 13 50 13 C 63 13 76 20 75 40 L 25 40 Z"
+      fill="#334155"
+    />
+    <Path d="M 25 36 Q 50 42 75 36" stroke="#475569" strokeWidth="4" fill="none" />
+    <Path
+      d="M 32 51 C 34 69 43 73 50 73 C 57 73 66 69 68 51 C 62 62 55 65 50 65 C 45 65 38 62 32 51 Z"
+      fill="#78350F"
+      opacity="0.75"
+    />
+    <Path d="M 35 39 L 45 41" stroke="#451A03" strokeWidth="2.8" strokeLinecap="round" />
+    <Path d="M 55 41 L 65 39" stroke="#451A03" strokeWidth="2.8" strokeLinecap="round" />
+    <Circle cx="41" cy="45" r="2.4" fill="#3B240F" />
+    <Circle cx="59" cy="45" r="2.4" fill="#3B240F" />
+    <Circle cx="42" cy="44" r="0.9" fill="#FFFFFF" />
+    <Circle cx="60" cy="44" r="0.9" fill="#FFFFFF" />
+    <Path d="M 50 46 L 48 52 L 52 52" stroke="#A9714B" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <Path d="M 43 59 Q 50 62 57 59" stroke="#7C2D12" strokeWidth="2" strokeLinecap="round" fill="none" />
+  </Svg>
+);
+
+/**
+ * 9. Vex: The Maze Trickster (1450 ELO)
+ * Asymmetric hood, sharp teal eyes and a knowing smirk.
+ */
+const VexPortrait: React.FC<{ size: number; noBg?: boolean }> = ({ size, noBg }) => (
+  <Svg width={size} height={size} viewBox="0 0 100 100">
+    <Defs>
+      <LinearGradient id="vexBg" x1="0" y1="0" x2="1" y2="1">
+        <Stop offset="0%" stopColor="#8B5CF6" />
+        <Stop offset="100%" stopColor="#2E1065" />
+      </LinearGradient>
+      <LinearGradient id="vexSkin" x1="0" y1="0" x2="0" y2="1">
+        <Stop offset="0%" stopColor="#E9C6B0" />
+        <Stop offset="100%" stopColor="#CFA189" />
+      </LinearGradient>
+    </Defs>
+    {!noBg && <Rect width="100" height="100" rx="16" fill="url(#vexBg)" />}
+    <Path d="M 12 100 C 16 72 32 66 50 66 C 68 66 84 72 88 100 Z" fill="#312E81" />
+    <Path
+      d="M 24 63 C 17 42 23 20 40 13 C 52 8 69 14 76 30 C 80 42 77 57 70 68 L 63 64 C 69 50 67 33 55 25 C 43 17 33 28 33 42 C 33 52 36 60 39 66 Z"
+      fill="#4C1D95"
+    />
+    <Path d="M 24 63 C 19 45 25 24 41 16" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round" fill="none" />
+    <Rect x="43" y="57" width="14" height="12" rx="4" fill="url(#vexSkin)" />
+    <Circle cx="50" cy="47" r="21" fill="url(#vexSkin)" />
+    <Path d="M 28 41 C 28 23 40 16 51 17 C 65 17 73 26 72 42 C 64 31 59 28 49 29 C 39 29 32 33 28 41 Z" fill="#1E1B4B" />
+    <Path d="M 35 39 L 46 37" stroke="#312E81" strokeWidth="2.4" strokeLinecap="round" />
+    <Path d="M 54 37 L 66 41" stroke="#312E81" strokeWidth="2.4" strokeLinecap="round" />
+    <Circle cx="41" cy="44" r="2.8" fill="#2DD4BF" />
+    <Circle cx="60" cy="44" r="2.8" fill="#2DD4BF" />
+    <Circle cx="41" cy="44" r="1.2" fill="#022C22" />
+    <Circle cx="60" cy="44" r="1.2" fill="#022C22" />
+    <Circle cx="42" cy="43" r="0.9" fill="#FFFFFF" />
+    <Circle cx="61" cy="43" r="0.9" fill="#FFFFFF" />
+    <Path d="M 50 46 L 52 52 L 48 52" stroke="#B77F63" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    <Path d="M 43 58 Q 50 64 58 57" stroke="#7F1D1D" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+    <Path d="M 58 57 L 61 55" stroke="#7F1D1D" strokeWidth="1.4" strokeLinecap="round" />
+  </Svg>
+);
+
+/**
+ * 10. Achref: The System Architect (2300 ELO)
+ * Clean side-part, rimless glasses at the brow, emerald jacket and a
+ * measured smile.
+ */
+const AchrefPortrait: React.FC<{ size: number; noBg?: boolean }> = ({ size, noBg }) => (
+  <Svg width={size} height={size} viewBox="0 0 100 100">
+    <Defs>
+      <LinearGradient id="achrefBg" x1="0" y1="0" x2="1" y2="1">
+        <Stop offset="0%" stopColor="#0EA5E9" />
+        <Stop offset="100%" stopColor="#172554" />
+      </LinearGradient>
+      <LinearGradient id="achrefSkin" x1="0" y1="0" x2="0" y2="1">
+        <Stop offset="0%" stopColor="#E8C3A4" />
+        <Stop offset="100%" stopColor="#CFA07A" />
+      </LinearGradient>
+    </Defs>
+    {!noBg && <Rect width="100" height="100" rx="16" fill="url(#achrefBg)" />}
+    <Path d="M 14 100 C 19 73 34 67 50 67 C 66 67 81 73 86 100 Z" fill="#064E3B" />
+    <Path d="M 40 68 L 50 80 L 60 68" stroke="#34D399" strokeWidth="2.5" fill="none" />
+    <Rect x="43" y="58" width="14" height="12" rx="4" fill="url(#achrefSkin)" />
+    <Circle cx="27" cy="48" r="4.5" fill="url(#achrefSkin)" />
+    <Circle cx="73" cy="48" r="4.5" fill="url(#achrefSkin)" />
+    <Circle cx="50" cy="46" r="21.5" fill="url(#achrefSkin)" />
+    <Path
+      d="M 26 40 C 24 20 37 13 52 14 C 66 14 76 21 74 40 C 68 26 61 22 49 23 C 37 23 31 29 26 40 Z"
+      fill="#111827"
+    />
+    <Path d="M 33 29 Q 44 20 58 23" stroke="#1F2937" strokeWidth="3" strokeLinecap="round" fill="none" />
+    <Path d="M 35 39 L 46 40" stroke="#111827" strokeWidth="2.5" strokeLinecap="round" />
+    <Path d="M 54 40 L 65 39" stroke="#111827" strokeWidth="2.5" strokeLinecap="round" />
+    <Circle cx="41" cy="45" r="2.5" fill="#0F172A" />
+    <Circle cx="59" cy="45" r="2.5" fill="#0F172A" />
+    <Circle cx="42" cy="44" r="0.9" fill="#FFFFFF" />
+    <Circle cx="60" cy="44" r="0.9" fill="#FFFFFF" />
+    <Path d="M 34 43 L 47 43 M 53 43 L 66 43" stroke="#38BDF8" strokeWidth="1.1" opacity="0.75" />
+    <Path
+      d="M 33 53 C 35 66 43 71 50 71 C 57 71 65 66 67 53 C 61 61 55 64 50 64 C 45 64 39 61 33 53 Z"
+      fill="#111827"
+      opacity="0.75"
+    />
+    <Path d="M 50 46 L 49 51 L 52 51" stroke="#B07A59" strokeWidth="1.6" strokeLinecap="round" fill="none" />
+    <Path d="M 44 59 Q 50 62 56 59" stroke="#78350F" strokeWidth="2" strokeLinecap="round" fill="none" />
+  </Svg>
+);
+
+/** Maps legacy bot IDs to canonical roster IDs. */
 const CANONICAL_BOT_KEY: Record<string, string> = {
-  pip: 'martin',
-  bram: 'elena',
-  vex: 'nelson',
-  sage: 'sofia',
+  elena: 'elias',
+  sofia: 'jamal',
+  sage: 'jamal',
   mab: 'marcus',
   clockmaker: 'viktor',
+  architect: 'achref',
+  creator: 'achref',
+};
+
+/**
+ * High-resolution 512x512 custom bot portraits from assets/bots/*.png.
+ * Any bot without an entry falls back to its styled SVG portrait.
+ */
+const BOT_AVATAR_IMAGES: Partial<Record<string, ImageSourcePropType>> = {
+  martin: martinPng,
+  pip: pipPng,
+  elias: eliasPng,
+  elena: eliasPng,
+  bram: bramPng,
+  nelson: nelsonPng,
+  vex: vexPng,
+  jamal: jamalPng,
+  sofia: jamalPng,
+  marcus: marcusPng,
+  viktor: viktorPng,
+  achref: achrefPng,
 };
 
 export const BotAvatar: React.FC<BotAvatarProps> = ({
@@ -424,6 +629,8 @@ export const BotAvatar: React.FC<BotAvatarProps> = ({
   color = THEME.colors.primary,
   size = 'md',
   showGlow = false,
+  noBg = false,
+  selected = false,
   style,
 }) => {
   const styles = useStyles(createStyles);
@@ -431,21 +638,17 @@ export const BotAvatar: React.FC<BotAvatarProps> = ({
   const cornerRadius = Math.max(6, Math.round(px * 0.18));
 
   const resolvedKey = CANONICAL_BOT_KEY[avatarKey] ?? avatarKey;
+  const customImg = BOT_AVATAR_IMAGES[resolvedKey] ?? BOT_AVATAR_IMAGES[avatarKey];
 
   const containerStyle = [
     styles.container,
     {
       width: px,
       height: px,
-      borderRadius: cornerRadius,
-      borderColor: color,
-    },
-    showGlow && {
-      shadowColor: color,
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0.6,
-      shadowRadius: px * 0.2,
-      elevation: 6,
+      borderRadius: noBg ? 0 : cornerRadius,
+      backgroundColor: noBg ? 'transparent' : THEME.colors.surfaceMuted,
+      borderWidth: noBg ? 0 : 2.5,
+      borderColor: selected ? THEME.colors.primary : 'transparent',
     },
     style,
   ];
@@ -453,22 +656,36 @@ export const BotAvatar: React.FC<BotAvatarProps> = ({
   let portrait: React.ReactNode;
   switch (resolvedKey) {
     case 'martin':
-      portrait = <MartinPortrait size={px} />;
+      portrait = <MartinPortrait size={px} noBg={noBg} />;
       break;
+    case 'pip':
+      portrait = <PipPortrait size={px} noBg={noBg} />;
+      break;
+    case 'elias':
     case 'elena':
-      portrait = <ElenaPortrait size={px} />;
+      portrait = <ElenaPortrait size={px} noBg={noBg} />;
+      break;
+    case 'bram':
+      portrait = <BramPortrait size={px} noBg={noBg} />;
       break;
     case 'nelson':
-      portrait = <NelsonPortrait size={px} />;
+      portrait = <NelsonPortrait size={px} noBg={noBg} />;
       break;
+    case 'vex':
+      portrait = <VexPortrait size={px} noBg={noBg} />;
+      break;
+    case 'jamal':
     case 'sofia':
-      portrait = <SofiaPortrait size={px} />;
+      portrait = <SofiaPortrait size={px} noBg={noBg} />;
       break;
     case 'marcus':
-      portrait = <MarcusPortrait size={px} />;
+      portrait = <MarcusPortrait size={px} noBg={noBg} />;
       break;
     case 'viktor':
-      portrait = <ViktorPortrait size={px} />;
+      portrait = <ViktorPortrait size={px} noBg={noBg} />;
+      break;
+    case 'achref':
+      portrait = <AchrefPortrait size={px} noBg={noBg} />;
       break;
     default:
       portrait = (
@@ -476,7 +693,7 @@ export const BotAvatar: React.FC<BotAvatarProps> = ({
           style={{
             width: px,
             height: px,
-            backgroundColor: color,
+            backgroundColor: noBg ? 'transparent' : color,
             justifyContent: 'center',
             alignItems: 'center',
           }}
@@ -485,7 +702,23 @@ export const BotAvatar: React.FC<BotAvatarProps> = ({
       break;
   }
 
-  return <View style={containerStyle}>{portrait}</View>;
+  return (
+    <View style={containerStyle}>
+      {customImg ? (
+        <Image
+          source={customImg}
+          style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: noBg ? 0 : Math.max(0, cornerRadius - 2),
+          }}
+          resizeMode={noBg ? 'contain' : 'cover'}
+        />
+      ) : (
+        portrait
+      )}
+    </View>
+  );
 };
 
 const createStyles = () =>
@@ -494,7 +727,7 @@ const createStyles = () =>
       overflow: 'hidden',
       justifyContent: 'center',
       alignItems: 'center',
-      borderWidth: 1.5,
-      backgroundColor: THEME.colors.backgroundElevated,
+      borderWidth: 0,
+      backgroundColor: 'transparent',
     },
   });

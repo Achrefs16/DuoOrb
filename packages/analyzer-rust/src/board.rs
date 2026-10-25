@@ -12,7 +12,10 @@ pub struct Board {
 impl Board {
     #[inline(always)]
     pub fn new() -> Self {
-        Self { h_walls: 0, v_walls: 0 }
+        Self {
+            h_walls: 0,
+            v_walls: 0,
+        }
     }
 
     pub fn from_walls(walls: &[WallCoord]) -> Self {
@@ -25,7 +28,7 @@ impl Board {
 
     #[inline(always)]
     fn bit_index(row: i8, col: i8) -> Option<u32> {
-        if row < 0 || row >= WALL_GRID_SIZE || col < 0 || col >= WALL_GRID_SIZE {
+        if !(0..WALL_GRID_SIZE).contains(&row) || !(0..WALL_GRID_SIZE).contains(&col) {
             None
         } else {
             Some((row as u32) * 8 + (col as u32))
@@ -65,7 +68,7 @@ impl Board {
     #[inline(always)]
     pub fn does_wall_conflict(&self, wall: &WallCoord) -> bool {
         let (row, col) = (wall.row, wall.col);
-        if row < 0 || row >= WALL_GRID_SIZE || col < 0 || col >= WALL_GRID_SIZE {
+        if !(0..WALL_GRID_SIZE).contains(&row) || !(0..WALL_GRID_SIZE).contains(&col) {
             return true;
         }
 
@@ -77,11 +80,13 @@ impl Board {
         match wall.orientation {
             Orientation::H => {
                 // Overlaps left or right by 1
-                self.has_wall(row, col - 1, Orientation::H) || self.has_wall(row, col + 1, Orientation::H)
+                self.has_wall(row, col - 1, Orientation::H)
+                    || self.has_wall(row, col + 1, Orientation::H)
             }
             Orientation::V => {
                 // Overlaps up or down by 1
-                self.has_wall(row - 1, col, Orientation::V) || self.has_wall(row + 1, col, Orientation::V)
+                self.has_wall(row - 1, col, Orientation::V)
+                    || self.has_wall(row + 1, col, Orientation::V)
             }
         }
     }
