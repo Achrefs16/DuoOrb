@@ -206,6 +206,9 @@ export function getBestAction(
       timeBudgetMs: timeLimit,
       wallHorizon: profile.wallHorizon,
       isHint: Boolean((profile as any).isHint),
+      varietyWindow: profile.varietyWindow,
+      difficulty: profile.difficulty,
+      randomness: profile.randomness,
     });
     const st = mctsStats();
     lastSearchStats.nodes = st.nodes;
@@ -344,6 +347,9 @@ export async function getBestActionAsync(
       timeBudgetMs: timeLimit,
       wallHorizon: profile.wallHorizon,
       isHint: Boolean((profile as any).isHint),
+      varietyWindow: profile.varietyWindow,
+      difficulty: profile.difficulty,
+      randomness: profile.randomness,
     }, { shouldCancel: hooks.shouldCancel });
     const st = mctsStats();
     lastSearchStats.nodes = st.nodes;

@@ -558,12 +558,46 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
     }
 
     const bestRate = best.visits > 0 ? best.rewards[rootMover.index] / best.visits : 0;
+
+    // Near-Optimal Candidate Selection (No Blunders):
+    // For non-hint, non-sprint moves with non-zero randomness, sample among
+    // top-tier candidate moves whose win rate falls strictly within the safe deltaQ window.
+    if (!isHint && !shouldSprint && opts.randomness !== 0 && root.children.length > 1) {
+      const isHard = simulations >= 2500 || opts.difficulty === 'hard';
+      const isNormal = simulations >= 300 || opts.difficulty === 'normal';
+      const deltaQ = opts.varietyWindow !== undefined
+        ? Number(opts.varietyWindow)
+        : (isHard ? 0.025 : (isNormal ? 0.065 : 0.14));
+      const minVisitRatio = isHard ? 0.35 : (isNormal ? 0.20 : 0.10);
+      const exponent = isHard ? 1.8 : (isNormal ? 1.3 : 1.0);
+      const maxChoices = isHard ? 3 : (isNormal ? 3 : 4);
+
+      const sorted = [...root.children].sort((a, b) => b.visits - a.visits);
+      const safeCandidates = sorted.slice(0, maxChoices).filter((c) => {
+        const cRate = c.visits > 0 ? c.rewards[rootMover.index] / c.visits : 0;
+        return cRate >= bestRate - deltaQ && c.visits >= best.visits * minVisitRatio;
+      });
+
+      if (safeCandidates.length > 1) {
+        const weights = safeCandidates.map((c) => Math.pow(c.visits / best.visits, exponent));
+        const totalWeight = weights.reduce((acc, w) => acc + w, 0);
+        let pick = rng() * totalWeight;
+        for (let i = 0; i < safeCandidates.length; i++) {
+          if (pick <= weights[i]) {
+            best = safeCandidates[i];
+            break;
+          }
+          pick -= weights[i];
+        }
+      }
+    }
+
     lastMctsStats = {
       simulations,
       nodes: nodeCount,
       elapsedMs: Date.now() - started,
       bestVisits: best.visits,
-      bestWinRate: bestRate,
+      bestWinRate: best.visits > 0 ? best.rewards[rootMover.index] / best.visits : bestRate,
     };
 
     // Losing-rescue: if we have NO walls left and collapsing, march along shortest path

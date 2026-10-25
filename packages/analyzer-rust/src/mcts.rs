@@ -971,14 +971,67 @@ pub fn find_best_action_multithreaded(
             }
         }
 
-        let mut best_action = None;
-        let mut best_visits = 0;
-        for (_, (action, visits, _)) in totals {
-            if visits > best_visits {
-                best_visits = visits;
-                best_action = Some(action);
+        let mut candidate_list: Vec<(GameAction, u32, f64)> = totals
+            .into_iter()
+            .map(|(_, (act, vis, q_weighted))| {
+                let avg_q = if vis > 0 { q_weighted / (vis as f64) } else { 0.5 };
+                (act, vis, avg_q)
+            })
+            .collect();
+
+        candidate_list.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let best_action = if candidate_list.is_empty() {
+            None
+        } else if simulations >= 90_000 || candidate_list.len() == 1 {
+            // Grandmaster Hint Oracle mode: strictly pick the single #1 highest-visited line
+            Some(candidate_list[0].0.clone())
+        } else {
+            let best_visits = candidate_list[0].1 as f64;
+            let best_q = candidate_list[0].2;
+
+            let (delta_q, min_visit_ratio, exponent, max_choices) = if simulations >= 20_000 {
+                // Master tier (Achref, Marcus, Viktor): razor-thin delta (<= 2.5%), high exponent
+                (0.025, 0.35, 1.8, 3)
+            } else if simulations >= 3_500 {
+                // Intermediate tier (Bram, Nelson, Vex, Jamal): moderate delta (<= 6.5%)
+                (0.065, 0.20, 1.3, 3)
+            } else {
+                // Beginner tier (Martin, Pip, Elias): casual delta (<= 14.0%)
+                (0.14, 0.10, 1.0, 4)
+            };
+
+            let safe_candidates: Vec<(&GameAction, f64)> = candidate_list
+                .iter()
+                .take(max_choices)
+                .filter(|(_, vis, q)| {
+                    *q >= best_q - delta_q && (*vis as f64) >= best_visits * min_visit_ratio
+                })
+                .map(|(act, vis, _)| {
+                    let w = ((*vis as f64) / best_visits).powf(exponent);
+                    (act, w)
+                })
+                .collect();
+
+            if safe_candidates.is_empty() {
+                Some(candidate_list[0].0.clone())
+            } else if safe_candidates.len() == 1 {
+                Some(safe_candidates[0].0.clone())
+            } else {
+                let total_weight: f64 = safe_candidates.iter().map(|(_, w)| *w).sum();
+                let mut prng = Prng::new(seed ^ 0x55AA55AA55AA55AA);
+                let mut pick = prng.next_f64() * total_weight;
+                let mut chosen = safe_candidates[0].0;
+                for (act, w) in &safe_candidates {
+                    if pick <= *w {
+                        chosen = act;
+                        break;
+                    }
+                    pick -= *w;
+                }
+                Some(chosen.clone())
             }
-        }
+        };
 
         best_action.or_else(|| legal_coords.into_iter().next().map(|to| GameAction::Move { to }))
     });
@@ -1104,4 +1157,15 @@ mod tests {
         let action = find_best_action_multithreaded(&state, 0, 1, 42);
         assert!(action.is_some());
     }
+
+    #[test]
+    fn multithreaded_search_produces_valid_actions_across_different_seeds() {
+        use super::find_best_action_multithreaded;
+        let state = state_2p(0);
+        let a1 = find_best_action_multithreaded(&state, 3000, 4, 1111);
+        let a2 = find_best_action_multithreaded(&state, 3000, 4, 2222);
+        assert!(a1.is_some());
+        assert!(a2.is_some());
+    }
 }
+
