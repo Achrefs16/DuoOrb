@@ -56,7 +56,13 @@ export function effectiveIncrement(tc: TimeControl, incrementEnabled: boolean): 
 }
 
 export function getTimeControl(id?: string): TimeControl {
+  if (id === 'no-timer') return NO_TIMER_CONTROL;
   return TIME_CONTROLS.find((tc) => tc.id === id) ?? DEFAULT_TIME_CONTROL;
+}
+
+export function isUntimedTimeControl(tc?: TimeControl | null): boolean {
+  if (!tc) return false;
+  return tc.id === 'no-timer' || tc.category === 'untimed' || tc.minutes <= 0;
 }
 
 /**

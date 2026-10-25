@@ -38,7 +38,7 @@ import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, 
 import { toast } from '../components/AppToast';
 import { SavedGameRecord, loadOnlineGameSnapshot, recordBotVictoryStars, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
 import { THEME, hexToRgba, playerColor, useStyles, useTheme, wallPreviewColor } from '../theme';
-import { CLOCK_ENABLED, DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement } from '../timeControls';
+import { CLOCK_ENABLED, DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement, isUntimedTimeControl } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
 import { useQuickReactions, groupReactionsBySeat } from '../network/useQuickReactions';import { ReactionDock, ReactionTray } from '../components/QuickReactions';
 import type { ReactionKind } from '../network/useQuickReactions';
@@ -558,7 +558,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (type === 'ai') preloadRewarded('undo');
   }, [type, state.gameId]);
 
+  const isUntimed = isUntimedTimeControl(timeControl);
+
   const [timers, setTimers] = useState<Record<string, number>>(() => {
+    if (isUntimed) return {};
     const defaultSec = timeControl.minutes * 60;
     const initialTimers: Record<string, number> = {};
     for (const p of initialState.players) {
@@ -570,9 +573,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // changes when the displayed second changes; elapsed time is measured from
   // Date.now(), so backgrounding or a slow JS frame can never freeze a clock.
   const remainingMsRef = useRef<Record<string, number>>(
-    Object.fromEntries(
-      initialState.players.map((p) => [p.id, timeControl.minutes * 60_000])
-    )
+    isUntimed
+      ? {}
+      : Object.fromEntries(
+          initialState.players.map((p) => [p.id, timeControl.minutes * 60_000])
+        )
   );
   const lastClockTickAtRef = useRef<number>(0);
   const clockTimeoutRef = useRef(false);
@@ -592,7 +597,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const lastMySecsRef = useRef<number | null>(null);
   const warned30Ref = useRef(false);
   useEffect(() => {
-    if (!CLOCK_ENABLED) return;
+    if (!CLOCK_ENABLED || isUntimed) return;
     if (state.status !== 'IN_PROGRESS') return;
     const myId = online.myPlayerId ?? state.players[humanIdx]?.id ?? null;
     if (!myId) return;
@@ -604,7 +609,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       warned30Ref.current = true;
       void playThirtySecondsSound();
     }
-  }, [timers, state.status, state.players, humanIdx, online.myPlayerId]);
+  }, [timers, state.status, state.players, humanIdx, online.myPlayerId, isUntimed]);
 
   // Per-move bonus: credited to the mover after every move/wall, in EVERY
   // match and clock. Toggleable from Settings — when off, no bonus at all.
@@ -616,6 +621,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const creditIncrement = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization
     (moverId: string, action: GameAction) => {
+      if (isUntimed) return;
       const inc = effectiveIncrement(timeControl, incrementEnabled);
       if (inc <= 0) return;
       if (action.type !== 'MOVE' && action.type !== 'PLACE_WALL') return;
@@ -624,7 +630,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       setTimers((prev) => ({ ...prev, [moverId]: (prev[moverId] ?? 0) + inc }));
       setLastBonus({ playerId: moverId, amount: inc });
     },
-    [timeControl, incrementEnabled]
+    [timeControl, incrementEnabled, isUntimed]
   );
 
   useEffect(() => {
@@ -924,7 +930,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // interval below does the visible countdown, but a move can land between
   // ticks — this closes that gap so no player gains or loses a free slice.
   useEffect(() => {
-    if (type === 'online') return;
+    if (type === 'online' || isUntimed) return;
     const activeId = state.players[state.currentPlayerIndex]?.id ?? null;
     const previousId = activeClockIdRef.current;
     if (undoSheetOpen || undoBusy) {
@@ -953,14 +959,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       activeClockIdRef.current = activeId;
       lastClockTickAtRef.current = Date.now();
     }
-  }, [state.currentPlayerIndex, state.moveNumber, state.status, state.players, type, undoSheetOpen, undoBusy]);
+  }, [state.currentPlayerIndex, state.moveNumber, state.status, state.players, type, undoSheetOpen, undoBusy, isUntimed]);
 
   // Clock countdown (offline only; online clocks are server-synchronized).
   // TESTING: CLOCK_ENABLED=false disables the countdown entirely, so no match
   // can be lost on time. See timeControls.ts.
   useEffect(() => {
     if (type === 'online') return;
-    if (!CLOCK_ENABLED) return;
+    if (!CLOCK_ENABLED || isUntimed) return;
     if (state.status !== 'IN_PROGRESS') return;
     // The undo reward sheet/ad is a system pause: never let a player lose on
     // time while they are watching a video they chose to watch.
@@ -998,7 +1004,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       }
     }, 200);
     return () => clearInterval(interval);
-  }, [state.status, type, undoSheetOpen, undoBusy]);
+  }, [state.status, type, undoSheetOpen, undoBusy, isUntimed]);
 
   // AI turn — logic untouched, presentation only.
   // NOTE: isAiThinking is intentionally NOT used as a scheduling guard here:
@@ -1026,9 +1032,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           // to the event loop (thinking indicator stays alive), depth is the
           // only ceiling, cancellation keeps the best completed ply.
           const isBlitzMatch =
-            Boolean(timeControl?.id.includes('blitz')) ||
-            Boolean(timeControl?.id.includes('bullet')) ||
-            (timeControl !== undefined && timeControl.minutes < 3);
+            !isUntimed &&
+            (Boolean(timeControl?.id.includes('blitz')) ||
+              Boolean(timeControl?.id.includes('bullet')) ||
+              (timeControl !== undefined && timeControl.minutes < 3));
           const aiAction = await getAiMove(live, profile, undefined, {
             shouldCancel: () => cancelled,
             budget: isBlitzMatch ? { timeMs: 250, maxDepth: 4 } : undefined,
@@ -1208,8 +1215,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         perspectivePlayerId: myPlayerId,
         isViewerSeated: type !== 'local' && myPlayerId != null,
         endedReason: 'GOAL',
-        timeControlMinutes: timeControl?.minutes,
-        incrementSeconds: timeControl
+        timeControlMinutes: isUntimed ? 0 : timeControl?.minutes,
+        incrementSeconds: isUntimed
+          ? 0
+          : timeControl
           ? effectiveIncrement(timeControl, incrementEnabled ?? true)
           : undefined,
         botId: personality?.id,
@@ -1509,12 +1518,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setInitialState(fresh);
     historyLenRef.current = 0;
     // Fresh clocks — never carry leftover time into the new match.
-    const full = timeControl.minutes * 60;
     const reset: Record<string, number> = {};
     const resetMs: Record<string, number> = {};
-    for (const p of fresh.players) {
-      reset[p.id] = full;
-      resetMs[p.id] = full * 1000;
+    if (!isUntimed) {
+      const full = timeControl.minutes * 60;
+      for (const p of fresh.players) {
+        reset[p.id] = full;
+        resetMs[p.id] = full * 1000;
+      }
     }
     setTimers(reset);
     remainingMsRef.current = resetMs;

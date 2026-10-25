@@ -1031,6 +1031,11 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
       if (!chosenIsForward && !safeBlunder) {
         if (chosen.move?.type === 'MOVE') {
           chosen = bestForward;
+        } else if (
+          chosen.move?.type === 'PLACE_WALL' &&
+          (isAhead || shouldSprint || qOf(bestForward) >= bestQ - 0.08)
+        ) {
+          chosen = bestForward;
         }
       }
     }

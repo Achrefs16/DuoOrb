@@ -70,29 +70,50 @@ pub fn classify_mcts_move(
         return (MoveAssessment::Best, eval_loss, 100.0);
     }
 
-    // 2. Suboptimal Tiers
+    // 2. Commanding Win Protection
+    // When the played move preserves a clear winning position (q_played >= 0.58 / mode_scale),
+    // it must never be penalized as an inaccuracy, mistake, or blunder! In a winning position,
+    // players can choose from multiple winning conversion paths.
+    let commanding_threshold = 0.58 / mode_scale;
+    if q_played >= commanding_threshold {
+        if delta_q <= 0.055 {
+            return (
+                MoveAssessment::Excellent,
+                eval_loss,
+                (100.0 - delta_q * 80.0).clamp(94.0, 99.0),
+            );
+        } else {
+            return (
+                MoveAssessment::Good,
+                eval_loss,
+                (95.0 - delta_q * 60.0).clamp(86.0, 95.0),
+            );
+        }
+    }
+
+    // 3. Suboptimal Tiers
     let win_threshold = 0.50 / mode_scale;
-    let losing_threshold = 0.34 / mode_scale;
+    let losing_threshold = 0.30 / mode_scale;
     let flipped_bar = (q_best >= win_threshold && q_played <= losing_threshold) || delta_q >= 0.30;
 
     let assessment = if delta_q <= 0.055 {
         MoveAssessment::Excellent
-    } else if delta_q <= 0.11 {
+    } else if delta_q <= 0.12 {
         MoveAssessment::Good
-    } else if delta_q <= 0.18 {
+    } else if delta_q <= 0.20 {
         MoveAssessment::Inaccuracy
-    } else if delta_q <= 0.26 || !flipped_bar {
+    } else if delta_q <= 0.28 || !flipped_bar {
         MoveAssessment::Mistake
     } else {
         MoveAssessment::Blunder
     };
 
     let accuracy = match assessment {
-        MoveAssessment::Excellent => (100.0 - delta_q * 120.0).clamp(90.0, 99.0),
-        MoveAssessment::Good => (92.0 - delta_q * 140.0).clamp(76.0, 90.0),
-        MoveAssessment::Inaccuracy => (78.0 - delta_q * 150.0).clamp(52.0, 75.0),
-        MoveAssessment::Mistake => (55.0 - delta_q * 120.0).clamp(25.0, 50.0),
-        MoveAssessment::Blunder => (25.0 - delta_q * 50.0).clamp(0.0, 20.0),
+        MoveAssessment::Excellent => (100.0 - delta_q * 80.0).clamp(92.0, 99.0),
+        MoveAssessment::Good => (94.0 - delta_q * 90.0).clamp(82.0, 93.0),
+        MoveAssessment::Inaccuracy => (82.0 - delta_q * 110.0).clamp(65.0, 81.0),
+        MoveAssessment::Mistake => (60.0 - delta_q * 100.0).clamp(35.0, 59.0),
+        MoveAssessment::Blunder => (30.0 - delta_q * 50.0).clamp(5.0, 25.0),
         _ => 100.0,
     };
 

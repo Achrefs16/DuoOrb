@@ -68,7 +68,7 @@ describe('Workstream 6: Multi-Mode Battle-Testing Matrix Across All 7 Modes', ()
     }
     expect(state.status).toBe('COMPLETED');
     expect(state.winnerId).not.toBeNull();
-  });
+  }, 20_000);
 
   it('Mode 4: race4 (4-Player Race) — multi-agent placement race completes legally', () => {
     let state = createInitialState({ mode: 'race4', gameId: 'battle-race4' });

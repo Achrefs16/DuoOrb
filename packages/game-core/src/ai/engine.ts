@@ -193,9 +193,9 @@ export function getBestAction(
     // package calls are reproducible instead of truncating on a clock edge.
     const deterministicSims = state.players.length < 4 && sims <= 800;
     const rawLimit =
-      budget?.timeMs ??
-      profile.timeBudgetMs ??
-      (randomSeed !== undefined || deterministicSims ? undefined : production.timeMs);
+      randomSeed !== undefined || deterministicSims
+        ? undefined
+        : (budget?.timeMs ?? profile.timeBudgetMs ?? production.timeMs);
     // Leave headroom for the final expansion + selection work so an observed
     // move never lands past the 250ms blitz promise.
     const timeLimit = isBlitz ? Math.min(rawLimit ?? 220, 220) : rawLimit;

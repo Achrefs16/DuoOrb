@@ -1,7 +1,7 @@
 use crate::board::Board;
 use crate::pathfinding::{is_goal_cell, EdgeMasks, GoalMask};
 use crate::rules::{apply_action, get_legal_moves};
-use crate::types::{CellCoord, GameAction, GameState, Orientation, PlayerState, WallCoord};
+use crate::types::{GameAction, GameState, Orientation, PlayerState, WallCoord};
 
 pub struct Prng {
     state: u64,
@@ -318,7 +318,40 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
     }
 
     let edge_masks = EdgeMasks::from_board(board);
-    let mut eff_dists = [99.0f64; 4];
+
+    if n == 2 {
+        let p0 = &state.players[0];
+        let p1 = &state.players[1];
+        let d0 = if p0.status == "FINISHED" {
+            0.0
+        } else {
+            let g0 = GoalMask::from_goal_and_mode(p0.goal_direction, &state.mode);
+            let d = edge_masks.shortest_distance(p0.position.row as u8, p0.position.col as u8, g0);
+            if d < 0 { 99.0 } else { d as f64 }
+        };
+        let d1 = if p1.status == "FINISHED" {
+            0.0
+        } else {
+            let g1 = GoalMask::from_goal_and_mode(p1.goal_direction, &state.mode);
+            let d = edge_masks.shortest_distance(p1.position.row as u8, p1.position.col as u8, g1);
+            if d < 0 { 99.0 } else { d as f64 }
+        };
+
+        // Exact match with game-core bot MCTS evaluation:
+        // turnBonus = if current_player == 0 { 0.5 } else { -0.5 }
+        // wallBonus = (walls0 - walls1) * 0.35
+        // lead = d1 - d0 + turnBonus + wallBonus
+        // p0 = sigmoid(lead / 3.2)
+        let turn_bonus = if state.current_player_index == 0 { 0.5 } else { -0.5 };
+        let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * 0.35;
+        let lead = d1 - d0 + turn_bonus + wall_bonus;
+        let p0_win = sigmoid(lead / 3.2);
+        rewards[0] = p0_win;
+        rewards[1] = 1.0 - p0_win;
+        return rewards;
+    }
+
+    // N-player (3P/4P)
     let avg_walls = state
         .players
         .iter()
@@ -327,6 +360,7 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
         .sum::<f64>()
         / (n as f64);
 
+    let mut eff_dists = [99.0f64; 4];
     for i in 0..n {
         let p = &state.players[i];
         if p.status == "FINISHED" {
@@ -334,139 +368,30 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
             continue;
         }
         let goal_mask = GoalMask::from_goal_and_mode(p.goal_direction, &state.mode);
-        let (dist, corridor) = edge_masks.shortest_path_corridor(
+        let dist = edge_masks.shortest_distance(
             p.position.row as u8,
             p.position.col as u8,
             goal_mask,
         );
         let base_dist = if dist < 0 { 99.0 } else { dist as f64 };
-
-        // Turn tempo: (i + N - current_player) % N, calibrated to 0.48 to break symmetric ties
         let turns_until_move = (i + n - state.current_player_index) % n;
-        let turn_tempo = 0.48 * (1.0 - (turns_until_move as f64) / (n as f64));
-
-        // Corridor width bonus (wider corridor is harder to wall off)
-        let corridor_cells = (corridor.count_ones() as f64).min(12.0);
-        let corridor_bonus = corridor_cells * 0.04;
-
-        // Bottleneck & Trap Risk: If this player is in a narrow corridor (single exit route)
-        // and any active opponent holds walls, they are vulnerable to a sudden multi-ply wall trap!
-        let opp_has_walls = state.players.iter().enumerate().any(|(j, opp)| {
-            j != i && opp.status != "FINISHED" && opp.walls_remaining > 0
-        });
-        let is_bottleneck = dist > 1 && (corridor.count_ones() as i32) <= dist + 1;
-        let bottleneck_penalty = if is_bottleneck && opp_has_walls {
-            1.25
-        } else {
-            0.0
-        };
-
-        // Tactical 1-ply jump lookahead
-        let mut jump_bonus = 0.0f64;
-        let pos = p.position;
-        for (dr, dc) in [(-1i8, 0i8), (1, 0), (0, -1), (0, 1)] {
-            let adj = CellCoord {
-                row: pos.row + dr,
-                col: pos.col + dc,
-            };
-            if adj.row >= 0
-                && adj.row < 9
-                && adj.col >= 0
-                && adj.col < 9
-                && !board.is_blocked(pos, adj)
-            {
-                if state
-                    .players
-                    .iter()
-                    .any(|other| other.status != "FINISHED" && other.position == adj)
-                {
-                    let straight = CellCoord {
-                        row: adj.row + dr,
-                        col: adj.col + dc,
-                    };
-                    let straight_oob = straight.row < 0
-                        || straight.row >= 9
-                        || straight.col < 0
-                        || straight.col >= 9;
-                    let straight_blocked = !straight_oob && board.is_blocked(adj, straight);
-                    let straight_occupied = !straight_oob
-                        && state
-                            .players
-                            .iter()
-                            .any(|other| other.status != "FINISHED" && other.position == straight);
-
-                    if !straight_oob && !straight_blocked && !straight_occupied {
-                        let d_straight = edge_masks.shortest_distance(
-                            straight.row as u8,
-                            straight.col as u8,
-                            goal_mask,
-                        );
-                        if d_straight >= 0 && (d_straight as f64) < base_dist {
-                            jump_bonus = jump_bonus.max(0.85);
-                        }
-                    } else {
-                        // Diagonals
-                        let perps = if dr != 0 {
-                            [(0i8, -1i8), (0, 1)]
-                        } else {
-                            [(-1i8, 0), (1, 0)]
-                        };
-                        for (pdr, pdc) in perps {
-                            let diag = CellCoord {
-                                row: adj.row + pdr,
-                                col: adj.col + pdc,
-                            };
-                            if diag.row >= 0
-                                && diag.row < 9
-                                && diag.col >= 0
-                                && diag.col < 9
-                                && !board.is_blocked(adj, diag)
-                            {
-                                if !state.players.iter().any(|other| {
-                                    other.status != "FINISHED" && other.position == diag
-                                }) {
-                                    let d_diag = edge_masks.shortest_distance(
-                                        diag.row as u8,
-                                        diag.col as u8,
-                                        goal_mask,
-                                    );
-                                    if d_diag >= 0 && (d_diag as f64) < base_dist {
-                                        jump_bonus = jump_bonus.max(0.85);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        let wall_bonus = (p.walls_remaining as f64 - avg_walls) * 0.12;
-        eff_dists[i] = base_dist + bottleneck_penalty - jump_bonus - corridor_bonus - turn_tempo - wall_bonus;
-    }
-
-    if n == 2 {
-        let lead = eff_dists[1] - eff_dists[0];
-        let p0 = sigmoid(lead / 2.8);
-        rewards[0] = p0;
-        rewards[1] = 1.0 - p0;
-        return rewards;
+        let turn_tempo = 0.5 * (1.0 - (turns_until_move as f64) / (n as f64));
+        let wall_bonus = (p.walls_remaining as f64 - avg_walls) * 0.35;
+        eff_dists[i] = base_dist - turn_tempo - wall_bonus;
     }
 
     // N-player softmax
-    let mut max_logit = f64::NEG_INFINITY;
-    let mut logits = [0.0f64; 4];
+    let mut min_dist = f64::INFINITY;
     for i in 0..n {
-        logits[i] = -eff_dists[i] / 2.2;
-        if logits[i] > max_logit {
-            max_logit = logits[i];
+        if eff_dists[i] < min_dist {
+            min_dist = eff_dists[i];
         }
     }
     let mut sum_exp = 0.0f64;
     for i in 0..n {
-        let e = (logits[i] - max_logit).exp();
-        rewards[i] = e;
-        sum_exp += e;
+        let val = (-0.4 * (eff_dists[i] - min_dist)).exp();
+        rewards[i] = val;
+        sum_exp += val;
     }
     if sum_exp > 0.0 {
         for i in 0..n {
