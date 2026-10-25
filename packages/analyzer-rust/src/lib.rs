@@ -62,3 +62,48 @@ pub async fn get_best_action_async(
     get_best_action_sync(state_json, simulations, threads, seed)
 }
 
+/// Standard C ABI export for Android JNI and iOS Swift/Objective-C.
+#[no_mangle]
+pub unsafe extern "C" fn duoorb_ai_find_best_action(
+    state_json_ptr: *const std::os::raw::c_char,
+    simulations: u32,
+    threads: u32,
+    seed: i64,
+) -> *mut std::os::raw::c_char {
+    if state_json_ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+    let c_str = std::ffi::CStr::from_ptr(state_json_ptr);
+    let str_slice = match c_str.to_str() {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let state: GameState = match serde_json::from_str(str_slice) {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let s = if seed != 0 {
+        seed as u64
+    } else {
+        mcts::position_seed(&state, 0)
+    };
+    let action_opt =
+        mcts::find_best_action_multithreaded(&state, simulations as usize, threads as usize, s);
+    let result_json = match action_opt {
+        Some(a) => serde_json::to_string(&a).unwrap_or_else(|_| "null".to_string()),
+        None => "null".to_string(),
+    };
+    std::ffi::CString::new(result_json)
+        .map(|cs| cs.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// Free string allocated by duoorb_ai_find_best_action.
+#[no_mangle]
+pub unsafe extern "C" fn duoorb_ai_free_string(ptr: *mut std::os::raw::c_char) {
+    if !ptr.is_null() {
+        let _ = std::ffi::CString::from_raw(ptr);
+    }
+}
+
+

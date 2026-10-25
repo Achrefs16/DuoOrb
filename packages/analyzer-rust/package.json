@@ -12,6 +12,7 @@
   "scripts": {
     "build": "cargo build --release && node scripts/copy-binary.js",
     "build:debug": "cargo build && node scripts/copy-binary.js",
+    "build:mobile": "node scripts/build-mobile.js",
     "test": "node tests/binding.test.js"
   }
 }

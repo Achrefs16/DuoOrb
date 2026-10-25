@@ -155,11 +155,10 @@ export async function getAiMove(
 
   if (Platform.OS !== 'web' && isNativeAiAvailable()) {
     try {
-      const nativeAction = await getBestActionNative(
-        state,
-        profile.simulations ?? 50000,
-        4
-      );
+      const isHard = profile.difficulty === 'hard';
+      const nativeSims = isHard ? 50000 : Math.max(2000, (profile.simulations ?? 3500) * 3);
+      const threads = isHard ? 8 : 4;
+      const nativeAction = await getBestActionNative(state, nativeSims, threads);
       if (nativeAction) return nativeAction;
     } catch {
       // Fall through to JS engine

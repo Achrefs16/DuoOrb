@@ -4,7 +4,7 @@ version = "1.0.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 napi = { version = "2.16.14", default-features = false, features = ["napi8", "async", "serde-json"] }
