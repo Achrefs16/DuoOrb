@@ -191,13 +191,8 @@ export function getBestAction(
     // 4-player searches stay time-bounded (the per-move budget regression is
     // measured there). Smaller 2P/3P searches run to their count so repeated
     // package calls are reproducible instead of truncating on a clock edge.
-    const deterministicSims = state.players.length < 4 && sims <= 800;
-    const rawLimit =
-      randomSeed !== undefined || deterministicSims
-        ? undefined
-        : (budget?.timeMs ?? profile.timeBudgetMs ?? production.timeMs);
-    // Leave headroom for the final expansion + selection work so an observed
-    // move never lands past the 250ms blitz promise.
+    const isExplicitDeterministic = randomSeed !== undefined;
+    const rawLimit = budget?.timeMs ?? (isExplicitDeterministic ? undefined : production.timeMs);
     const timeLimit = isBlitz ? Math.min(rawLimit ?? 220, 220) : rawLimit;
     const action = mctsBestAction(state, {
       simulations: sims,

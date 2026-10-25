@@ -1062,4 +1062,46 @@ mod tests {
         assert_eq!(a.next_u64(), b.next_u64());
         assert_eq!(a.next_f64(), b.next_f64());
     }
+
+    #[test]
+    fn multithreaded_search_picks_winning_move_immediately() {
+        use super::find_best_action_multithreaded;
+        let mut state = state_2p(0);
+        // Put player 1 adjacent to their goal (GoalDirection::Bottom is row 8)
+        state.players[0].position = CellCoord { row: 7, col: 4 };
+        let action = find_best_action_multithreaded(&state, 1000, 4, 12345);
+        assert!(action.is_some());
+        match action.unwrap() {
+            GameAction::Move { to } => {
+                assert_eq!(to, CellCoord { row: 8, col: 4 });
+            }
+            _ => panic!("Expected winning move to (8,4)"),
+        }
+    }
+
+    #[test]
+    fn multithreaded_search_root_parallel_stress_test() {
+        use super::find_best_action_multithreaded;
+        let state = state_2p(0);
+        // Run with 8 threads and 10,000 simulations
+        let action = find_best_action_multithreaded(&state, 10000, 8, 99999);
+        assert!(action.is_some());
+        // Verify it returned a valid action (pawn move or wall)
+        match action.unwrap() {
+            GameAction::Move { to } => {
+                // Must be one of legal start moves from (7,4): (6,4), (7,3), (7,5)
+                assert!((to.row - 7).abs() + (to.col - 4).abs() == 1);
+            }
+            GameAction::PlaceWall { .. } => {}
+            _ => panic!("Expected Move or PlaceWall"),
+        }
+    }
+
+    #[test]
+    fn multithreaded_search_zero_sims_returns_fallback_move() {
+        use super::find_best_action_multithreaded;
+        let state = state_2p(0);
+        let action = find_best_action_multithreaded(&state, 0, 1, 42);
+        assert!(action.is_some());
+    }
 }

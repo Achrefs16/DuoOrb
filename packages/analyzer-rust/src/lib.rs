@@ -106,4 +106,68 @@ pub unsafe extern "C" fn duoorb_ai_free_string(ptr: *mut std::os::raw::c_char) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::{CStr, CString};
+
+    #[test]
+    fn c_abi_handles_null_pointer_gracefully() {
+        unsafe {
+            let res = duoorb_ai_find_best_action(std::ptr::null(), 1000, 2, 0);
+            assert!(res.is_null());
+            duoorb_ai_free_string(std::ptr::null_mut());
+        }
+    }
+
+    #[test]
+    fn c_abi_handles_invalid_json_gracefully() {
+        unsafe {
+            let invalid = CString::new("this is not valid json").unwrap();
+            let res = duoorb_ai_find_best_action(invalid.as_ptr(), 1000, 2, 0);
+            assert!(res.is_null());
+        }
+    }
+
+    #[test]
+    fn c_abi_executes_valid_game_state_and_frees_safely() {
+        let state_json = r#"{
+            "gameId": "test_game",
+            "mode": "2p",
+            "currentPlayerIndex": 0,
+            "players": [
+                {
+                    "id": "p1",
+                    "index": 0,
+                    "displayName": "P1",
+                    "position": {"row": 7, "col": 4},
+                    "wallsRemaining": 10,
+                    "goalDirection": "BOTTOM",
+                    "status": "ACTIVE"
+                },
+                {
+                    "id": "p2",
+                    "index": 1,
+                    "displayName": "P2",
+                    "position": {"row": 1, "col": 4},
+                    "wallsRemaining": 10,
+                    "goalDirection": "TOP",
+                    "status": "ACTIVE"
+                }
+            ],
+            "walls": [],
+            "status": "IN_PROGRESS"
+        }"#;
+
+        unsafe {
+            let c_json = CString::new(state_json).unwrap();
+            let res_ptr = duoorb_ai_find_best_action(c_json.as_ptr(), 2000, 4, 12345);
+            assert!(!res_ptr.is_null());
+            let res_str = CStr::from_ptr(res_ptr).to_str().unwrap();
+            assert!(res_str.contains("MOVE") || res_str.contains("PLACE_WALL"));
+            duoorb_ai_free_string(res_ptr);
+        }
+    }
+}
+
 

@@ -1,0 +1,185 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createInitialState, botById, type AIProfile, type GameAction } from '@duoorb/game-core';
+
+describe('aiWorkerClient routing & native fallback', () => {
+  const initialState = createInitialState({ mode: '2p' });
+  const achrefProfile: AIProfile = botById('achref')!.profile;
+  const martinProfile: AIProfile = botById('martin')!.profile;
+
+  const sampleAction: GameAction = {
+    type: 'MOVE',
+    to: { row: 6, col: 4 },
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('routes to native module with 50,000 sims & 8 threads for hard bots on native', async () => {
+    const mockGetBestActionNative = vi.fn().mockResolvedValue(sampleAction);
+    const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
+
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'android' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: mockIsNativeAiAvailable,
+      getBestActionNative: mockGetBestActionNative,
+    }));
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(initialState, achrefProfile, 12345);
+
+    expect(mockIsNativeAiAvailable).toHaveBeenCalled();
+    expect(mockGetBestActionNative).toHaveBeenCalledWith(
+      initialState,
+      50000,
+      8
+    );
+    expect(action).toEqual(sampleAction);
+  });
+
+  it('routes to native module with 4 threads and scaled sims for intermediate/beginner bots', async () => {
+    const mockGetBestActionNative = vi.fn().mockResolvedValue(sampleAction);
+    const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
+
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'ios' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: mockIsNativeAiAvailable,
+      getBestActionNative: mockGetBestActionNative,
+    }));
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(initialState, martinProfile, 12345);
+
+    expect(mockIsNativeAiAvailable).toHaveBeenCalled();
+    // Beginner profile has simulations: 100, so Math.max(2000, 100 * 3) = 2000
+    expect(mockGetBestActionNative).toHaveBeenCalledWith(
+      initialState,
+      2000,
+      4
+    );
+    expect(action).toEqual(sampleAction);
+  });
+
+  it('falls back gracefully to JS getBestActionAsync when native returns null', async () => {
+    const mockGetBestActionNative = vi.fn().mockResolvedValue(null);
+    const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
+    const jsFallbackAction: GameAction = { type: 'MOVE', to: { row: 7, col: 3 } };
+    const mockGetBestActionAsync = vi.fn().mockResolvedValue(jsFallbackAction);
+
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'android' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: mockIsNativeAiAvailable,
+      getBestActionNative: mockGetBestActionNative,
+    }));
+
+    vi.doMock('@duoorb/game-core', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@duoorb/game-core')>();
+      return {
+        ...actual,
+        getBestActionAsync: mockGetBestActionAsync,
+      };
+    });
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(initialState, achrefProfile, 12345);
+
+    expect(mockGetBestActionNative).toHaveBeenCalled();
+    expect(mockGetBestActionAsync).toHaveBeenCalled();
+    expect(action).toEqual(jsFallbackAction);
+  });
+
+  it('falls back gracefully to JS getBestActionAsync when native throws', async () => {
+    const mockGetBestActionNative = vi.fn().mockRejectedValue(new Error('Native engine panic'));
+    const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
+    const jsFallbackAction: GameAction = { type: 'MOVE', to: { row: 7, col: 5 } };
+    const mockGetBestActionAsync = vi.fn().mockResolvedValue(jsFallbackAction);
+
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'ios' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: mockIsNativeAiAvailable,
+      getBestActionNative: mockGetBestActionNative,
+    }));
+
+    vi.doMock('@duoorb/game-core', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@duoorb/game-core')>();
+      return {
+        ...actual,
+        getBestActionAsync: mockGetBestActionAsync,
+      };
+    });
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(initialState, achrefProfile, 12345);
+
+    expect(mockGetBestActionNative).toHaveBeenCalled();
+    expect(mockGetBestActionAsync).toHaveBeenCalled();
+    expect(action).toEqual(jsFallbackAction);
+  });
+
+  it('falls back directly to JS getBestActionAsync when native module is not available (Expo Go)', async () => {
+    const mockGetBestActionNative = vi.fn();
+    const mockIsNativeAiAvailable = vi.fn().mockReturnValue(false);
+    const jsFallbackAction: GameAction = { type: 'MOVE', to: { row: 6, col: 4 } };
+    const mockGetBestActionAsync = vi.fn().mockResolvedValue(jsFallbackAction);
+
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'android' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: mockIsNativeAiAvailable,
+      getBestActionNative: mockGetBestActionNative,
+    }));
+
+    vi.doMock('@duoorb/game-core', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@duoorb/game-core')>();
+      return {
+        ...actual,
+        getBestActionAsync: mockGetBestActionAsync,
+      };
+    });
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(initialState, achrefProfile, 12345);
+
+    expect(mockIsNativeAiAvailable).toHaveBeenCalled();
+    expect(mockGetBestActionNative).not.toHaveBeenCalled();
+    expect(mockGetBestActionAsync).toHaveBeenCalled();
+    expect(action).toEqual(jsFallbackAction);
+  });
+
+  it('returns null immediately when shouldCancel is triggered', async () => {
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'android' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: () => false,
+      getBestActionNative: vi.fn(),
+    }));
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(initialState, achrefProfile, 12345, {
+      shouldCancel: () => true,
+    });
+
+    expect(action).toBeNull();
+  });
+
+  it('cancelAiSearch clears pending requests without crashing', async () => {
+    const { cancelAiSearch } = await import('./aiWorkerClient');
+    expect(() => cancelAiSearch()).not.toThrow();
+  });
+});
