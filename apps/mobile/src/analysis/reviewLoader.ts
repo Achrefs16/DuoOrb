@@ -49,11 +49,12 @@ export async function fetchOrComputeReview(
     const serverReview = await api.requestGameReview(safeInitial, history, gameId);
     if (options?.isCancelled?.()) return null;
     if (serverReview && Array.isArray(serverReview.moveAnalyses)) {
+      console.log(`[ReviewLoader] ✅ Received SERVER review (${serverReview.engineVersion || 'rust'}) for ${gameId}`);
       cacheReview(key, serverReview);
       return serverReview;
     }
   } catch (err) {
-    console.warn('Server analysis request failed:', err);
+    console.warn(`[ReviewLoader] ⚠️ Server analysis failed (${(err as any)?.message || err}). Falling back to local on-device engine.`);
   }
 
   if (options?.isCancelled?.()) return null;
@@ -67,11 +68,12 @@ export async function fetchOrComputeReview(
     });
     if (options?.isCancelled?.()) return null;
     if (localReview && Array.isArray(localReview.moveAnalyses)) {
+      console.log(`[ReviewLoader] 📱 Computed LOCAL ON-DEVICE review (${localReview.engineVersion}) for ${gameId}`);
       cacheReview(key, localReview);
       return localReview;
     }
   } catch (err) {
-    console.warn('Local analysis failed:', err);
+    console.warn('[ReviewLoader] Local analysis failed:', err);
   }
 
   return null;

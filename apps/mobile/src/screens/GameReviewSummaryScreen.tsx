@@ -197,6 +197,40 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
+            {/* Engine Source Badge (Server vs Local) */}
+            <View style={styles.engineBadgeRow}>
+              <View
+                style={[
+                  styles.enginePill,
+                  review?.engineVersion?.includes('rust')
+                    ? styles.enginePillServer
+                    : styles.enginePillLocal,
+                ]}
+              >
+                <Feather
+                  name={review?.engineVersion?.includes('rust') ? 'cpu' : 'smartphone'}
+                  size={12}
+                  color={
+                    review?.engineVersion?.includes('rust')
+                      ? '#69B342'
+                      : '#F59E0B'
+                  }
+                />
+                <Text
+                  style={[
+                    styles.enginePillText,
+                    review?.engineVersion?.includes('rust')
+                      ? styles.engineTextServer
+                      : styles.engineTextLocal,
+                  ]}
+                >
+                  {review?.engineVersion?.includes('rust')
+                    ? 'Server Engine (Rust MCTS · 1,000 sims)'
+                    : 'On-Device Engine (Offline Fallback · 2-ply)'}
+                </Text>
+              </View>
+            </View>
+
             {/* Header Comparison: Players Section */}
             <View style={styles.playersSection}>
               <View style={styles.playersLabelCol}>
@@ -546,5 +580,37 @@ const createStyles = () =>
       fontWeight: '800',
       color: '#FFFFFF',
       letterSpacing: 0.2,
+    },
+    engineBadgeRow: {
+      alignItems: 'center',
+      marginBottom: 14,
+    },
+    enginePill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingVertical: 5,
+      paddingHorizontal: 12,
+      borderRadius: 14,
+      borderWidth: 1,
+    },
+    enginePillServer: {
+      backgroundColor: 'rgba(105, 179, 66, 0.1)',
+      borderColor: 'rgba(105, 179, 66, 0.35)',
+    },
+    enginePillLocal: {
+      backgroundColor: 'rgba(245, 158, 11, 0.1)',
+      borderColor: 'rgba(245, 158, 11, 0.4)',
+    },
+    enginePillText: {
+      fontSize: 11,
+      fontWeight: '700',
+      fontFamily: THEME.fonts.bold,
+    },
+    engineTextServer: {
+      color: '#69B342',
+    },
+    engineTextLocal: {
+      color: '#F59E0B',
     },
   });

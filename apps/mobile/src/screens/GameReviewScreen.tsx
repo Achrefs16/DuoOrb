@@ -649,7 +649,21 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         <TouchableOpacity style={styles.backBtn} onPress={onBack}>
           <Feather name="arrow-left" size={20} color={THEME.colors.textSecondary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{bare ? t('review.matchReplay') : t('review.matchReview')}</Text>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={styles.headerTitle}>{bare ? t('review.matchReplay') : t('review.matchReview')}</Text>
+          {!bare && review?.engineVersion && (
+            <Text
+              style={{
+                fontSize: 10,
+                color: review.engineVersion.includes('rust') ? '#69B342' : '#F59E0B',
+                fontFamily: THEME.fonts.medium,
+                marginTop: 1,
+              }}
+            >
+              {review.engineVersion.includes('rust') ? '⚡ Server Engine (Rust MCTS)' : '📱 On-Device (Offline 2-ply)'}
+            </Text>
+          )}
+        </View>
         <View style={{ width: 36 }} />
       </View>
 

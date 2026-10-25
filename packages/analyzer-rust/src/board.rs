@@ -66,28 +66,60 @@ impl Board {
     }
 
     #[inline(always)]
+    pub fn can_place_wall_geometry(&self, r: u8, c: u8, is_horizontal: bool) -> bool {
+        if r >= 8 || c >= 8 {
+            return false;
+        }
+        let idx = (r * 8 + c) as u64;
+        let bit = 1u64 << idx;
+
+        // Cross-orientation collision at exact intersection (r, c)
+        if ((self.h_walls | self.v_walls) & bit) != 0 {
+            return false;
+        }
+
+        if is_horizontal {
+            // Check left (r, c-1) and right (r, c+1) horizontal overlap
+            let left_conflict = c > 0 && (self.h_walls & (1u64 << (idx - 1))) != 0;
+            let right_conflict = c < 7 && (self.h_walls & (1u64 << (idx + 1))) != 0;
+            !(left_conflict || right_conflict)
+        } else {
+            // Check up (r-1, c) and down (r+1, c) vertical overlap
+            let up_conflict = r > 0 && (self.v_walls & (1u64 << (idx - 8))) != 0;
+            let down_conflict = r < 7 && (self.v_walls & (1u64 << (idx + 8))) != 0;
+            !(up_conflict || down_conflict)
+        }
+    }
+
+    #[inline(always)]
     pub fn does_wall_conflict(&self, wall: &WallCoord) -> bool {
-        let (row, col) = (wall.row, wall.col);
-        if !(0..WALL_GRID_SIZE).contains(&row) || !(0..WALL_GRID_SIZE).contains(&col) {
+        if wall.row < 0 || wall.row >= WALL_GRID_SIZE || wall.col < 0 || wall.col >= WALL_GRID_SIZE {
             return true;
         }
+        !self.can_place_wall_geometry(
+            wall.row as u8,
+            wall.col as u8,
+            wall.orientation == Orientation::H,
+        )
+    }
 
-        // 1. Cross collision: H and V cannot cross at the same intersection
-        if self.has_wall(row, col, Orientation::H) || self.has_wall(row, col, Orientation::V) {
-            return true;
+    #[inline(always)]
+    pub fn place_wall_raw(&mut self, r: u8, c: u8, is_horizontal: bool) {
+        let bit = 1u64 << ((r * 8 + c) as u64);
+        if is_horizontal {
+            self.h_walls |= bit;
+        } else {
+            self.v_walls |= bit;
         }
+    }
 
-        match wall.orientation {
-            Orientation::H => {
-                // Overlaps left or right by 1
-                self.has_wall(row, col - 1, Orientation::H)
-                    || self.has_wall(row, col + 1, Orientation::H)
-            }
-            Orientation::V => {
-                // Overlaps up or down by 1
-                self.has_wall(row - 1, col, Orientation::V)
-                    || self.has_wall(row + 1, col, Orientation::V)
-            }
+    #[inline(always)]
+    pub fn remove_wall_raw(&mut self, r: u8, c: u8, is_horizontal: bool) {
+        let bit = 1u64 << ((r * 8 + c) as u64);
+        if is_horizontal {
+            self.h_walls &= !bit;
+        } else {
+            self.v_walls &= !bit;
         }
     }
 

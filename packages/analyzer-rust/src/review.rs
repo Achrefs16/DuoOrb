@@ -134,25 +134,31 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
             let forced = non_board_action || (legal_moves.len() <= 1 && mover.walls_remaining == 0);
 
             let seed = position_seed(state_before, *step as i32);
-            // Deep MCTS search (1,000 adversarial simulations per ply).
-            let mcts = run_mcts_analysis(state_before, board_before, &rec.action, 1000, seed);
+            // Deep MCTS search with Stage 2 depth equalization
+            let mcts = run_mcts_analysis(state_before, board_before, &rec.action, 6000, seed);
 
             let best_q = mcts.best_q;
-            // If a legacy history entry cannot be replayed, never invent a
-            // blunder: treating it as the best available keeps the review
-            // honest instead of fabricating a 0.9 swing.
             let played_q = mcts.played_q.unwrap_or(best_q);
-            let best_gain = race_gain(state_before, board_before, &mcts.best_action, mover_idx);
             let played_gain = race_gain(state_before, board_before, &rec.action, mover_idx);
-            let net_step_delta = (played_gain - best_gain).clamp(-32000, 32000) as i16;
+            let is_wall = matches!(rec.action, GameAction::PlaceWall { .. });
+            let is_jump = match rec.action {
+                GameAction::Move { to } => {
+                    (to.row - mover.position.row).abs() + (to.col - mover.position.col).abs() > 1
+                }
+                _ => false,
+            };
+            let num_players = state_before.players.len().max(2).min(4) as u8;
 
             let (assessment, evaluation_loss, move_acc) = classify_mcts_move(
                 best_q,
                 played_q,
-                mcts.root_q,
-                mcts.gap_to_second,
-                net_step_delta,
+                mcts.q_second_best,
+                mcts.q_naive_pawn_step,
+                played_gain,
+                is_wall,
+                is_jump,
                 forced,
+                num_players,
             );
 
             let eval_after = (played_q - 0.5) * 40.0;
@@ -253,7 +259,7 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
             key_lesson,
             confidence: "high".to_string(),
         },
-        engine_version: "duoorb-rust-mcts-2.1".to_string(),
-        analysis_version: "analysis-2.1".to_string(),
+        engine_version: "duoorb-rust-mcts-3.0".to_string(),
+        analysis_version: "analysis-3.0".to_string(),
     }
 }

@@ -1,5 +1,5 @@
 use crate::board::{Board, BOARD_SIZE};
-use crate::pathfinding::{has_path_to_goal, is_goal_cell};
+use crate::pathfinding::{is_goal_cell, EdgeMasks, GoalMask};
 use crate::types::{CellCoord, GameAction, GameState, PlayerState, WallCoord};
 
 #[inline(always)]
@@ -109,11 +109,13 @@ pub fn is_legal_wall_placement(
     let mut spec_board = *board;
     spec_board.place_wall(wall);
 
+    let edge_masks = EdgeMasks::from_board(&spec_board);
     for p in &state.players {
-        if p.status == "ACTIVE"
-            && !has_path_to_goal(p.position, p.goal_direction, &spec_board, &state.mode)
-        {
-            return false;
+        if p.status == "ACTIVE" {
+            let goal_mask = GoalMask::from_goal_and_mode(p.goal_direction, &state.mode);
+            if edge_masks.shortest_distance(p.position.row as u8, p.position.col as u8, goal_mask) < 0 {
+                return false;
+            }
         }
     }
 
