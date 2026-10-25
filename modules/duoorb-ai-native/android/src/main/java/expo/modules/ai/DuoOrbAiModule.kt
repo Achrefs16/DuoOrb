@@ -1,4 +1,4 @@
-﻿package expo.modules.ai
+package expo.modules.ai
 
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module

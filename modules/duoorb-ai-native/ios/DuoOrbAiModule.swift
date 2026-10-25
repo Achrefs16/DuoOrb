@@ -1,4 +1,4 @@
-﻿import ExpoModulesCore
+import ExpoModulesCore
 
 public class DuoOrbAiModule: Module {
   private let queue = DispatchQueue(label: "com.duoorb.ai.queue", qos: .userInitiated, attributes: .concurrent)

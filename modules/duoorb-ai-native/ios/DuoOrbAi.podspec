@@ -1,4 +1,4 @@
-﻿Pod::Spec.new do |s|
+Pod::Spec.new do |s|
   s.name           = 'DuoOrbAi'
   s.version        = '1.0.0'
   s.summary        = 'Native multi-threaded MCTS bot engine for DuoOrb'

@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.18.1)
+cmake_minimum_required(VERSION 3.18.1)
 project(duoorb_ai)
 
 add_library(duoorb_ai SHARED src/main/cpp/bridge.cpp)
