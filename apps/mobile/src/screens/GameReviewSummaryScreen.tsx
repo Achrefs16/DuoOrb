@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -116,14 +116,12 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
 
   const effectiveGameId = initialState?.gameId || `review-${history.length}`;
 
-  useEffect(() => {
+  const loadReview = useCallback(() => {
     let cancelled = false;
     setLoading(true);
 
     void fetchOrComputeReview(initialState, history, effectiveGameId, {
       isCancelled: () => cancelled,
-      offlineTitle: t('review.offlineTitle'),
-      offlineBody: t('review.offlineBody'),
     }).then((res) => {
       if (cancelled) return;
       setReview(res);
@@ -133,7 +131,11 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
     return () => {
       cancelled = true;
     };
-  }, [initialState, history, effectiveGameId, t]);
+  }, [initialState, history, effectiveGameId]);
+
+  useEffect(() => {
+    return loadReview();
+  }, [loadReview]);
 
   const p1 = initialState.players[0] || { id: 'p1', displayName: 'Player 1' };
   const p2 = initialState.players[1] || { id: 'p2', displayName: 'Player 2' };
@@ -189,7 +191,24 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#69B342" />
             <Text style={styles.loadingTitle}>Analyzing game...</Text>
-            <Text style={styles.loadingSubtitle}>Evaluating all moves and accuracy</Text>
+            <Text style={styles.loadingSubtitle}>Evaluating all moves with server engine</Text>
+          </View>
+        ) : !review ? (
+          <View style={styles.loadingContainer}>
+            <Feather name="alert-circle" size={44} color="#EF4444" style={{ marginBottom: 14 }} />
+            <Text style={styles.loadingTitle}>Analysis Unavailable</Text>
+            <Text style={[styles.loadingSubtitle, { marginBottom: 22, textAlign: 'center', paddingHorizontal: 20 }]}>
+              Could not connect to the server analysis engine. Please ensure the server is online.
+            </Text>
+            <TouchableOpacity
+              style={styles.retryBtn}
+              onPress={loadReview}
+              accessibilityRole="button"
+              accessibilityLabel="Retry Analysis"
+            >
+              <Feather name="refresh-cw" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.retryBtnText}>Retry Analysis</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <ScrollView
@@ -197,36 +216,12 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            {/* Engine Source Badge (Server vs Local) */}
+            {/* Engine Source Badge (Server Engine) */}
             <View style={styles.engineBadgeRow}>
-              <View
-                style={[
-                  styles.enginePill,
-                  review?.engineVersion?.includes('rust')
-                    ? styles.enginePillServer
-                    : styles.enginePillLocal,
-                ]}
-              >
-                <Feather
-                  name={review?.engineVersion?.includes('rust') ? 'cpu' : 'smartphone'}
-                  size={12}
-                  color={
-                    review?.engineVersion?.includes('rust')
-                      ? '#69B342'
-                      : '#F59E0B'
-                  }
-                />
-                <Text
-                  style={[
-                    styles.enginePillText,
-                    review?.engineVersion?.includes('rust')
-                      ? styles.engineTextServer
-                      : styles.engineTextLocal,
-                  ]}
-                >
-                  {review?.engineVersion?.includes('rust')
-                    ? 'Server Engine (Rust MCTS · 1,000 sims)'
-                    : 'On-Device Engine (Offline Fallback · 2-ply)'}
+              <View style={[styles.enginePill, styles.enginePillServer]}>
+                <Feather name="cpu" size={13} color="#69B342" />
+                <Text style={[styles.enginePillText, styles.engineTextServer]}>
+                  {`Server Engine (${review?.engineVersion || 'duoorb-rust-mcts-3.0'} · 35,000 sims)`}
                 </Text>
               </View>
             </View>
@@ -612,5 +607,20 @@ const createStyles = () =>
     },
     engineTextLocal: {
       color: '#F59E0B',
+    },
+    retryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#69B342',
+      paddingVertical: 12,
+      paddingHorizontal: 24,
+      borderRadius: 14,
+    },
+    retryBtnText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+      fontFamily: THEME.fonts.bold,
     },
   });

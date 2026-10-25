@@ -48,7 +48,6 @@ import {
 } from '../monetization/analysisAccess';
 import { isPremiumActive, usePremium } from '../monetization/premium';
 import { api } from '../network/apiClient';
-import { analyzeMatchLocal } from '../analysis/localReview';
 import { useTranslation } from '../i18n';
 import { BotAvatar } from '../components/BotAvatar';
 import {
@@ -304,8 +303,6 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
 
       const res = await fetchOrComputeReview(safeInitial, history, effectiveGameId, {
         isCancelled: () => cancelled,
-        offlineTitle: t('review.offlineTitle'),
-        offlineBody: t('review.offlineBody'),
       });
       if (!cancelled && res) {
         setReview(res);

@@ -19,7 +19,7 @@ import { AdBanner } from './AdBanner';
 import { modeLabel } from '../matchModes';
 import { nameInitial } from '../displayName';
 import { usePremium, isPremiumActive } from '../monetization/premium';
-import { analyzeMatchLocal } from '../analysis/localReview';
+import { fetchOrComputeReview } from '../analysis/reviewLoader';
 
 export interface GameOverModalProps {
   visible: boolean;
@@ -139,14 +139,18 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     }
 
     let cancelled = false;
-    void analyzeMatchLocal(initialState, state.history, {
-      budgetMs: 15,
+    void fetchOrComputeReview(initialState, state.history, state.gameId, {
       isCancelled: () => cancelled,
     }).then((review) => {
-      if (cancelled) return;
+      if (cancelled || !review) return;
       const targetPlayerId = myPlayerId ?? (state.players[0]?.id || '');
       const userMoves = review.moveAnalyses.filter((m) => m.playerId === targetPlayerId);
-      const best = userMoves.filter((m) => m.assessment === 'BEST').length;
+      const best = userMoves.filter(
+        (m) =>
+          m.assessment === 'BEST' ||
+          m.assessment === 'BRILLIANT' ||
+          m.assessment === 'GREAT'
+      ).length;
       const excellent = userMoves.filter((m) => m.assessment === 'EXCELLENT').length;
       const good = userMoves.filter((m) => m.assessment === 'GOOD').length;
       setInternalCounts({ best, excellent, good });
@@ -157,7 +161,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [visible, moveCounts, initialState, state.history, myPlayerId]);
+  }, [visible, moveCounts, initialState, state.history, myPlayerId, state.gameId]);
 
   const userWon = isWinner !== undefined ? isWinner : winner?.id === (myPlayerId ?? 'p1');
   const outcomeWin = !isDraw && !!userWon;

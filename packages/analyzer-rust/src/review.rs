@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::board::Board;
 use crate::classifier::classify_mcts_move;
-use crate::mcts::{position_seed, run_mcts_analysis};
+use crate::mcts::{position_seed, run_mcts_analysis, DEFAULT_SIMS_PER_PLY};
 use crate::pathfinding::shortest_distance;
 use crate::rules::{apply_action, get_legal_moves};
 use crate::types::{
@@ -134,8 +134,8 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
             let forced = non_board_action || (legal_moves.len() <= 1 && mover.walls_remaining == 0);
 
             let seed = position_seed(state_before, *step as i32);
-            // Deep MCTS search with Stage 2 depth equalization
-            let mcts = run_mcts_analysis(state_before, board_before, &rec.action, 6000, seed);
+            // Deep MCTS search (35,000 simulations per ply, 16-18 plies depth)
+            let mcts = run_mcts_analysis(state_before, board_before, &rec.action, DEFAULT_SIMS_PER_PLY, seed);
 
             let best_q = mcts.best_q;
             let played_q = mcts.played_q.unwrap_or(best_q);

@@ -29,7 +29,7 @@ import type { GameSyncDto } from '@duoorb/protocol';
 import { GameBoard, boardRim, isInsideBoard, nearestWallSlot } from '../components/GameBoard';
 import { PlayerStrip, type SeatStatus } from '../components/GameHud';
 import { GameOverModal } from '../components/GameOverModal';
-import { analyzeMatchLocal } from '../analysis/localReview';
+import { fetchOrComputeReview } from '../analysis/reviewLoader';
 import { reviewCacheKey, cacheReview } from './GameReviewScreen';
 import { PlayerProfileScreen } from './PlayerProfileScreen';
 import { SideChoice } from './MatchSetupScreen';
@@ -434,16 +434,17 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         ? state.players[humanIdx]?.id
         : state.players[0]?.id;
 
-    void analyzeMatchLocal(initialState, state.history, {
-      budgetMs: 15,
+    void fetchOrComputeReview(initialState, state.history, state.gameId, {
       isCancelled: () => cancelled,
     }).then((review) => {
-      if (cancelled) return;
-      const key = reviewCacheKey(state.gameId, state.history.length);
-      cacheReview(key, review);
-
+      if (cancelled || !review) return;
       const userMoves = review.moveAnalyses.filter((m) => m.playerId === myId);
-      const best = userMoves.filter((m) => m.assessment === 'BEST').length;
+      const best = userMoves.filter(
+        (m) =>
+          m.assessment === 'BEST' ||
+          m.assessment === 'BRILLIANT' ||
+          m.assessment === 'GREAT'
+      ).length;
       const excellent = userMoves.filter((m) => m.assessment === 'EXCELLENT').length;
       const good = userMoves.filter((m) => m.assessment === 'GOOD').length;
       setLocalMoveCounts({ best, excellent, good });

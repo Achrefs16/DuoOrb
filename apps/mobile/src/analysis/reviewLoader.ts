@@ -1,6 +1,5 @@
 import { GameReview, GameState, RecordedAction, createInitialState } from '@duoorb/game-core';
 import { api } from '../network/apiClient';
-import { analyzeMatchLocal } from './localReview';
 
 const REVIEW_CACHE = new Map<string, GameReview>();
 const REVIEW_CACHE_LIMIT = 10;
@@ -28,8 +27,6 @@ export async function fetchOrComputeReview(
   gameId: string,
   options?: {
     isCancelled?: () => boolean;
-    offlineTitle?: string;
-    offlineBody?: string;
   }
 ): Promise<GameReview | null> {
   const key = reviewCacheKey(gameId, history.length);
@@ -44,36 +41,20 @@ export async function fetchOrComputeReview(
           mode: '2p',
         });
 
-  // 1. Try server analysis
   try {
     const serverReview = await api.requestGameReview(safeInitial, history, gameId);
     if (options?.isCancelled?.()) return null;
     if (serverReview && Array.isArray(serverReview.moveAnalyses)) {
-      console.log(`[ReviewLoader] ✅ Received SERVER review (${serverReview.engineVersion || 'rust'}) for ${gameId}`);
+      console.log(
+        `[ReviewLoader] ✅ Received SERVER review (${serverReview.engineVersion || 'duoorb-rust-mcts-3.0'}) for ${gameId}`
+      );
       cacheReview(key, serverReview);
       return serverReview;
     }
   } catch (err) {
-    console.warn(`[ReviewLoader] ⚠️ Server analysis failed (${(err as any)?.message || err}). Falling back to local on-device engine.`);
-  }
-
-  if (options?.isCancelled?.()) return null;
-
-  // 2. Fall back to local engine
-  try {
-    const localReview = await analyzeMatchLocal(safeInitial, history, {
-      isCancelled: options?.isCancelled,
-      keyLessonTitle: options?.offlineTitle,
-      keyLessonDetail: options?.offlineBody,
-    });
-    if (options?.isCancelled?.()) return null;
-    if (localReview && Array.isArray(localReview.moveAnalyses)) {
-      console.log(`[ReviewLoader] 📱 Computed LOCAL ON-DEVICE review (${localReview.engineVersion}) for ${gameId}`);
-      cacheReview(key, localReview);
-      return localReview;
-    }
-  } catch (err) {
-    console.warn('[ReviewLoader] Local analysis failed:', err);
+    console.warn(
+      `[ReviewLoader] ❌ Server analysis failed (${(err as any)?.message || err}).`
+    );
   }
 
   return null;

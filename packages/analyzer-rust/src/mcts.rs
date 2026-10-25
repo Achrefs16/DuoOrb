@@ -487,8 +487,9 @@ pub struct MctsEvaluationResult {
     pub q_second_best: f64,
 }
 
-pub const MIN_SIMS_PER_PLY: usize = 4_000;
-pub const MAX_SIMS_PER_PLY: usize = 12_000;
+pub const MIN_SIMS_PER_PLY: usize = 8_000;
+pub const MAX_SIMS_PER_PLY: usize = 50_000;
+pub const DEFAULT_SIMS_PER_PLY: usize = 35_000;
 const UCT_C: f64 = 0.45;
 
 pub fn run_mcts_analysis(
@@ -640,11 +641,11 @@ pub fn run_mcts_analysis(
 
     if let Some(pid) = played_cid_opt {
         if pid != best_cid {
-            let target_visits = tree[best_cid].visits.min(3_000);
+            let target_visits = tree[best_cid].visits.min(8_000);
             let played_visits = tree[pid].visits;
 
             if played_visits < target_visits {
-                let needed = (target_visits - played_visits).min(3_000);
+                let needed = (target_visits - played_visits).min(8_000);
                 for _ in 0..needed {
                     let mut cur_node_idx = pid;
                     let mut cur_state = root_state.clone();
