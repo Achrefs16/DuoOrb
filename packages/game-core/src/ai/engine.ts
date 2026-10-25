@@ -210,21 +210,6 @@ export function getBestAction(
       maxRolloutPlies: profile.maxRolloutPlies,
       timeBudgetMs: timeLimit,
       wallHorizon: profile.wallHorizon,
-      blunderRate:
-        profile.blunderRate ??
-        (profile.difficulty === 'easy' ? 0.28 : profile.difficulty === 'normal' ? 0.05 : 0),
-      missDefenseProb:
-        profile.missDefenseProb ??
-        (profile.difficulty === 'easy' ? 0.3 : 0),
-      naiveWallProb:
-        profile.naiveWallProb ??
-        (profile.difficulty === 'easy' ? 0.35 : profile.difficulty === 'normal' ? 0.06 : 0),
-      softmaxTemp: profile.softmaxTemp ?? 0.18,
-      varietyWindow:
-        profile.varietyWindow ??
-        (profile.difficulty === 'easy' ? 0.1 : profile.difficulty === 'normal' ? 0.05 : 0.025),
-      wallStyle: profile.wallStyle ?? 'balanced',
-      openingStyle: profile.openingStyle ?? 'mixed',
     });
     const st = mctsStats();
     lastSearchStats.nodes = st.nodes;
@@ -362,21 +347,6 @@ export async function getBestActionAsync(
       maxRolloutPlies: profile.maxRolloutPlies,
       timeBudgetMs: timeLimit,
       wallHorizon: profile.wallHorizon,
-      blunderRate:
-        profile.blunderRate ??
-        (profile.difficulty === 'easy' ? 0.28 : profile.difficulty === 'normal' ? 0.05 : 0),
-      missDefenseProb:
-        profile.missDefenseProb ??
-        (profile.difficulty === 'easy' ? 0.3 : 0),
-      naiveWallProb:
-        profile.naiveWallProb ??
-        (profile.difficulty === 'easy' ? 0.35 : profile.difficulty === 'normal' ? 0.06 : 0),
-      softmaxTemp: profile.softmaxTemp ?? 0.18,
-      varietyWindow:
-        profile.varietyWindow ??
-        (profile.difficulty === 'easy' ? 0.1 : profile.difficulty === 'normal' ? 0.05 : 0.025),
-      wallStyle: profile.wallStyle ?? 'balanced',
-      openingStyle: profile.openingStyle ?? 'mixed',
     }, { shouldCancel: hooks.shouldCancel });
     const st = mctsStats();
     lastSearchStats.nodes = st.nodes;

@@ -50,9 +50,31 @@ async function analyzeGameAsync(initialState, history) {
   return JSON.parse(jsonResult);
 }
 
+/**
+ * Find the optimal action using parallel multi-threaded MCTS in native Rust.
+ */
+function getBestAction(state, simulations = 50000, threads = 4, seed = null) {
+  const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+  const jsonResult = nativeBinding.getBestActionSync(stateStr, simulations, threads, seed);
+  return JSON.parse(jsonResult);
+}
+
+/**
+ * Asynchronously find the optimal action on an OS background thread (NAPI worker).
+ */
+async function getBestActionAsync(state, simulations = 50000, threads = 4, seed = null) {
+  const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+  const jsonResult = await nativeBinding.getBestActionAsync(stateStr, simulations, threads, seed);
+  return JSON.parse(jsonResult);
+}
+
 module.exports = {
   analyzeGame,
   analyzeGameAsync,
+  getBestAction,
+  getBestActionAsync,
   analyzeGameSyncRaw: nativeBinding.analyzeGameSync,
-  analyzeGameAsyncRaw: nativeBinding.analyzeGameAsync
+  analyzeGameAsyncRaw: nativeBinding.analyzeGameAsync,
+  getBestActionSyncRaw: nativeBinding.getBestActionSync,
+  getBestActionAsyncRaw: nativeBinding.getBestActionAsync
 };

@@ -2,6 +2,8 @@ use crate::board::Board;
 use crate::pathfinding::{is_goal_cell, EdgeMasks, GoalMask};
 use crate::rules::{apply_action, get_legal_moves};
 use crate::types::{GameAction, GameState, Orientation, PlayerState, WallCoord};
+use rayon::prelude::*;
+use std::collections::HashMap;
 
 pub struct Prng {
     state: u64,
@@ -783,6 +785,205 @@ pub fn run_mcts_analysis(
         q_naive_pawn_step,
         q_second_best,
     }
+}
+
+/// Parallel multi-threaded MCTS bot search.
+///
+/// Uses Root Parallelization with rayon:
+/// Dispatches simulations across CPU worker threads lock-free,
+/// aggregating visit counts and returning the most heavily tested move.
+/// Wrapped in std::panic::catch_unwind for 100% crash safety.
+pub fn find_best_action_multithreaded(
+    root_state: &GameState,
+    simulations: usize,
+    threads: usize,
+    seed: u64,
+) -> Option<GameAction> {
+    let safe_run = std::panic::catch_unwind(|| {
+        let mover_idx = root_state.current_player_index;
+        let mover = match root_state.players.get(mover_idx) {
+            Some(p) => p,
+            None => return None,
+        };
+        let root_board = Board::from_walls(&root_state.walls);
+        let legal_coords = get_legal_moves(root_state, &mover.id, &root_board);
+        if legal_coords.is_empty() {
+            return None;
+        }
+
+        // 1. Immediate Win Check: if stepping to a goal cell, take it now!
+        for &to in &legal_coords {
+            if is_goal_cell(to, mover.goal_direction, &root_state.mode) {
+                return Some(GameAction::Move { to });
+            }
+        }
+
+        // 2. Candidate generation
+        let initial_candidates = generate_logical_actions(root_state, mover_idx, &root_board, None);
+        if initial_candidates.is_empty() {
+            return legal_coords.into_iter().next().map(|to| GameAction::Move { to });
+        }
+        if initial_candidates.len() == 1 {
+            return Some(initial_candidates[0].0.clone());
+        }
+
+        let thread_count = threads.max(1).min(16);
+        let sims_per_thread = (simulations / thread_count).max(200);
+
+        let run_worker = |_t_idx: usize, _s: u64| -> Vec<(GameAction, u32, f64)> {
+            let mut tree: Vec<MctsNode> = Vec::with_capacity(sims_per_thread + 32);
+            tree.push(MctsNode {
+                action: None,
+                mover_idx,
+                parent: None,
+                children: Vec::with_capacity(initial_candidates.len()),
+                all_actions: initial_candidates.clone(),
+                visits: 0,
+                rewards: [0.0; 4],
+                prior: 0.5,
+            });
+
+            for _ in 0..sims_per_thread {
+                let mut cur_node_idx = 0;
+                let mut cur_state = root_state.clone();
+                let mut cur_board = root_board;
+
+                while !tree[cur_node_idx].children.is_empty() {
+                    let parent_visits = tree[cur_node_idx].visits as f64;
+                    let unlocked = (2.0 + 1.2 * parent_visits.powf(0.5)).floor() as usize;
+                    let limit = unlocked.min(tree[cur_node_idx].all_actions.len());
+
+                    if tree[cur_node_idx].children.len() < limit {
+                        break;
+                    }
+
+                    let selector_idx = tree[cur_node_idx].mover_idx.min(3);
+                    let sqrt_parent = parent_visits.sqrt();
+                    let mut best_child_idx = tree[cur_node_idx].children[0];
+                    let mut best_score = f64::NEG_INFINITY;
+
+                    for &child_idx in &tree[cur_node_idx].children {
+                        let child = &tree[child_idx];
+                        let q = if child.visits > 0 {
+                            child.rewards[selector_idx] / child.visits as f64
+                        } else {
+                            child.prior
+                        };
+                        let u = UCT_C * child.prior * sqrt_parent / (1.0 + child.visits as f64);
+                        let score = q + u;
+                        if score > best_score {
+                            best_score = score;
+                            best_child_idx = child_idx;
+                        }
+                    }
+
+                    cur_node_idx = best_child_idx;
+                    if let Some(ref act) = tree[cur_node_idx].action {
+                        if let Some(next) = apply_action(&cur_state, act, &mut cur_board) {
+                            cur_state = next;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                let parent_visits = tree[cur_node_idx].visits as f64;
+                let unlocked = (2.0 + 1.2 * parent_visits.powf(0.5)).floor() as usize;
+                let limit = unlocked.min(tree[cur_node_idx].all_actions.len());
+                let mut expanded_node_idx = cur_node_idx;
+
+                if tree[cur_node_idx].children.len() < limit {
+                    let next_act_idx = tree[cur_node_idx].children.len();
+                    let (action, act_prior) = tree[cur_node_idx].all_actions[next_act_idx].clone();
+
+                    if let Some(next_state) = apply_action(&cur_state, &action, &mut cur_board) {
+                        let next_mover = next_state.current_player_index;
+                        let next_actions = if next_state.status == "COMPLETED" {
+                            vec![]
+                        } else {
+                            generate_logical_actions(&next_state, next_mover, &cur_board, None)
+                        };
+
+                        let new_node_idx = tree.len();
+                        tree.push(MctsNode {
+                            action: Some(action),
+                            mover_idx: next_mover,
+                            parent: Some(cur_node_idx),
+                            children: Vec::new(),
+                            all_actions: next_actions,
+                            visits: 0,
+                            rewards: [0.0; 4],
+                            prior: act_prior,
+                        });
+                        tree[cur_node_idx].children.push(new_node_idx);
+                        expanded_node_idx = new_node_idx;
+                        cur_state = next_state;
+                    }
+                }
+
+                let rewards = heuristic_rewards(&cur_state, &cur_board);
+                let mut b_idx = Some(expanded_node_idx);
+                while let Some(n_idx) = b_idx {
+                    tree[n_idx].visits += 1;
+                    for (i, reward) in rewards.iter().enumerate() {
+                        tree[n_idx].rewards[i] += reward;
+                    }
+                    b_idx = tree[n_idx].parent;
+                }
+            }
+
+            tree[0]
+                .children
+                .iter()
+                .filter_map(|&cid| {
+                    tree[cid].action.as_ref().map(|act| {
+                        let selector = tree[0].mover_idx.min(3);
+                        let q = if tree[cid].visits > 0 {
+                            tree[cid].rewards[selector] / tree[cid].visits as f64
+                        } else {
+                            tree[cid].prior
+                        };
+                        (act.clone(), tree[cid].visits, q)
+                    })
+                })
+                .collect()
+        };
+
+        let results: Vec<Vec<(GameAction, u32, f64)>> = if thread_count > 1 {
+            (0..thread_count)
+                .into_par_iter()
+                .map(|t_idx| {
+                    let s = seed.wrapping_add((t_idx as u64).wrapping_mul(0x9E3779B97F4A7C15));
+                    run_worker(t_idx, s)
+                })
+                .collect()
+        } else {
+            vec![run_worker(0, seed)]
+        };
+
+        let mut totals: HashMap<String, (GameAction, u32, f64)> = HashMap::new();
+        for thread_res in results {
+            for (action, visits, q) in thread_res {
+                let key = format!("{:?}", action);
+                let entry = totals.entry(key).or_insert((action, 0, 0.0));
+                entry.1 += visits;
+                entry.2 += q * (visits as f64);
+            }
+        }
+
+        let mut best_action = None;
+        let mut best_visits = 0;
+        for (_, (action, visits, _)) in totals {
+            if visits > best_visits {
+                best_visits = visits;
+                best_action = Some(action);
+            }
+        }
+
+        best_action.or_else(|| legal_coords.into_iter().next().map(|to| GameAction::Move { to }))
+    });
+
+    safe_run.unwrap_or(None)
 }
 
 #[cfg(test)]
