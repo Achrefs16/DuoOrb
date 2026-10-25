@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { getBestActionAsync } from '@duoorb/game-core';
+import { isNativeAiAvailable, getBestActionNative } from 'duoorb-ai-native';
 import type {
   AIProfile,
   AiProductionBudget,
@@ -149,6 +150,19 @@ export async function getAiMove(
       }
       // Worker loading/runtime errors are not fatal: fall through to the
       // sliced main-thread search so the match can finish.
+    }
+  }
+
+  if (Platform.OS !== 'web' && isNativeAiAvailable()) {
+    try {
+      const nativeAction = await getBestActionNative(
+        state,
+        profile.simulations ?? 50000,
+        4
+      );
+      if (nativeAction) return nativeAction;
+    } catch {
+      // Fall through to JS engine
     }
   }
 
