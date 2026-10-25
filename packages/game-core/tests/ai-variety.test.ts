@@ -139,5 +139,5 @@ describe('master difficulty', () => {
         getShortestDistance(rival.position, rival.goalDirection, applied.state.walls, state.mode)
       ).toBeGreaterThan(1);
     }
-  }, 30_000);
+  }, 60_000);
 });

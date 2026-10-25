@@ -536,14 +536,14 @@ function actionPrior(
       }
     }
   } else if (action.type === 'PLACE_WALL') {
-    prior += wallPositive ? 0.06 : -0.07;
+    prior += wallPositive ? 0.02 : -0.08;
     if (wallStyle === 'horizontal_barricade' && action.wall.orientation === 'H') prior += 0.025;
     if (wallStyle === 'vertical_corridor' && action.wall.orientation === 'V') prior += 0.025;
     if (wallStyle === 'flank_trap' && (action.wall.col <= 2 || action.wall.col >= 5)) prior += 0.03;
     if (wallStyle === 'minimal') prior -= 0.04;
     if (opening) {
-      if (openingStyle === 'early_fence') prior += 0.09;
-      if (openingStyle === 'back_gate') prior += 0.05;
+      if (openingStyle === 'early_fence') prior += 0.03;
+      if (openingStyle === 'back_gate') prior += 0.02;
       if (openingStyle === 'wing_drift') prior -= 0.02;
     }
   }
@@ -774,7 +774,7 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
       const d0 = Number.isFinite(dists[0]) ? dists[0] : 99;
       const d1 = Number.isFinite(dists[1]) ? dists[1] : 99;
       const turnBonus = s.currentPlayerIndex === 0 ? 0.5 : -0.5;
-      const wallBonus = ((s.players[0]?.wallsRemaining ?? 0) - (s.players[1]?.wallsRemaining ?? 0)) * 0.35;
+      const wallBonus = ((s.players[0]?.wallsRemaining ?? 0) - (s.players[1]?.wallsRemaining ?? 0)) * 1.10;
       const p0 = 1 / (1 + Math.exp(-((d1 - d0 + turnBonus + wallBonus) / 3.2)));
       return [p0, 1 - p0];
     }

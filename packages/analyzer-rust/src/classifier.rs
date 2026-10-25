@@ -71,12 +71,14 @@ pub fn classify_mcts_move(
     }
 
     // 2. Commanding Win Protection
-    // When the played move preserves a clear winning position (q_played >= 0.58 / mode_scale),
+    // When the played move preserves a clear winning position (q_played >= 0.52 / mode_scale),
     // it must never be penalized as an inaccuracy, mistake, or blunder! In a winning position,
     // players can choose from multiple winning conversion paths.
-    let commanding_threshold = 0.58 / mode_scale;
+    let commanding_threshold = 0.52 / mode_scale;
     if q_played >= commanding_threshold {
-        if delta_q <= 0.055 {
+        if delta_q <= 0.04 {
+            return (MoveAssessment::Best, eval_loss, 100.0);
+        } else if delta_q <= 0.08 {
             return (
                 MoveAssessment::Excellent,
                 eval_loss,
@@ -86,12 +88,40 @@ pub fn classify_mcts_move(
             return (
                 MoveAssessment::Good,
                 eval_loss,
-                (95.0 - delta_q * 60.0).clamp(86.0, 95.0),
+                (95.0 - delta_q * 50.0).clamp(88.0, 95.0),
             );
         }
     }
 
-    // 3. Suboptimal Tiers
+    // 3. Forward Pawn Move Protection
+    // Advancing your pawn along the shortest path towards the goal is the primary objective of DuoOrb.
+    // Moving 1 step closer to your goal (static_1ply_net_gain >= 1) must NEVER be branded as a Blunder or Mistake!
+    let is_forward_pawn_advance = !is_wall && !is_jump && static_1ply_net_gain >= 1;
+    if is_forward_pawn_advance {
+        if delta_q <= 0.06 {
+            return (
+                MoveAssessment::Excellent,
+                eval_loss,
+                (100.0 - delta_q * 80.0).clamp(92.0, 99.0),
+            );
+        } else if delta_q <= 0.16 {
+            return (
+                MoveAssessment::Good,
+                eval_loss,
+                (94.0 - delta_q * 70.0).clamp(84.0, 93.0),
+            );
+        } else {
+            // Even if a strong tactical wall existed, making direct path progress
+            // is at worst a minor inaccuracy, never a blunder or mistake.
+            return (
+                MoveAssessment::Inaccuracy,
+                eval_loss,
+                (84.0 - delta_q * 60.0).clamp(72.0, 83.0),
+            );
+        }
+    }
+
+    // 4. Suboptimal Tiers (Walls, Retreats, Lateral moves, Jump blunders)
     let win_threshold = 0.50 / mode_scale;
     let losing_threshold = 0.30 / mode_scale;
     let flipped_bar = (q_best >= win_threshold && q_played <= losing_threshold) || delta_q >= 0.30;
