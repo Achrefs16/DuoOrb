@@ -3,7 +3,7 @@
     "name": "DuoOrb",
     "slug": "duoorb",
     "scheme": "duoorb",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon-512.png",
     "userInterfaceStyle": "light",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.asdigital.duoorb",
-      "versionCode": 8,
+      "versionCode": 9,
       "permissions": [],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
