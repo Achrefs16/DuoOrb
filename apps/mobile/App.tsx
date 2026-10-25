@@ -1028,6 +1028,8 @@ export default function App() {
                 <ProfileScreen
                   onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
                   onOpenPlayerProfile={handleOpenPlayerProfile}
+                  onSelectGame={handleSelectGameFromHistory}
+                  onAnalyzeGame={handleAnalyzeGameFromHistory}
                   onOpenHistory={() => navigate(currentTab, 'HISTORY')}
                 />
               )}

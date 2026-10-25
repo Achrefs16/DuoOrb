@@ -373,7 +373,17 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={onBack}
+          activeOpacity={0.7}
+          accessibilityLabel={t('common.back')}
+          accessibilityRole="button"
+        >
+          <Feather name="arrow-left" size={22} color={THEME.colors.onSurface} />
+        </TouchableOpacity>
         <Text style={styles.title}>{t('history.title')}</Text>
+        <View style={styles.headerPlaceholder} />
       </View>
 
       {loading && games.length === 0 && localGames.length === 0 ? (
@@ -534,6 +544,16 @@ const createStyles = () => StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: THEME.colors.onSurface,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -8,
+  },
+  headerPlaceholder: {
+    width: 40,
   },
   // Summary, guest lock and filters: the list header, so the whole page
   // scrolls as one instead of a fixed block over scrolling rows.

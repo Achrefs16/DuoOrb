@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   Modal,
   ScrollView,
@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { createInitialState } from '@duoorb/game-core';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
 import { useSession } from '../network/session';
@@ -17,6 +18,7 @@ import {
   AchievementsResponseDto,
   UserMeDto,
   RatingHistoryPointDto,
+  GameHistoryItemDto,
 } from '../network/apiClient';
 import { RatingChart } from '../components/RatingChart';
 import { AdBanner } from '../components/AdBanner';
@@ -29,6 +31,7 @@ import {
   tierOf,
 } from '../components/AchievementMedal';
 import { AchievementsModal } from '../components/AchievementsModal';
+import { MatchResultModal } from '../components/MatchResultModal';
 import { GuestGate } from '../components/GuestGate';
 import { PremiumBadge } from '../components/PremiumBadge';
 import { isPremiumActive, usePremium } from '../monetization/premium';
@@ -36,28 +39,42 @@ import { toast } from '../components/AppToast';
 import { NoConnectionSection } from '../components/NoConnection';
 import { actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
 import { ProfileSkeleton } from '../components/Skeleton';
+import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
+import {
+  deviceHistoryGames,
+  mapLocalGameToHistoryItem,
+  mergeHistoryItems,
+} from '../lib/historyMerge';
+import { modeDisplayName } from '../matchModes';
 
 interface ProfileScreenProps {
   onOpenSettings: () => void;
   onOpenHistory?: () => void;
+  onSelectGame?: (game: SavedGameRecord) => void;
+  onAnalyzeGame?: (game: SavedGameRecord) => void;
   /** Opens the shared player profile for a recent match's opponent. */
   onOpenPlayerProfile?: (player: { userId: string; username: string }) => void;
 }
 
+type OutcomeFilter = 'ALL' | 'WINS' | 'LOSSES';
+
+const PAGE_SIZE = 10;
+
 /**
  * Last loaded bundle, keyed by account. Tab switches remount this screen,
- * so the previous profile renders on the first frame and refreshes
- * silently. Never mix accounts: guest and Google rows stay separate.
- * Skeleton only when there is nothing to show yet.
- *
- * Match history is NOT cached here: it lives on the History tab, which
- * owns its own paging cache.
+ * so the previous profile and match history render on the first frame and
+ * refresh silently.
  */
 let profileCache: {
   userId: string;
   profile: UserMeDto;
   ratingHistory: RatingHistoryPointDto[];
   achievements: AchievementsResponseDto | null;
+  games: GameHistoryItemDto[];
+  localGames: SavedGameRecord[];
+  totalGames: number;
+  serverLoaded: number;
+  serverTotal: number;
 } | null = null;
 
 function formatJoinedAt(value?: string | number): string | null {
@@ -70,6 +87,8 @@ function formatJoinedAt(value?: string | number): string | null {
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onOpenSettings,
   onOpenHistory,
+  onSelectGame,
+  onAnalyzeGame,
   onOpenPlayerProfile,
 }) => {
   const styles = useStyles(createStyles);
@@ -80,6 +99,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   // not the fetched profile snapshot — it flips the moment a purchase lands.
   const premiumState = usePremium();
   const showOwnBadge = isPremiumActive(premiumState);
+  const isGuest = identity?.isGuest === true;
+
   const [profile, setProfile] = useState<UserMeDto | null>(null);
   const [ratingHistory, setRatingHistory] = useState<RatingHistoryPointDto[]>([]);
   const [achievements, setAchievements] = useState<AchievementsResponseDto | null>(null);
@@ -88,6 +109,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [showAchievements, setShowAchievements] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
+
+  // Match History state
+  const [games, setGames] = useState<GameHistoryItemDto[]>([]);
+  const [localGames, setLocalGames] = useState<SavedGameRecord[]>([]);
+  const [filter, setFilter] = useState<OutcomeFilter>('ALL');
+  const [recentVisible, setRecentVisible] = useState(5);
+  const [selectedMatch, setSelectedMatch] = useState<GameHistoryItemDto | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalGames, setTotalGames] = useState(0);
+  const offsetRef = useRef(0);
+  const serverTotalRef = useRef(0);
 
   const formatJoined = (value?: string | number): string | null => {
     if (!value) return null;
@@ -114,26 +146,56 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       }
       if (me) {
         setProfile(me);
-        const [rSettled, aSettled] = await Promise.allSettled([
+        const [rSettled, aSettled, localSaved, historySettled] = await Promise.allSettled([
           api.getRatingHistory(me.id, 'CLASSIC_1V1', 20),
           api.getMyAchievements(),
+          loadGameHistory(),
+          identity?.isGuest
+            ? Promise.resolve({ games: [], total: 0 })
+            : api.getMyHistory(PAGE_SIZE, 0),
         ]);
-        // Failed slices keep their previous rows: stale-but-true beats
-        // fabricated. First-load failures stay empty, honestly so.
+
         if (rSettled.status === 'fulfilled') setRatingHistory(rSettled.value);
         if (aSettled.status === 'fulfilled') setAchievements(aSettled.value);
-        // Cache the bundle for instant remounts. Failed slices reuse the
-        // previous cache (same account only), never blank state.
+
+        const savedLocal = localSaved.status === 'fulfilled' ? localSaved.value : [];
+        setLocalGames(savedLocal);
+
+        const serverRes = historySettled.status === 'fulfilled' ? historySettled.value : null;
+        const device = deviceHistoryGames(savedLocal);
+        const localItems = device.map(mapLocalGameToHistoryItem);
+        const serverGames = serverRes?.games ?? [];
+        const merged = mergeHistoryItems(serverGames, localItems);
+
+        setGames(merged);
+        offsetRef.current = serverGames.length;
+        serverTotalRef.current = serverRes?.total ?? 0;
+        const compTotal = (serverRes?.total ?? 0) + device.length;
+        setTotalGames(compTotal);
+
         const prev = profileCache?.userId === me.id ? profileCache : null;
         profileCache = {
           userId: me.id,
           profile: me,
           ratingHistory: rSettled.status === 'fulfilled' ? rSettled.value : prev?.ratingHistory ?? [],
           achievements: aSettled.status === 'fulfilled' ? aSettled.value : prev?.achievements ?? null,
+          games: merged,
+          localGames: savedLocal,
+          totalGames: compTotal,
+          serverLoaded: serverGames.length,
+          serverTotal: serverRes?.total ?? 0,
         };
       } else {
-        // No profile: full section, never a fabricated stand-in (first
-        // load only - a silent refresh keeps what is on screen).
+        // Fallback for offline: load device matches
+        try {
+          const savedLocal = await loadGameHistory();
+          setLocalGames(savedLocal);
+          const device = deviceHistoryGames(savedLocal);
+          const localItems = device.map(mapLocalGameToHistoryItem);
+          setGames(localItems);
+          setTotalGames(device.length);
+        } catch {}
+
         if (!silent) setLoadError({ message: loadMessage(meError), kind: kindOf(meError) });
       }
     } catch {
@@ -141,25 +203,118 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  // Runs on mount (tab switches remount this screen). Auth comes from the
-  // canonical store inside api.getMe, so no identity dep is needed.
-  }, []);
+  }, [identity?.isGuest]);
 
   useEffect(() => {
-    // Instant restore, silent refresh: header, identity card chrome and the
-    // last bundle render on the first frame. Account mismatch (guest <->
-    // Google) always takes the full path, never another account's rows.
     const mine = profileCache && identity?.userId && profileCache.userId === identity.userId ? profileCache : null;
     if (mine) {
       setProfile(mine.profile);
       setRatingHistory(mine.ratingHistory);
       setAchievements(mine.achievements);
+      setGames(mine.games);
+      setLocalGames(mine.localGames);
+      setTotalGames(mine.totalGames);
+      offsetRef.current = mine.serverLoaded;
+      serverTotalRef.current = mine.serverTotal;
       setLoading(false);
       fetchProfileData(true);
     } else {
       fetchProfileData();
     }
   }, [fetchProfileData, identity?.userId]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || isGuest) return;
+    if (offsetRef.current >= serverTotalRef.current) return;
+    setLoadingMore(true);
+    try {
+      const serverRes = await api.getMyHistory(PAGE_SIZE, offsetRef.current);
+      if (serverRes) {
+        setGames((prev) => mergeHistoryItems(serverRes.games, prev));
+        offsetRef.current += serverRes.games.length;
+        serverTotalRef.current = serverRes.total;
+        setTotalGames(serverRes.total + deviceHistoryGames(localGames).length);
+        if (profileCache && profileCache.userId === identity?.userId) {
+          profileCache.serverLoaded = offsetRef.current;
+          profileCache.serverTotal = serverRes.total;
+          profileCache.games = mergeHistoryItems(serverRes.games, profileCache.games);
+          profileCache.totalGames = serverRes.total + deviceHistoryGames(localGames).length;
+        }
+      }
+    } catch (e) {
+      toast.show(loadMessage(e) ?? t('history.loadFailed'));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, isGuest, localGames, identity?.userId, t]);
+
+  const resolveRecord = (
+    gameItem: GameHistoryItemDto,
+    done: (record: SavedGameRecord) => void
+  ) => {
+    const localMatch = localGames.find((lg) => lg.id === gameItem.gameId);
+    if (localMatch) {
+      setSelectedMatch(null);
+      done(localMatch);
+      return;
+    }
+
+    api.getGameReplay(gameItem.gameId)
+      .then((replay) => {
+        if (replay) {
+          const initial = createInitialState({
+            gameId: replay.gameId,
+            mode: replay.mode,
+            playerNames: replay.players.map((p: any) => p.displayName),
+          });
+          const viewer = identity?.userId
+            ? replay.players.find((p: any) => p.userId === identity.userId)
+            : undefined;
+          const viewerSeatId = viewer ? `p${viewer.playerIndex + 1}` : null;
+          const record: SavedGameRecord = {
+            id: replay.gameId,
+            date: new Date(replay.endedAt).getTime(),
+            mode: replay.mode,
+            type: 'online',
+            winnerId: replay.winnerId,
+            winnerName: replay.players.find((p: any) => p.isWinner)?.displayName ?? 'Winner',
+            myPlayerId: viewerSeatId,
+            perspectivePlayerId: viewerSeatId ?? 'p1',
+            isViewerSeated: viewerSeatId != null,
+            endedReason: replay.endedReason ?? 'GOAL',
+            timeControlMinutes: replay.timeControlMinutes,
+            incrementSeconds: replay.incrementSeconds,
+            totalMoves: replay.moves.length,
+            durationSeconds: Math.floor(
+              (new Date(replay.endedAt).getTime() - new Date(replay.startedAt || replay.endedAt).getTime()) / 1000
+            ),
+            initialState: initial,
+            history: replay.moves.map((m: any) => ({
+              sequence: m.sequence,
+              playerId: `p${m.playerIndex + 1}`,
+              action: m.payload,
+              timestamp: m.serverTimestamp,
+            })),
+          };
+          setSelectedMatch(null);
+          done(record);
+        }
+      })
+      .catch(() => {
+        toast.show(t('history.replayFailed'));
+      });
+  };
+
+  const filteredGames = useMemo(() => {
+    return games.filter((g) => {
+      if (filter === 'WINS') return g.outcome === 'WIN';
+      if (filter === 'LOSSES') return g.outcome === 'LOSS';
+      return true;
+    });
+  }, [games, filter]);
+
+  const winCount = useMemo(() => games.filter((g) => g.outcome === 'WIN').length, [games]);
+  const lossCount = useMemo(() => games.filter((g) => g.outcome === 'LOSS').length, [games]);
 
   const rating1v1 = profile?.ratings?.CLASSIC_1V1?.rating ?? 1500;
   const wins = profile?.ratings?.CLASSIC_1V1?.wins ?? 0;
@@ -380,27 +535,154 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <RatingChart data={ratingHistory} currentRating={rating1v1} />
           </View>
 
-          {/* Match History & Review Access */}
-          {onOpenHistory && (
-            <TouchableOpacity
-              style={styles.historyCardBtn}
-              activeOpacity={0.8}
-              onPress={onOpenHistory}
-              accessibilityRole="button"
-              accessibilityLabel="Match History & Review"
-            >
-              <View style={styles.historyBtnLeft}>
-                <View style={styles.historyIconCircle}>
-                  <Feather name="clock" size={18} color={THEME.colors.primary} />
-                </View>
-                <View>
-                  <Text style={styles.historyBtnTitle}>Match History & Review</Text>
-                  <Text style={styles.historyBtnSubtitle}>Replay past games and analyze evaluations</Text>
-                </View>
+          {/* Embedded Match History Section */}
+          <View style={styles.historySection}>
+            <View style={styles.historyHeaderRow}>
+              <View>
+                <Text style={styles.sectionHeading}>{t('history.title')}</Text>
+                <Text style={styles.historySub}>
+                  {t('profile.latestGames', { count: games.length })}
+                </Text>
               </View>
-              <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
-            </TouchableOpacity>
-          )}
+              {onOpenHistory && (
+                <TouchableOpacity
+                  style={styles.fullHistoryBtn}
+                  onPress={onOpenHistory}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.fullHistoryText}>Full History</Text>
+                  <Feather name="chevron-right" size={14} color={THEME.colors.primary} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {isGuest && (
+              <GuestGate
+                title={t('profile.keepEveryMatch')}
+                message={t('profile.keepEveryMatchDesc')}
+                mini
+              />
+            )}
+
+            {/* Filter Pills with counts */}
+            <View style={styles.filterPillsRow}>
+              {(['ALL', 'WINS', 'LOSSES'] as OutcomeFilter[]).map((f) => {
+                const count = f === 'ALL' ? games.length : f === 'WINS' ? winCount : lossCount;
+                const label = f === 'ALL' ? t('profile.all') : f === 'WINS' ? t('profile.wins') : t('profile.losses');
+                return (
+                  <TouchableOpacity
+                    key={f}
+                    style={[styles.filterPill, filter === f && styles.filterPillActive]}
+                    onPress={() => {
+                      setFilter(f);
+                      setRecentVisible(5);
+                    }}
+                  >
+                    <Text style={[styles.filterPillText, filter === f && styles.filterPillTextActive]}>
+                      {label} ({count})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Match rows list */}
+            {filteredGames.length > 0 ? (
+              <View style={styles.matchesList}>
+                {filteredGames.slice(0, recentVisible).map((item, index) => {
+                  const isWin = item.outcome === 'WIN';
+                  const isNeutral = item.outcome === 'DRAW';
+                  const delta = item.myRating?.delta ?? 0;
+                  const opponentName = item.opponent?.displayName || item.opponent?.username || t('history.opponent');
+                  const opponentRating = item.opponent?.ratingBefore ?? item.opponent?.ratingAfter;
+                  const pts = item.isRanked
+                    ? ` · ${delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} pts`
+                    : '';
+                  const isFirst = index === 0;
+                  const isLast = index === Math.min(filteredGames.length, recentVisible) - 1;
+
+                  return (
+                    <TouchableOpacity
+                      key={item.gameId}
+                      style={[
+                        styles.matchRow,
+                        isFirst && styles.matchRowFirst,
+                        isLast && styles.matchRowLast,
+                        !isLast && styles.matchRowDivider,
+                      ]}
+                      activeOpacity={0.75}
+                      onPress={() => setSelectedMatch(item)}
+                    >
+                      <View
+                        style={[
+                          styles.miniOutcomeBadge,
+                          isWin ? styles.badgeWin : isNeutral ? styles.badgeNeutral : styles.badgeLoss,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.miniOutcomeText,
+                            isWin ? styles.textWin : isNeutral ? styles.textNeutral : styles.textLoss,
+                          ]}
+                        >
+                          {isWin ? 'W' : isNeutral ? '–' : 'L'}
+                        </Text>
+                      </View>
+
+                      <View style={styles.matchRowMeta}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Text style={styles.matchRowOpponent} numberOfLines={1}>
+                            {t('gameover.vs', { name: opponentName })}
+                            {opponentRating !== undefined && opponentRating !== null ? (
+                              <Text style={styles.matchRowOppRating}> ({Math.round(opponentRating)})</Text>
+                            ) : null}
+                          </Text>
+                          {item.opponent?.isPremium && <PremiumBadge size="xs" />}
+                        </View>
+                        <Text style={styles.matchRowMode}>
+                          {item.isRanked ? t('history.ranked') : t('history.practice')} · {modeDisplayName(item.mode)}
+                          {pts}
+                        </Text>
+                      </View>
+
+                      <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={styles.emptyMatchesCard}>
+                <Feather name="clock" size={28} color={THEME.colors.textMuted} />
+                <Text style={styles.emptyMatchesTitle}>{t('history.noMatchesRecorded')}</Text>
+                <Text style={styles.emptyMatchesSub}>{t('history.noMatchesSub')}</Text>
+              </View>
+            )}
+
+            {/* Pagination / Load more */}
+            {filteredGames.length > recentVisible ? (
+              <TouchableOpacity
+                style={styles.loadMoreMatchesBtn}
+                activeOpacity={0.8}
+                onPress={() => setRecentVisible((v) => v + 5)}
+              >
+                <Text style={styles.loadMoreMatchesText}>
+                  {t('profile.loadMore')} ({recentVisible}/{filteredGames.length})
+                </Text>
+              </TouchableOpacity>
+            ) : games.length < totalGames && !isGuest ? (
+              <TouchableOpacity
+                style={[styles.loadMoreMatchesBtn, loadingMore && styles.loadMoreMatchesBtnBusy]}
+                activeOpacity={0.8}
+                disabled={loadingMore}
+                onPress={() => void loadMore()}
+              >
+                <Text style={styles.loadMoreMatchesText}>
+                  {loadingMore ? t('history.loading') : `${t('history.loadMore')} (${games.length}/${totalGames})`}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
 
           {/* Ad slot: bottom of the page, below all actions. */}
           <AdBanner placement="list" />
@@ -508,6 +790,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* Match detail modal */}
+      <MatchResultModal
+        match={selectedMatch}
+        onClose={() => setSelectedMatch(null)}
+        onReplay={(item) => resolveRecord(item, (rec) => onSelectGame?.(rec))}
+        onAnalyze={(item) => resolveRecord(item, (rec) => onAnalyzeGame?.(rec))}
+        onViewOpponentProfile={onOpenPlayerProfile}
+      />
     </View>
   );
 };
@@ -884,40 +1175,182 @@ const createStyles = () => StyleSheet.create({
     letterSpacing: 0.8,
     paddingHorizontal: 2,
   },
-  historyCardBtn: {
+  historySection: {
+    marginTop: 18,
+    gap: 12,
+  },
+  historyHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: THEME.colors.backgroundCard,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
+    paddingHorizontal: 2,
+  },
+  historySub: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    marginTop: 2,
+  },
+  fullHistoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  fullHistoryText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    color: THEME.colors.primary,
+  },
+  filterPillsRow: {
+    flexDirection: 'row',
+    gap: 4,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderRadius: 12,
+    padding: 4,
+    alignSelf: 'flex-start',
+  },
+  filterPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  filterPillActive: {
+    backgroundColor: THEME.colors.inverseSurface,
+  },
+  filterPillText: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 12,
+    fontWeight: '500',
+    color: THEME.colors.textOnMuted,
+  },
+  filterPillTextActive: {
+    color: THEME.colors.inverseOnSurface,
+    fontWeight: '600',
+  },
+  matchesList: {
+    borderRadius: 12,
+    overflow: 'hidden',
     ...THEME.shadows.card,
   },
-  historyBtnLeft: {
+  matchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
   },
-  historyIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: THEME.colors.surfacePrimaryTint,
+  matchRowFirst: {
+    borderTopWidth: 1,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  matchRowLast: {
+    borderBottomWidth: 1,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+  },
+  matchRowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.colors.surfaceMuted,
+  },
+  miniOutcomeBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  historyBtnTitle: {
+  badgeWin: {
+    backgroundColor: THEME.colors.tertiaryLight,
+  },
+  badgeLoss: {
+    backgroundColor: THEME.colors.secondaryContainer,
+  },
+  badgeNeutral: {
+    backgroundColor: THEME.colors.surfaceMuted,
+  },
+  miniOutcomeText: {
     fontFamily: THEME.fonts.extraBold,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
+  },
+  textWin: {
+    color: THEME.colors.tertiary,
+  },
+  textLoss: {
+    color: THEME.colors.secondary,
+  },
+  textNeutral: {
+    color: THEME.colors.textMuted,
+  },
+  matchRowMeta: {
+    gap: 2,
+    flex: 1,
+  },
+  matchRowOpponent: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 14,
+    fontWeight: '600',
     color: THEME.colors.textPrimary,
   },
-  historyBtnSubtitle: {
-    fontFamily: THEME.fonts.medium,
+  matchRowOppRating: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 13,
+    fontWeight: '400',
+    color: THEME.colors.textSecondary,
+  },
+  matchRowMode: {
+    fontFamily: THEME.fonts.regular,
     fontSize: 12,
     color: THEME.colors.textSecondary,
-    marginTop: 2,
+  },
+  emptyMatchesCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    backgroundColor: THEME.colors.backgroundCard,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+    gap: 6,
+  },
+  emptyMatchesTitle: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 15,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+    marginTop: 6,
+  },
+  emptyMatchesSub: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    textAlign: 'center',
+  },
+  loadMoreMatchesBtn: {
+    paddingVertical: 11,
+    borderRadius: THEME.radius.md,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    alignItems: 'center',
+    ...THEME.shadows.card,
+  },
+  loadMoreMatchesBtnBusy: {
+    opacity: 0.6,
+  },
+  loadMoreMatchesText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.textPrimary,
+    fontVariant: ['tabular-nums'],
   },
 });
