@@ -182,7 +182,7 @@ export function getBestAction(
       Boolean(state.gameId && state.gameId.toLowerCase().includes('blitz')) ||
       (state.mode as string) === 'blitz';
     const production = budget ?? productionBudget(profile, state.mode);
-    const defaultSims = profile.difficulty === 'easy' ? 300 : profile.difficulty === 'normal' ? 800 : 2000;
+    const defaultSims = profile.difficulty === 'easy' ? 60 : profile.difficulty === 'normal' ? 500 : 2000;
     const sims = profile.simulations ?? defaultSims;
     // Small deterministic searches finish well inside the clock, so let them
     // run to the simulation count instead of truncating on a wall-clock edge.
@@ -199,8 +199,8 @@ export function getBestAction(
       // Live callers (the mobile screen) pass a fresh seed per turn. Defaulting
       // to the position keeps the package API reproducible for tests/tools.
       seed: randomSeed ?? positionSeed(state, currentPlayer.index),
-      wallMoveProb: profile.wallMoveProb ?? (profile.difficulty === 'easy' ? 0.2 : 0.35),
-      blockMoveProb: profile.blockMoveProb ?? 0.35,
+      wallMoveProb: profile.wallMoveProb ?? (profile.difficulty === 'easy' ? 0.12 : 0.35),
+      blockMoveProb: profile.blockMoveProb ?? (profile.difficulty === 'easy' ? 0.20 : 0.35),
       uctConst: profile.uctConst ?? 0.4,
       maxRolloutPlies: profile.maxRolloutPlies,
       timeBudgetMs: timeLimit,
@@ -209,6 +209,9 @@ export function getBestAction(
       varietyWindow: profile.varietyWindow,
       difficulty: profile.difficulty,
       randomness: profile.randomness,
+      blunderRate: profile.blunderRate,
+      missDefenseProb: profile.missDefenseProb,
+      naiveWallProb: profile.naiveWallProb,
     });
     const st = mctsStats();
     lastSearchStats.nodes = st.nodes;
@@ -329,7 +332,7 @@ export async function getBestActionAsync(
     const isBlitz =
       Boolean(state.gameId && state.gameId.toLowerCase().includes('blitz')) ||
       (state.mode as string) === 'blitz';
-    const defaultSims = profile.difficulty === 'easy' ? 600 : profile.difficulty === 'normal' ? 4000 : 15000;
+    const defaultSims = profile.difficulty === 'easy' ? 60 : profile.difficulty === 'normal' ? 600 : 2500;
     const sims = profile.simulations ?? defaultSims;
     const baseBudget = hooks.budget?.timeMs ?? profile.timeBudgetMs;
     const timeLimit = isBlitz ? Math.min(baseBudget ?? 250, 250) : baseBudget;
@@ -340,8 +343,8 @@ export async function getBestActionAsync(
     const action = await mctsBestActionAsync(state, {
       simulations: sims,
       seed: liveSeed,
-      wallMoveProb: profile.wallMoveProb ?? (profile.difficulty === 'easy' ? 0.2 : 0.35),
-      blockMoveProb: profile.blockMoveProb ?? 0.35,
+      wallMoveProb: profile.wallMoveProb ?? (profile.difficulty === 'easy' ? 0.12 : 0.35),
+      blockMoveProb: profile.blockMoveProb ?? (profile.difficulty === 'easy' ? 0.20 : 0.35),
       uctConst: profile.uctConst ?? 0.4,
       maxRolloutPlies: profile.maxRolloutPlies,
       timeBudgetMs: timeLimit,
@@ -350,6 +353,9 @@ export async function getBestActionAsync(
       varietyWindow: profile.varietyWindow,
       difficulty: profile.difficulty,
       randomness: profile.randomness,
+      blunderRate: profile.blunderRate,
+      missDefenseProb: profile.missDefenseProb,
+      naiveWallProb: profile.naiveWallProb,
     }, { shouldCancel: hooks.shouldCancel });
     const st = mctsStats();
     lastSearchStats.nodes = st.nodes;

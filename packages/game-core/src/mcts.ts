@@ -286,13 +286,17 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
   const isCloseRace = isRacing && myDist <= minFoeDist + 1 && minFoeDist > 1;
   const isRacingFarBehind = isRacing && minFoeDist > 1 && myDist >= minFoeDist + 3;
   const isHint = Boolean(opts.isHint);
+  const isEasy = simulations < 200 || opts.difficulty === 'easy';
   const shouldSprint = !isHint && (isLeadingRace || isCloseRace || isRacingFarBehind) && !hasCriticalFoe;
-  const wallProb = shouldSprint ? 0.05 : (opts.wallMoveProb ?? (isHint ? 0.45 : 0.3));
-  const blockProb = opts.blockMoveProb ?? (isHint ? 0.85 : 0.35);
-  const configuredHorizon = opts.wallHorizon ?? (isHint ? 20 : 6);
+  const wallProb = shouldSprint ? 0.05 : (opts.wallMoveProb ?? (isHint ? 0.45 : (isEasy ? 0.12 : 0.3)));
+  const blockProb = opts.blockMoveProb ?? (isHint ? 0.85 : (isEasy ? 0.20 : 0.35));
+  const configuredHorizon = opts.wallHorizon ?? (isHint ? 20 : (isEasy ? 3 : 6));
   const maxOpeningPly = state.players.length * 2;
   const isOpeningSprint = !isHint && state.moveNumber <= maxOpeningPly && myDist >= 7 && minFoeDist >= 7;
   const effectiveHorizon = isOpeningSprint ? Math.min(configuredHorizon, 4) : configuredHorizon;
+  const missDefenseProb = opts.missDefenseProb !== undefined
+    ? Number(opts.missDefenseProb)
+    : (isEasy ? 0.35 : 0);
 
   const newNode = (
     move: GameAction | null,
@@ -320,7 +324,10 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
     const mover = st.players[st.currentPlayerIndex];
     if (!mover) return;
     const moves: GameAction[] = [];
-    if (mover.wallsRemaining > 0) {
+    const isRoot = node === root;
+    const ignoreCritDefense = isRoot && !isHint && missDefenseProb > 0 && rng() < missDefenseProb;
+
+    if (mover.wallsRemaining > 0 && !ignoreCritDefense) {
       const critFoe = st.players.find(
         (p) =>
           p.id !== mover.id &&
@@ -559,17 +566,18 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
 
     const bestRate = best.visits > 0 ? best.rewards[rootMover.index] / best.visits : 0;
 
-    // Near-Optimal Candidate Selection (No Blunders):
-    // For non-hint, non-sprint moves with non-zero randomness, sample among
-    // top-tier candidate moves whose win rate falls strictly within the safe deltaQ window.
+    // Candidate Selection Strategy:
+    // 1. Easy bots: wider deltaQ, lower visit threshold, and blunderRate allowing
+    //    human-like suboptimal 2nd/3rd choices without freezing or looping.
+    // 2. Normal & Hard bots: strictly enforce Near-Optimal Candidate Selection with tight Delta-Q protection.
     if (!isHint && !shouldSprint && opts.randomness !== 0 && root.children.length > 1) {
       const isHard = simulations >= 2500 || opts.difficulty === 'hard';
       const isNormal = simulations >= 300 || opts.difficulty === 'normal';
       const deltaQ = opts.varietyWindow !== undefined
         ? Number(opts.varietyWindow)
-        : (isHard ? 0.025 : (isNormal ? 0.065 : 0.14));
-      const minVisitRatio = isHard ? 0.35 : (isNormal ? 0.20 : 0.10);
-      const exponent = isHard ? 1.8 : (isNormal ? 1.3 : 1.0);
+        : (isHard ? 0.025 : (isNormal ? 0.065 : 0.18));
+      const minVisitRatio = isHard ? 0.35 : (isNormal ? 0.20 : 0.08);
+      const exponent = isHard ? 1.8 : (isNormal ? 1.3 : 0.9);
       const maxChoices = isHard ? 3 : (isNormal ? 3 : 4);
 
       const sorted = [...root.children].sort((a, b) => b.visits - a.visits);
@@ -578,16 +586,24 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
         return cRate >= bestRate - deltaQ && c.visits >= best.visits * minVisitRatio;
       });
 
+      const blunderRate = isEasy ? (opts.blunderRate !== undefined ? Number(opts.blunderRate) : 0.30) : 0;
+
       if (safeCandidates.length > 1) {
-        const weights = safeCandidates.map((c) => Math.pow(c.visits / best.visits, exponent));
-        const totalWeight = weights.reduce((acc, w) => acc + w, 0);
-        let pick = rng() * totalWeight;
-        for (let i = 0; i < safeCandidates.length; i++) {
-          if (pick <= weights[i]) {
-            best = safeCandidates[i];
-            break;
+        if (blunderRate > 0 && rng() < blunderRate) {
+          // Blunder: deliberately pick a suboptimal candidate (2nd, 3rd, etc.)
+          const subCandidates = safeCandidates.slice(1);
+          best = subCandidates[Math.floor(rng() * subCandidates.length)];
+        } else {
+          const weights = safeCandidates.map((c) => Math.pow(c.visits / best.visits, exponent));
+          const totalWeight = weights.reduce((acc, w) => acc + w, 0);
+          let pick = rng() * totalWeight;
+          for (let i = 0; i < safeCandidates.length; i++) {
+            if (pick <= weights[i]) {
+              best = safeCandidates[i];
+              break;
+            }
+            pick -= weights[i];
           }
-          pick -= weights[i];
         }
       }
     }

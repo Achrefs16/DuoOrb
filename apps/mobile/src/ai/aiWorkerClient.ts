@@ -159,10 +159,15 @@ export async function getAiMove(
     try {
       const isHint = Boolean(options.isHint);
       const isHard = profile.difficulty === 'hard';
-      const nativeSims = isHint ? 100000 : (isHard ? 50000 : Math.max(2000, (profile.simulations ?? 3500) * 3));
-      const threads = isHint ? 8 : (isHard ? 8 : 4);
-      const nativeAction = await getBestActionNative(state, nativeSims, threads);
-      if (nativeAction) return nativeAction;
+      // Native Rust MCTS is designed for deep Grandmaster calculation (Hints & Hard bots).
+      // Beginners & intermediate bots must run through the calibrated JS engine so their
+      // specific personality weights, blunder rates, and missed defense chances take effect.
+      if (isHint || isHard) {
+        const nativeSims = isHint ? 100000 : 50000;
+        const threads = 8;
+        const nativeAction = await getBestActionNative(state, nativeSims, threads);
+        if (nativeAction) return nativeAction;
+      }
     } catch {
       // Fall through to JS engine
     }
