@@ -39,8 +39,8 @@ describe('AnalysisService', () => {
     expect(review.totalMoves).toBe(4);
     expect(review.moveAnalyses.length).toBe(4);
     expect(review.summary).toBeDefined();
-    expect(review.engineVersion).toBe('duoorb-rust-mcts-3.0');
-    expect(review.analysisVersion).toBe('analysis-3.0');
+    expect(review.engineVersion).toBe('duoorb-rust-mcts-3.2');
+    expect(review.analysisVersion).toBe('analysis-3.2');
   });
 
   it('serves cached review when present in database', async () => {
@@ -58,7 +58,7 @@ describe('AnalysisService', () => {
         findUnique: vi.fn().mockResolvedValue({
           gameId: 'test-game',
           reviewData: cachedReview,
-          analysisVersion: 'analysis-3.0',
+          analysisVersion: 'analysis-3.2',
         }),
       },
     };
@@ -98,8 +98,8 @@ describe('AnalysisService', () => {
     const review = await service.reviewGame(undefined, []);
     expect(review).toBeDefined();
     expect(review.totalMoves).toBe(0);
-    expect(review.engineVersion).toBe('duoorb-rust-mcts-3.0');
-    expect(review.analysisVersion).toBe('analysis-3.0');
+    expect(review.engineVersion).toBe('duoorb-rust-mcts-3.2');
+    expect(review.analysisVersion).toBe('analysis-3.2');
   });
 
   it('invalidates stale cache entries and replaces them', async () => {
@@ -130,10 +130,10 @@ describe('AnalysisService', () => {
     const service = new AnalysisService(mockPrisma);
     const review = await service.reviewGame(undefined, [], 'stale-game', '2p');
 
-    expect(review.analysisVersion).toBe('analysis-3.0');
+    expect(review.analysisVersion).toBe('analysis-3.2');
     expect(upsert).toHaveBeenCalledTimes(1);
     const write = upsert.mock.calls[0][0];
-    expect(write.update.analysisVersion).toBe('analysis-3.0');
-    expect(write.update.reviewData.analysisVersion).toBe('analysis-3.0');
+    expect(write.update.analysisVersion).toBe('analysis-3.2');
+    expect(write.update.reviewData.analysisVersion).toBe('analysis-3.2');
   });
 });

@@ -38,17 +38,6 @@ fn race_snapshot(state: &GameState, board: &Board, mover_idx: usize) -> (i32, i3
     (mine, opp)
 }
 
-/// Net race tempo of one action: (my improvement) - (opponent improvement).
-fn race_gain(state: &GameState, board: &Board, action: &GameAction, mover_idx: usize) -> i32 {
-    let (my_before, opp_before) = race_snapshot(state, board, mover_idx);
-    let mut after_board = *board;
-    if let Some(after) = apply_action(state, action, &mut after_board) {
-        let (my_after, opp_after) = race_snapshot(&after, &after_board, mover_idx);
-        (my_before - my_after) - (opp_before - opp_after)
-    } else {
-        0
-    }
-}
 
 pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedAction>) -> GameReview {
     let mut states_before = Vec::with_capacity(history.len() + 1);
@@ -139,7 +128,18 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
 
             let best_q = mcts.best_q;
             let played_q = mcts.played_q.unwrap_or(best_q);
-            let played_gain = race_gain(state_before, board_before, &rec.action, mover_idx);
+            let is_engine_best = rec.action == mcts.best_action;
+
+            let (my_before, opp_before) = race_snapshot(state_before, board_before, mover_idx);
+            let mut after_board = *board_before;
+            let (_my_after, opp_after) = if let Some(after_state) = apply_action(state_before, &rec.action, &mut after_board) {
+                race_snapshot(&after_state, &after_board, mover_idx)
+            } else {
+                (my_before, opp_before)
+            };
+            let opp_detour = (opp_after - opp_before).max(0);
+            let my_lead_before = opp_before - my_before;
+
             let is_wall = matches!(rec.action, GameAction::PlaceWall { .. });
             let is_jump = match rec.action {
                 GameAction::Move { to } => {
@@ -154,7 +154,9 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
                 played_q,
                 mcts.q_second_best,
                 mcts.q_naive_pawn_step,
-                played_gain,
+                is_engine_best,
+                opp_detour,
+                my_lead_before,
                 is_wall,
                 is_jump,
                 forced,
@@ -260,7 +262,7 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
             key_lesson,
             confidence: "high".to_string(),
         },
-        engine_version: "duoorb-rust-mcts-3.0".to_string(),
-        analysis_version: "analysis-3.0".to_string(),
+        engine_version: "duoorb-rust-mcts-3.2".to_string(),
+        analysis_version: "analysis-3.2".to_string(),
     }
 }

@@ -14,7 +14,7 @@ export class AnalysisService {
   private readonly logger = new Logger(AnalysisService.name);
 
   /** Bump together with the Rust `review.analysis_version`. */
-  private static readonly ANALYSIS_VERSION = 'analysis-3.1';
+  private static readonly ANALYSIS_VERSION = 'analysis-3.2';
 
   constructor(private readonly prisma: PrismaService) {}
 

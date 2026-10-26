@@ -284,7 +284,7 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
   const isRacing = state.mode.startsWith('race') || state.mode.startsWith('center');
   const isLeadingRace = myDist <= minFoeDist && minFoeDist > 1;
   const isCloseRace = isRacing && myDist <= minFoeDist + 1 && minFoeDist > 1;
-  const isRacingFarBehind = isRacing && minFoeDist > 1 && myDist >= minFoeDist + 3;
+  const isRacingFarBehind = minFoeDist > 1 && myDist >= minFoeDist + 3;
   const isHint = Boolean(opts.isHint);
   const isEasy = simulations < 200 || opts.difficulty === 'easy';
   const shouldSprint = !isHint && (isLeadingRace || isCloseRace || isRacingFarBehind) && !hasCriticalFoe;
@@ -342,7 +342,15 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
       }
     }
     if (moves.length === 0) {
-      moves.push(...getLegalMoves(st, mover.id).map((to) => ({ type: 'MOVE' as const, to })));
+      const legal = getLegalMoves(st, mover.id);
+      const curDist = getShortestDistance(mover.position, mover.goalDirection, st.walls, st.mode);
+      const hasAdvancing = legal.some(
+        (to) => getShortestDistance(to, mover.goalDirection, st.walls, st.mode) < curDist
+      );
+      const viableMoves = hasAdvancing
+        ? legal.filter((to) => getShortestDistance(to, mover.goalDirection, st.walls, st.mode) <= curDist)
+        : legal;
+      moves.push(...viableMoves.map((to) => ({ type: 'MOVE' as const, to })));
       if (mover.wallsRemaining > 0) {
         for (const slot of probableWalls(st, mover.id, effectiveHorizon)) {
           moves.push({ type: 'PLACE_WALL' as const, wall: slot });
@@ -463,7 +471,12 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
       if (!action) {
         const legal = getLegalMoves(st, mover.id);
         if (legal.length === 0) break;
-        const to = legal[Math.floor(rng() * legal.length)];
+        const curDist = getShortestDistance(mover.position, mover.goalDirection, st.walls, st.mode);
+        const advancing = legal.filter(
+          (to) => getShortestDistance(to, mover.goalDirection, st.walls, st.mode) <= curDist
+        );
+        const pool = advancing.length > 0 ? advancing : legal;
+        const to = pool[Math.floor(rng() * pool.length)];
         action = { type: 'MOVE', to: { ...to } };
       }
       const applied = applyAction(st, action);
@@ -581,7 +594,23 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
       const maxChoices = isHard ? 3 : (isNormal ? 3 : 4);
 
       const sorted = [...root.children].sort((a, b) => b.visits - a.visits);
-      const safeCandidates = sorted.slice(0, maxChoices).filter((c) => {
+      const myDist = getShortestDistance(rootMover.position, rootMover.goalDirection, state.walls, state.mode);
+      const hasForwardMove = sorted.some((c) => {
+        const m = c.move;
+        return m && m.type === 'MOVE' && getShortestDistance(m.to, rootMover.goalDirection, state.walls, state.mode) < myDist;
+      });
+      const candidatePool = hasForwardMove
+        ? sorted.filter((c) => {
+            const m = c.move;
+            if (m && m.type === 'MOVE') {
+              return getShortestDistance(m.to, rootMover.goalDirection, state.walls, state.mode) <= myDist;
+            }
+            return true;
+          })
+        : sorted;
+      const effectivePool = candidatePool.length > 0 ? candidatePool : sorted;
+
+      const safeCandidates = effectivePool.slice(0, maxChoices).filter((c) => {
         const cRate = c.visits > 0 ? c.rewards[rootMover.index] / c.visits : 0;
         return cRate >= bestRate - deltaQ && c.visits >= best.visits * minVisitRatio;
       });
@@ -591,7 +620,6 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
       if (safeCandidates.length > 1) {
         if (blunderRate > 0 && rng() < blunderRate) {
           // Blunder: pick a suboptimal candidate (2nd, 3rd) but avoid backward pawn moves if forward is open
-          const myDist = getShortestDistance(rootMover.position, rootMover.goalDirection, state.walls, state.mode);
           const sensibleSub = safeCandidates.slice(1).filter((c) => {
             const m = c.move;
             if (m && m.type === 'MOVE') {
@@ -626,9 +654,11 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
     };
 
     // Forward-progress guarantee in losing positions:
-    // If collapsing (bestRate < 0.15) and chosen move either steps backward/sideways or we have 0 walls left,
-    // march forward along the shortest path towards the goal instead of shuffling back and forth!
-    if (bestRate < 0.15) {
+    // If collapsing (bestRate < 0.20 or trailing far behind in an unstoppable race) and chosen move either
+    // steps backward/sideways, or places an unhelpful wall, or we have 0 walls left:
+    // march forward along the best advancing move towards the goal!
+    const isCollapsing = bestRate < 0.20 || (minFoeDist <= 3 && myDist >= minFoeDist + 2);
+    if (isCollapsing) {
       const myDist = getShortestDistance(rootMover.position, rootMover.goalDirection, state.walls, state.mode);
       const bm = best.move;
       const isBackwardOrStationary = Boolean(
@@ -637,14 +667,34 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
         getShortestDistance(bm.to, rootMover.goalDirection, state.walls, state.mode) >= myDist
       );
 
-      if (isBackwardOrStationary || rootMover.wallsRemaining === 0) {
-        const path = getShortestPath(rootMover.position, rootMover.goalDirection, state.walls, state.mode);
-        if (path && path.length > 0) {
-          const to = path[0];
-          if (getLegalMoves(state, rootMover.id).some((c) => c.row === to.row && c.col === to.col)) {
-            lastMctsStats.elapsedMs = Date.now() - started;
-            return { type: 'MOVE', to: { ...to } };
+      let isProductiveWall = false;
+      if (bm?.type === 'PLACE_WALL') {
+        const applied = applyAction(state, bm);
+        if (applied.success) {
+          const foeDistsAfter = applied.state.players
+            .filter((p) => p.id !== rootMover.id && p.status === 'ACTIVE')
+            .map((p) => getShortestDistance(p.position, p.goalDirection, applied.state.walls, applied.state.mode));
+          const minFoeAfter = Math.min(...foeDistsAfter);
+          if (minFoeAfter > minFoeDist) {
+            isProductiveWall = true;
           }
+        }
+      }
+
+      if (isBackwardOrStationary || (!isProductiveWall && bm?.type === 'PLACE_WALL') || rootMover.wallsRemaining === 0) {
+        const legal = getLegalMoves(state, rootMover.id);
+        let bestAdvancing: CellCoord | null = null;
+        let minAdvDist = myDist;
+        for (const cand of legal) {
+          const d = getShortestDistance(cand, rootMover.goalDirection, state.walls, state.mode);
+          if (d < minAdvDist) {
+            minAdvDist = d;
+            bestAdvancing = cand;
+          }
+        }
+        if (bestAdvancing) {
+          lastMctsStats.elapsedMs = Date.now() - started;
+          return { type: 'MOVE', to: { ...bestAdvancing } };
         }
       }
     }

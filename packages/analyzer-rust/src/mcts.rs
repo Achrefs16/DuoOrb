@@ -130,11 +130,14 @@ pub fn generate_logical_actions(
 
     if !forward_moves.is_empty() {
         candidates.extend(forward_moves);
-        // Include only tactical lateral/retreat moves when dodging an opponent
+        // Include only tactical lateral moves when dodging an opponent (never retreating moves)
         if mover.walls_remaining > 0 && is_adjacent_to_opp {
             for m in other_pawn_moves {
-                if candidates.len() < 8 {
-                    candidates.push(m);
+                if let GameAction::Move { to } = &m.0 {
+                    let d = edge_masks.shortest_distance(to.row as u8, to.col as u8, mover_goal);
+                    if d >= 0 && mover_dist >= 0 && d <= mover_dist && candidates.len() < 8 {
+                        candidates.push(m);
+                    }
                 }
             }
         }
@@ -426,9 +429,9 @@ pub struct MctsEvaluationResult {
     pub q_second_best: f64,
 }
 
-pub const MIN_SIMS_PER_PLY: usize = 1_500;
-pub const MAX_SIMS_PER_PLY: usize = 8_000;
-pub const DEFAULT_SIMS_PER_PLY: usize = 3_500;
+pub const MIN_SIMS_PER_PLY: usize = 3_000;
+pub const MAX_SIMS_PER_PLY: usize = 10_000;
+pub const DEFAULT_SIMS_PER_PLY: usize = 6_000;
 const UCT_C: f64 = 0.45;
 
 pub fn run_mcts_analysis(
@@ -564,13 +567,24 @@ pub fn run_mcts_analysis(
         }
     }
 
-    // Stage 2: Depth Equalization (Equalize visits for played_action and best_action)
-    let best_cid = tree[0]
+    // Stage 1: Identify the true engine recommendation from unconstrained search
+    let engine_best_cid = tree[0]
         .children
         .iter()
         .copied()
         .max_by_key(|&cid| tree[cid].visits)
         .unwrap_or(0);
+
+    let engine_best_action = tree[engine_best_cid]
+        .action
+        .clone()
+        .unwrap_or_else(|| played_action.clone());
+
+    let engine_best_q = if tree[engine_best_cid].visits > 0 {
+        tree[engine_best_cid].rewards[mover_idx.min(3)] / tree[engine_best_cid].visits as f64
+    } else {
+        tree[engine_best_cid].prior
+    };
 
     let played_cid_opt = tree[0]
         .children
@@ -578,13 +592,14 @@ pub fn run_mcts_analysis(
         .copied()
         .find(|&cid| tree[cid].action.as_ref() == Some(played_action));
 
+    // Stage 2: Depth Equalization (Ensure played_action has sufficient visits for fair comparison)
     if let Some(pid) = played_cid_opt {
-        if pid != best_cid {
-            let target_visits = tree[best_cid].visits.min(1_200);
+        if pid != engine_best_cid {
+            let target_visits = tree[engine_best_cid].visits.min(1_500);
             let played_visits = tree[pid].visits;
 
             if played_visits < target_visits {
-                let needed = (target_visits - played_visits).min(1_200);
+                let needed = (target_visits - played_visits).min(1_500);
                 for _ in 0..needed {
                     let mut cur_node_idx = pid;
                     let mut cur_state = root_state.clone();
@@ -624,6 +639,8 @@ pub fn run_mcts_analysis(
                             let val = q + u;
                             if val > best_val {
                                 best_val = val;
+                            }
+                            if val >= best_val {
                                 best_child = cid;
                             }
                         }
@@ -689,10 +706,20 @@ pub fn run_mcts_analysis(
     }
 
     // Finalize metrics
-    let mut candidate_actions = Vec::with_capacity(tree[0].children.len());
-    let mut final_best_cid = best_cid;
-    let mut max_visits = 0;
+    // CRITICAL: best_action is strictly the engine's unconstrained recommendation.
+    // It is NEVER overwritten by played_action!
+    let best_action = engine_best_action;
+    let best_q = engine_best_q;
 
+    let played_q = played_cid_opt.map(|pid| {
+        if tree[pid].visits > 0 {
+            tree[pid].rewards[mover_idx.min(3)] / tree[pid].visits as f64
+        } else {
+            tree[pid].prior
+        }
+    });
+
+    let mut candidate_actions = Vec::with_capacity(tree[0].children.len());
     for &cid in &tree[0].children {
         let child = &tree[cid];
         if let Some(ref act) = child.action {
@@ -702,32 +729,10 @@ pub fn run_mcts_analysis(
                 child.prior
             };
             candidate_actions.push((act.clone(), q, child.visits));
-            if child.visits > max_visits {
-                max_visits = child.visits;
-                final_best_cid = cid;
-            }
         }
     }
 
     candidate_actions.sort_by(|a, b| b.2.cmp(&a.2));
-
-    let best_action = tree[final_best_cid]
-        .action
-        .clone()
-        .unwrap_or_else(|| played_action.clone());
-    let best_q = if tree[final_best_cid].visits > 0 {
-        tree[final_best_cid].rewards[mover_idx.min(3)] / tree[final_best_cid].visits as f64
-    } else {
-        tree[final_best_cid].prior
-    };
-
-    let played_q = played_cid_opt.map(|pid| {
-        if tree[pid].visits > 0 {
-            tree[pid].rewards[mover_idx.min(3)] / tree[pid].visits as f64
-        } else {
-            tree[pid].prior
-        }
-    });
 
     let root_q = if tree[0].visits > 0 {
         tree[0].rewards[mover_idx.min(3)] / tree[0].visits as f64
@@ -739,7 +744,7 @@ pub fn run_mcts_analysis(
         .iter()
         .filter(|(act, _, _)| act != &best_action)
         .map(|(_, q, _)| *q)
-        .next()
+        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
         .unwrap_or(best_q);
 
     let gap_to_second = (best_q - q_second_best).max(0.0);
@@ -1033,7 +1038,31 @@ pub fn find_best_action_multithreaded(
             }
         };
 
-        best_action.or_else(|| legal_coords.into_iter().next().map(|to| GameAction::Move { to }))
+        let mover_goal = GoalMask::from_goal_and_mode(mover.goal_direction, &root_state.mode);
+        let edge_masks = EdgeMasks::from_board(&root_board);
+        let mover_dist = edge_masks.shortest_distance(mover.position.row as u8, mover.position.col as u8, mover_goal);
+
+        let final_action = best_action.map(|act| {
+            if let GameAction::Move { to } = act {
+                let to_dist = edge_masks.shortest_distance(to.row as u8, to.col as u8, mover_goal);
+                if to_dist > mover_dist && mover_dist >= 0 {
+                    let best_adv = legal_coords.iter().filter_map(|&c| {
+                        let d = edge_masks.shortest_distance(c.row as u8, c.col as u8, mover_goal);
+                        if d >= 0 && d < mover_dist {
+                            Some((c, d))
+                        } else {
+                            None
+                        }
+                    }).min_by_key(|&(_, d)| d);
+                    if let Some((best_c, _)) = best_adv {
+                        return GameAction::Move { to: best_c };
+                    }
+                }
+            }
+            act
+        });
+
+        final_action.or_else(|| legal_coords.into_iter().next().map(|to| GameAction::Move { to }))
     });
 
     safe_run.unwrap_or(None)
