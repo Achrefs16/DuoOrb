@@ -16,11 +16,13 @@ import {
   BOARD_CENTER,
   CellCoord,
   GameState,
+  MoveAssessment,
   WallCoord,
   isCenterGoalMode,
   isGoalCell,
   isLegalWallPlacement,
 } from '@duoorb/game-core';
+import { AssessmentIcon } from './AnalysisBadge';
 import { THEME, playerColor, useTheme, wallColorForPlayer, wallPreviewColor } from '../theme';
 import { BoardSkin, useBoardSkin } from '../theme/boardTheme';
 
@@ -58,7 +60,7 @@ interface GameBoardProps {
    * Review classification badge (?? / ? / ?! / !) pinned on the move's
    * destination cell — the chess-style glyph that needs no legend.
    */
-  badgeMark?: { cell: CellCoord; glyph: string; color: string } | null;
+  badgeMark?: { cell: CellCoord; glyph?: string; color?: string; assessment?: MoveAssessment } | null;
   /**
    * Review best-move arrow: thick engine-colored arrow from the mover's
    * origin to the engine's preferred destination (piece moves only —
@@ -1022,26 +1024,35 @@ const GameBoardView: React.FC<GameBoardProps> = ({
               top: BOARD_PAD + badgeMark.cell.row * (CELL + GAP) - 8,
               left:
                 BOARD_PAD + badgeMark.cell.col * (CELL + GAP) + CELL - 14,
-              minWidth: 22,
-              height: 22,
-              paddingHorizontal: 4,
-              borderRadius: 11,
-              backgroundColor: badgeMark.color,
-              alignItems: 'center',
-              justifyContent: 'center',
               transform: [{ rotate: orbCounterRotation }],
             }}
           >
-            <Text
-              style={{
-                color: '#FFFFFF',
-                fontSize: 11,
-                fontWeight: '800',
-                fontFamily: THEME.fonts.bold,
-              }}
-            >
-              {badgeMark.glyph}
-            </Text>
+            {badgeMark.assessment ? (
+              <AssessmentIcon assessment={badgeMark.assessment} size={22} />
+            ) : (
+              <View
+                style={{
+                  minWidth: 22,
+                  height: 22,
+                  paddingHorizontal: 4,
+                  borderRadius: 11,
+                  backgroundColor: badgeMark.color || '#69B342',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text
+                  style={{
+                    color: '#FFFFFF',
+                    fontSize: 11,
+                    fontWeight: '800',
+                    fontFamily: THEME.fonts.bold,
+                  }}
+                >
+                  {badgeMark.glyph}
+                </Text>
+              </View>
+            )}
           </Animated.View>
         )}
 

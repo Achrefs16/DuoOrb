@@ -16,6 +16,7 @@ import { useTranslation } from '../i18n';
 import { fetchOrComputeReview } from '../analysis/reviewLoader';
 import { SmoothStar } from '../components/SmoothStar';
 import { BotAvatar } from '../components/BotAvatar';
+import { AssessmentIcon } from '../components/AnalysisBadge';
 
 interface GameReviewSummaryScreenProps {
   initialState: GameState;
@@ -156,17 +157,7 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
     : (oppMoves.length > 0 ? 76.8 : 72.0);
 
   const renderBadgeIcon = (cfg: MoveRowConfig) => {
-    if (cfg.isCustomIcon === 'star') {
-      return <SmoothStar size={12} color="#FFFFFF" />;
-    }
-    if (cfg.isCustomIcon === 'thumb') {
-      return <MaterialCommunityIcons name="thumb-up" size={11} color="#FFFFFF" />;
-    }
-    return (
-      <Text style={[styles.badgeText, { color: cfg.badgeColor }]}>
-        {cfg.glyph}
-      </Text>
-    );
+    return <AssessmentIcon assessment={cfg.assessment} size={22} />;
   };
 
   return (

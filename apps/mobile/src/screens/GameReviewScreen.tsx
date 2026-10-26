@@ -10,7 +10,7 @@ import {
   createInitialState,
   rebuildStateAtStep,
 } from '@duoorb/game-core';
-import { AnalysisBadge } from '../components/AnalysisBadge';
+import { AnalysisBadge, AssessmentIcon } from '../components/AnalysisBadge';
 import {
   DetailsRows,
   ImpactRows,
@@ -155,9 +155,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     180,
     Math.floor(
       Math.min(
-        effectiveWidth - 24,
+        effectiveWidth,
         anchorW > 0 ? anchorW : Number.POSITIVE_INFINITY,
-        windowHeight - topH - bottomH - 26
+        windowHeight - topH - bottomH - 12
       )
     )
   );
@@ -476,8 +476,6 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   // Classification badge (?? / ? / ?! / !) pinned on the destination.
   const badgeMark = useMemo(() => {
     if (bare || !currentAnalysis) return null;
-    const glyph = assessmentGlyph(currentAnalysis.assessment);
-    if (!glyph) return null;
     const pa = currentAnalysis.playedAction ?? (currentAnalysis as any).action;
     if (!pa) return null;
     const cell =
@@ -487,7 +485,12 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           ? { row: pa.wall.row, col: pa.wall.col }
           : null;
     if (!cell) return null;
-    return { cell, glyph, color: assessmentBadgeColor(currentAnalysis.assessment) };
+    return {
+      cell,
+      assessment: currentAnalysis.assessment,
+      glyph: assessmentGlyph(currentAnalysis.assessment),
+      color: assessmentBadgeColor(currentAnalysis.assessment),
+    };
   }, [bare, currentAnalysis]);
 
   // Best-move arrow: mover's origin -> engine destination (piece moves).
@@ -608,21 +611,25 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   }, [review]);
   const nextMoment = keyMoments.find((m) => m.moveNumber > currentStep) ?? null;
 
-  // Move strip window: around the current step, clamped, padded backwards.
+  // Move strip window: focused 3-chip centered window [Previous, Current, Next].
+  // Gives each chip ~100px of breathing room so move names and badges never truncate with "..."!
   const stripSteps = useMemo(() => {
     const total = history.length;
-    const out: number[] = [];
-    for (
-      let s = Math.max(0, currentStep - 1);
-      s <= Math.min(total, currentStep + 2) && out.length < 5;
-      s++
-    ) {
-      out.push(s);
+    if (total === 0) return [0];
+    if (currentStep === 0) {
+      const out = [0];
+      if (total >= 1) out.push(1);
+      if (total >= 2) out.push(2);
+      return out;
     }
-    while (out.length < Math.min(5, total + 1) && out[0] > 0) {
-      out.unshift(out[0] - 1);
+    if (currentStep >= total) {
+      const out: number[] = [];
+      if (total >= 2) out.push(total - 2);
+      if (total >= 1) out.push(total - 1);
+      out.push(total);
+      return out;
     }
-    return out;
+    return [currentStep - 1, currentStep, currentStep + 1];
   }, [history.length, currentStep]);
   const stripLabel = (step: number): string => {
     if (step === 0) return 'Start';
@@ -1108,21 +1115,11 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               <View style={styles.coachBubble}>
                 <View style={styles.bubblePointer} />
                 <View style={styles.verdictRow}>
-                  {assessmentGlyph(currentAnalysis.assessment) !== '' && (
-                    <View
-                      style={[
-                        styles.glyphBadge,
-                        {
-                          backgroundColor: assessmentBadgeColor(
-                            currentAnalysis.assessment
-                          ),
-                        },
-                      ]}
-                    >
-                      <Text style={styles.glyphText}>
-                        {assessmentGlyph(currentAnalysis.assessment)}
-                      </Text>
-                    </View>
+                  {currentAnalysis.assessment && (
+                    <AssessmentIcon
+                      assessment={currentAnalysis.assessment}
+                      size={22}
+                    />
                   )}
                   <Text style={styles.verdictText} numberOfLines={1}>
                     {t('review.verdictIsA', {
@@ -1142,7 +1139,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                   </View>
                 </View>
                 {currentAnalysis.explanation ? (
-                  <Text style={styles.coachText} numberOfLines={3}>
+                  <Text style={styles.coachText}>
                     {currentAnalysis.explanation}
                   </Text>
                 ) : null}
@@ -1167,7 +1164,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                     <Text style={styles.evalPillText}>0.0</Text>
                   </View>
                 </View>
-                <Text style={styles.coachText} numberOfLines={2}>
+                <Text style={styles.coachText}>
                   {review.summary?.keyLesson?.detail ?? 'Initial board position. Tap Next to review the match.'}
                 </Text>
               </View>
@@ -1231,7 +1228,10 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           {/* Move strip navigator. */}
           <View style={styles.stripRow}>
             <TouchableOpacity
-              style={styles.stripNav}
+              style={[
+                styles.stripNav,
+                currentStep <= 0 && styles.stripNavDisabled,
+              ]}
               disabled={currentStep <= 0}
               onPress={() => goTo(currentStep - 1)}
               accessibilityRole="button"
@@ -1239,19 +1239,17 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             >
               <Feather
                 name="chevron-left"
-                size={20}
+                size={26}
                 color={
                   currentStep <= 0
                     ? theme.colors.textMuted
-                    : theme.colors.textSecondary
+                    : theme.colors.textPrimary
                 }
               />
             </TouchableOpacity>
             {stripSteps.map((s) => {
               const a = stripAssessment(s);
               const active = s === currentStep;
-              const glyph = a ? assessmentGlyph(a) : null;
-              const badgeColor = a ? assessmentBadgeColor(a) : null;
               return (
                 <TouchableOpacity
                   key={s}
@@ -1267,21 +1265,17 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                   >
                     {s === 0 ? 'Start' : `${s} · ${stripLabel(s)}`}
                   </Text>
-                  {badgeColor && glyph ? (
-                    <View
-                      style={[
-                        styles.stripBadgeMini,
-                        { backgroundColor: badgeColor },
-                      ]}
-                    >
-                      <Text style={styles.stripBadgeMiniText}>{glyph}</Text>
-                    </View>
+                  {a ? (
+                    <AssessmentIcon assessment={a} size={18} />
                   ) : null}
                 </TouchableOpacity>
               );
             })}
             <TouchableOpacity
-              style={styles.stripNav}
+              style={[
+                styles.stripNav,
+                currentStep >= history.length && styles.stripNavDisabled,
+              ]}
               disabled={currentStep >= history.length}
               onPress={() => goTo(currentStep + 1)}
               accessibilityRole="button"
@@ -1289,11 +1283,11 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             >
               <Feather
                 name="chevron-right"
-                size={20}
+                size={26}
                 color={
                   currentStep >= history.length
                     ? theme.colors.textMuted
-                    : theme.colors.textSecondary
+                    : theme.colors.textPrimary
                 }
               />
             </TouchableOpacity>
@@ -1777,7 +1771,7 @@ const createStyles = () => StyleSheet.create({
     flex: 1,
     gap: 8,
     paddingBottom: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 0,
     maxWidth: 580,
     width: '100%',
     alignSelf: 'center',
@@ -1786,6 +1780,7 @@ const createStyles = () => StyleSheet.create({
   analysisTopChrome: {
     width: '100%',
     gap: 8,
+    paddingHorizontal: 12,
   },
   // Eval bar: number + viewer-share track.
   evalBarRow: {
@@ -1815,7 +1810,7 @@ const createStyles = () => StyleSheet.create({
   // Coach card: bot avatar wrapper + speech bubble with left pointer.
   coachCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
     paddingHorizontal: 2,
     marginVertical: 4,
@@ -1826,6 +1821,7 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'flex-end',
     alignItems: 'center',
     backgroundColor: 'transparent',
+    marginTop: 2,
   },
   coachBubble: {
     flex: 1,
@@ -1846,7 +1842,7 @@ const createStyles = () => StyleSheet.create({
   bubblePointer: {
     position: 'absolute',
     left: -7,
-    top: 18,
+    top: 14,
     width: 0,
     height: 0,
     borderTopWidth: 6,
@@ -1858,9 +1854,9 @@ const createStyles = () => StyleSheet.create({
   },
   coachText: {
     fontFamily: THEME.fonts.regular,
-    fontSize: 12,
+    fontSize: 12.5,
     color: THEME.colors.textSecondary,
-    lineHeight: 16,
+    lineHeight: 17,
   },
   verdictRow: {
     flexDirection: 'row',
@@ -1911,41 +1907,54 @@ const createStyles = () => StyleSheet.create({
   analysisBottomChrome: {
     width: '100%',
     gap: 8,
+    paddingHorizontal: 12,
   },
   // Move strip navigator.
   stripRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
   },
   stripNav: {
-    width: 32,
-    height: 40,
+    width: 44,
+    height: 44,
+    borderRadius: THEME.radius.md,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
     alignItems: 'center',
     justifyContent: 'center',
+    ...THEME.shadows.card,
+  },
+  stripNavDisabled: {
+    opacity: 0.35,
   },
   stripChip: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     borderRadius: THEME.radius.md,
-    backgroundColor: 'transparent',
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceContainer,
+    ...THEME.shadows.card,
   },
   stripChipActive: {
-    backgroundColor: THEME.colors.surfaceContainer,
+    backgroundColor: THEME.colors.surfaceContainerHigh,
+    borderColor: THEME.colors.primary,
   },
   stripChipText: {
-    fontFamily: THEME.fonts.medium,
-    fontSize: 12,
-    fontWeight: '600',
+    fontFamily: THEME.fonts.bold,
+    fontSize: 13,
+    fontWeight: '700',
     color: THEME.colors.textSecondary,
   },
   stripChipTextActive: {
-    fontFamily: THEME.fonts.bold,
+    fontFamily: THEME.fonts.extraBold,
     color: THEME.colors.textPrimary,
     fontWeight: '800',
   },
