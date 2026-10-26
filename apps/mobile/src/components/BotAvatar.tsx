@@ -20,6 +20,35 @@ import jamalPng from '../../assets/bots/jamal.png';
 import marcusPng from '../../assets/bots/marcus.png';
 import viktorPng from '../../assets/bots/viktor.png';
 import achrefPng from '../../assets/bots/achref.png';
+import barnabyPng from '../../assets/bots/barnaby.png';
+import finnPng from '../../assets/bots/finn.png';
+import claraPng from '../../assets/bots/clara.png';
+import leoPng from '../../assets/bots/leo.png';
+import tariqPng from '../../assets/bots/tariq.png';
+import renPng from '../../assets/bots/ren.png';
+import mateoPng from '../../assets/bots/mateo.png';
+import zaraPng from '../../assets/bots/zara.png';
+import archimedesPng from '../../assets/bots/archimedes.png';
+import fionaPng from '../../assets/bots/fiona.png';
+import dmitriPng from '../../assets/bots/dmitri.png';
+import laylaPng from '../../assets/bots/layla.png';
+import dantePng from '../../assets/bots/dante.png';
+import meilingPng from '../../assets/bots/meiling.png';
+import amaraPng from '../../assets/bots/amara.png';
+import gideonPng from '../../assets/bots/gideon.png';
+import soraPng from '../../assets/bots/sora.png';
+import samiraPng from '../../assets/bots/samira.png';
+import torsteinPng from '../../assets/bots/torstein.png';
+import kofiPng from '../../assets/bots/kofi.png';
+import diegoPng from '../../assets/bots/diego.png';
+import hassanPng from '../../assets/bots/hassan.png';
+import jinPng from '../../assets/bots/jin.png';
+import sterlingPng from '../../assets/bots/sterling.png';
+import kenzoPng from '../../assets/bots/kenzo.png';
+import valeriaPng from '../../assets/bots/valeria.png';
+import nexus9Png from '../../assets/bots/nexus9.png';
+import bobaPng from '../../assets/bots/boba.png';
+import miloPng from '../../assets/bots/milo.png';
 
 export type BotAvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
@@ -603,6 +632,11 @@ const CANONICAL_BOT_KEY: Record<string, string> = {
   clockmaker: 'viktor',
   architect: 'achref',
   creator: 'achref',
+  sensei: 'jin',
+  feline: 'jin',
+  sensei_cat: 'jin',
+  boss_cat: 'milo',
+  lord_whiskers: 'milo',
 };
 
 /**
@@ -622,6 +656,35 @@ const BOT_AVATAR_IMAGES: Partial<Record<string, ImageSourcePropType>> = {
   marcus: marcusPng,
   viktor: viktorPng,
   achref: achrefPng,
+  barnaby: barnabyPng,
+  finn: finnPng,
+  clara: claraPng,
+  leo: leoPng,
+  tariq: tariqPng,
+  ren: renPng,
+  mateo: mateoPng,
+  zara: zaraPng,
+  archimedes: archimedesPng,
+  fiona: fionaPng,
+  dmitri: dmitriPng,
+  layla: laylaPng,
+  dante: dantePng,
+  meiling: meilingPng,
+  amara: amaraPng,
+  gideon: gideonPng,
+  sora: soraPng,
+  samira: samiraPng,
+  torstein: torsteinPng,
+  kofi: kofiPng,
+  diego: diegoPng,
+  hassan: hassanPng,
+  jin: jinPng,
+  sterling: sterlingPng,
+  kenzo: kenzoPng,
+  valeria: valeriaPng,
+  nexus9: nexus9Png,
+  boba: bobaPng,
+  milo: miloPng,
 };
 
 export const BotAvatar: React.FC<BotAvatarProps> = ({

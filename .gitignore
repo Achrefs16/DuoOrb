@@ -48,9 +48,15 @@ yarn-error.*
 *.log
 logs/
 
+# Local scratch & generation assets
+scratch/
+newbotsimages/
+
 # OS / editor
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/*
 !.vscode/settings.json
+
+

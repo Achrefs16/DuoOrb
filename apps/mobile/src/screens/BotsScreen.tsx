@@ -162,11 +162,13 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
   const beginnerBots = BOT_ROSTER.filter((b) => b.tier === 'beginner');
   const intermediateBots = BOT_ROSTER.filter((b) => b.tier === 'intermediate');
   const masterBots = BOT_ROSTER.filter((b) => b.tier === 'master');
+  const grandmasterBots = BOT_ROSTER.filter((b) => b.tier === 'grandmaster');
 
   const BOT_TIERS = [
     { key: 'beginner', title: 'Beginner', bots: beginnerBots },
     { key: 'intermediate', title: 'Intermediate', bots: intermediateBots },
     { key: 'master', title: 'Master', bots: masterBots },
+    { key: 'grandmaster', title: 'Grandmaster', bots: grandmasterBots },
   ];
 
   // Total stars

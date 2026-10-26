@@ -9,8 +9,8 @@ import { BOT_ROSTER, botById, botLadder, botsByTier } from './personalities.js';
  * fresh board — a mistyped weight or depth must fail here, not mid-match.
  */
 describe('bot roster data', () => {
-  it('has ten unique ids and names', () => {
-    expect(BOT_ROSTER).toHaveLength(10);
+  it('has unique ids and names', () => {
+    expect(BOT_ROSTER).toHaveLength(39);
     const ids = BOT_ROSTER.map((b) => b.id);
     expect(new Set(ids).size).toBe(ids.length);
     const names = BOT_ROSTER.map((b) => b.name);
@@ -30,7 +30,7 @@ describe('bot roster data', () => {
       expect(b.premium).toBe(false);
       expect(b.name.trim().length).toBeGreaterThan(0);
       expect(b.title.trim().length).toBeGreaterThan(0);
-      expect(['beginner', 'intermediate', 'master']).toContain(b.tier);
+      expect(['beginner', 'intermediate', 'master', 'grandmaster']).toContain(b.tier);
       expect(b.color).toMatch(/^#[0-9A-Fa-f]{6}$/);
       expect(b.avatarKey.trim().length).toBeGreaterThan(0);
       expect(b.avatarGlyph.trim().length).toBeGreaterThan(0);
@@ -55,7 +55,8 @@ describe('bot roster data', () => {
     expect(tiers.beginner.length).toBeGreaterThan(0);
     expect(tiers.intermediate.length).toBeGreaterThan(0);
     expect(tiers.master.length).toBeGreaterThan(0);
-    const total = tiers.beginner.length + tiers.intermediate.length + tiers.master.length;
+    expect(tiers.grandmaster.length).toBeGreaterThan(0);
+    const total = tiers.beginner.length + tiers.intermediate.length + tiers.master.length + tiers.grandmaster.length;
     expect(total).toBe(BOT_ROSTER.length);
   });
 
