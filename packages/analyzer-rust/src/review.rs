@@ -200,16 +200,28 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
         .collect();
 
     let mut move_analyses = Vec::with_capacity(analyses_with_acc.len());
-    let mut player_acc_sums: HashMap<String, (f64, usize)> = HashMap::new();
+    let mut player_loss_stats: HashMap<String, (f64, usize)> = HashMap::new();
     let mut critical_moments = Vec::new();
     let mut worst_blunder_step = None;
     let mut worst_blunder_loss = 0.0;
 
-    for (m, acc) in analyses_with_acc {
-        let entry = player_acc_sums
+    for (m, _acc) in analyses_with_acc {
+        let tier_loss: f64 = match m.assessment {
+            MoveAssessment::Brilliant
+            | MoveAssessment::Great
+            | MoveAssessment::Best
+            | MoveAssessment::Forced => 0.0,
+            MoveAssessment::Excellent => 28.0,
+            MoveAssessment::Good => 46.0,
+            MoveAssessment::Inaccuracy => 72.0,
+            MoveAssessment::Mistake => 125.0,
+            MoveAssessment::Blunder => 215.0,
+        };
+
+        let entry = player_loss_stats
             .entry(m.player_id.clone())
             .or_insert((0.0, 0));
-        entry.0 += acc;
+        entry.0 += tier_loss.powf(1.40);
         entry.1 += 1;
 
         if m.assessment == MoveAssessment::Blunder
@@ -230,8 +242,13 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
     }
 
     let mut accuracies = HashMap::new();
-    for (pid, (sum, count)) in player_acc_sums {
-        let acc = if count > 0 { sum / count as f64 } else { 100.0 };
+    for (pid, (sum_loss_pow, count)) in player_loss_stats {
+        let acc = if count > 0 {
+            let avg_loss = (sum_loss_pow / count as f64).powf(1.0 / 1.40);
+            (100.0 - avg_loss).clamp(0.0, 100.0)
+        } else {
+            100.0
+        };
         accuracies.insert(pid, (acc * 10.0).round() / 10.0);
     }
 
@@ -263,6 +280,6 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
             confidence: "high".to_string(),
         },
         engine_version: "duoorb-rust-mcts-3.2".to_string(),
-        analysis_version: "analysis-3.2".to_string(),
+        analysis_version: "analysis-3.3".to_string(),
     }
 }
