@@ -593,8 +593,9 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
           // Blunder: pick a suboptimal candidate (2nd, 3rd) but avoid backward pawn moves if forward is open
           const myDist = getShortestDistance(rootMover.position, rootMover.goalDirection, state.walls, state.mode);
           const sensibleSub = safeCandidates.slice(1).filter((c) => {
-            if (c.move.type === 'MOVE') {
-              const d = getShortestDistance(c.move.to, rootMover.goalDirection, state.walls, state.mode);
+            const m = c.move;
+            if (m && m.type === 'MOVE') {
+              const d = getShortestDistance(m.to, rootMover.goalDirection, state.walls, state.mode);
               return d <= myDist;
             }
             return true;
@@ -629,8 +630,12 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
     // march forward along the shortest path towards the goal instead of shuffling back and forth!
     if (bestRate < 0.15) {
       const myDist = getShortestDistance(rootMover.position, rootMover.goalDirection, state.walls, state.mode);
-      const isBackwardOrStationary = best.move.type === 'MOVE' &&
-        getShortestDistance(best.move.to, rootMover.goalDirection, state.walls, state.mode) >= myDist;
+      const bm = best.move;
+      const isBackwardOrStationary = Boolean(
+        bm &&
+        bm.type === 'MOVE' &&
+        getShortestDistance(bm.to, rootMover.goalDirection, state.walls, state.mode) >= myDist
+      );
 
       if (isBackwardOrStationary || rootMover.wallsRemaining === 0) {
         const path = getShortestPath(rootMover.position, rootMover.goalDirection, state.walls, state.mode);

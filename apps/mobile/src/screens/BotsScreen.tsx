@@ -84,33 +84,39 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
       : NO_TIMER_CONTROL
   );
 
-  const neededBots = Math.max(1, playerCount - 1);
+  const effectivePlayerCount: PlayerCount = modeSel === 'classic' ? 2 : playerCount;
+  const neededBots = Math.max(1, effectivePlayerCount - 1);
   const [selectedBotIds, setSelectedBotIds] = useState<string[]>(() => {
     const initial = draft.botId && botById(draft.botId) ? draft.botId : 'martin';
     return [initial];
   });
 
-  // Re-sync selected bots when playerCount changes
+  // Re-sync selected bots when effectivePlayerCount / neededBots changes
   useEffect(() => {
     setSelectedBotIds((prev) => {
       const valid = prev.filter((id) => botById(id));
       if (valid.length >= neededBots) return valid.slice(0, neededBots);
       const remaining = BOT_ROSTER.filter((b) => !valid.includes(b.id));
       const toAdd = remaining.slice(0, neededBots - valid.length).map((b) => b.id);
-      return [...valid, ...toAdd];
+      return [...valid, ...toAdd].slice(0, neededBots);
     });
   }, [neededBots]);
 
   const [botStars, setBotStars] = useState<BotStarMap>({});
 
+  const [focusedBotId, setFocusedBotId] = useState<string>(() => {
+    return draft.botId && botById(draft.botId) ? draft.botId : 'martin';
+  });
+
   const selectedBotId = selectedBotIds[0] || 'martin';
-  const selectedBot: BotPersonality =
-    botById(selectedBotId) ?? BOT_ROSTER[0];
-  const selectedBots: BotPersonality[] = selectedBotIds
-    .map((id) => botById(id))
-    .filter(Boolean) as BotPersonality[];
+  const displayBot: BotPersonality =
+    botById(focusedBotId) ?? botById(selectedBotId) ?? BOT_ROSTER[0];
+  const selectedBot: BotPersonality = displayBot;
+  const currentStars = botStars[displayBot.id]?.stars ?? 0;
 
   const handleBotTilePress = (botId: string) => {
+    setFocusedBotId(botId);
+
     if (neededBots === 1) {
       setSelectedBotIds([botId]);
       onSelectBot?.(botId);
@@ -124,7 +130,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
       if (selectedBotIds.length < neededBots) {
         setSelectedBotIds([...selectedBotIds, botId]);
       } else {
-        setSelectedBotIds([...selectedBotIds.slice(0, neededBots - 1), botId]);
+        setSelectedBotIds([...selectedBotIds.slice(1), botId]);
       }
     }
     onSelectBot?.(botId);
@@ -178,13 +184,13 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
   const handleLaunch = () => {
     const resolvedMode = resolveMode(
       modeSel === 'race' ? 'race' : modeSel === 'center' ? 'center' : 'classic',
-      playerCount
+      effectivePlayerCount
     );
-    let finalBotIds = [...selectedBotIds];
+    let finalBotIds = [...selectedBotIds].slice(0, neededBots);
     if (finalBotIds.length < neededBots) {
       const remaining = BOT_ROSTER.filter((b) => !finalBotIds.includes(b.id));
       const toAdd = remaining.slice(0, neededBots - finalBotIds.length).map((b) => b.id);
-      finalBotIds = [...finalBotIds, ...toAdd];
+      finalBotIds = [...finalBotIds, ...toAdd].slice(0, neededBots);
     }
     onStartGame?.({
       botId: finalBotIds[0],
@@ -195,8 +201,6 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
       wallsEach: walls,
     });
   };
-
-  const currentStars = botStars[selectedBot.id]?.stars ?? 0;
 
   if (optionsOpen) {
     return (
@@ -235,8 +239,13 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
         >
           <MatchOptionsPicker
             mode={modeSel}
-            onModeChange={setModeSel}
-            playerCount={playerCount}
+            onModeChange={(m) => {
+              setModeSel(m);
+              if (m === 'classic') {
+                setPlayerCount(2);
+              }
+            }}
+            playerCount={effectivePlayerCount}
             onPlayerCountChange={setPlayerCount}
             walls={walls}
             onWallsChange={setWalls}
@@ -283,87 +292,39 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
           </View>
         </View>
 
-        {/* 2. Hero Showcase */}
-        {neededBots === 1 ? (
-          <View style={styles.heroSection}>
-            <View style={styles.heroTopRow}>
-              <BotAvatar avatarKey={selectedBot.avatarKey} size={76} noBg />
-              <View style={styles.speechBubble}>
-                <View style={styles.speechTail} />
-                <Text style={styles.speechText} numberOfLines={2}>
-                  {selectedBot.quote ||
-                    selectedBot.dialogue?.greetings?.[0] ||
-                    `Hi, I'm ${selectedBot.name}! Let's play!`}
-                </Text>
-              </View>
+        {/* 2. Hero Showcase — Always the classic hero with comic speech bubble */}
+        <View style={styles.heroSection}>
+          <View style={styles.heroTopRow}>
+            <BotAvatar avatarKey={displayBot.avatarKey} size={76} noBg />
+            <View style={styles.speechBubble}>
+              <View style={styles.speechTail} />
+              <Text style={styles.speechText} numberOfLines={2}>
+                {displayBot.quote ||
+                  displayBot.dialogue?.greetings?.[0] ||
+                  `Hi, I'm ${displayBot.name}! Let's play!`}
+              </Text>
             </View>
+          </View>
 
-            <View style={styles.heroMetaRow}>
-              <View style={styles.heroMetaLeft}>
-                <Text style={styles.heroName}>{selectedBot.name}</Text>
-                <Text style={styles.heroElo}>{selectedBot.elo}</Text>
-                <Text style={styles.heroRoleBadge} numberOfLines={1}>
-                  {selectedBot.title}
-                </Text>
-              </View>
-              <View style={styles.heroStarsRow}>
-                {[1, 2, 3].map((starIdx) => (
-                  <SmoothStar
-                    key={starIdx}
-                    size={20}
-                    color={starIdx <= currentStars ? '#FBBF24' : '#D1D5DB'}
-                  />
-                ))}
-              </View>
+          <View style={styles.heroMetaRow}>
+            <View style={styles.heroMetaLeft}>
+              <Text style={styles.heroName}>{displayBot.name}</Text>
+              <Text style={styles.heroElo}>{displayBot.elo}</Text>
+              <Text style={styles.heroRoleBadge} numberOfLines={1}>
+                {displayBot.title}
+              </Text>
+            </View>
+            <View style={styles.heroStarsRow}>
+              {[1, 2, 3].map((starIdx) => (
+                <SmoothStar
+                  key={starIdx}
+                  size={20}
+                  color={starIdx <= currentStars ? '#FBBF24' : '#D1D5DB'}
+                />
+              ))}
             </View>
           </View>
-        ) : (
-          <View style={styles.multiHeroSection}>
-            <Text style={styles.multiHeroSubtitle}>
-              {playerCount}-Player Match · Select {neededBots} Opponents ({selectedBotIds.length}/{neededBots})
-            </Text>
-            <View style={styles.multiHeroRow}>
-              {Array.from({ length: neededBots }).map((_, idx) => {
-                const botId = selectedBotIds[idx];
-                const bot = botId ? botById(botId) : null;
-                const slotNum = idx + 2;
-                return (
-                  <View
-                    key={idx}
-                    style={[
-                      styles.multiHeroSlot,
-                      bot ? styles.multiHeroSlotFilled : undefined,
-                    ]}
-                  >
-                    <View style={styles.multiHeroBadge}>
-                      <Text style={styles.multiHeroBadgeText}>
-                        {slotNum}/{playerCount}
-                      </Text>
-                    </View>
-                    {bot ? (
-                      <>
-                        <BotAvatar avatarKey={bot.avatarKey} size={46} noBg />
-                        <Text style={styles.multiHeroBotName} numberOfLines={1}>
-                          {bot.name}
-                        </Text>
-                        <Text style={styles.multiHeroBotElo}>{bot.elo}</Text>
-                      </>
-                    ) : (
-                      <View style={styles.multiHeroEmptyContent}>
-                        <MaterialCommunityIcons
-                          name="plus-circle-outline"
-                          size={24}
-                          color={THEME.colors.textMuted}
-                        />
-                        <Text style={styles.multiHeroEmptyText}>Select Bot</Text>
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        )}
+        </View>
       </View>
 
       {/* 3. Middle Area: Clean Avatar Grid */}
@@ -382,7 +343,9 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             </Text>
             <View style={styles.avatarGrid}>
               {bots.map((bot) => {
-                const isSelected = selectedBotIds.includes(bot.id);
+                const isSelected = neededBots === 1
+                  ? (selectedBotIds[0] ?? selectedBotId) === bot.id
+                  : selectedBotIds.includes(bot.id);
                 const selIndex = selectedBotIds.indexOf(bot.id);
                 const stars = botStars[bot.id]?.stars ?? 0;
                 return (
@@ -400,7 +363,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
                     {neededBots > 1 && isSelected && (
                       <View style={styles.gridSlotBadge} pointerEvents="none">
                         <Text style={styles.gridSlotBadgeText}>
-                          {selIndex + 2}/{playerCount}
+                          {selIndex + 2}/{effectivePlayerCount}
                         </Text>
                       </View>
                     )}
@@ -549,80 +512,6 @@ const createStyles = () =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
-    },
-    // Multi-bot hero section for 3P / 4P
-    multiHeroSection: {
-      paddingHorizontal: 16,
-      paddingTop: 4,
-      paddingBottom: 10,
-      backgroundColor: THEME.colors.background,
-    },
-    multiHeroSubtitle: {
-      fontFamily: THEME.fonts.bold,
-      fontSize: 12,
-      color: THEME.colors.textSecondary,
-      marginBottom: 8,
-      textAlign: 'center',
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
-    },
-    multiHeroRow: {
-      flexDirection: 'row',
-      gap: 10,
-      justifyContent: 'center',
-    },
-    multiHeroSlot: {
-      flex: 1,
-      maxWidth: 140,
-      minHeight: 96,
-      backgroundColor: THEME.colors.surfaceMuted,
-      borderRadius: 12,
-      borderWidth: 2,
-      borderColor: THEME.colors.secondaryBevel,
-      padding: 8,
-      alignItems: 'center',
-      justifyContent: 'center',
-      position: 'relative',
-    },
-    multiHeroSlotFilled: {
-      borderColor: THEME.colors.primary,
-      backgroundColor: THEME.colors.surface,
-    },
-    multiHeroBadge: {
-      position: 'absolute',
-      top: 4,
-      left: 6,
-      backgroundColor: THEME.colors.primary,
-      paddingHorizontal: 6,
-      paddingVertical: 1,
-      borderRadius: 6,
-    },
-    multiHeroBadgeText: {
-      fontFamily: THEME.fonts.extraBold,
-      fontSize: 10,
-      color: '#FFFFFF',
-      fontWeight: '800',
-    },
-    multiHeroBotName: {
-      fontFamily: THEME.fonts.bold,
-      fontSize: 12,
-      color: THEME.colors.textPrimary,
-      marginTop: 4,
-    },
-    multiHeroBotElo: {
-      fontFamily: THEME.fonts.medium,
-      fontSize: 11,
-      color: THEME.colors.textMuted,
-    },
-    multiHeroEmptyContent: {
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 4,
-    },
-    multiHeroEmptyText: {
-      fontFamily: THEME.fonts.medium,
-      fontSize: 11,
-      color: THEME.colors.textMuted,
     },
     gridSlotBadge: {
       position: 'absolute',

@@ -2464,12 +2464,7 @@ useEffect(() => {
                   return (
                     <View key={botPlayer.id} style={styles.multiBotCol}>
                       {/* Avatar on top */}
-                      <View
-                        style={[
-                          styles.multiBotAvatarWrap,
-                          isBotActive && styles.multiBotAvatarActive,
-                        ]}
-                      >
+                      <View style={styles.multiBotAvatarWrap}>
                         <BotAvatar
                           avatarKey={bot?.avatarKey ?? 'martin'}
                           color={botBall}
@@ -3608,12 +3603,7 @@ const createStyles = () => StyleSheet.create({
   },
   multiBotAvatarWrap: {
     position: 'relative',
-    borderRadius: 24,
     padding: 2,
-  },
-  multiBotAvatarActive: {
-    borderWidth: 2,
-    borderColor: THEME.colors.primary,
   },
   multiBotName: {
     fontFamily: THEME.fonts.bold,
