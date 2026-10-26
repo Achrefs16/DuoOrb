@@ -17,6 +17,7 @@ import { BotAvatar } from '../components/BotAvatar';
 import { SmoothStar } from '../components/SmoothStar';
 import { THEME, useStyles } from '../theme';
 import { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   TIME_CONTROLS,
   TimeControl,
@@ -36,6 +37,7 @@ import type { SideChoice, PlayerCount } from './MatchSetupScreen';
 
 export interface BotMatchConfig {
   botId: string;
+  botIds?: string[];
   side: SideChoice;
   clock: TimeControl;
   mode: GameMode;
@@ -56,11 +58,18 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
   onStartGame,
 }) => {
   const styles = useStyles(createStyles);
+  const insets = useSafeAreaInsets();
 
   // Load last-used picks from AI draft
   const draft = getMatchSetupDraft('ai');
-  const [selectedBotId, setSelectedBotId] = useState<string>(
-    draft.botId && botById(draft.botId) ? draft.botId : 'martin'
+  const [modeSel, setModeSel] = useState<SetupMode>(
+    draft.mode === 'center' || draft.mode === 'race' ? draft.mode : 'classic'
+  );
+  const [playerCount, setPlayerCount] = useState<PlayerCount>(
+    draft.playerCount === 3 || draft.playerCount === 4 ? draft.playerCount : 2
+  );
+  const [walls, setWalls] = useState<WallsChoice>(
+    draft.wallsEach === 15 || draft.wallsEach === 99 ? draft.wallsEach : 10
   );
   const [side, setSide] = useState<SideChoice>(
     draft.side === 'red' || draft.side === 'random' ? draft.side : 'random'
@@ -74,20 +83,52 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
       ? getTimeControl(draft.clockId)
       : NO_TIMER_CONTROL
   );
-  const [modeSel, setModeSel] = useState<SetupMode>(
-    draft.mode === 'center' || draft.mode === 'race' ? draft.mode : 'classic'
-  );
-  const [playerCount, setPlayerCount] = useState<PlayerCount>(
-    draft.playerCount === 3 || draft.playerCount === 4 ? draft.playerCount : 2
-  );
-  const [walls, setWalls] = useState<WallsChoice>(
-    draft.wallsEach === 15 || draft.wallsEach === 99 ? draft.wallsEach : 10
-  );
+
+  const neededBots = Math.max(1, playerCount - 1);
+  const [selectedBotIds, setSelectedBotIds] = useState<string[]>(() => {
+    const initial = draft.botId && botById(draft.botId) ? draft.botId : 'martin';
+    return [initial];
+  });
+
+  // Re-sync selected bots when playerCount changes
+  useEffect(() => {
+    setSelectedBotIds((prev) => {
+      const valid = prev.filter((id) => botById(id));
+      if (valid.length >= neededBots) return valid.slice(0, neededBots);
+      const remaining = BOT_ROSTER.filter((b) => !valid.includes(b.id));
+      const toAdd = remaining.slice(0, neededBots - valid.length).map((b) => b.id);
+      return [...valid, ...toAdd];
+    });
+  }, [neededBots]);
 
   const [botStars, setBotStars] = useState<BotStarMap>({});
 
+  const selectedBotId = selectedBotIds[0] || 'martin';
   const selectedBot: BotPersonality =
     botById(selectedBotId) ?? BOT_ROSTER[0];
+  const selectedBots: BotPersonality[] = selectedBotIds
+    .map((id) => botById(id))
+    .filter(Boolean) as BotPersonality[];
+
+  const handleBotTilePress = (botId: string) => {
+    if (neededBots === 1) {
+      setSelectedBotIds([botId]);
+      onSelectBot?.(botId);
+      return;
+    }
+    if (selectedBotIds.includes(botId)) {
+      if (selectedBotIds.length > 1) {
+        setSelectedBotIds(selectedBotIds.filter((id) => id !== botId));
+      }
+    } else {
+      if (selectedBotIds.length < neededBots) {
+        setSelectedBotIds([...selectedBotIds, botId]);
+      } else {
+        setSelectedBotIds([...selectedBotIds.slice(0, neededBots - 1), botId]);
+      }
+    }
+    onSelectBot?.(botId);
+  };
 
   useEffect(() => {
     let live = true;
@@ -139,8 +180,15 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
       modeSel === 'race' ? 'race' : modeSel === 'center' ? 'center' : 'classic',
       playerCount
     );
+    let finalBotIds = [...selectedBotIds];
+    if (finalBotIds.length < neededBots) {
+      const remaining = BOT_ROSTER.filter((b) => !finalBotIds.includes(b.id));
+      const toAdd = remaining.slice(0, neededBots - finalBotIds.length).map((b) => b.id);
+      finalBotIds = [...finalBotIds, ...toAdd];
+    }
     onStartGame?.({
-      botId: selectedBotId,
+      botId: finalBotIds[0],
+      botIds: finalBotIds,
       side,
       clock,
       mode: resolvedMode,
@@ -179,7 +227,10 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
 
         <ScrollView
           style={styles.scrollArea}
-          contentContainerStyle={styles.optionsPageContent}
+          contentContainerStyle={[
+            styles.optionsPageContent,
+            { paddingBottom: BOTTOM_NAV_HEIGHT + 32 + insets.bottom },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           <MatchOptionsPicker
@@ -233,44 +284,95 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
         </View>
 
         {/* 2. Hero Showcase */}
-        <View style={styles.heroSection}>
-          <View style={styles.heroTopRow}>
-            <BotAvatar avatarKey={selectedBot.avatarKey} size={76} noBg />
-            <View style={styles.speechBubble}>
-              <View style={styles.speechTail} />
-              <Text style={styles.speechText} numberOfLines={2}>
-                {selectedBot.quote ||
-                  selectedBot.dialogue?.greetings?.[0] ||
-                  `Hi, I'm ${selectedBot.name}! Let's play!`}
-              </Text>
+        {neededBots === 1 ? (
+          <View style={styles.heroSection}>
+            <View style={styles.heroTopRow}>
+              <BotAvatar avatarKey={selectedBot.avatarKey} size={76} noBg />
+              <View style={styles.speechBubble}>
+                <View style={styles.speechTail} />
+                <Text style={styles.speechText} numberOfLines={2}>
+                  {selectedBot.quote ||
+                    selectedBot.dialogue?.greetings?.[0] ||
+                    `Hi, I'm ${selectedBot.name}! Let's play!`}
+                </Text>
+              </View>
             </View>
-          </View>
 
-          <View style={styles.heroMetaRow}>
-            <View style={styles.heroMetaLeft}>
-              <Text style={styles.heroName}>{selectedBot.name}</Text>
-              <Text style={styles.heroElo}>{selectedBot.elo}</Text>
-              <Text style={styles.heroRoleBadge} numberOfLines={1}>
-                {selectedBot.title}
-              </Text>
-            </View>
-            <View style={styles.heroStarsRow}>
-              {[1, 2, 3].map((starIdx) => (
-                <SmoothStar
-                  key={starIdx}
-                  size={20}
-                  color={starIdx <= currentStars ? '#FBBF24' : '#D1D5DB'}
-                />
-              ))}
+            <View style={styles.heroMetaRow}>
+              <View style={styles.heroMetaLeft}>
+                <Text style={styles.heroName}>{selectedBot.name}</Text>
+                <Text style={styles.heroElo}>{selectedBot.elo}</Text>
+                <Text style={styles.heroRoleBadge} numberOfLines={1}>
+                  {selectedBot.title}
+                </Text>
+              </View>
+              <View style={styles.heroStarsRow}>
+                {[1, 2, 3].map((starIdx) => (
+                  <SmoothStar
+                    key={starIdx}
+                    size={20}
+                    color={starIdx <= currentStars ? '#FBBF24' : '#D1D5DB'}
+                  />
+                ))}
+              </View>
             </View>
           </View>
-        </View>
+        ) : (
+          <View style={styles.multiHeroSection}>
+            <Text style={styles.multiHeroSubtitle}>
+              {playerCount}-Player Match · Select {neededBots} Opponents ({selectedBotIds.length}/{neededBots})
+            </Text>
+            <View style={styles.multiHeroRow}>
+              {Array.from({ length: neededBots }).map((_, idx) => {
+                const botId = selectedBotIds[idx];
+                const bot = botId ? botById(botId) : null;
+                const slotNum = idx + 2;
+                return (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.multiHeroSlot,
+                      bot ? styles.multiHeroSlotFilled : undefined,
+                    ]}
+                  >
+                    <View style={styles.multiHeroBadge}>
+                      <Text style={styles.multiHeroBadgeText}>
+                        {slotNum}/{playerCount}
+                      </Text>
+                    </View>
+                    {bot ? (
+                      <>
+                        <BotAvatar avatarKey={bot.avatarKey} size={46} noBg />
+                        <Text style={styles.multiHeroBotName} numberOfLines={1}>
+                          {bot.name}
+                        </Text>
+                        <Text style={styles.multiHeroBotElo}>{bot.elo}</Text>
+                      </>
+                    ) : (
+                      <View style={styles.multiHeroEmptyContent}>
+                        <MaterialCommunityIcons
+                          name="plus-circle-outline"
+                          size={24}
+                          color={THEME.colors.textMuted}
+                        />
+                        <Text style={styles.multiHeroEmptyText}>Select Bot</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
       </View>
 
       {/* 3. Middle Area: Clean Avatar Grid */}
       <ScrollView
         style={styles.scrollArea}
-        contentContainerStyle={styles.gridContent}
+        contentContainerStyle={[
+          styles.gridContent,
+          { paddingBottom: BOTTOM_NAV_HEIGHT + 130 + insets.bottom },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {BOT_TIERS.map(({ key, title, bots }) => (
@@ -280,23 +382,28 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             </Text>
             <View style={styles.avatarGrid}>
               {bots.map((bot) => {
-                const isSelected = bot.id === selectedBotId;
+                const isSelected = selectedBotIds.includes(bot.id);
+                const selIndex = selectedBotIds.indexOf(bot.id);
                 const stars = botStars[bot.id]?.stars ?? 0;
                 return (
                   <TouchableOpacity
                     key={bot.id}
                     style={styles.avatarTile}
                     activeOpacity={0.8}
-                    onPress={() => {
-                      setSelectedBotId(bot.id);
-                      onSelectBot?.(bot.id);
-                    }}
+                    onPress={() => handleBotTilePress(bot.id)}
                   >
                     <BotAvatar
                       avatarKey={bot.avatarKey}
                       size={58}
                       selected={isSelected}
                     />
+                    {neededBots > 1 && isSelected && (
+                      <View style={styles.gridSlotBadge} pointerEvents="none">
+                        <Text style={styles.gridSlotBadgeText}>
+                          {selIndex + 2}/{playerCount}
+                        </Text>
+                      </View>
+                    )}
                     {stars > 0 && (
                       <View style={styles.avatarStarsRow} pointerEvents="none">
                         {[1, 2, 3].map((starIdx) => (
@@ -317,7 +424,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
       </ScrollView>
 
       {/* 4. Bottom Sticky Dock: Control Strip + Unified Play Button */}
-      <View style={styles.bottomDock}>
+      <View style={[styles.bottomDock, { bottom: BOTTOM_NAV_HEIGHT + insets.bottom }]}>
         <View style={styles.controlStrip}>
           <TouchableOpacity
             style={styles.optionsBtn}
@@ -442,6 +549,98 @@ const createStyles = () =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
+    },
+    // Multi-bot hero section for 3P / 4P
+    multiHeroSection: {
+      paddingHorizontal: 16,
+      paddingTop: 4,
+      paddingBottom: 10,
+      backgroundColor: THEME.colors.background,
+    },
+    multiHeroSubtitle: {
+      fontFamily: THEME.fonts.bold,
+      fontSize: 12,
+      color: THEME.colors.textSecondary,
+      marginBottom: 8,
+      textAlign: 'center',
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    multiHeroRow: {
+      flexDirection: 'row',
+      gap: 10,
+      justifyContent: 'center',
+    },
+    multiHeroSlot: {
+      flex: 1,
+      maxWidth: 140,
+      minHeight: 96,
+      backgroundColor: THEME.colors.surfaceMuted,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: THEME.colors.secondaryBevel,
+      padding: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
+    },
+    multiHeroSlotFilled: {
+      borderColor: THEME.colors.primary,
+      backgroundColor: THEME.colors.surface,
+    },
+    multiHeroBadge: {
+      position: 'absolute',
+      top: 4,
+      left: 6,
+      backgroundColor: THEME.colors.primary,
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+      borderRadius: 6,
+    },
+    multiHeroBadgeText: {
+      fontFamily: THEME.fonts.extraBold,
+      fontSize: 10,
+      color: '#FFFFFF',
+      fontWeight: '800',
+    },
+    multiHeroBotName: {
+      fontFamily: THEME.fonts.bold,
+      fontSize: 12,
+      color: THEME.colors.textPrimary,
+      marginTop: 4,
+    },
+    multiHeroBotElo: {
+      fontFamily: THEME.fonts.medium,
+      fontSize: 11,
+      color: THEME.colors.textMuted,
+    },
+    multiHeroEmptyContent: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+    },
+    multiHeroEmptyText: {
+      fontFamily: THEME.fonts.medium,
+      fontSize: 11,
+      color: THEME.colors.textMuted,
+    },
+    gridSlotBadge: {
+      position: 'absolute',
+      top: -4,
+      right: -4,
+      backgroundColor: THEME.colors.primary,
+      borderRadius: 8,
+      paddingHorizontal: 5,
+      paddingVertical: 1,
+      borderWidth: 1.5,
+      borderColor: '#FFFFFF',
+      zIndex: 15,
+    },
+    gridSlotBadgeText: {
+      fontFamily: THEME.fonts.extraBold,
+      fontSize: 10,
+      color: '#FFFFFF',
+      fontWeight: '800',
     },
     // Comic speech bubble - Pure white with pointer tail
     speechBubble: {

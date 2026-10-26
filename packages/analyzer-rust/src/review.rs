@@ -159,6 +159,7 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
                 is_jump,
                 forced,
                 num_players,
+                *step,
             );
 
             let eval_after = (played_q - 0.5) * 40.0;

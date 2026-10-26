@@ -590,9 +590,17 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
 
       if (safeCandidates.length > 1) {
         if (blunderRate > 0 && rng() < blunderRate) {
-          // Blunder: deliberately pick a suboptimal candidate (2nd, 3rd, etc.)
-          const subCandidates = safeCandidates.slice(1);
-          best = subCandidates[Math.floor(rng() * subCandidates.length)];
+          // Blunder: pick a suboptimal candidate (2nd, 3rd) but avoid backward pawn moves if forward is open
+          const myDist = getShortestDistance(rootMover.position, rootMover.goalDirection, state.walls, state.mode);
+          const sensibleSub = safeCandidates.slice(1).filter((c) => {
+            if (c.move.type === 'MOVE') {
+              const d = getShortestDistance(c.move.to, rootMover.goalDirection, state.walls, state.mode);
+              return d <= myDist;
+            }
+            return true;
+          });
+          const pool = sensibleSub.length > 0 ? sensibleSub : safeCandidates.slice(1);
+          best = pool[Math.floor(rng() * pool.length)];
         } else {
           const weights = safeCandidates.map((c) => Math.pow(c.visits / best.visits, exponent));
           const totalWeight = weights.reduce((acc, w) => acc + w, 0);
@@ -616,14 +624,22 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
       bestWinRate: best.visits > 0 ? best.rewards[rootMover.index] / best.visits : bestRate,
     };
 
-    // Losing-rescue: if we have NO walls left and collapsing, march along shortest path
-    if (bestRate < 0.1 && rootMover.wallsRemaining === 0) {
-      const path = getShortestPath(rootMover.position, rootMover.goalDirection, state.walls, state.mode);
-      if (path && path.length > 0) {
-        const to = path[0];
-        if (getLegalMoves(state, rootMover.id).some((c) => c.row === to.row && c.col === to.col)) {
-          lastMctsStats.elapsedMs = Date.now() - started;
-          return { type: 'MOVE', to: { ...to } };
+    // Forward-progress guarantee in losing positions:
+    // If collapsing (bestRate < 0.15) and chosen move either steps backward/sideways or we have 0 walls left,
+    // march forward along the shortest path towards the goal instead of shuffling back and forth!
+    if (bestRate < 0.15) {
+      const myDist = getShortestDistance(rootMover.position, rootMover.goalDirection, state.walls, state.mode);
+      const isBackwardOrStationary = best.move.type === 'MOVE' &&
+        getShortestDistance(best.move.to, rootMover.goalDirection, state.walls, state.mode) >= myDist;
+
+      if (isBackwardOrStationary || rootMover.wallsRemaining === 0) {
+        const path = getShortestPath(rootMover.position, rootMover.goalDirection, state.walls, state.mode);
+        if (path && path.length > 0) {
+          const to = path[0];
+          if (getLegalMoves(state, rootMover.id).some((c) => c.row === to.row && c.col === to.col)) {
+            lastMctsStats.elapsedMs = Date.now() - started;
+            return { type: 'MOVE', to: { ...to } };
+          }
         }
       }
     }

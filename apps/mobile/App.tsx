@@ -122,6 +122,8 @@ interface ActiveGameConfig {
   aiDifficulty?: AIDifficulty;
   /** Premium personality id for AI games (null = generic difficulty bot). */
   botId?: string | null;
+  /** Multi-bot personality ids for >2p AI games. */
+  botIds?: string[] | null;
   timeControl?: TimeControl;
   sideChoice?: SideChoice;
   wallsEach?: number;
@@ -297,11 +299,15 @@ export default function App() {
       dismissTo('PLAY', null);
       return;
     }
+    if (gameConfig.type === 'ai') {
+      dismissTo('BOTS', null);
+      return;
+    }
     if (gameConfig.challengeOrigin) {
       dismissTo(gameConfig.challengeOrigin.tab, gameConfig.challengeOrigin.sub);
       return;
     }
-    // Match closed (including vs AI or Local) closes directly to the home screen.
+    // Match closed (including Local) closes directly to the home screen.
     dismissTo('PLAY', null);
   };
 
@@ -321,9 +327,13 @@ export default function App() {
       }
       if (
         subScreen === 'GAME' ||
-        ((subScreen === 'REVIEW' || subScreen === 'REVIEW_SUMMARY') && !reviewBare)
+        ((subScreen === 'REVIEW' || subScreen === 'REVIEW_SUMMARY') && reviewOrigin === 'match' && !reviewBare)
       ) {
         dismissMatchToOrigin();
+        return;
+      }
+      if (subScreen === 'REVIEW' || subScreen === 'REVIEW_SUMMARY') {
+        dismissTo(currentTab, null);
         return;
       }
       if (subScreen !== null) {
@@ -342,7 +352,7 @@ export default function App() {
     setExitAsk(false);
     setCurrentTab(prev.tab);
     setSubScreen(prev.sub);
-  }, [subScreen, reviewBare, gameConfig, currentTab, setupKind]);
+  }, [subScreen, reviewBare, reviewOrigin, gameConfig, currentTab, setupKind]);
 
   // Close Match: return to the surface that match came from —
   // private room lobby, custom online setup page, or the home screen.
@@ -380,8 +390,12 @@ export default function App() {
       }
       return;
     }
-    goBack();
-  }, [reviewOrigin, reviewBare, gameConfig, currentTab, goBack]);
+    if (stackRef.current.length > 0) {
+      goBack();
+    } else {
+      dismissTo(currentTab, null);
+    }
+  }, [reviewOrigin, reviewBare, currentTab, goBack]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -965,7 +979,7 @@ export default function App() {
   // splash covers this whole phase (see above), so no JS splash is needed.
   return (
     <SafeAreaProvider>
-    <SafeAreaView style={chrome.root} edges={['top', 'bottom']}>
+    <SafeAreaView style={chrome.root} edges={['top']}>
       <SystemChrome />
       <SessionProvider>
         {settingsLoaded ? (
@@ -1000,6 +1014,7 @@ export default function App() {
                       mode: cfg.mode,
                       type: 'ai',
                       botId: cfg.botId,
+                      botIds: cfg.botIds,
                       sideChoice: cfg.side === 'random' ? (Math.random() < 0.5 ? 'blue' : 'red') : cfg.side,
                       timeControl: cfg.clock,
                       wallsEach: cfg.wallsEach,
@@ -1042,7 +1057,7 @@ export default function App() {
               key={
                 gameConfig.type === 'online'
                   ? `online-session-${matchSession}`
-                  : `local-${gameConfig.mode}-${gameConfig.type}-${gameConfig.aiDifficulty ?? 'none'}-${gameConfig.botId ?? 'generic'}-${gameConfig.sideChoice ?? 'blue'}`
+                  : `local-${gameConfig.mode}-${gameConfig.type}-${gameConfig.aiDifficulty ?? 'none'}-${gameConfig.botIds?.join('-') ?? gameConfig.botId ?? 'generic'}-${gameConfig.sideChoice ?? 'blue'}`
               }
               mode={gameConfig.mode}
               type={gameConfig.type}
@@ -1051,6 +1066,7 @@ export default function App() {
               initialOnlineSnapshot={gameConfig.initialSync ?? null}
               aiDifficulty={gameConfig.aiDifficulty}
               botId={gameConfig.botId ?? null}
+              botIds={gameConfig.botIds ?? (gameConfig.botId ? [gameConfig.botId] : null)}
               timeControl={gameConfig.timeControl}
               sideChoice={gameConfig.sideChoice}
               wallsEach={gameConfig.wallsEach}

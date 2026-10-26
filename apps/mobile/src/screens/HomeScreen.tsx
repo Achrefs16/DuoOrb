@@ -11,6 +11,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { runWhenOnline } from '../components/NoConnection';
 import { AdBanner } from '../components/AdBanner';
@@ -51,6 +52,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const navLock = useRef(0);
   const { isConnected } = useConnectivity();
   const verified = useVerified();
+  const insets = useSafeAreaInsets();
 
   // Track rendered container width on Web
   const [webLayoutWidth, setWebLayoutWidth] = useState<number>(() => {
@@ -201,7 +203,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       {/* Main Scrollable Content — Clean flat list, NO cards */}
       <ScrollView
         style={styles.scrollArea}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: BOTTOM_NAV_HEIGHT + 74 + insets.bottom },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Row 1: Play Online */}
@@ -313,7 +318,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       </ScrollView>
 
       {/* Sticky Bottom Play Button — Seamlessly connects to BottomNav with NO line */}
-      <View style={styles.stickyCtaContainer}>
+      <View style={[styles.stickyCtaContainer, { bottom: BOTTOM_NAV_HEIGHT + insets.bottom }]}>
         <TouchableOpacity
           style={styles.stickyPlayButton}
           activeOpacity={0.88}

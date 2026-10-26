@@ -6,6 +6,7 @@ import {
   AIDifficulty,
   AI_PROFILES,
   botById,
+  type BotPersonality,
   CellCoord,
   GameAction,
   GameMode,
@@ -103,6 +104,7 @@ interface GameScreenProps {
   aiDifficulty?: AIDifficulty;
   /** Premium personality id for AI games (null = generic difficulty bot). */
   botId?: string | null;
+  botIds?: string[] | null;
   timeControl?: TimeControl;
   incrementEnabled?: boolean;
   premoveEnabled?: boolean;
@@ -138,27 +140,29 @@ function playerNamesFor(
   aiDifficulty: AIDifficulty,
   humanIdx: number,
   ownName: string,
-  /** Premium personality display name, or null for the generic bot. */
-  aiName: string | null
+  /** Premium personality display names, or null for the generic bot. */
+  aiNames: string[] | string | null
 ) {
   const n = playerCountForMode(mode);
+  const namesList = Array.isArray(aiNames)
+    ? aiNames
+    : aiNames
+    ? [aiNames]
+    : [];
+
   if (type === 'ai') {
     if (mode === '2p') {
-      const foe = aiName ?? `AI · ${aiDifficulty}`;
+      const foe = namesList[0] ?? `AI · ${aiDifficulty}`;
       return humanIdx === 0 ? [ownName, foe] : [foe, ownName];
     }
     // AI games: you lead, every other seat is an AI opponent.
-    return Array.from({ length: n }, (_, i) =>
-      i === 0
-        ? ownName
-        : aiName
-          ? i === 1
-            ? aiName
-            : `${aiName} ${i}`
-          : i === 1
-            ? 'AI'
-            : `AI ${i}`
-    );
+    let botCounter = 0;
+    return Array.from({ length: n }, (_, i) => {
+      if (i === humanIdx) return ownName;
+      const botName = namesList[botCounter] ?? `AI ${botCounter + 1}`;
+      botCounter++;
+      return botName;
+    });
   }
   if (type === 'online') {
     if (mode === '2p') return humanIdx === 0 ? [ownName, 'Opponent'] : ['Opponent', ownName];
@@ -172,9 +176,8 @@ const EMPTY_CELL_LIST: CellCoord[] = [];
 const EMPTY_PREMOVE_MARKS: { to: CellCoord; color: string }[] = [];
 const EMPTY_QUEUED_WALLS: { qi: number; wall: WallCoord; color: string }[] = [];
 
-/** Thinking beat per difficulty — long enough to queue a premove. */
-function thinkMsFor(difficulty: AIDifficulty, testThink: boolean): number {
-  if (testThink) return 10000;
+/** Thinking beat per difficulty */
+function thinkMsFor(difficulty: AIDifficulty): number {
   switch (difficulty) {
     case 'easy':
       return 350;
@@ -227,9 +230,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   initialOnlineSnapshot = null,
   aiDifficulty = 'normal',
   botId = null,
+  botIds = null,
   timeControl = DEFAULT_TIME_CONTROL,
   incrementEnabled = true,
-  premoveEnabled = true,
+  premoveEnabled = false,
   extendedQueue = true,
   testThink = false,
   sideChoice = 'blue',
@@ -282,12 +286,37 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   // Every non-human seat in an AI game is AI-controlled
   const isAiSide = (idx: number) => type === 'ai' && idx !== humanIdx;
-  // Premium personality (MONETIZATION.md P4.2.2): its profile replaces
-  // AI_PROFILES[aiDifficulty] for every AI seat; null = generic bot (D5).
-  const personality = type === 'ai' ? botById(botId) : null;
-  const [initialState, setInitialState] = useState<GameState>(() =>
-    createInitialState({ mode, playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You', personality?.name ?? null), wallsEach })
+
+  const botPersonalities = useMemo(() => {
+    if (type !== 'ai') return [];
+    if (botIds && botIds.length > 0) {
+      return botIds.map((id) => botById(id)).filter(Boolean) as BotPersonality[];
+    }
+    const single = botById(botId);
+    return single ? [single] : [];
+  }, [type, botIds, botId]);
+
+  const personality = botPersonalities[0] ?? (type === 'ai' ? botById(botId) : null);
+
+  const getBotForSeat = useCallback(
+    (seatIdx: number): BotPersonality | null => {
+      if (type !== 'ai' || seatIdx === humanIdx) return null;
+      const botIdx = seatIdx > humanIdx ? seatIdx - 1 : seatIdx;
+      return botPersonalities[botIdx] ?? personality ?? null;
+    },
+    [type, humanIdx, botPersonalities, personality]
   );
+
+  const [initialState, setInitialState] = useState<GameState>(() => {
+    const aiNames = botPersonalities.length > 0
+      ? botPersonalities.map((b) => b.name)
+      : personality?.name ?? null;
+    return createInitialState({
+      mode,
+      playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You', aiNames),
+      wallsEach,
+    });
+  });
 
   const [state, setState] = useState<GameState>(initialState);
 
@@ -299,15 +328,18 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   });
 
   const botAvatarKeyBySeat = useMemo(() => {
-    if (type !== 'ai' || !personality) return undefined;
+    if (type !== 'ai') return undefined;
     const map: Record<string, string> = {};
     for (let i = 0; i < state.players.length; i++) {
-      if (i !== humanIdx && personality.avatarKey) {
-        map[state.players[i].id] = personality.avatarKey;
+      if (i !== humanIdx) {
+        const bot = getBotForSeat(i);
+        if (bot?.avatarKey) {
+          map[state.players[i].id] = bot.avatarKey;
+        }
       }
     }
     return map;
-  }, [type, personality, humanIdx, state.players]);
+  }, [type, humanIdx, state.players, getBotForSeat]);
 
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [soundMuted, setSoundMuted] = useState(false);
@@ -324,7 +356,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         if (i === humanIdx) {
           map[p.id] = (identity as any)?.rating ?? 1200;
         } else {
-          map[p.id] = personality?.elo ?? 400;
+          const bot = getBotForSeat(i);
+          map[p.id] = bot?.elo ?? personality?.elo ?? 400;
         }
       } else if (type === 'online') {
         if (i === humanIdx) {
@@ -335,7 +368,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       }
     }
     return map;
-  }, [state.players, type, humanIdx, identity, personality]);
+  }, [state.players, type, humanIdx, identity, getBotForSeat, personality]);
 
   const seatCountryFlags = useMemo(() => {
     const map: Record<string, string> = {};
@@ -345,14 +378,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         if (i === humanIdx) {
           map[p.id] = countryFlagFor(p.displayName);
         } else {
-          map[p.id] = countryFlagFor(personality?.name, personality?.id);
+          const bot = getBotForSeat(i);
+          map[p.id] = countryFlagFor(bot?.name ?? personality?.name, bot?.id ?? personality?.id);
         }
       } else {
         map[p.id] = countryFlagFor(p.displayName);
       }
     }
     return map;
-  }, [state.players, type, humanIdx, personality]);
+  }, [state.players, type, humanIdx, getBotForSeat, personality]);
 
   // Cached last-known online state keeps the finished/live board visible
   // during reconnects. The server still replaces it on the next sync.
@@ -1022,14 +1056,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       return;
     }
     setIsAiThinking(true);
-    const thinkMs = thinkMsFor(aiDifficulty, testThink);
+    const thinkMs = thinkMsFor(aiDifficulty);
     let cancelled = false;
     const timer = setTimeout(() => {
       void (async () => {
         try {
           const live = stateRef.current;
           if (cancelled || live.status !== 'IN_PROGRESS' || !isAiSide(live.currentPlayerIndex)) return;
-          const profile = personality?.profile ?? AI_PROFILES[aiDifficulty];
+          const seatBot = getBotForSeat(live.currentPlayerIndex);
+          const profile = seatBot?.profile ?? personality?.profile ?? AI_PROFILES[aiDifficulty];
           // Unbounded deep search off the critical path: time slices yield
           // to the event loop (thinking indicator stays alive), depth is the
           // only ceiling, cancellation keeps the best completed ply.
@@ -2400,13 +2435,7 @@ useEffect(() => {
               />
             </View>
           ) : (
-            <TouchableOpacity
-              onPress={() => setOptionsOpen(true)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              accessibilityLabel="Game options"
-            >
-              <Feather name="settings" size={20} color={THEME.colors.textSecondary} />
-            </TouchableOpacity>
+            <View style={{ width: 20 }} />
           )}
         </View>
       </View>
@@ -2418,6 +2447,78 @@ useEffect(() => {
       )}
       {type === 'ai' && personality ? (
         (() => {
+          if (state.players.length > 2) {
+            // Multi-bot opponent zone (>2P match vs bots): Avatar on top -> Clock -> Walls
+            const botSeats = state.players
+              .map((p, i) => ({ player: p, index: i }))
+              .filter((x) => x.index !== humanIdx);
+
+            return (
+              <View style={styles.multiBotHeroRow}>
+                {botSeats.map(({ player: botPlayer, index: seatIdx }) => {
+                  const bot = getBotForSeat(seatIdx);
+                  const isBotActive = state.currentPlayerIndex === seatIdx;
+                  const botBall = playerColor(seatIdx, botPlayer.color);
+                  const botTimer = timers?.[botPlayer.id];
+
+                  return (
+                    <View key={botPlayer.id} style={styles.multiBotCol}>
+                      {/* Avatar on top */}
+                      <View
+                        style={[
+                          styles.multiBotAvatarWrap,
+                          isBotActive && styles.multiBotAvatarActive,
+                        ]}
+                      >
+                        <BotAvatar
+                          avatarKey={bot?.avatarKey ?? 'martin'}
+                          color={botBall}
+                          size={46}
+                          noBg
+                        />
+                      </View>
+                      <Text style={styles.multiBotName} numberOfLines={1}>
+                        {bot?.name ?? botPlayer.displayName}
+                      </Text>
+
+                      {/* Clock underneath (if timed) */}
+                      {botTimer !== undefined && (
+                        <View
+                          style={[
+                            styles.multiBotTimerBox,
+                            isBotActive && styles.multiBotTimerBoxActive,
+                          ]}
+                        >
+                          <MaterialCommunityIcons
+                            name="timer-outline"
+                            size={12}
+                            color={isBotActive ? THEME.colors.primary : THEME.colors.textMuted}
+                          />
+                          <Text
+                            style={[
+                              styles.multiBotTimerText,
+                              isBotActive && styles.multiBotTimerTextActive,
+                            ]}
+                          >
+                            {formatTimer(botTimer)}
+                          </Text>
+                        </View>
+                      )}
+
+                      {/* Remaining walls underneath */}
+                      <View style={styles.multiBotWallsChip}>
+                        <WallIcon size={13} color={botBall} />
+                        <Text style={styles.multiBotWallsText}>
+                          {botPlayer.wallsRemaining}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          }
+
           const botPlayer = state.players.find((_, i) => i !== humanIdx);
           const isBotActive = state.currentPlayerIndex !== humanIdx;
           const botBall = botPlayer ? playerColor(1 - humanIdx, botPlayer.color) : personality.color;
@@ -3491,6 +3592,66 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
     flexShrink: 0,
+  },
+  multiBotHeroRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    gap: 20,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  multiBotCol: {
+    alignItems: 'center',
+    minWidth: 70,
+    gap: 3,
+  },
+  multiBotAvatarWrap: {
+    position: 'relative',
+    borderRadius: 24,
+    padding: 2,
+  },
+  multiBotAvatarActive: {
+    borderWidth: 2,
+    borderColor: THEME.colors.primary,
+  },
+  multiBotName: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 11,
+    color: THEME.colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 76,
+  },
+  multiBotTimerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: THEME.colors.surfaceMuted,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  multiBotTimerBoxActive: {
+    backgroundColor: THEME.colors.primaryLight,
+  },
+  multiBotTimerText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+  },
+  multiBotTimerTextActive: {
+    color: THEME.colors.primary,
+  },
+  multiBotWallsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  multiBotWallsText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
   },
   statWallsChip: {
     flexDirection: 'row',

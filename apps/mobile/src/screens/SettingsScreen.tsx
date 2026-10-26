@@ -67,12 +67,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const gameplayRows: ToggleRow[] = [
     {
-      key: 'premoveEnabled',
-      icon: 'corner-up-left',
-      title: t('settings.premove'),
-      desc: t('settings.premoveDesc'),
-    },
-    {
       key: 'extendedQueue',
       icon: 'grid',
       title: t('settings.wallPredrops'),
@@ -86,12 +80,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       icon: 'volume-2',
       title: t('settings.sounds'),
       desc: t('settings.soundsDesc'),
-    },
-    {
-      key: 'testThink',
-      icon: 'clock',
-      title: t('settings.longAi'),
-      desc: t('settings.longAiDesc'),
     },
   ];
 
