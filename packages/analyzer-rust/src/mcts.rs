@@ -348,7 +348,7 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
         // lead = d1 - d0 + turnBonus + wallBonus
         // p0 = sigmoid(lead / 3.2)
         let turn_bonus = if state.current_player_index == 0 { 0.5 } else { -0.5 };
-        let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * 1.10;
+        let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * 0.35;
         let lead = d1 - d0 + turn_bonus + wall_bonus;
         let p0_win = sigmoid(lead / 3.2);
         rewards[0] = p0_win;
@@ -381,7 +381,7 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
         let base_dist = if dist < 0 { 99.0 } else { dist as f64 };
         let turns_until_move = (i + n - state.current_player_index) % n;
         let turn_tempo = 0.5 * (1.0 - (turns_until_move as f64) / (n as f64));
-        let wall_bonus = (p.walls_remaining as f64 - avg_walls) * 1.10;
+        let wall_bonus = (p.walls_remaining as f64 - avg_walls) * 0.35;
         eff_dists[i] = base_dist - turn_tempo - wall_bonus;
     }
 
