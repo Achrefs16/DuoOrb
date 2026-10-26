@@ -1239,7 +1239,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             >
               <Feather
                 name="chevron-left"
-                size={26}
+                size={22}
                 color={
                   currentStep <= 0
                     ? theme.colors.textMuted
@@ -1266,7 +1266,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                     {s === 0 ? 'Start' : `${s} · ${stripLabel(s)}`}
                   </Text>
                   {a ? (
-                    <AssessmentIcon assessment={a} size={18} />
+                    <AssessmentIcon assessment={a} size={15} />
                   ) : null}
                 </TouchableOpacity>
               );
@@ -1283,7 +1283,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             >
               <Feather
                 name="chevron-right"
-                size={26}
+                size={22}
                 color={
                   currentStep >= history.length
                     ? theme.colors.textMuted
@@ -1913,11 +1913,11 @@ const createStyles = () => StyleSheet.create({
   stripRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   stripNav: {
-    width: 44,
-    height: 44,
+    width: 38,
+    height: 38,
     borderRadius: THEME.radius.md,
     backgroundColor: THEME.colors.surfaceContainerLowest,
     borderWidth: 1,
@@ -1934,9 +1934,9 @@ const createStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     borderRadius: THEME.radius.md,
     backgroundColor: THEME.colors.surfaceContainerLowest,
     borderWidth: 1,
@@ -1949,12 +1949,14 @@ const createStyles = () => StyleSheet.create({
   },
   stripChipText: {
     fontFamily: THEME.fonts.bold,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
     color: THEME.colors.textSecondary,
+    flexShrink: 1,
   },
   stripChipTextActive: {
     fontFamily: THEME.fonts.extraBold,
+    fontSize: 11,
     color: THEME.colors.textPrimary,
     fontWeight: '800',
   },

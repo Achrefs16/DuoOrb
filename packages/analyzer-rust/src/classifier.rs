@@ -11,9 +11,9 @@ pub fn win_chance_from_eval(eval: f64) -> f64 {
 /// Grades a move from adversarial MCTS win probabilities.
 ///
 /// Order of move quality (Chess.com standard):
-/// 1. `BRILLIANT` (`!!`, cyan) - Best move that sets up a decisive tactical detour / game-flipping wall.
-/// 2. `GREAT` (`!`, blue) - Best move that is the critical only winning/saving move in a complex position.
-/// 3. `BEST` (`★`, green) - Top engine recommendation.
+/// 1. `BRILLIANT` (`!!`, cyan) - Rare, game-saving / match-flipping tactical masterpiece from a losing position.
+/// 2. `GREAT` (`!`, blue) - Sharp tactical wall adding significant detour / tactical gain.
+/// 3. `BEST` (`★`, green) - Top engine recommendation (including all standard optimal pawn advances).
 /// 4. `EXCELLENT` (`✓` / `👍`, light green) - Very close to best (loss <= 3.5%).
 /// 5. `GOOD` - Solid move (loss 3.5% - 8.0%).
 /// 6. `INACCURACY` (`?!`, amber) - Suboptimal choice (backward step, useless wall, loss 8.0% - 16.0%).
@@ -49,31 +49,30 @@ pub fn classify_mcts_move(
     // 1. Optimal Move Tier
     // Only the engine's #1 move (or a move within 0.012 scaled win equity of it) qualifies for Best, Brilliant, or Great.
     if is_engine_best || delta_q <= 0.012 {
-        // BRILLIANT (!!): Decisive match-turning tactical wall
-        // - Wall placement that forces a significant opponent detour (>= 3 steps)
-        // - Or deep trap wall where tactical gain over simple pawn step is high (>= 0.15) and gap to 2nd is >= 0.08
-        // - Played from a contested or trailing position (player wasn't already at a crushing lead)
-        // - Non-opening (ply >= 4)
-        let is_brilliant_wall = is_wall
-            && (opp_detour >= 3 || (tactical_gain_vs_step >= 0.15 && gap_to_second >= 0.08))
-            && (my_lead_before <= 2 || q_played <= (0.70 / mode_scale));
+        // BRILLIANT (!!): Rare, high-magnitude match flip
+        // - Must be a wall in mid/endgame (ply >= 6)
+        // - Player was legitimately losing/trailing in the race (my_lead_before <= -2 or q_played <= 0.45)
+        // - Forces a massive opponent detour (opp_detour >= 5 steps) OR massive multi-ply trap wall (gain >= 0.22 & gap >= 0.16)
+        let is_brilliant_masterpiece = is_wall
+            && ply >= 6
+            && (my_lead_before <= -2 || q_played <= (0.45 / mode_scale))
+            && (opp_detour >= 5 || (tactical_gain_vs_step >= 0.22 && gap_to_second >= 0.16));
 
-        if is_brilliant_wall && ply >= 4 {
+        if is_brilliant_masterpiece {
             return (MoveAssessment::Brilliant, 0.0, 100.0);
         }
 
-        // GREAT (!): Critical only winning or game-saving move in a complex position
-        // - Must have a noticeable gap to the 2nd best move (gap >= 0.08)
-        // - In a contested game state (not an obvious blowout 92%+ or already lost < 35%)
-        // - Non-opening (ply >= 4)
-        if ply >= 4
-            && gap_to_second >= 0.08
-            && q_played >= (0.35 / mode_scale)
-            && q_played <= (0.92 / mode_scale)
-        {
+        // GREAT (!): Tactical wall or sharp defensive conversion
+        // (Previously the equation for brilliant: adds >= 3 detour or sharp tactical gain from contested position)
+        let is_great_tactical_wall = is_wall
+            && (opp_detour >= 3 || (tactical_gain_vs_step >= 0.15 && gap_to_second >= 0.08))
+            && (my_lead_before <= 2 || q_played <= (0.70 / mode_scale));
+
+        if is_great_tactical_wall && ply >= 4 {
             return (MoveAssessment::Great, 0.0, 100.0);
         }
 
+        // All other optimal moves (standard pawn advances, conversions) are BEST!
         return (MoveAssessment::Best, 0.0, 100.0);
     }
 
@@ -122,29 +121,38 @@ mod tests {
     }
 
     #[test]
-    fn brilliant_trap_wall_recognition() {
+    fn brilliant_match_flipping_wall() {
+        // Trailing by 3 moves (lead: -3) and forcing a 6-step detour: Brilliant!
         let (assessment, loss, accuracy) =
-            classify_mcts_move(0.65, 0.65, 0.52, 0.45, true, 4, -2, true, false, false, 2, 8);
+            classify_mcts_move(0.60, 0.60, 0.42, 0.35, true, 6, -3, true, false, false, 2, 8);
         assert_eq!(assessment, MoveAssessment::Brilliant);
         assert_eq!(loss, 0.0);
         assert_eq!(accuracy, 100.0);
     }
 
     #[test]
-    fn opening_move_is_best_not_great() {
-        // Ply 1 opening pawn step with a gap to backward step: must be Best, NOT Great!
+    fn great_tactical_wall() {
+        // Normal tactical wall forcing 3-step detour: Great!
+        let (assessment, loss, accuracy) =
+            classify_mcts_move(0.65, 0.65, 0.52, 0.45, true, 3, 0, true, false, false, 2, 8);
+        assert_eq!(assessment, MoveAssessment::Great);
+        assert_eq!(loss, 0.0);
+        assert_eq!(accuracy, 100.0);
+    }
+
+    #[test]
+    fn pawn_advance_is_best_not_great() {
+        // Midgame forward pawn advance with a gap to alternative: must be BEST, not Great!
         let (assessment, _, _) =
-            classify_mcts_move(0.55, 0.55, 0.38, 0.38, true, 0, 0, false, false, false, 2, 1);
+            classify_mcts_move(0.65, 0.65, 0.48, 0.55, true, 0, 0, false, false, false, 2, 10);
         assert_eq!(assessment, MoveAssessment::Best);
     }
 
     #[test]
-    fn great_move_is_only_winning_move_in_midgame() {
-        let (assessment, loss, accuracy) =
-            classify_mcts_move(0.65, 0.65, 0.48, 0.55, true, 0, 0, false, false, false, 2, 10);
-        assert_eq!(assessment, MoveAssessment::Great);
-        assert_eq!(loss, 0.0);
-        assert_eq!(accuracy, 100.0);
+    fn opening_move_is_best() {
+        let (assessment, _, _) =
+            classify_mcts_move(0.55, 0.55, 0.38, 0.38, true, 0, 0, false, false, false, 2, 1);
+        assert_eq!(assessment, MoveAssessment::Best);
     }
 
     #[test]

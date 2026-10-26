@@ -14,7 +14,7 @@ export function assessmentColor(a?: MoveAssessment): string {
     case 'EXCELLENT':
       return '#78B833';
     case 'GOOD':
-      return '#3B82F6';
+      return '#5EA33A';
     case 'INACCURACY':
       return '#F59E0B';
     case 'MISTAKE':
@@ -24,7 +24,7 @@ export function assessmentColor(a?: MoveAssessment): string {
     case 'FORCED':
       return '#6B7280';
     default:
-      return '#2563EB';
+      return '#5EA33A';
   }
 }
 
