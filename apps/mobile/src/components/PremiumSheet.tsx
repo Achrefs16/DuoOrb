@@ -8,8 +8,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
 import { useSession } from '../network/session';
@@ -73,6 +74,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { identity, signInWithGoogle } = useSession();
   const [plans, setPlans] = useState<PremiumPlan[]>([]);
   const [canBuy, setCanBuy] = useState(false);
@@ -187,7 +189,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.backdrop}>
-        <View style={styles.card}>
+        <View style={[styles.card, { paddingBottom: 32 + insets.bottom }]}>
           <LinearGradient
             colors={['#F7DE9B', '#D9A62E']}
             start={{ x: 0, y: 0 }}
@@ -196,7 +198,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
           >
             <View style={styles.heroHandle} />
             <View style={styles.heroCrownTile}>
-              <MaterialCommunityIcons name="crown" size={26} color={PREMIUM_GOLD} />
+              <OrbIcon name="crown" size={26} color={PREMIUM_GOLD} />
             </View>
             <Text style={styles.heroTitle}>{t('premium.title')}</Text>
           </LinearGradient>
@@ -205,7 +207,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
             {bullets.map((b) => (
               <View key={b} style={styles.bulletRow}>
                 <View style={styles.bulletCheck}>
-                  <Feather name="check" size={12} color="#FFFFFF" />
+                  <OrbIcon name="check" size={12} color="#FFFFFF" />
                 </View>
                 <Text style={styles.bullet}>{b}</Text>
               </View>

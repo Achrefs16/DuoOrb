@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import { THEME, useStyles } from '../theme';
 import {
   NO_TIMER_CONTROL,
@@ -77,10 +77,10 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
       {/* 1. Match Mode */}
       <View style={styles.optionsSection}>
         <View style={styles.optionCatHeader}>
-          <MaterialCommunityIcons
-            name="sword-cross"
-            size={18}
-            color="#3B82F6"
+          <OrbIcon
+            name="flag"
+            size={16}
+            color={THEME.colors.textSecondary}
           />
           <Text style={styles.optionCatTitle}>Match Mode</Text>
         </View>
@@ -107,7 +107,7 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
       {mode !== 'classic' && (
         <View style={styles.optionsSection}>
           <View style={styles.optionCatHeader}>
-            <Feather name="users" size={17} color="#3B82F6" />
+            <OrbIcon name="users" size={16} color={THEME.colors.textSecondary} />
             <Text style={styles.optionCatTitle}>Player Count</Text>
           </View>
           <View style={styles.threeColGrid}>
@@ -127,10 +127,10 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
       {/* 3. Walls */}
       <View style={styles.optionsSection}>
         <View style={styles.optionCatHeader}>
-          <MaterialCommunityIcons
-            name="wall"
-            size={18}
-            color="#A855F7"
+          <OrbIcon
+            name="grid"
+            size={16}
+            color={THEME.colors.textSecondary}
           />
           <Text style={styles.optionCatTitle}>Walls</Text>
         </View>
@@ -157,7 +157,7 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
       {/* Bullet */}
       <View style={styles.optionsSection}>
         <View style={styles.optionCatHeader}>
-          <Feather name="zap" size={15} color="#EAB308" />
+          <OrbIcon name="zap" size={16} color={THEME.colors.textSecondary} />
           <Text style={styles.optionCatTitle}>Bullet</Text>
         </View>
         <View style={styles.twoColGrid}>
@@ -179,7 +179,7 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
       {/* Rapid */}
       <View style={styles.optionsSection}>
         <View style={styles.optionCatHeader}>
-          <Feather name="clock" size={15} color={THEME.colors.primary} />
+          <OrbIcon name="clock" size={16} color={THEME.colors.textSecondary} />
           <Text style={styles.optionCatTitle}>Rapid</Text>
         </View>
         <View style={styles.twoColGrid}>

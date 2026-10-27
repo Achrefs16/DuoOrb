@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, LayoutChangeEvent } from 'react-native';
+import { StyleSheet, Text, View, LayoutChangeEvent, Platform } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Path, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
@@ -25,8 +25,16 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
   const paddingY = 16;
 
   // Use the recent 20 points
-  const points = data.slice(-20);
-  const ratings = points.length > 0 ? points.map((p) => p.ratingAfter) : [currentRating];
+  const safeData = Array.isArray(data) ? data : [];
+  const points = safeData.slice(-20);
+  const parsedRatings = points
+    .map((p) => p?.ratingAfter)
+    .filter((r): r is number => typeof r === 'number' && Number.isFinite(r));
+  const fallbackRating =
+    typeof currentRating === 'number' && Number.isFinite(currentRating)
+      ? currentRating
+      : 1500;
+  const ratings = parsedRatings.length > 0 ? parsedRatings : [fallbackRating];
 
   const minVal = Math.min(...ratings) - 20;
   const maxVal = Math.max(...ratings) + 20;
@@ -37,10 +45,12 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
   const chartH = height - paddingY * 2;
 
   const yFor = (val: number) => paddingY + chartH - ((val - minVal) / range) * chartH;
-  // Y axis: min / mid / max, rounded to tens.
-  const yTicks = [minVal + 20, minVal + 20 + range / 2, maxVal - 20].map((v) =>
-    Math.round(v / 10) * 10
-  );
+  // Y axis: baseline grid lines at 0.85 (bottom), 0.5 (mid), 0.15 (top) rounded to tens.
+  const yTicks = [
+    Math.round((minVal + range * 0.15) / 10) * 10,
+    Math.round((minVal + range * 0.5) / 10) * 10,
+    Math.round((minVal + range * 0.85) / 10) * 10,
+  ];
 
   const monthFmt = (ts?: string | number): string => {
     if (ts === undefined || ts === null) return '';
@@ -129,9 +139,12 @@ export const RatingChart: React.FC<RatingChartProps> = ({ data, currentRating, s
 
       <View style={styles.svgWrap}>
         {/* Y axis ratings */}
-        {yTicks.map((t) => (
-          <Text key={t} style={[styles.yTick, { top: yFor(t) - 7 }]}>
-            {t}
+        {yTicks.map((tick, idx) => (
+          <Text
+            key={`ytick-${idx}-${tick}`}
+            style={[styles.yTick, { top: Math.round(yFor(tick)) - 7 }]}
+          >
+            {tick}
           </Text>
         ))}
         <Svg width={containerWidth} height={height}>
@@ -278,7 +291,9 @@ const createStyles = () => StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: THEME.colors.textPrimary,
-    fontVariant: ['tabular-nums'],
+    ...(Platform.OS === 'web'
+      ? ({ fontVariantNumeric: 'tabular-nums' } as any)
+      : { fontVariant: ['tabular-nums'] as const }),
   },
   svgWrap: {
     marginTop: -4,
@@ -292,7 +307,9 @@ const createStyles = () => StyleSheet.create({
     fontSize: 9,
     fontWeight: '500',
     color: THEME.colors.textMuted,
-    fontVariant: ['tabular-nums'],
+    ...(Platform.OS === 'web'
+      ? ({ fontVariantNumeric: 'tabular-nums' } as any)
+      : { fontVariant: ['tabular-nums'] as const }),
   },
   nowLabel: {
     color: THEME.colors.success,
@@ -309,6 +326,8 @@ const createStyles = () => StyleSheet.create({
     fontSize: 11,
     color: THEME.colors.textMuted,
     fontWeight: '600',
-    fontVariant: ['tabular-nums'],
+    ...(Platform.OS === 'web'
+      ? ({ fontVariantNumeric: 'tabular-nums' } as any)
+      : { fontVariant: ['tabular-nums'] as const }),
   },
 });

@@ -3,7 +3,7 @@
     "name": "DuoOrb",
     "slug": "duoorb",
     "scheme": "duoorb",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon-512.png",
     "userInterfaceStyle": "light",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.asdigital.duoorb",
-      "versionCode": 12,
+      "versionCode": 13,
       "permissions": [],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
@@ -23,7 +23,7 @@
       ],
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-          "foregroundImage": "./assets/adaptive-foreground-432.png"
+        "foregroundImage": "./assets/adaptive-foreground-432.png"
       },
       "predictiveBackGestureEnabled": false
     },

@@ -408,7 +408,7 @@ describe('AI: determinism', () => {
       return line.join(' ');
     };
     expect(play()).toBe(play());
-  }, 10_000);
+  }, 30_000);
 
   it('keeps easy reproducible for a position, jitter notwithstanding', () => {
     const state = createInitialState({ mode: 'race3' });

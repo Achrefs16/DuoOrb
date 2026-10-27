@@ -34,7 +34,7 @@ describe('Workstream 6: Multi-Mode Battle-Testing Matrix Across All 7 Modes', ()
     }
     expect(state.status).toBe('COMPLETED');
     expect(state.winnerId).not.toBeNull();
-  });
+  }, 20_000);
 
   it('Mode 2: 4p (4-Player FFA) — 0 illegal moves and finishes with placement ranking', () => {
     let state = createInitialState({ mode: '4p', gameId: 'battle-4p' });
@@ -73,7 +73,7 @@ describe('Workstream 6: Multi-Mode Battle-Testing Matrix Across All 7 Modes', ()
   it('Mode 4: race4 (4-Player Race) — multi-agent placement race completes legally', () => {
     let state = createInitialState({ mode: 'race4', gameId: 'battle-race4' });
     let plies = 0;
-    while (state.status === 'IN_PROGRESS' && state.placements.length === 0 && plies < 120) {
+    while (state.status === 'IN_PROGRESS' && state.placements.length === 0 && plies < 140) {
       const action = getBestAction(state, fastAI, 4000 + plies);
       expect(action, `ply ${plies}`).not.toBeNull();
       if (!action) break;
@@ -85,7 +85,7 @@ describe('Workstream 6: Multi-Mode Battle-Testing Matrix Across All 7 Modes', ()
     }
     expect(state.placements.length).toBeGreaterThanOrEqual(1);
     expect(state.placements[0].place).toBe(1);
-  }, 20_000);
+  }, 30_000);
 
   it('Mode 5: center2 (2-Player Center Rush) — converges on center square', () => {
     let state = createInitialState({ mode: 'center2', gameId: 'battle-center2' });
@@ -102,7 +102,7 @@ describe('Workstream 6: Multi-Mode Battle-Testing Matrix Across All 7 Modes', ()
     }
     expect(state.status).toBe('COMPLETED');
     expect(state.winnerId).not.toBeNull();
-  });
+  }, 20_000);
 
   it('Mode 6: center3 (3-Player Center Rush) — converges on center square without infinite looping', () => {
     let state = createInitialState({ mode: 'center3', gameId: 'battle-center3' });

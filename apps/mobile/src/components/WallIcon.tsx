@@ -1,6 +1,5 @@
 import React from 'react';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-
+import { OrbIcon } from './OrbIcon';
 interface WallIconProps {
   size?: number;
   color?: string;
@@ -10,5 +9,5 @@ interface WallIconProps {
  * Tactical wall badge icon representing remaining walls in match HUD.
  */
 export const WallIcon: React.FC<WallIconProps> = ({ size = 15, color }) => {
-  return <MaterialCommunityIcons name="wall" size={size} color={color} />;
+  return <OrbIcon name="wall" size={size} color={color} />;
 };

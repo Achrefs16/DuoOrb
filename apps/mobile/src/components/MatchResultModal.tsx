@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
@@ -64,7 +64,7 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityLabel={t('result.closeA11y')}
               >
-                <Feather name="x" size={20} color={THEME.colors.textMuted} />
+                <OrbIcon name="x" size={20} color={THEME.colors.textMuted} />
               </TouchableOpacity>
 
               <Text style={styles.outcome}>
@@ -106,7 +106,7 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
                     accessibilityRole="button"
                     accessibilityLabel={`View ${opp}'s profile`}
                   >
-                    <Feather name="user" size={14} color={THEME.colors.textSecondary} />
+                    <OrbIcon name="user" size={14} color={THEME.colors.textSecondary} />
                     <Text style={styles.viewProfileText}>{t('gameover.viewProfile')}</Text>
                   </TouchableOpacity>
                 )}
@@ -123,7 +123,7 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
                   accessibilityRole="button"
                   accessibilityLabel="Analyze this game"
                 >
-                  <Feather name="activity" size={14} color={THEME.colors.onPrimary} />
+                  <OrbIcon name="activity" size={14} color={THEME.colors.onPrimary} />
                   <Text style={styles.analyzeText}>{t('gameover.analyze')}</Text>
                 </TouchableOpacity>
               </View>

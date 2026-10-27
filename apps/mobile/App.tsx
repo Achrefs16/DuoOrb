@@ -63,7 +63,10 @@ import { flushIdentityStorage, hydrateIdentity, useIdentity } from './src/networ
 import { hasCompletedOnboarding, markOnboardingComplete } from './src/storage/onboarding';
 import { isGeneratedUsername } from './src/usernamePolicy';
 import { ChooseUsernameScreen } from './src/screens/ChooseUsernameScreen';
+import { TutorialScreen } from './src/screens/TutorialScreen';
+import { hasCompletedTutorial } from './src/storage/tutorial';
 import { createInitialState } from '@duoorb/game-core';
+import { resolveSideChoice } from './src/lib/sideChoice';
 import type { SavedGameRecord } from './src/storage/gameStorage';
 import { THEME, setThemeName, useTheme } from './src/theme';
 import { DEFAULT_TIME_CONTROL, TimeControl } from './src/timeControls';
@@ -99,6 +102,7 @@ type SubScreen =
   | 'REVIEW_SUMMARY'
   | 'LEGAL'
   | 'HISTORY'
+  | 'TUTORIAL'
   | null;
 
 /** One entry in the in-app navigation history (hardware back stack). */
@@ -499,6 +503,19 @@ export default function App() {
     });
 
     return () => sub.remove();
+  }, []);
+
+  // First-launch tutorial check: opens automatically for fresh players
+  useEffect(() => {
+    let cancelled = false;
+    void hasCompletedTutorial().then((done) => {
+      if (!cancelled && !done) {
+        setSubScreen('TUTORIAL');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Post-onboarding room entry: called when new identity finishes username setup
@@ -1015,7 +1032,7 @@ export default function App() {
                       type: 'ai',
                       botId: cfg.botId,
                       botIds: cfg.botIds,
-                      sideChoice: cfg.side === 'random' ? (Math.random() < 0.5 ? 'blue' : 'red') : cfg.side,
+                      sideChoice: resolveSideChoice(cfg.side, cfg.mode),
                       timeControl: cfg.clock,
                       wallsEach: cfg.wallsEach,
                     });
@@ -1143,7 +1160,7 @@ export default function App() {
                   aiDifficulty: sel.difficulty,
                   botId: sel.botId ?? null,
                   timeControl: sel.clock,
-                  sideChoice: sel.side,
+                  sideChoice: resolveSideChoice(sel.side, sel.mode),
                   wallsEach: sel.wallsEach,
                 });
               }}
@@ -1177,6 +1194,18 @@ export default function App() {
               onChange={updateSettings}
               onBack={goBack}
               onOpenLegal={handleOpenLegal}
+              onOpenTutorial={() => navigate(currentTab, 'TUTORIAL')}
+            />
+          )}
+
+          {subScreen === 'TUTORIAL' && (
+            <TutorialScreen
+              onFinish={() => {
+                setSubScreen(null);
+              }}
+              onSkip={() => {
+                setSubScreen(null);
+              }}
             />
           )}
 

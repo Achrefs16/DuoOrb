@@ -20,7 +20,7 @@ describe('Bot Personas & Dialogue System', () => {
       expect(bot.quote.trim().length).toBeGreaterThan(5);
       expect(bot.bio.trim().length).toBeGreaterThan(10);
       expect(bot.avatarKey.trim().length).toBeGreaterThan(1);
-      expect(['beginner', 'intermediate', 'master']).toContain(bot.tier);
+      expect(['beginner', 'intermediate', 'master', 'grandmaster']).toContain(bot.tier);
     }
   });
 

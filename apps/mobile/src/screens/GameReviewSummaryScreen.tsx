@@ -9,7 +9,8 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GameReview, GameState, MoveAssessment, RecordedAction } from '@duoorb/game-core';
 import { THEME, useStyles, useTheme } from '../theme';
 import { useTranslation } from '../i18n';
@@ -105,6 +106,7 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
   const styles = useStyles(createStyles);
   const theme = useTheme();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   const isTablet = windowWidth >= 600 && (windowWidth <= 1100 || windowHeight >= windowWidth);
@@ -172,7 +174,7 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
             accessibilityRole="button"
             accessibilityLabel="Back"
           >
-            <Feather name="arrow-left" size={22} color={THEME.colors.textPrimary} />
+            <OrbIcon name="arrow-left" size={22} color={THEME.colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Game Review</Text>
           <View style={styles.headerSpacer} />
@@ -186,7 +188,7 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
           </View>
         ) : !review ? (
           <View style={styles.loadingContainer}>
-            <Feather name="alert-circle" size={44} color={theme.colors.danger} style={{ marginBottom: 14 }} />
+            <OrbIcon name="alert-circle" size={44} color={theme.colors.danger} style={{ marginBottom: 14 }} />
             <Text style={styles.loadingTitle}>Analysis Unavailable</Text>
             <Text style={[styles.loadingSubtitle, { marginBottom: 22, textAlign: 'center', paddingHorizontal: 20 }]}>
               Could not connect to the server analysis engine. Please ensure the server is online.
@@ -197,7 +199,7 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
               accessibilityRole="button"
               accessibilityLabel="Retry Analysis"
             >
-              <Feather name="refresh-cw" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <OrbIcon name="refresh-cw" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
               <Text style={styles.retryBtnText}>Retry Analysis</Text>
             </TouchableOpacity>
           </View>
@@ -207,16 +209,6 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            {/* Engine Source Badge (Server Engine) */}
-            <View style={styles.engineBadgeRow}>
-              <View style={[styles.enginePill, styles.enginePillServer]}>
-                <Feather name="cpu" size={13} color={theme.colors.tertiary} />
-                <Text style={[styles.enginePillText, styles.engineTextServer]}>
-                  {`Server Engine (${review?.engineVersion || 'duoorb-rust-mcts-3.0'} · 35,000 sims)`}
-                </Text>
-              </View>
-            </View>
-
             {/* Header Comparison: Players Section */}
             <View style={styles.playersSection}>
               <View style={styles.playersLabelCol}>
@@ -309,7 +301,12 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
 
         {/* Sticky Hero Green "Start Review" Button */}
         {!loading && (
-          <View style={styles.bottomBar}>
+          <View
+            style={[
+              styles.bottomBar,
+              { paddingBottom: (Platform.OS === 'ios' ? 28 : 16) + insets.bottom },
+            ]}
+          >
             <TouchableOpacity
               style={styles.startReviewBtn}
               activeOpacity={0.88}
@@ -347,7 +344,7 @@ const createStyles = () => {
       paddingHorizontal: 16,
       borderBottomWidth: 1,
       borderBottomColor: THEME.colors.surfaceContainer,
-      backgroundColor: THEME.colors.surfaceContainerLowest,
+      backgroundColor: THEME.colors.background,
     },
     backBtn: {
       width: 40,
@@ -542,7 +539,7 @@ const createStyles = () => {
       paddingHorizontal: 18,
       paddingTop: 12,
       paddingBottom: Platform.OS === 'ios' ? 28 : 16,
-      backgroundColor: THEME.colors.surfaceContainerLowest,
+      backgroundColor: THEME.colors.background,
       borderTopWidth: 1,
       borderTopColor: THEME.colors.surfaceContainer,
     },
@@ -566,38 +563,6 @@ const createStyles = () => {
       fontWeight: '800',
       color: '#FFFFFF',
       letterSpacing: 0.2,
-    },
-    engineBadgeRow: {
-      alignItems: 'center',
-      marginBottom: 14,
-    },
-    enginePill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      paddingVertical: 5,
-      paddingHorizontal: 12,
-      borderRadius: 14,
-      borderWidth: 1,
-    },
-    enginePillServer: {
-      backgroundColor: THEME.colors.tertiaryLight,
-      borderColor: THEME.colors.tertiaryBorder,
-    },
-    enginePillLocal: {
-      backgroundColor: THEME.colors.warningLight,
-      borderColor: THEME.colors.warningBorder,
-    },
-    enginePillText: {
-      fontSize: 11,
-      fontWeight: '700',
-      fontFamily: THEME.fonts.bold,
-    },
-    engineTextServer: {
-      color: THEME.colors.tertiary,
-    },
-    engineTextLocal: {
-      color: THEME.colors.warning,
     },
     retryBtn: {
       flexDirection: 'row',

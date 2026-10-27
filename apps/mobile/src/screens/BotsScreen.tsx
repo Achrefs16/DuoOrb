@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
 import {
   BOT_ROSTER,
   botById,
@@ -27,13 +28,32 @@ import {
 } from '../timeControls';
 import { MatchOptionsPicker } from '../components/MatchOptionsPicker';
 import { resolveMode } from '../matchModes';
+import { useTranslation } from '../i18n';
+import {
+  isSideAvailable,
+  isSideChoice,
+  SEAT_COLORS,
+  sidesForCount,
+  type SeatSide,
+  type SideChoice,
+} from '../lib/sideChoice';
 import {
   getMatchSetupDraft,
   loadBotStars,
   saveMatchSetupDraft,
   type BotStarMap,
 } from '../storage/gameStorage';
-import type { SideChoice, PlayerCount } from './MatchSetupScreen';
+import type { PlayerCount } from './MatchSetupScreen';
+
+const SIDE_LABEL_KEYS: Record<
+  SeatSide,
+  'setup.blue' | 'setup.red' | 'setup.green' | 'setup.amber'
+> = {
+  blue: 'setup.blue',
+  red: 'setup.red',
+  green: 'setup.green',
+  amber: 'setup.amber',
+};
 
 export interface BotMatchConfig {
   botId: string;
@@ -59,22 +79,26 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
 
   // Load last-used picks from AI draft
   const draft = getMatchSetupDraft('ai');
-  const [modeSel, setModeSel] = useState<SetupMode>(
-    draft.mode === 'center' || draft.mode === 'race' ? draft.mode : 'classic'
-  );
-  const [playerCount, setPlayerCount] = useState<PlayerCount>(
-    draft.playerCount === 3 || draft.playerCount === 4 ? draft.playerCount : 2
-  );
+  const initialMode: SetupMode =
+    draft.mode === 'center' || draft.mode === 'race' ? draft.mode : 'classic';
+  const initialPlayerCount: PlayerCount =
+    draft.playerCount === 3 || draft.playerCount === 4 ? draft.playerCount : 2;
+  const [modeSel, setModeSel] = useState<SetupMode>(initialMode);
+  const [playerCount, setPlayerCount] = useState<PlayerCount>(initialPlayerCount);
   const [walls, setWalls] = useState<WallsChoice>(
     draft.wallsEach === 15 || draft.wallsEach === 99 ? draft.wallsEach : 10
   );
-  const [side, setSide] = useState<SideChoice>(
-    draft.side === 'red' || draft.side === 'random' ? draft.side : 'random'
-  );
+  const [side, setSide] = useState<SideChoice>(() => {
+    const saved = isSideChoice(draft.side) ? draft.side : 'random';
+    const seats = initialMode === 'classic' ? 2 : initialPlayerCount;
+    return isSideAvailable(saved, seats) ? saved : 'random';
+  });
   const [optionsOpen, setOptionsOpen] = useState<boolean>(false);
+  const [sidePickerOpen, setSidePickerOpen] = useState<boolean>(false);
 
   const [clock, setClock] = useState<TimeControl>(
     draft.clockId === 'no-timer'
@@ -85,6 +109,8 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
   );
 
   const effectivePlayerCount: PlayerCount = modeSel === 'classic' ? 2 : playerCount;
+  const availableSides = sidesForCount(effectivePlayerCount);
+  const sideOptions: SideChoice[] = [...availableSides, 'random'];
   const neededBots = Math.max(1, effectivePlayerCount - 1);
   const [selectedBotIds, setSelectedBotIds] = useState<string[]>(() => {
     const initial = draft.botId && botById(draft.botId) ? draft.botId : 'martin';
@@ -171,10 +197,6 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
     { key: 'grandmaster', title: 'Grandmaster', bots: grandmasterBots },
   ];
 
-  // Total stars
-  const totalStars = Object.values(botStars).reduce((sum, rec) => sum + (rec?.stars || 0), 0);
-  const maxPossibleStars = BOT_ROSTER.length * 3;
-
   const modeName =
     modeSel === 'classic'
       ? 'Classic'
@@ -182,6 +204,13 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
       ? 'Center Rush'
       : 'Race';
   const timeLabel = formatTimeControlDisplay(clock);
+
+  const handlePlayerCountChange = (count: PlayerCount) => {
+    setPlayerCount(count);
+    if (!isSideAvailable(side, count)) {
+      setSide('random');
+    }
+  };
 
   const handleLaunch = () => {
     const resolvedMode = resolveMode(
@@ -197,7 +226,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
     onStartGame?.({
       botId: finalBotIds[0],
       botIds: finalBotIds,
-      side,
+      side: isSideAvailable(side, effectivePlayerCount) ? side : 'random',
       clock,
       mode: resolvedMode,
       wallsEach: walls,
@@ -215,11 +244,11 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             style={styles.backBtn}
             accessibilityLabel="Go back"
           >
-            <Feather name="arrow-left" size={24} color={THEME.colors.textPrimary} />
+            <OrbIcon name="arrow-left" size={24} color={THEME.colors.textPrimary} />
           </TouchableOpacity>
 
           <View style={styles.headerCenter}>
-            <Feather
+            <OrbIcon
               name="sliders"
               size={18}
               color={THEME.colors.primary}
@@ -244,11 +273,11 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             onModeChange={(m) => {
               setModeSel(m);
               if (m === 'classic') {
-                setPlayerCount(2);
+                handlePlayerCountChange(2);
               }
             }}
             playerCount={effectivePlayerCount}
-            onPlayerCountChange={setPlayerCount}
+            onPlayerCountChange={handlePlayerCountChange}
             walls={walls}
             onWallsChange={setWalls}
             clock={clock}
@@ -274,23 +303,13 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
         {/* 1. Header Bar — Always visible at top */}
         <View style={styles.header}>
           <View style={styles.headerCenter}>
-            <MaterialCommunityIcons
+            <OrbIcon
               name="robot-outline"
               size={22}
               color={THEME.colors.primary}
               style={{ marginRight: 8 }}
             />
             <Text style={styles.headerTitle}>Bots</Text>
-          </View>
-          <View style={styles.masteryPill}>
-            <SmoothStar
-              size={14}
-              color="#F59E0B"
-              style={{ marginRight: 4 }}
-            />
-            <Text style={styles.masteryPillText}>
-              {totalStars} / {maxPossibleStars}
-            </Text>
           </View>
         </View>
 
@@ -398,46 +417,58 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             accessibilityLabel="Open options"
           >
             <View style={styles.optionsBtnContent}>
-              <Feather
+              <OrbIcon
                 name="sliders"
                 size={15}
                 color={THEME.colors.textPrimary}
               />
-              <Text style={styles.optionsBtnText} numberOfLines={1}>
+              <Text
+                style={styles.optionsBtnText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+                ellipsizeMode="tail"
+              >
                 {timeLabel} · {modeName}
               </Text>
             </View>
-            <Feather name="chevron-right" size={16} color={THEME.colors.textMuted} />
+            <OrbIcon
+              name="chevron-right"
+              size={16}
+              color={THEME.colors.textMuted}
+              style={styles.optionsChevron}
+            />
           </TouchableOpacity>
 
-          <View style={styles.sidePicker}>
-            <TouchableOpacity
-              style={[styles.sideBtn, side === 'blue' && styles.sideBtnActive]}
-              activeOpacity={0.8}
-              onPress={() => setSide('blue')}
-              accessibilityLabel="Play as Blue"
-            >
-              <View style={[styles.sideOrb, { backgroundColor: '#3B82F6' }]} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.sideBtn, side === 'random' && styles.sideBtnActive]}
-              activeOpacity={0.8}
-              onPress={() => setSide('random')}
-              accessibilityLabel="Random side"
-            >
-              <Text style={styles.sideRandomText}>?</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.sideBtn, side === 'red' && styles.sideBtnActive]}
-              activeOpacity={0.8}
-              onPress={() => setSide('red')}
-              accessibilityLabel="Play as Red"
-            >
-              <View style={[styles.sideOrb, { backgroundColor: '#E5484D' }]} />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.sideChip}
+            activeOpacity={0.8}
+            onPress={() => setSidePickerOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`${t('setup.yourSide')}: ${
+              side === 'random' ? t('setup.random') : t(SIDE_LABEL_KEYS[side])
+            }`}
+            accessibilityHint="Opens the side picker"
+          >
+            {side === 'random' ? (
+              <View style={styles.sideRandomChipOrb}>
+                <OrbIcon
+                  name="shuffle"
+                  size={11}
+                  color={THEME.colors.textPrimary}
+                />
+              </View>
+            ) : (
+              <View
+                style={[styles.sideOrb, { backgroundColor: SEAT_COLORS[side] }]}
+              />
+            )}
+            <OrbIcon
+              name="chevron-down"
+              size={13}
+              color={THEME.colors.textMuted}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* 3D Green Play Button */}
@@ -449,6 +480,101 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
           <Text style={styles.stickyPlayButtonText}>Play</Text>
         </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={sidePickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSidePickerOpen(false)}
+      >
+        <View style={styles.sideSheetBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setSidePickerOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Close side picker"
+          />
+          <View
+            style={[
+              styles.sideSheet,
+              { paddingBottom: 18 + insets.bottom },
+            ]}
+          >
+            <View style={styles.sideSheetHandle} />
+            <View style={styles.sideSheetHeader}>
+              <Text style={styles.sideSheetTitle}>{t('setup.yourSide')}</Text>
+              <TouchableOpacity
+                style={styles.sideSheetClose}
+                activeOpacity={0.75}
+                onPress={() => setSidePickerOpen(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Close side picker"
+              >
+                <OrbIcon name="x" size={18} color={THEME.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.sideSheetRow}>
+              {sideOptions.map((option) => {
+                const selected = side === option;
+                const label =
+                  option === 'random'
+                    ? t('setup.random')
+                    : t(SIDE_LABEL_KEYS[option]);
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    style={[
+                      styles.sideOption,
+                      selected && styles.sideOptionSelected,
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      setSide(option);
+                      setSidePickerOpen(false);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={label}
+                  >
+                    {option === 'random' ? (
+                      <View
+                        style={[styles.sideOptionOrb, styles.sideOptionRandom]}
+                      >
+                        <OrbIcon
+                          name="shuffle"
+                          size={12}
+                          color={THEME.colors.textPrimary}
+                        />
+                      </View>
+                    ) : (
+                      <View
+                        style={[
+                          styles.sideOptionOrb,
+                          { backgroundColor: SEAT_COLORS[option] },
+                        ]}
+                      />
+                    )}
+                    <Text
+                      style={[
+                        styles.sideOptionLabel,
+                        selected && styles.sideOptionLabelSelected,
+                      ]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -485,20 +611,6 @@ const createStyles = () =>
       fontWeight: '800',
       color: THEME.colors.textPrimary,
       letterSpacing: -0.2,
-    },
-    masteryPill: {
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: 14,
-      backgroundColor: THEME.colors.surfaceMuted,
-      borderBottomWidth: 2,
-      borderBottomColor: THEME.colors.secondaryBevel,
-    },
-    masteryPillText: {
-      fontFamily: THEME.fonts.extraBold,
-      fontSize: 12.5,
-      fontWeight: '800',
-      color: '#D97706',
     },
     // Selected Bot Hero Showcase (Pinned at top, cutout avatar with NO background)
     heroSection: {
@@ -694,51 +806,151 @@ const createStyles = () =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: 12,
+      paddingHorizontal: 10,
     },
     optionsBtnContent: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      gap: 6,
       flex: 1,
+      minWidth: 0,
+      overflow: 'hidden',
     },
     optionsBtnText: {
       fontFamily: THEME.fonts.extraBold,
-      fontSize: 13.5,
+      fontSize: 12.5,
       fontWeight: '800',
       color: THEME.colors.textPrimary,
+      flexShrink: 1,
+      minWidth: 0,
     },
-    sidePicker: {
-      flexDirection: 'row',
-      gap: 6,
+    optionsChevron: {
+      marginLeft: 4,
+      flexShrink: 0,
     },
-    sideBtn: {
-      width: 42,
+    sideChip: {
+      width: 64,
       height: 42,
       backgroundColor: THEME.colors.surfaceMuted,
       borderRadius: 8,
-      borderWidth: 2.5, // Universal 2.5px border
+      borderWidth: 2.5,
+      borderColor: 'transparent',
+      borderBottomWidth: 3,
+      borderBottomColor: THEME.colors.secondaryBevel,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 5,
+    },
+    sideOrb: {
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+    },
+    sideRandomChipOrb: {
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      backgroundColor: THEME.colors.backgroundCard,
+      borderWidth: 1.5,
+      borderColor: THEME.colors.outlineVariant,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sideSheetBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(15, 23, 42, 0.55)',
+      justifyContent: 'flex-end',
+    },
+    sideSheet: {
+      backgroundColor: THEME.colors.backgroundCard,
+      borderTopLeftRadius: 22,
+      borderTopRightRadius: 22,
+      paddingHorizontal: 16,
+      paddingTop: 10,
+      maxWidth: 480,
+      width: '100%',
+      alignSelf: 'center',
+      shadowColor: '#000000',
+      shadowOpacity: 0.18,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: -4 },
+      elevation: 24,
+    },
+    sideSheetHandle: {
+      width: 36,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: THEME.colors.outlineVariant,
+      alignSelf: 'center',
+      marginBottom: 12,
+    },
+    sideSheetHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+    },
+    sideSheetTitle: {
+      fontFamily: THEME.fonts.extraBold,
+      fontSize: 17,
+      fontWeight: '800',
+      color: THEME.colors.textPrimary,
+    },
+    sideSheetClose: {
+      width: 32,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sideSheetRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 8,
+    },
+    sideOption: {
+      flex: 1,
+      maxWidth: 64,
+      minWidth: 44,
+      height: 68,
+      backgroundColor: THEME.colors.surfaceMuted,
+      borderRadius: 10,
+      borderWidth: 2.5,
       borderColor: 'transparent',
       borderBottomWidth: 3,
       borderBottomColor: THEME.colors.secondaryBevel,
       alignItems: 'center',
       justifyContent: 'center',
+      gap: 7,
+      paddingHorizontal: 2,
     },
-    sideBtnActive: {
-      backgroundColor: THEME.colors.surfaceMuted,
+    sideOptionSelected: {
       borderColor: THEME.colors.primary,
       borderBottomWidth: 3,
       borderBottomColor: THEME.colors.primaryBevel,
     },
-    sideOrb: {
-      width: 15,
-      height: 15,
-      borderRadius: 7.5,
+    sideOptionOrb: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
     },
-    sideRandomText: {
-      fontFamily: THEME.fonts.extraBold,
-      fontSize: 15,
-      fontWeight: '800',
+    sideOptionRandom: {
+      backgroundColor: THEME.colors.backgroundCard,
+      borderWidth: 1.5,
+      borderColor: THEME.colors.outlineVariant,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sideOptionLabel: {
+      fontFamily: THEME.fonts.bold,
+      fontSize: 11.5,
+      fontWeight: '700',
+      color: THEME.colors.textSecondary,
+      textAlign: 'center',
+      maxWidth: '100%',
+    },
+    sideOptionLabelSelected: {
       color: THEME.colors.textPrimary,
     },
     // Exact same 3D tactile Play button styling & metrics as HomeScreen.tsx!

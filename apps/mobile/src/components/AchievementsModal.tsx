@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
@@ -148,7 +148,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
               accessibilityLabel={t('achievements.closeA11y')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="x" size={20} color={THEME.colors.textMuted} />
+              <OrbIcon name="x" size={20} color={THEME.colors.textMuted} />
             </TouchableOpacity>
           </View>
 
@@ -163,7 +163,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
               return (
                 <View key={section.cat} style={styles.section}>
                   <View style={styles.sectionHeader}>
-                    <Feather name={meta.icon} size={13} color={THEME.colors.textSecondaryStrong} />
+                    <OrbIcon name={meta.icon} size={13} color={THEME.colors.textSecondaryStrong} />
                     <Text style={styles.sectionTitle}>{categoryTitle(section.cat)}</Text>
                     <Text style={styles.sectionCount}>
                       {t('achievements.earnedCount', { earned: got, total: section.items.length })}
@@ -228,7 +228,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                                 : metalLabel(METALS[tierOf(badge.tier)].label)}
                             </Text>
                           </View>
-                          <Feather
+                          <OrbIcon
                             name={open ? 'chevron-up' : 'chevron-down'}
                             size={18}
                             color={THEME.colors.textMuted}

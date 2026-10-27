@@ -8,6 +8,7 @@
 
 import { useMemo, useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
+import { getActiveOrbPalette } from './theme/orbTheme';
 
 const hexToRgba = (hex: string, alpha: number): string => {
   const clean = hex.replace('#', '');
@@ -288,20 +289,20 @@ export function buildTheme(
       wallPlaced: '#8A8474',
       wallPreviewLegal: primary,
       wallPreviewIllegal: '#DC2626',
-      wallOpacity: 0.88,
+      wallOpacity: 1.0,
       wallPreviewOpacity: 0.45,
       wallPreviewInactiveOpacity: 0.22,
 
       // 10. Match Outcomes
-      win: '#69B342',
-      winBg: '#F2F9ED',
-      winBorder: '#BEE29E',
-      loss: '#DC2626',
-      lossBg: '#FEF2F2',
-      lossBorder: '#FECACA',
-      draw: '#64748B',
-      drawBg: '#F8FAFC',
-      drawBorder: '#E2E8F0',
+      win: dark ? '#81B64C' : '#69B342',
+      winBg: dark ? '#1B2E10' : '#F2F9ED',
+      winBorder: dark ? '#3D6823' : '#BEE29E',
+      loss: dark ? '#F87171' : '#DC2626',
+      lossBg: dark ? '#3B1518' : '#FEF2F2',
+      lossBorder: dark ? '#7F1D1D' : '#FECACA',
+      draw: dark ? '#989795' : '#64748B',
+      drawBg: dark ? '#312E2B' : '#F8FAFC',
+      drawBorder: dark ? '#45423E' : '#E2E8F0',
 
       // 11. Live Status Indicators
       statusOnline: dark ? '#81B64C' : '#69B342',
@@ -442,7 +443,7 @@ export function buildTheme(
       },
     },
     animation: {
-      ballMoveMs: 200,
+      ballMoveMs: 120,
       wallSnapMs: 160,
       fadeMs: 140,
     },
@@ -550,11 +551,11 @@ export function __resetThemeForTests(): void {
   THEME = THEMES.light;
 }
 
-/** Player ball color by index (0-based). Falls back to palette cycling. */
+/** Player ball color by index (0-based). Uses active orb palette with fallback. */
 export function playerColor(index: number, fallback?: string): string {
-  const palette = THEME.colors.playerColors;
+  const activeColors = getActiveOrbPalette().colors;
   if (fallback && /^#[0-9a-fA-F]{3,8}$/.test(fallback)) return fallback;
-  return palette[index % palette.length] ?? THEME.colors.primary;
+  return activeColors[index % activeColors.length] ?? THEME.colors.primary;
 }
 
 /**
@@ -562,6 +563,7 @@ export function playerColor(index: number, fallback?: string): string {
  * softer so walls stay readable and don't overpower the board.
  */
 export function wallColorForPlayer(ballColor: string, alpha = THEME.colors.wallOpacity): string {
+  if (alpha >= 1) return ballColor;
   return hexToRgba(ballColor, alpha);
 }
 

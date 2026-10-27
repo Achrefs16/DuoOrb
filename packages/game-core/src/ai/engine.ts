@@ -192,7 +192,7 @@ export function getBestAction(
     // measured there). Smaller 2P/3P searches run to their count so repeated
     // package calls are reproducible instead of truncating on a clock edge.
     const isExplicitDeterministic = randomSeed !== undefined;
-    const rawLimit = budget?.timeMs ?? (isExplicitDeterministic ? undefined : production.timeMs);
+    const rawLimit = budget?.timeMs ?? (isExplicitDeterministic || (state.players.length <= 3 && sims <= 500) ? undefined : production.timeMs);
     const timeLimit = isBlitz ? Math.min(rawLimit ?? 220, 220) : rawLimit;
     const action = mctsBestAction(state, {
       simulations: sims,

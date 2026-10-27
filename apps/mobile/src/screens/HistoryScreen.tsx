@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME, useStyles } from '../theme';
 import { modeDisplayName } from '../matchModes';
@@ -54,7 +55,6 @@ let historyCache: {
   guest: boolean;
   games: GameHistoryItemDto[];
   localGames: SavedGameRecord[];
-  total: number;
   summary: { total: number; wins: number; losses: number } | null;
   liveRating: number | null;
   serverLoaded: number;
@@ -70,16 +70,23 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [games, setGames] = useState<GameHistoryItemDto[]>([]);
   const [localGames, setLocalGames] = useState<SavedGameRecord[]>([]);
   const [filter, setFilter] = useState<OutcomeFilter>('ALL');
   const [selected, setSelected] = useState<GameHistoryItemDto | null>(null);
-  const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<{ total: number; wins: number; losses: number } | null>(null);
   const [liveRating, setLiveRating] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Render mirrors of the pagination refs, so the footer never reads a ref
+  // during render.
+  const [serverLoaded, setServerLoaded] = useState(0);
+  const [serverTotal, setServerTotal] = useState(0);
   const offsetRef = useRef(0);
   const serverTotalRef = useRef(0);
+  const gamesRef = useRef<GameHistoryItemDto[]>([]);
+  const loadingMoreRef = useRef(false);
+  const historySeqRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
   // Guests keep their device games but never the server list: no online
@@ -91,6 +98,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   const fetchHistory = useCallback(async (silent = false) => {
     // Silent = background refresh with data on screen: never flash a
     // skeleton, never replace the list with an error.
+    const seq = ++historySeqRef.current;
     if (!silent) {
       setLoading(true);
       setLoadError(null);
@@ -99,12 +107,19 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
       const savedLocal = await loadGameHistory();
       setLocalGames(savedLocal);
 
+      // Refresh the loaded window, not page 1: a silent remount must keep
+      // every page the player loaded earlier.
+      const cached = historyCache && historyCache.guest === isGuest ? historyCache : null;
+      const historyLimit = Math.max(PAGE_SIZE, cached?.serverLoaded ?? offsetRef.current);
+
       const [meSettled, serverSettled] = await Promise.allSettled([
         api.getMe(),
         isGuest
           ? Promise.resolve({ games: [], total: 0, summary: null })
-          : api.getMyHistory(PAGE_SIZE, 0),
+          : api.getMyHistory(historyLimit, 0),
       ]);
+      if (seq !== historySeqRef.current) return;
+
       const meRes = meSettled.status === 'fulfilled' ? meSettled.value : null;
       const serverRes =
         serverSettled.status === 'fulfilled' ? serverSettled.value : null;
@@ -114,74 +129,125 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
       const r = meRes?.ratings?.CLASSIC_1V1?.rating;
       const roundedRating = typeof r === 'number' ? Math.round(r) : null;
       if (roundedRating !== null) setLiveRating(roundedRating);
+      // A failed /me request must not erase the rating already shown by a
+      // cached history bundle.
+      const nextLiveRating = roundedRating ?? cached?.liveRating ?? null;
 
       // Unified history: every device game (AI + pass-and-play) stays visible
       // beside the server's online list. Server rows win identity ties, so a
       // locally cached online record can never duplicate the canonical one.
       const device = deviceHistoryGames(savedLocal);
       const localItems = device.map(mapLocalGameToHistoryItem);
-      const serverGames = serverRes?.games ?? [];
-      const merged = mergeHistoryItems(serverGames, localItems);
-      setGames(merged);
-      offsetRef.current = serverGames.length;
-      serverTotalRef.current = serverRes?.total ?? 0;
-      setTotal((serverRes?.total ?? 0) + device.length);
-      setSummary(combineHistorySummary(serverRes?.summary, savedLocal));
 
-      // Only a completely empty first load becomes a full error page. With
-      // even one device game we stay on the list (offline AI history works).
-      if (!isGuest && serverError && merged.length === 0 && !silent) {
-        setLoadError({
-          message: loadMessage(serverError),
-          kind: kindOf(serverError),
-        });
+      if (serverRes) {
+        const serverGames = serverRes.games;
+        const merged = mergeHistoryItems(serverGames, localItems);
+        const nextSummary = combineHistorySummary(serverRes.summary, savedLocal);
+        setGames(merged);
+        gamesRef.current = merged;
+        offsetRef.current = serverGames.length;
+        serverTotalRef.current = serverRes.total;
+        setServerLoaded(serverGames.length);
+        setServerTotal(serverRes.total);
+        setSummary(nextSummary);
+
+        historyCache = {
+          guest: isGuest,
+          games: merged,
+          localGames: savedLocal,
+          summary: nextSummary,
+          liveRating: nextLiveRating,
+          serverLoaded: serverGames.length,
+          serverTotal: serverRes.total,
+        };
+      } else {
+        // History request failed: keep every server row already loaded and
+        // never replace the list with a local-only page.
+        const previousGames = cached?.games ?? gamesRef.current;
+        const merged = mergeHistoryItems(previousGames, localItems);
+        setGames(merged);
+        gamesRef.current = merged;
+
+        const keptLoaded = cached?.serverLoaded ?? offsetRef.current;
+        const keptTotal = cached?.serverTotal ?? serverTotalRef.current;
+        offsetRef.current = keptLoaded;
+        serverTotalRef.current = keptTotal;
+        setServerLoaded(keptLoaded);
+        setServerTotal(keptTotal);
+
+        if (cached) {
+          historyCache = {
+            ...cached,
+            games: merged,
+            localGames: savedLocal,
+          };
+        } else {
+          setSummary(combineHistorySummary(null, savedLocal));
+        }
+
+        // Only a completely empty first load becomes a full error page. With
+        // even one device game we stay on the list (offline AI history works).
+        if (!isGuest && merged.length === 0 && !silent) {
+          setLoadError({
+            message: loadMessage(serverError),
+            kind: kindOf(serverError),
+          });
+        }
       }
-
-      historyCache = {
-        guest: isGuest,
-        games: merged,
-        localGames: savedLocal,
-        total: (serverRes?.total ?? 0) + device.length,
-        summary: combineHistorySummary(serverRes?.summary, savedLocal),
-        liveRating: roundedRating,
-        serverLoaded: serverGames.length,
-        serverTotal: serverRes?.total ?? 0,
-      };
     } catch {
-      if (!silent) setLoadError({ message: undefined, kind: 'UNKNOWN' });
+      if (!silent && seq === historySeqRef.current) {
+        setLoadError({ message: undefined, kind: 'UNKNOWN' });
+      }
     } finally {
-      setLoading(false);
+      if (seq === historySeqRef.current) setLoading(false);
     }
   }, [isGuest]);
+
+  useEffect(() => {
+    gamesRef.current = games;
+  }, [games]);
+
+  // Invalidate any in-flight history request when this screen unmounts, so a
+  // remounted screen's cache cannot be overwritten by the old instance.
+  useEffect(() => () => {
+    historySeqRef.current += 1;
+  }, []);
 
   // Next page — appended to the list, never reloaded. Guests have no server
   // list, so there is nothing more to load. A failed page keeps every loaded
   // row; the footer button stays enabled for retry.
   const loadMore = useCallback(async () => {
-    if (loadingMore || isGuest) return;
+    if (loading || loadingMoreRef.current || isGuest) return;
     if (offsetRef.current >= serverTotalRef.current) return;
+    loadingMoreRef.current = true;
+    const seq = ++historySeqRef.current;
     setLoadingMore(true);
     try {
       const serverRes = await api.getMyHistory(PAGE_SIZE, offsetRef.current);
-      if (serverRes) {
-        setGames((prev) => mergeHistoryItems(serverRes.games, prev));
-        offsetRef.current += serverRes.games.length;
-        serverTotalRef.current = serverRes.total;
-        setTotal(serverRes.total + deviceHistoryGames(localGames).length);
-        if (historyCache && historyCache.guest === isGuest) {
-          historyCache = {
-            ...historyCache,
-            serverLoaded: offsetRef.current,
-            serverTotal: serverRes.total,
-          };
-        }
+      if (!serverRes || seq !== historySeqRef.current) return;
+
+      const merged = mergeHistoryItems(serverRes.games, gamesRef.current);
+      setGames(merged);
+      gamesRef.current = merged;
+      offsetRef.current += serverRes.games.length;
+      serverTotalRef.current = serverRes.total;
+      setServerLoaded(offsetRef.current);
+      setServerTotal(serverRes.total);
+      if (historyCache && historyCache.guest === isGuest) {
+        historyCache = {
+          ...historyCache,
+          games: merged,
+          serverLoaded: offsetRef.current,
+          serverTotal: serverRes.total,
+        };
       }
     } catch (e) {
       toast.show(loadMessage(e) ?? t('history.loadFailed'));
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [loadingMore, isGuest, localGames, t]);
+  }, [isGuest, loading, t]);
 
   useEffect(() => {
     // Instant restore, silent refresh. Static chrome (header, filters)
@@ -189,11 +255,12 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
     if (historyCache && historyCache.guest === isGuest) {
       setGames(historyCache.games);
       setLocalGames(historyCache.localGames);
-      setTotal(historyCache.total);
       setSummary(historyCache.summary);
       setLiveRating(historyCache.liveRating);
       offsetRef.current = historyCache.serverLoaded;
       serverTotalRef.current = historyCache.serverTotal;
+      setServerLoaded(historyCache.serverLoaded);
+      setServerTotal(historyCache.serverTotal);
       setLoading(false);
       fetchHistory(true);
     } else {
@@ -292,6 +359,9 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
     [games, filter]
   );
 
+  // A filter can be empty while older pages still contain matching rows.
+  const filterHasNoLoadedMatches = games.length > 0 && filter !== 'ALL';
+
   /**
    * One row of the match list, in the Profile page's list design: the rows
    * are drawn as SEGMENTS of a single card (top segment rounds the top
@@ -360,7 +430,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           </Text>
         </View>
 
-          <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
+          <OrbIcon name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
         </TouchableOpacity>
       );
     },
@@ -380,7 +450,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           accessibilityLabel={t('common.back')}
           accessibilityRole="button"
         >
-          <Feather name="arrow-left" size={22} color={THEME.colors.onSurface} />
+          <OrbIcon name="arrow-left" size={22} color={THEME.colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.title}>{t('history.title')}</Text>
         <View style={styles.headerPlaceholder} />
@@ -406,7 +476,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           // cheap cards and the list is short (paged). Deliberately no
           // removeClippedSubviews (Android overlay artifacts).
           windowSize={11}
-          contentContainerStyle={styles.rowsContent}
+          contentContainerStyle={[
+            styles.rowsContent,
+            { paddingBottom: 32 + insets.bottom },
+          ]}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
           <>
@@ -479,21 +552,35 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Feather name="clock" size={36} color={THEME.colors.textMuted} />
-              <Text style={styles.emptyTitle}>{t('history.noMatchesRecorded')}</Text>
-              <Text style={styles.emptySub}>{t('history.noMatchesSub')}</Text>
-              <TouchableOpacity
-                style={styles.quickMatchBtn}
-                activeOpacity={0.8}
-                onPress={onQuickMatch}
-              >
-                <Text style={styles.quickMatchBtnText}>{t('history.playNow')}</Text>
-              </TouchableOpacity>
+              <OrbIcon
+                name={filterHasNoLoadedMatches ? 'filter' : 'clock'}
+                size={36}
+                color={THEME.colors.textMuted}
+              />
+              <Text style={styles.emptyTitle}>
+                {filterHasNoLoadedMatches
+                  ? t('history.filteredEmpty')
+                  : t('history.noMatchesRecorded')}
+              </Text>
+              <Text style={styles.emptySub}>
+                {filterHasNoLoadedMatches
+                  ? t('history.filteredEmptySub')
+                  : t('history.noMatchesSub')}
+              </Text>
+              {!filterHasNoLoadedMatches && (
+                <TouchableOpacity
+                  style={styles.quickMatchBtn}
+                  activeOpacity={0.8}
+                  onPress={onQuickMatch}
+                >
+                  <Text style={styles.quickMatchBtnText}>{t('history.playNow')}</Text>
+                </TouchableOpacity>
+              )}
             </View>
           }
           ListFooterComponent={
             <>
-              {games.length > 0 && games.length < total ? (
+              {!isGuest && games.length > 0 && serverLoaded < serverTotal ? (
                 <TouchableOpacity
                   style={[styles.loadMoreBtn, loadingMore && styles.loadMoreBtnBusy]}
                   activeOpacity={0.8}
@@ -501,7 +588,9 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                   onPress={() => void loadMore()}
                 >
                   <Text style={styles.loadMoreText}>
-                    {loadingMore ? t('history.loading') : `${t('history.loadMore')} (${games.length}/${total})`}
+                    {loadingMore
+                      ? t('history.loading')
+                      : `${t('history.loadMore')} (${serverLoaded}/${serverTotal})`}
                   </Text>
                 </TouchableOpacity>
               ) : null}
@@ -535,7 +624,7 @@ const createStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: THEME.colors.surfaceContainerLowest,
+    backgroundColor: THEME.colors.background,
     borderBottomWidth: 1,
     borderBottomColor: THEME.colors.surfaceContainer,
   },

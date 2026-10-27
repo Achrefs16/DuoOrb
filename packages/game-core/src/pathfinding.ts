@@ -381,3 +381,61 @@ export function getShortestDistance(
 
   return Infinity;
 }
+
+/**
+ * Checks if a specific wall intersects any edge of a given path.
+ * Runs in O(path.length) nanoseconds without touching the board graph.
+ *
+ * If this returns false, the path is guaranteed to remain 100% open and legal,
+ * so the shortest distance cannot increase.
+ */
+export function doesWallIntersectPath(
+  path: CellCoord[] | null | undefined,
+  wall: WallCoord
+): boolean {
+  if (!path || path.length < 2) return false;
+  const isH = wall.orientation === 'H';
+  const wRow = wall.row;
+  const wCol = wall.col;
+
+  for (let i = 0; i < path.length - 1; i++) {
+    const from = path[i];
+    const to = path[i + 1];
+
+    if (isH) {
+      if (from.col === to.col && (from.col === wCol || from.col === wCol + 1)) {
+        const minR = from.row < to.row ? from.row : to.row;
+        if (minR === wRow) return true;
+      }
+    } else {
+      if (from.row === to.row && (from.row === wRow || from.row === wRow + 1)) {
+        const minC = from.col < to.col ? from.col : to.col;
+        if (minC === wCol) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Fast cached distance calculation:
+ * If an existing shortest path is provided and the new wall does not intersect it,
+ * the distance is guaranteed to be (path.length - 1) without running BFS.
+ * Otherwise, falls back to full BFS distance calculation.
+ */
+export function getShortestDistanceCached(
+  start: CellCoord,
+  goalDirection: GoalDirection,
+  walls: WallCoord[],
+  cachedPath: CellCoord[] | null | undefined,
+  mode?: GameMode
+): number {
+  if (isGoalCell(start, goalDirection, mode)) return 0;
+  if (cachedPath && cachedPath.length > 1 && walls.length > 0) {
+    const lastWall = walls[walls.length - 1];
+    if (!doesWallIntersectPath(cachedPath, lastWall)) {
+      return cachedPath.length - 1;
+    }
+  }
+  return getShortestDistance(start, goalDirection, walls, mode);
+}

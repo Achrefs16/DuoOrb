@@ -1,7 +1,7 @@
 use crate::board::Board;
 use crate::pathfinding::{is_goal_cell, EdgeMasks, GoalMask};
 use crate::rules::{apply_action, get_legal_moves};
-use crate::types::{GameAction, GameState, Orientation, PlayerState, WallCoord};
+use crate::types::{CellCoord, GameAction, GameState, Orientation, PlayerState, WallCoord};
 use rayon::prelude::*;
 use std::collections::HashMap;
 
@@ -84,7 +84,7 @@ pub fn generate_logical_actions(
 
     let edge_masks = EdgeMasks::from_board(board);
     let mover_goal = GoalMask::from_goal_and_mode(mover.goal_direction, &state.mode);
-    let mover_dist = edge_masks.shortest_distance(
+    let (mover_dist, mover_corridor) = edge_masks.shortest_path_corridor(
         mover.position.row as u8,
         mover.position.col as u8,
         mover_goal,
@@ -118,7 +118,7 @@ pub fn generate_logical_actions(
         let is_forced = forced_include == Some(&action);
 
         if step_gain >= 1 {
-            let prior = (0.52 + (step_gain as f64) * 0.16).clamp(0.10, 0.95);
+            let prior = (0.65 + (step_gain as f64) * 0.15).clamp(0.10, 0.95);
             forward_moves.push((action, prior));
         } else if is_forced || (mover.walls_remaining > 0 && is_adjacent_to_opp) {
             let prior = (0.42 + (step_gain as f64) * 0.10).clamp(0.10, 0.60);
@@ -168,6 +168,41 @@ pub fn generate_logical_actions(
             let combined_opp_corridors =
                 opps.iter().fold(0u128, |acc, (_, _, _, c)| acc | *c);
 
+            // Pre-scan: detect lethal opponent threat walls that block mover (inflicting >= 2 delay)
+            let mut lethal_cross_cuts = Vec::new();
+            let opp_has_walls = state.players.iter().enumerate().any(|(j, p)| {
+                j != mover_idx && p.status != "FINISHED" && p.walls_remaining > 0
+            });
+            if opp_has_walls && mover_dist > 0 {
+                for tr in 0..8u8 {
+                    for tc in 0..8u8 {
+                        let w_cells = (1u128 << (tr as u32 * 9 + tc as u32))
+                            | (1u128 << (tr as u32 * 9 + tc as u32 + 1))
+                            | (1u128 << ((tr as u32 + 1) * 9 + tc as u32))
+                            | (1u128 << ((tr as u32 + 1) * 9 + tc as u32 + 1));
+                        if (w_cells & mover_corridor) == 0 {
+                            continue;
+                        }
+                        for t_is_h in [true, false] {
+                            if !board.can_place_wall_geometry(tr, tc, t_is_h) {
+                                continue;
+                            }
+                            let mut spec = *board;
+                            spec.place_wall_raw(tr, tc, t_is_h);
+                            let spec_masks = EdgeMasks::from_board(&spec);
+                            let d_after = spec_masks.shortest_distance(
+                                mover.position.row as u8,
+                                mover.position.col as u8,
+                                mover_goal,
+                            );
+                            if d_after >= 0 && d_after - mover_dist >= 2 {
+                                lethal_cross_cuts.push((tr, tc, !t_is_h));
+                            }
+                        }
+                    }
+                }
+            }
+
             for r in 0..8u8 {
                 for c in 0..8u8 {
                     for is_h in [true, false] {
@@ -180,6 +215,9 @@ pub fn generate_logical_actions(
                         let touches_corridor =
                             (wall_cells_mask & combined_opp_corridors) != 0;
 
+                        let _touches_mover_corridor =
+                            (wall_cells_mask & mover_corridor) != 0;
+
                         let near_wall = state.walls.iter().any(|w| {
                             (r as i8 - w.row).abs() <= 1 && (c as i8 - w.col).abs() <= 1
                         });
@@ -190,7 +228,11 @@ pub fn generate_logical_actions(
                                 && (c as i8 - p.position.col).abs() <= 2
                         });
 
-                        if !touches_corridor && !near_wall && !near_pawn {
+                        let is_defensive_counter = lethal_cross_cuts.iter().any(|&(lr, lc, lh)| {
+                            lr == r && lc == c && lh == is_h
+                        });
+
+                        if !touches_corridor && !near_wall && !near_pawn && !is_defensive_counter {
                             continue;
                         }
 
@@ -238,21 +280,29 @@ pub fn generate_logical_actions(
                             continue;
                         }
 
-                        // Rule B: Strict self-harm filter
+                        // Rule B: Candidate walls must actually delay an active opponent!
+                        if max_opp_delta <= 0 {
+                            continue;
+                        }
+
                         let my_delta = (my_after - mover_dist).max(0);
                         let net_gain = max_opp_delta - my_delta;
-
-                        // Pure self-block check
-                        if my_delta > 0 && max_opp_delta <= 0 && !touches_corridor {
-                            continue;
-                        }
-                        if net_gain < -1 {
+                        if net_gain < 0 {
                             continue;
                         }
 
-                        let corridor_bonus = if touches_corridor { 0.10 } else { 0.0 };
-                        let wall_prior = (0.45 + (net_gain as f64) * 0.12 + corridor_bonus)
-                            .clamp(0.10, 0.92);
+                        // Opening wall squandering prevention:
+                        // On an open board (walls <= 2 and mover far from goal >= 6),
+                        // casual walls that only inflict <= 2 delay waste valuable walls and tempo.
+                        let is_opening = state.walls.len() <= 2 && mover_dist >= 6;
+                        if is_opening && max_opp_delta <= 2 {
+                            continue;
+                        }
+
+                        let corridor_bonus = if touches_corridor { 0.08 } else { 0.0 };
+                        let counter_bonus = if is_defensive_counter { 0.35 } else { 0.0 };
+                        let wall_prior = (0.35 + (net_gain as f64) * 0.10 + corridor_bonus + counter_bonus)
+                            .clamp(0.05, 0.90);
 
                         let wall = WallCoord {
                             row: r as i8,
@@ -344,11 +394,11 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
 
         // Exact match with game-core bot MCTS evaluation:
         // turnBonus = if current_player == 0 { 0.5 } else { -0.5 }
-        // wallBonus = (walls0 - walls1) * 0.35
+        // wallBonus = (walls0 - walls1) * 1.35 (walls in reserve have strategic equity ~1.35 steps)
         // lead = d1 - d0 + turnBonus + wallBonus
         // p0 = sigmoid(lead / 3.2)
         let turn_bonus = if state.current_player_index == 0 { 0.5 } else { -0.5 };
-        let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * 0.35;
+        let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * 1.35;
         let lead = d1 - d0 + turn_bonus + wall_bonus;
         let p0_win = sigmoid(lead / 3.2);
         rewards[0] = p0_win;
@@ -381,7 +431,7 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
         let base_dist = if dist < 0 { 99.0 } else { dist as f64 };
         let turns_until_move = (i + n - state.current_player_index) % n;
         let turn_tempo = 0.5 * (1.0 - (turns_until_move as f64) / (n as f64));
-        let wall_bonus = (p.walls_remaining as f64 - avg_walls) * 0.35;
+        let wall_bonus = (p.walls_remaining as f64 - avg_walls) * 1.35;
         eff_dists[i] = base_dist - turn_tempo - wall_bonus;
     }
 
@@ -792,6 +842,103 @@ pub fn run_mcts_analysis(
     }
 }
 
+/// Evaluates whether a pawn step to `to` walks into an immediate lethal corridor trap
+/// (where an opponent can inflict a >= 3 step detour, or >= 2 in endgame).
+/// Returns Some((delay, lethal_wall)) if poisoned.
+fn evaluate_pawn_step_danger(
+    state: &GameState,
+    mover_idx: usize,
+    to: CellCoord,
+    board: &Board,
+) -> Option<(i32, WallCoord)> {
+    let mover = state.players.get(mover_idx)?;
+    let mover_goal = GoalMask::from_goal_and_mode(mover.goal_direction, &state.mode);
+    let edge_masks = EdgeMasks::from_board(board);
+    let (to_dist, to_corridor) = edge_masks.shortest_path_corridor(to.row as u8, to.col as u8, mover_goal);
+    if to_dist <= 0 {
+        return None;
+    }
+
+    let opp_has_walls = state.players.iter().enumerate().any(|(j, p)| {
+        j != mover_idx && p.status != "FINISHED" && p.walls_remaining > 0
+    });
+    if !opp_has_walls {
+        return None;
+    }
+
+    let threshold = 4;
+    let mut max_delay = 0;
+    let mut lethal_wall = None;
+
+    for tr in 0..8u8 {
+        for tc in 0..8u8 {
+            // Must be physically adjacent to the pawn's step destination
+            if (tr as i8 - to.row).abs() > 1 || (tc as i8 - to.col).abs() > 1 {
+                continue;
+            }
+
+            let w_cells = (1u128 << (tr as u32 * 9 + tc as u32))
+                | (1u128 << (tr as u32 * 9 + tc as u32 + 1))
+                | (1u128 << ((tr as u32 + 1) * 9 + tc as u32))
+                | (1u128 << ((tr as u32 + 1) * 9 + tc as u32 + 1));
+            if (w_cells & to_corridor) == 0 {
+                continue;
+            }
+
+            for t_is_h in [true, false] {
+                if !board.can_place_wall_geometry(tr, tc, t_is_h) {
+                    continue;
+                }
+                let mut spec = *board;
+                spec.place_wall_raw(tr, tc, t_is_h);
+                let spec_masks = EdgeMasks::from_board(&spec);
+
+                let dist_after = spec_masks.shortest_distance(to.row as u8, to.col as u8, mover_goal);
+                if dist_after < 0 {
+                    continue;
+                }
+                let mut all_opps_have_path = true;
+                let mut max_foe_self_delay = 0;
+                for p in &state.players {
+                    if p.id != mover.id && p.status != "FINISHED" {
+                        let g = GoalMask::from_goal_and_mode(p.goal_direction, &state.mode);
+                        let foe_after = spec_masks.shortest_distance(p.position.row as u8, p.position.col as u8, g);
+                        if foe_after < 0 {
+                            all_opps_have_path = false;
+                            break;
+                        }
+                        let foe_base = edge_masks.shortest_distance(p.position.row as u8, p.position.col as u8, g);
+                        let self_delay = (foe_after - foe_base).max(0);
+                        if self_delay > max_foe_self_delay {
+                            max_foe_self_delay = self_delay;
+                        }
+                    }
+                }
+                if !all_opps_have_path {
+                    continue;
+                }
+
+                let mover_delay = dist_after - to_dist;
+                let net_threat = mover_delay - max_foe_self_delay;
+                if net_threat > max_delay {
+                    max_delay = net_threat;
+                    lethal_wall = Some(WallCoord {
+                        row: tr as i8,
+                        col: tc as i8,
+                        orientation: if t_is_h { Orientation::H } else { Orientation::V },
+                    });
+                }
+            }
+        }
+    }
+
+    if max_delay >= threshold {
+        lethal_wall.map(|w| (max_delay, w))
+    } else {
+        None
+    }
+}
+
 /// Parallel multi-threaded MCTS bot search.
 ///
 /// Uses Root Parallelization with rayon:
@@ -1038,31 +1185,48 @@ pub fn find_best_action_multithreaded(
             }
         };
 
+        let final_action = best_action;
+
         let mover_goal = GoalMask::from_goal_and_mode(mover.goal_direction, &root_state.mode);
         let edge_masks = EdgeMasks::from_board(&root_board);
-        let mover_dist = edge_masks.shortest_distance(mover.position.row as u8, mover.position.col as u8, mover_goal);
+        let _mover_dist = edge_masks.shortest_distance(mover.position.row as u8, mover.position.col as u8, mover_goal);
 
-        let final_action = best_action.map(|act| {
-            if let GameAction::Move { to } = act {
-                let to_dist = edge_masks.shortest_distance(to.row as u8, to.col as u8, mover_goal);
-                if to_dist > mover_dist && mover_dist >= 0 {
-                    let best_adv = legal_coords.iter().filter_map(|&c| {
-                        let d = edge_masks.shortest_distance(c.row as u8, c.col as u8, mover_goal);
-                        if d >= 0 && d < mover_dist {
-                            Some((c, d))
-                        } else {
-                            None
+        // Tactical Alpha-Beta Refutation Guard:
+        // If the chosen move is a pawn step that walks into a lethal corridor trap (>= 3 delay, or >= 2 in endgame),
+        // refute it! Search candidate_list for a counter-action or deploy the direct cross-cut.
+        let refutation_action = if let Some(GameAction::Move { to }) = final_action {
+            if simulations >= 1_000 {
+                if let Some((_delay, _lw)) = evaluate_pawn_step_danger(&root_state, root_state.current_player_index, to, &root_board) {
+                    let mut best_counter: Option<GameAction> = None;
+                    let mut best_counter_score = -f64::INFINITY;
+
+                    for (act, _vis, q) in &candidate_list {
+                        if let GameAction::Move { to: alt_to } = act {
+                            if *alt_to != to {
+                                let to_dist = edge_masks.shortest_distance(to.row as u8, to.col as u8, mover_goal);
+                                let alt_dist = edge_masks.shortest_distance(alt_to.row as u8, alt_to.col as u8, mover_goal);
+                                if alt_dist >= 0 && alt_dist <= to_dist + 1 && evaluate_pawn_step_danger(&root_state, root_state.current_player_index, *alt_to, &root_board).is_none() {
+                                    if *q > best_counter_score {
+                                        best_counter_score = *q;
+                                        best_counter = Some(act.clone());
+                                    }
+                                }
+                            }
                         }
-                    }).min_by_key(|&(_, d)| d);
-                    if let Some((best_c, _)) = best_adv {
-                        return GameAction::Move { to: best_c };
                     }
-                }
-            }
-            act
-        });
 
-        final_action.or_else(|| legal_coords.into_iter().next().map(|to| GameAction::Move { to }))
+                    best_counter
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        refutation_action.or(final_action).or_else(|| legal_coords.into_iter().next().map(|to| GameAction::Move { to }))
     });
 
     safe_run.unwrap_or(None)
@@ -1195,6 +1359,111 @@ mod tests {
         let a2 = find_best_action_multithreaded(&state, 3000, 4, 2222);
         assert!(a1.is_some());
         assert!(a2.is_some());
+    }
+
+    #[test]
+    fn tactical_guard_detects_corridor_trap() {
+        use super::{evaluate_pawn_step_danger, find_best_action_multithreaded};
+        use crate::types::{Orientation, WallCoord};
+        let mut state = state_2p(0);
+        state.players[0].position = CellCoord { row: 3, col: 4 };
+        // Set up vertical walls flanking col 4 across rows 3 and 4
+        state.walls = vec![
+            WallCoord { row: 3, col: 3, orientation: Orientation::V },
+            WallCoord { row: 3, col: 4, orientation: Orientation::V },
+        ];
+        let board = Board::from_walls(&state.walls);
+
+        // Stepping to (4, 4) enters a dead-end pocket that an opponent H-wall at row 4 caps
+        let danger = evaluate_pawn_step_danger(&state, 0, CellCoord { row: 4, col: 4 }, &board);
+        assert!(danger.is_some(), "Expected corridor trap to be detected");
+        let (delay, wall) = danger.unwrap();
+        assert!(delay >= 3, "Expected delay >= 3, got {}", delay);
+        assert_eq!(wall.orientation, Orientation::H);
+
+        // When running multithreaded search with >= 1000 sims, the bot refutes stepping blindly to (4,4)
+        let action = find_best_action_multithreaded(&state, 2000, 2, 42);
+        assert!(action.is_some());
+        if let Some(GameAction::Move { to }) = action {
+            assert_ne!(to, CellCoord { row: 4, col: 4 }, "Bot should NOT blindly walk into the dead-end corridor trap at (4,4)");
+        }
+    }
+
+    #[test]
+    fn opening_position_sprints_forward_and_conserves_walls() {
+        use super::find_best_action_multithreaded;
+        let state = GameState {
+            game_id: "test_opening".to_string(),
+            mode: "2p".to_string(),
+            current_player_index: 0,
+            players: vec![
+                player("p1", 0, 4, GoalDirection::Bottom, 10),
+                player("p2", 8, 4, GoalDirection::Top, 10),
+            ],
+            walls: vec![],
+            status: "IN_PROGRESS".to_string(),
+        };
+
+        let action = find_best_action_multithreaded(&state, 3000, 2, 999);
+        assert!(action.is_some());
+        match action.unwrap() {
+            GameAction::Move { to } => {
+                assert_eq!(to, CellCoord { row: 1, col: 4 }, "Bot should sprint forward to (1,4) in opening, not waste walls!");
+            }
+            GameAction::PlaceWall { wall } => {
+                panic!("Bot squandered a wall in the opening at ({}, {}, {:?})!", wall.row, wall.col, wall.orientation);
+            }
+            _ => panic!("Expected Move action"),
+        }
+    }
+
+    #[test]
+    fn jump_clash_prefers_f6_or_protective_counterwall_over_d6() {
+        use super::find_best_action_multithreaded;
+        use crate::types::{Orientation, WallCoord};
+        // Red is player 0, starts at row 0 (goal row 8)
+        // Blue is player 1, starts at row 8 (goal row 0)
+        // Red is at (5, 4) [e6], Blue is at (4, 4) [e5]
+        // Blue placed horizontal wall at (5, 3) [hd6, covering col 3 and 4 at row 5/6]
+        let state = GameState {
+            game_id: "test_clash".to_string(),
+            mode: "2p".to_string(),
+            current_player_index: 0,
+            players: vec![
+                player("red", 5, 4, GoalDirection::Bottom, 10),
+                player("blue", 4, 4, GoalDirection::Top, 9),
+            ],
+            walls: vec![
+                WallCoord { row: 5, col: 3, orientation: Orientation::H },
+            ],
+            status: "IN_PROGRESS".to_string(),
+        };
+
+        let action = find_best_action_multithreaded(&state, 3000, 2, 42);
+        assert!(action.is_some());
+        match action.unwrap() {
+            GameAction::Move { to } => {
+                // Must step to (5, 5) [f6], NEVER (5, 3) [d6]!
+                assert_eq!(to, CellCoord { row: 5, col: 5 }, "Red should step to open flank (5,5) [f6], not into dead-end (5,3) [d6]");
+            }
+            GameAction::PlaceWall { wall } => {
+                // Placing a counter-wall (like row 3 or 4 or 5) is a valid book reply
+                assert!(wall.row == 3 || wall.row == 4 || wall.row == 5);
+            }
+            _ => panic!("Expected Move or PlaceWall"),
+        }
+
+        // Test pawn move case specifically: when Red has 0 walls remaining, Red MUST step to (5,5) [f6], NEVER (5,3) [d6]!
+        let mut state_no_walls = state.clone();
+        state_no_walls.players[0].walls_remaining = 0;
+        let action_no_walls = find_best_action_multithreaded(&state_no_walls, 3000, 2, 42);
+        assert!(action_no_walls.is_some());
+        match action_no_walls.unwrap() {
+            GameAction::Move { to } => {
+                assert_eq!(to, CellCoord { row: 5, col: 5 }, "When moving, Red MUST step to open flank (5,5) [f6], NEVER into dead-end (5,3) [d6]!");
+            }
+            _ => panic!("Expected Move action when having 0 walls"),
+        }
     }
 }
 

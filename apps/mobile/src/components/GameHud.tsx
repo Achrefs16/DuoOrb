@@ -6,36 +6,16 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import { GameState, PlayerState } from '@duoorb/game-core';
 import { THEME, hexToRgba, playerColor, useStyles } from '../theme';
 import { nameInitial } from '../displayName';
 import { ReactionDock } from './QuickReactions';
 import { PremiumBadge } from './PremiumBadge';
 import { BotAvatar } from './BotAvatar';
-import { WallIcon } from './WallIcon';
+import { MatchStats } from './MatchStats';
 import type { IncomingReaction } from '../network/useQuickReactions';
 import { useTranslation } from '../i18n';
-
-function formatTimer(seconds?: number): string {
-  if (seconds === undefined || seconds <= 0) return '0:00';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s < 10 ? '0' : ''}${s}`;
-}
-
-/**
- * Visual low-time urgency, independent of audio: the 30s sound has a muted
- * audience, and opponents get no cue at all. ≤30s warns, ≤10s alarms — on
- * every layout (chip, grid, strip), computed from the same seconds the chip
- * already renders.
- */
-function urgencyColor(seconds?: number): string | null {
-  if (seconds === undefined || seconds <= 0) return null;
-  if (seconds <= 10) return THEME.colors.danger;
-  if (seconds <= 30) return THEME.colors.warning;
-  return null;
-}
 
 /**
  * Connection/attention state of a seat, shown on its card.
@@ -206,10 +186,8 @@ function avatarTint(ball: string): { bg: string; border: string; text: string } 
 }
 
 /**
- * Chess.com seamless active-match player row:
- * Clean flat row directly on the background (no bulky cards), avatar,
- * name + inline rating in parens + flag emoji, subline with remaining walls,
- * and high-contrast illuminated active timer box.
+ * Seamless active-match player row: flat row on the background, avatar and
+ * name/status on the left, then the standard wall + clock stack on the right.
  */
 export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
   player,
@@ -240,7 +218,6 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
   // current truth, so both are hidden until the seat is back.
   const hideStats = status !== null;
   const tone = status ? seatStatusTone(status) : null;
-  const urgent = urgencyColor(timeLeft);
   const statusIcon =
     status?.kind === 'disconnected' || status?.kind === 'reconnecting'
       ? 'wifi-off'
@@ -300,17 +277,8 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
             {isActive && <View style={[styles.turnDot, { backgroundColor: ball }]} />}
           </View>
 
-          {/* Wall inventory + status under the name line */}
+          {/* Status under the name line */}
           <View style={styles.playerSubRow}>
-            {!hideWallsBadge && !hideStats && player.wallsRemaining !== undefined && (
-              <View style={[styles.wallsInline, { borderColor: tint.border, backgroundColor: tint.bg }]}>
-                <WallIcon size={13} color={ball} />
-                <Text style={[styles.wallsInlineText, { color: ball }]}>
-                  {player.wallsRemaining}
-                </Text>
-              </View>
-            )}
-
             {status && statusIcon && tone && (
               <View
                 style={[
@@ -318,7 +286,7 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
                   tone === 'danger' ? styles.statusPillDanger : styles.statusPillWarn,
                 ]}
               >
-                <Feather name={statusIcon} size={11} color={THEME.colors.onPrimary} />
+                <OrbIcon name={statusIcon} size={11} color={THEME.colors.onPrimary} />
                 <Text style={styles.statusText} numberOfLines={1} ellipsizeMode="tail">
                   {seatStatusLabel(status, t)}
                 </Text>
@@ -328,42 +296,18 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
         </View>
       </View>
 
-      {/* Right: Chess.com style timer box with theme palette tokens */}
-      {timeLeft !== undefined && (
-        <View
-          style={[
-            styles.timerBox,
-            isActive ? styles.timerBoxActive : styles.timerBoxInactive,
-            surface && {
-              backgroundColor: surface.card,
-              borderColor: isActive ? THEME.colors.primary : surface.border,
-            },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name="timer-outline"
-            size={16}
-            color={
-              urgent ??
-              (isActive
-                ? THEME.colors.textPrimary
-                : THEME.colors.textMuted)
-            }
-          />
-          <Text
-            style={[
-              styles.timerText,
-              isActive ? styles.timerTextActive : styles.timerTextInactive,
-              urgent !== null && { color: urgent },
-            ]}
-          >
-            {formatTimer(timeLeft)}
-          </Text>
-          {bonus !== undefined && bonus !== null && bonus > 0 && (
-            <Text style={styles.bonusText}>+{bonus}</Text>
-          )}
-        </View>
-      )}
+      {/* Right: standard wall + clock stack shared by every mode */}
+      <MatchStats
+        wallsRemaining={
+          !hideWallsBadge && !hideStats
+            ? player.wallsRemaining
+            : undefined
+        }
+        timeLeft={timeLeft}
+        ball={ball}
+        isActive={isActive}
+        bonus={bonus}
+      />
       {/* This seat's own relayed reactions, over its own card. */}
       {reactions && reactions.length > 0 && (
         <ReactionDock
@@ -380,6 +324,8 @@ export const PlayerStrip: React.FC<{
   state: GameState;
   timers?: Record<string, number>;
   compact?: boolean;
+  /** Use the short-screen 3-4P stat row instead of the stacked boxes. */
+  compactStats?: boolean;
   ratings?: Record<string, number>;
   bonus?: { playerId: string; amount: number } | null;
   hideWallsBadge?: boolean;
@@ -390,7 +336,7 @@ export const PlayerStrip: React.FC<{
    * on narrow screens with no overlap.
    */
   grid?: boolean;
-  /** Hides the wall pill for a single seat (your own — the tray shows it). */
+  /** Hides the wall box for a single seat (your own — the tray shows it). */
   hideWallsForPlayerId?: string;
   /** Per-seat connection/attention state, keyed by seat id. */
   seatStatus?: Record<string, SeatStatus>;
@@ -420,6 +366,7 @@ export const PlayerStrip: React.FC<{
 }> = ({
   state,
   timers,
+  compactStats = false,
   ratings,
   bonus = null,
   hideWallsBadge = false,
@@ -438,8 +385,8 @@ export const PlayerStrip: React.FC<{
   const { t } = useTranslation();
   // Split multiplayer tables (2 up / 2 down): side-by-side compact cards
   // that flex with the row width. Long names truncate (numberOfLines +
-  // minWidth 0) while the wall pill and clock are shrink-proof, so the
-  // clock can never cover the wall count, even on narrow screens.
+  // minWidth 0) while the standard wall/clock stack stays shrink-proof, so
+  // the clock can never cover the wall count, even on narrow screens.
   if (grid) {
     return (
       <View style={styles.gridRow}>
@@ -454,7 +401,6 @@ export const PlayerStrip: React.FC<{
           // Stale while the seat is unreachable: hide rather than freeze.
           const showWalls = !hideWallsBadge && hideWallsForPlayerId !== p.id && seat === null;
           const playerBonus = bonus?.playerId === p.id ? bonus.amount : null;
-          const urgent = urgencyColor(timers?.[p.id]);
           return (
               <View
                 key={p.id}
@@ -529,31 +475,20 @@ export const PlayerStrip: React.FC<{
                       {p.place === 1 ? t('game.place1st').toUpperCase() : t('game.placeNth', { place: p.place }).toUpperCase()}
                     </Text>
                   )}
-                  {showWalls && (
-                    <View style={[styles.gridWalls, { borderColor: tint.border, backgroundColor: tint.bg }]}>
-                      <WallIcon size={12} color={ball} />
-                      <Text style={[styles.gridWallsText, { color: ball }]}>
-                        {p.wallsRemaining}
-                      </Text>
-                    </View>
-                  )}
-                  {timers?.[p.id] !== undefined && (
-                    <Text
-                      style={[
-                        styles.compactTime,
-                        surface && { color: surface.ink },
-                        urgent !== null && { color: urgent },
-                      ]}
-                    >
-                      {formatTimer(timers[p.id])}
-                    </Text>
-                  )}
-                  {playerBonus !== null && playerBonus > 0 && (
-                    <Text style={styles.bonusText}>+{playerBonus}</Text>
-                  )}
                 </View>
               </View>
-              {isActive && <View style={[styles.turnDot, { backgroundColor: ball }]} />}
+              <MatchStats
+                wallsRemaining={showWalls ? p.wallsRemaining : undefined}
+                timeLeft={timers?.[p.id]}
+                ball={ball}
+                isActive={isActive}
+                bonus={playerBonus}
+                compact={compactStats}
+                compactWidth={compactStats ? 72 : undefined}
+              />
+              {isActive && !compactStats && (
+                <View style={[styles.turnDot, { backgroundColor: ball }]} />
+              )}
               {reactionsBySeat?.[p.id] && reactionsBySeat[p.id].length > 0 && (
                 <ReactionDock
                   items={reactionsBySeat[p.id]}
@@ -584,7 +519,7 @@ export const PlayerStrip: React.FC<{
           const onPressIdentity = onPressPlayer ? () => onPressPlayer(p.id) : undefined;
           const identityLabel = onPressIdentity ? `View ${p.displayName}'s profile` : undefined;
           const seat = seatStatus?.[p.id] ?? null;
-          const urgent = urgencyColor(timers?.[p.id]);
+          const playerBonus = bonus?.playerId === p.id ? bonus.amount : null;
           return (
             <View
               key={p.id}
@@ -651,28 +586,20 @@ export const PlayerStrip: React.FC<{
                       {p.place === 1 ? t('game.place1st').toUpperCase() : t('game.placeNth', { place: p.place }).toUpperCase()}
                     </Text>
                   )}
-                  {!seat && p.wallsRemaining !== undefined && (
-                    <View style={[styles.gridWalls, { borderColor: tint.border, backgroundColor: tint.bg }]}>
-                      <WallIcon size={12} color={ball} />
-                      <Text style={[styles.gridWallsText, { color: ball }]}>
-                        {p.wallsRemaining}
-                      </Text>
-                    </View>
-                  )}
-                  {timers?.[p.id] !== undefined && (
-                    <Text
-                      style={[
-                        styles.compactTime,
-                        surface && { color: surface.ink },
-                        urgent !== null && { color: urgent },
-                      ]}
-                    >
-                      {formatTimer(timers[p.id])}
-                    </Text>
-                  )}
                 </View>
               </View>
-              {isActive && <View style={[styles.turnDot, { backgroundColor: ball }]} />}
+              <MatchStats
+                wallsRemaining={!seat ? p.wallsRemaining : undefined}
+                timeLeft={timers?.[p.id]}
+                ball={ball}
+                isActive={isActive}
+                bonus={playerBonus}
+                compact={compactStats}
+                compactWidth={compactStats ? 72 : undefined}
+              />
+              {isActive && !compactStats && (
+                <View style={[styles.turnDot, { backgroundColor: ball }]} />
+              )}
               {reactionsBySeat?.[p.id] && reactionsBySeat[p.id].length > 0 && (
                 <ReactionDock
                   items={reactionsBySeat[p.id]}
@@ -730,7 +657,7 @@ const createStyles = () => StyleSheet.create({
   },
   compactItem: {
     minWidth: 116,
-    maxWidth: 150,
+    maxWidth: 180,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -811,14 +738,6 @@ const createStyles = () => StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
-  compactTime: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 11,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-    color: THEME.colors.onSurface,
-    flexShrink: 0,
-  },
   gridRow: {
     width: '100%',
     flexDirection: 'row',
@@ -847,22 +766,6 @@ const createStyles = () => StyleSheet.create({
     color: THEME.colors.inverseLabel,
     flexShrink: 1,
     minWidth: 0,
-  },
-  gridWalls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 6,
-    borderWidth: 1,
-    flexShrink: 0,
-  },
-  gridWallsText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 10,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
   },
   playerCard: {
     width: '100%',
@@ -935,21 +838,6 @@ const createStyles = () => StyleSheet.create({
     gap: 6,
     marginTop: 2,
   },
-  wallsInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 4,
-    borderWidth: 1,
-  },
-  wallsInlineText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 10,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
   ratingBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -983,48 +871,5 @@ const createStyles = () => StyleSheet.create({
     fontFamily: THEME.fonts.bold,
     fontSize: 11,
     fontWeight: '700',
-  },
-  timerBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    minWidth: 72,
-    height: 36,
-    justifyContent: 'center',
-    flexShrink: 0,
-    marginLeft: 8,
-  },
-  timerBoxInactive: {
-    backgroundColor: THEME.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  timerBoxActive: {
-    backgroundColor: THEME.colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: THEME.colors.primary,
-  },
-  timerText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 15,
-    fontVariant: ['tabular-nums'],
-  },
-  timerTextInactive: {
-    color: THEME.colors.textMuted,
-    fontWeight: '600',
-  },
-  timerTextActive: {
-    color: THEME.colors.textPrimary,
-    fontWeight: '800',
-  },
-  bonusText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 10,
-    fontWeight: '700',
-    color: THEME.colors.tertiary,
-    marginLeft: 2,
   },
 });

@@ -403,7 +403,7 @@ export function buildRootCandidates(
     }
 
     const delay = before === Infinity ? 0 : Math.max(0, after - before);
-    if (rivalsDisarmed && delay <= 0) continue;
+    if (delay <= 0) continue;
     const ownAfter = routeOf(next, nextBoard, me);
     const selfCost =
       own.hasGoalAccess && ownAfter.hasGoalAccess

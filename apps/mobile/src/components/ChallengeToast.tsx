@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import { ChallengeDto } from '@duoorb/protocol';
 import { PremiumBadge } from './PremiumBadge';
 import { THEME, useStyles } from '../theme';
@@ -95,7 +95,7 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
                 <Text style={styles.sub}>{t('challengeToast.wantsToPlay')}</Text>
               </View>
               <View style={styles.swords}>
-                <MaterialCommunityIcons name="sword-cross" size={20} color={THEME.colors.primary} />
+                <OrbIcon name="sword-cross" size={20} color={THEME.colors.primary} />
               </View>
             </View>
             <View style={styles.pillRow}>
@@ -103,7 +103,7 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
                 <Text style={styles.pillText}>{modeLabel(incoming.mode)}</Text>
               </View>
               <View style={styles.pill}>
-                <Feather name="clock" size={11} color={THEME.colors.textOnMuted} />
+                <OrbIcon name="clock" size={11} color={THEME.colors.textOnMuted} />
                 <Text style={styles.pillText}>
                   {clockLabel(incoming.timeControlMinutes, incoming.incrementSeconds)}
                 </Text>
@@ -121,7 +121,7 @@ export const ChallengeToast: React.FC<ChallengeToastProps> = ({
                 label={t('challengeToast.accept')}
                 onPress={onAccept}
                 flex
-                icon={<Feather name="check" size={15} color={THEME.colors.onPrimary} />}
+                icon={<OrbIcon name="check" size={15} color={THEME.colors.onPrimary} />}
               />
               <ToastDecline label={t('challengeToast.decline')} onPress={onDecline} />
             </View>

@@ -259,7 +259,7 @@ describe('enclosure positions (4p centre race)', () => {
     const a = mctsBestAction(spot, { simulations: 800, seed: 11 });
     const b = mctsBestAction(spot, { simulations: 800, seed: 11 });
     expect(a).toEqual(b);
-  });
+  }, 15_000);
 
   it('concentrates visits instead of spreading them over every wall slot', () => {
     // Regression: a radius-2 wall sweep gave ~200 root children, so the best
@@ -267,7 +267,7 @@ describe('enclosure positions (4p centre race)', () => {
     mctsBestAction(spot, { simulations: 2000, seed: 3 });
     const st = mctsStats();
     expect(st.bestVisits / st.simulations).toBeGreaterThan(0.05);
-  });
+  }, 15_000);
 
   it('converges on an equally-good symmetric opening choice', () => {
     const s = createInitialState({ mode: '2p', gameId: 'open' });

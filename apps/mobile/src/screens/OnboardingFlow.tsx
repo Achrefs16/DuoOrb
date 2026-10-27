@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { Modal, View, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSession } from '../network/session';
 import type { LegalKind } from '../legal-content';
 import { WelcomeScreen } from './WelcomeScreen';
@@ -51,7 +52,11 @@ export const OnboardingFlow: React.FC = () => {
         }}
       />
       <Modal visible={legalKind !== null} animationType="slide" onRequestClose={() => setLegalKind(null)}>
-        {legalKind && <LegalScreen kind={legalKind} onBack={() => setLegalKind(null)} />}
+        {/* Modals are their own native window: the app root's top inset does
+            not reach them. LegalScreen already owns the bottom inset. */}
+        <SafeAreaView style={styles.fill} edges={['top']}>
+          {legalKind && <LegalScreen kind={legalKind} onBack={() => setLegalKind(null)} />}
+        </SafeAreaView>
       </Modal>
 
       <LanguageSelectModal

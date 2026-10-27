@@ -1,6 +1,8 @@
 import { createInitialState, GameMode, GameState, RecordedAction } from '@duoorb/game-core';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { type LanguageCode, isLanguageCode } from '../i18n';
+import { isSideChoice } from '../lib/sideChoice';
+import { type OrbPaletteId, parseOrbPaletteId, setOrbPaletteId } from '../theme/orbTheme';
 
 export interface SavedGameRecord {
   id: string;
@@ -88,6 +90,8 @@ export interface UserSettings {
   themeName: 'light' | 'midnight';
   /** Premium board skin id: 'classic' free, 'walnut', 'tactile', 'stone'. */
   boardSkinId: 'classic' | 'walnut' | 'tactile' | 'stone';
+  /** Player ball / orb color palette. */
+  orbPaletteId: OrbPaletteId;
   /** App-wide dark mode. Device flag, independent of the board theme. */
   darkMode: boolean;
   /** App language code. */
@@ -107,7 +111,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   extendedQueue: true,
   testThink: false,
   themeName: 'light',
-  boardSkinId: 'classic',
+  boardSkinId: 'tactile',
+  orbPaletteId: 'classic',
   darkMode: false,
 };
 
@@ -360,6 +365,8 @@ export async function loadSettings(): Promise<UserSettings> {
       ) {
         inMemorySettings.boardSkinId = 'classic';
       }
+      inMemorySettings.orbPaletteId = parseOrbPaletteId(inMemorySettings.orbPaletteId);
+      setOrbPaletteId(inMemorySettings.orbPaletteId);
       // Coerce the appearance flag the same way: anything truthy-but-not-true
       // (downgrade, corrupt store) falls back to light mode.
       inMemorySettings.darkMode = inMemorySettings.darkMode === true;
@@ -374,6 +381,9 @@ export async function loadSettings(): Promise<UserSettings> {
 }
 
 export async function saveSettings(settings: Partial<UserSettings>): Promise<UserSettings> {
+  if (settings.orbPaletteId !== undefined) {
+    setOrbPaletteId(settings.orbPaletteId);
+  }
   inMemorySettings = { ...inMemorySettings, ...settings };
   try {
     storage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(inMemorySettings));
@@ -408,7 +418,7 @@ export function sanitizeMatchSetupDraft(raw: unknown): MatchSetupDraft {
     out.difficulty = r.difficulty;
   }
   if (typeof r.botId === 'string' || r.botId === null) out.botId = r.botId;
-  if (r.side === 'blue' || r.side === 'red' || r.side === 'random') out.side = r.side;
+  if (isSideChoice(r.side)) out.side = r.side;
   if (r.wallsEach === 10 || r.wallsEach === 15 || r.wallsEach === 99) out.wallsEach = r.wallsEach;
   if (typeof r.clockId === 'string' && r.clockId.length > 0) out.clockId = r.clockId;
   return out;

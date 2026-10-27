@@ -1,6 +1,7 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { LEGAL_DOCS, LEGAL_DEVELOPER, type LegalKind } from '../legal-content';
 import { LEGAL_CONTACT_EMAIL, LEGAL_URLS, openLegalUrl } from '../legal';
@@ -22,6 +23,7 @@ interface LegalScreenProps {
 export const LegalScreen: React.FC<LegalScreenProps> = ({ kind, onBack }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const doc = LEGAL_DOCS[kind];
   const webUrl =
     kind === 'privacy' ? LEGAL_URLS.privacy : kind === 'terms' ? LEGAL_URLS.terms : LEGAL_URLS.deleteAccount;
@@ -30,13 +32,17 @@ export const LegalScreen: React.FC<LegalScreenProps> = ({ kind, onBack }) => {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.closeBtn} onPress={onBack} accessibilityLabel={t('common.back')}>
-          <Feather name="arrow-left" size={20} color={THEME.colors.onSurface} />
+          <OrbIcon name="arrow-left" size={20} color={THEME.colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{doc.title}</Text>
         <View style={{ width: 36 }} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.body, { paddingBottom: 40 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.updated}>
           {doc.updated} · {LEGAL_DEVELOPER}
         </Text>
@@ -59,7 +65,7 @@ export const LegalScreen: React.FC<LegalScreenProps> = ({ kind, onBack }) => {
             onPress={() => void openLegalUrl(webUrl)}
             accessibilityLabel={t('legal.openWeb')}
           >
-            <Feather name="external-link" size={14} color={THEME.colors.onPrimary} />
+            <OrbIcon name="external-link" size={14} color={THEME.colors.onPrimary} />
             <Text style={styles.webButtonText}>{t('legal.openWeb')}</Text>
           </TouchableOpacity>
           <Text style={styles.supportText}>{t('settings.support', { email: LEGAL_CONTACT_EMAIL })}</Text>
@@ -77,7 +83,7 @@ const createStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: THEME.colors.surfaceContainerLowest,
+    backgroundColor: THEME.colors.background,
     borderBottomWidth: 1,
     borderBottomColor: THEME.colors.surfaceContainer,
   },

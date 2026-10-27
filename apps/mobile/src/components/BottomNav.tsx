@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon, type OrbIconName } from './OrbIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
@@ -18,8 +18,7 @@ interface BottomNavProps {
 interface TabItem {
   id: MainTab;
   label: string;
-  featherIcon?: keyof typeof Feather.glyphMap;
-  mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
+  icon: OrbIconName;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
@@ -33,11 +32,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   const bottomInset = insets.bottom;
 
   const tabs: TabItem[] = [
-    { id: 'PLAY', label: t('nav.play') || 'Home', featherIcon: 'home' },
-    { id: 'BOTS', label: 'Bots', mciIcon: 'robot-outline' },
-    { id: 'FRIENDS', label: t('nav.friends') || 'Friends', featherIcon: 'users' },
-    { id: 'LEADERBOARD', label: t('nav.leaderboard') || 'Leaderboard', mciIcon: 'trophy-outline' },
-    { id: 'PROFILE', label: t('nav.profile') || 'Profile', featherIcon: 'user' },
+    { id: 'PLAY', label: t('nav.play') || 'Home', icon: 'home' },
+    { id: 'BOTS', label: 'Bots', icon: 'robot-outline' },
+    { id: 'FRIENDS', label: t('nav.friends') || 'Friends', icon: 'users' },
+    { id: 'LEADERBOARD', label: t('nav.leaderboard') || 'Leaderboard', icon: 'trophy-outline' },
+    { id: 'PROFILE', label: t('nav.profile') || 'Profile', icon: 'user' },
   ];
 
   return (
@@ -59,11 +58,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               accessibilityState={{ selected: isActive }}
             >
               <View style={styles.iconWrapper}>
-                {tab.featherIcon ? (
-                  <Feather name={tab.featherIcon} size={22} color={iconColor} />
-                ) : tab.mciIcon ? (
-                  <MaterialCommunityIcons name={tab.mciIcon} size={22} color={iconColor} />
-                ) : null}
+                <OrbIcon name={tab.icon} size={22} color={iconColor} />
 
                 {showBadge && (
                   <View style={styles.badge}>

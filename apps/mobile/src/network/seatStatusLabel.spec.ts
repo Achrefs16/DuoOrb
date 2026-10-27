@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@expo/vector-icons', () => ({
-  Feather: () => null,
-  MaterialCommunityIcons: () => null,
-  MaterialIcons: () => null,
+vi.mock('../components/OrbIcon', () => ({
+  OrbIcon: () => null,
 }));
 
 import { seatStatusLabel } from '../components/GameHud';

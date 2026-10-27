@@ -246,9 +246,7 @@ export const TACTILE_SKIN: BoardSkin = {
   frameInnerBorder: '#E5E1D7',
   frameSheen: false,
   wallRadius: 'capsule',
-  wallStyle: 'neutral',
-  neutralWall: '#7D7666',
-  neutralWallEdge: '#9B9482',
+  wallStyle: 'flat',
   wallSlot: 'transparent',
   wallSlotSize: 0,
   orbStyle: 'gloss',
@@ -345,7 +343,7 @@ export function parseBoardThemeName(raw: unknown): BoardThemeName {
 /* Render-path store (sync; settings are the persisted copy in gameStorage). */
 
 let themeName: BoardThemeName = 'light';
-let skinId: BoardSkinId = 'classic';
+let skinId: BoardSkinId = 'tactile';
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -425,6 +423,6 @@ export function useBoardPalette(): BoardSkin {
 /** Test seam: drops in-memory state without touching disk. */
 export function __resetBoardThemeForTests(): void {
   themeName = 'light';
-  skinId = 'classic';
+  skinId = 'tactile';
   listeners.clear();
 }

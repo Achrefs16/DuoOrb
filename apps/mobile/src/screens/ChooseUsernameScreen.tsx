@@ -9,7 +9,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { KeyboardShift } from '../components/KeyboardShift';
 import { api, ApiError } from '../network/apiClient';
@@ -43,6 +44,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
   const styles = useStyles(createStyles);
   const { identity, refreshProfile } = useSession();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
 
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -181,7 +183,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
 
   return (
     <KeyboardShift>
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: 40 + insets.bottom }]}>
       <View style={styles.body}>
         <Image
           source={require('../../assets/logo-512.webp')}
@@ -230,7 +232,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
             accessibilityLabel={t('username.shuffleA11y')}
             accessibilityRole="button"
           >
-            <Feather name="shuffle" size={18} color={THEME.colors.textSecondary} />
+            <OrbIcon name="shuffle" size={18} color={THEME.colors.textSecondary} />
           </TouchableOpacity>
         </View>
 

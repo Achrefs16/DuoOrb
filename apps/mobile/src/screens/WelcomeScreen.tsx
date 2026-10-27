@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { GoogleGLogo } from '../components/GoogleGLogo';
 import type { LegalKind } from '../legal-content';
@@ -48,10 +49,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t, currentLanguage } = useTranslation();
+  const insets = useSafeAreaInsets();
   const busy = googleBusy || !!guestBusy;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: 40 + insets.bottom }]}>
       {/* Top bar with language selector */}
       <View style={styles.topBar}>
         {onOpenLanguage && (
@@ -64,7 +66,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           >
             <Text style={styles.langFlag}>{currentLanguage.flag}</Text>
             <Text style={styles.langText}>{currentLanguage.nativeName}</Text>
-            <Feather name="chevron-down" size={14} color={THEME.colors.textSecondary} />
+            <OrbIcon name="chevron-down" size={14} color={THEME.colors.textSecondary} />
           </TouchableOpacity>
         )}
       </View>
@@ -110,7 +112,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           {guestBusy ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <Feather name="user" size={17} color="#FFFFFF" />
+            <OrbIcon name="user" size={17} color="#FFFFFF" />
           )}
           <Text style={styles.guestButtonText}>
             {guestBusy ? t('welcome.starting') : t('welcome.guest')}

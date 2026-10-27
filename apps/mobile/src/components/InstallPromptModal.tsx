@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import { THEME, useStyles } from '../theme';
 
 import {
@@ -142,7 +142,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
           {/* Header Icon + Title */}
           <View style={styles.header}>
             <View style={styles.iconCircle}>
-              <MaterialCommunityIcons
+              <OrbIcon
                 name="cellphone-arrow-down"
                 size={28}
                 color={THEME.colors.primary}
@@ -181,7 +181,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                     your Safari toolbar:
                   </Text>
                   <View style={styles.iconRow}>
-                    <Feather name="share" size={16} color={THEME.colors.primary} />
+                    <OrbIcon name="share" size={16} color={THEME.colors.primary} />
                     <Text style={styles.iconDesc}>Square with arrow pointing up</Text>
                   </View>
                 </View>
@@ -197,7 +197,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                     <Text style={styles.stepBold}>"Add to Home Screen"</Text>:
                   </Text>
                   <View style={styles.iconRow}>
-                    <Feather name="plus-square" size={16} color={THEME.colors.primary} />
+                    <OrbIcon name="plus-square" size={16} color={THEME.colors.primary} />
                     <Text style={styles.iconDesc}>Plus icon in actions list</Text>
                   </View>
                 </View>
@@ -215,7 +215,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                 activeOpacity={0.85}
                 onPress={handleGooglePlay}
               >
-                <MaterialCommunityIcons name="google-play" size={20} color="#FFFFFF" />
+                <OrbIcon name="google-play" size={20} color="#FFFFFF" />
                 <Text style={styles.primaryButtonText}>Install from Google Play</Text>
               </TouchableOpacity>
 
@@ -226,7 +226,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                   activeOpacity={0.8}
                   onPress={handleInstallPwa}
                 >
-                  <Feather name="download" size={16} color={THEME.colors.textPrimary} />
+                  <OrbIcon name="download" size={16} color={THEME.colors.textPrimary} />
                   <Text style={styles.secondaryButtonText}>
                     Or Install Instant Web App (2 MB)
                   </Text>
@@ -244,7 +244,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                   activeOpacity={0.85}
                   onPress={handleInstallPwa}
                 >
-                  <Feather name="download" size={18} color="#FFFFFF" />
+                  <OrbIcon name="download" size={18} color="#FFFFFF" />
                   <Text style={styles.primaryButtonText}>Install Desktop App</Text>
                 </TouchableOpacity>
               ) : (
@@ -253,7 +253,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                   activeOpacity={0.85}
                   onPress={handleGooglePlay}
                 >
-                  <MaterialCommunityIcons name="google-play" size={20} color="#FFFFFF" />
+                  <OrbIcon name="google-play" size={20} color="#FFFFFF" />
                   <Text style={styles.primaryButtonText}>View on Google Play</Text>
                 </TouchableOpacity>
               )}

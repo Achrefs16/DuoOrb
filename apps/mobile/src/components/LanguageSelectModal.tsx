@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { sheetSlideStyle, useSheetSlide } from './sheetAnimation';
@@ -93,7 +93,7 @@ export const LanguageSelectModal: React.FC<LanguageSelectModalProps> = ({
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   accessibilityLabel={t('common.cancel')}
                 >
-                  <Feather name="x" size={18} color={THEME.colors.textSecondary} />
+                  <OrbIcon name="x" size={18} color={THEME.colors.textSecondary} />
                 </TouchableOpacity>
               )}
             </View>
@@ -131,7 +131,7 @@ export const LanguageSelectModal: React.FC<LanguageSelectModalProps> = ({
 
                     {isSelected ? (
                       <View style={styles.checkCircle}>
-                        <Feather name="check" size={14} color="#FFFFFF" />
+                        <OrbIcon name="check" size={14} color="#FFFFFF" />
                       </View>
                     ) : (
                       <View style={styles.radioOutline} />
@@ -141,7 +141,7 @@ export const LanguageSelectModal: React.FC<LanguageSelectModalProps> = ({
               })}
 
               <View style={styles.noteBox}>
-                <Feather name="info" size={13} color={THEME.colors.textMuted} />
+                <OrbIcon name="info" size={13} color={THEME.colors.textMuted} />
                 <Text style={styles.noteText}>
                   {t('language.restartNote')}
                 </Text>
@@ -156,7 +156,7 @@ export const LanguageSelectModal: React.FC<LanguageSelectModalProps> = ({
                   onPress={() => void handleContinue()}
                 >
                   <Text style={styles.continueBtnText}>{t('common.continue')}</Text>
-                  <Feather name="arrow-right" size={16} color="#FFFFFF" />
+                  <OrbIcon name="arrow-right" size={16} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
             )}

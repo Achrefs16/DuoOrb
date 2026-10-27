@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
 import { api } from '../network/apiClient';
@@ -91,12 +91,12 @@ export const ReportDialog: React.FC<ReportDialogProps> = ({
           <View style={styles.head}>
             <Text style={styles.title}>{t('report.title', { name: targetUsername })}</Text>
             <TouchableOpacity onPress={close} accessibilityLabel={t('report.closeA11y')}>
-              <Feather name="x" size={20} color={THEME.colors.textSecondary} />
+              <OrbIcon name="x" size={20} color={THEME.colors.textSecondary} />
             </TouchableOpacity>
           </View>
           {done ? (
             <>
-              <Feather name="check-circle" size={32} color={THEME.colors.success} />
+              <OrbIcon name="check-circle" size={32} color={THEME.colors.success} />
               <Text style={styles.doneTitle}>{t('report.sentTitle')}</Text>
               <Text style={styles.doneText}>
                 {t('report.sentMessage')}

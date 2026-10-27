@@ -1,6 +1,5 @@
 import React, { memo } from 'react';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-
+import { OrbIcon } from './OrbIcon';
 /**
  * Premium member badge (MONETIZATION.md P5.2): a small gold crown rendered
  * next to display names. Fixed 13px box — callers render it only when the
@@ -20,7 +19,7 @@ const SIZE_MAP: Record<string, number> = {
 const PremiumBadgeInner: React.FC<{ size?: number | 'xs' | 'sm' | 'md' | 'lg' }> = ({ size = 13 }) => {
   const pixelSize = typeof size === 'number' ? size : (SIZE_MAP[size] ?? 13);
   return (
-    <MaterialCommunityIcons
+    <OrbIcon
       name="crown"
       size={pixelSize}
       color={PREMIUM_GOLD}

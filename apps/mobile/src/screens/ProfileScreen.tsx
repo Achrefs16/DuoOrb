@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
@@ -22,6 +23,7 @@ import {
 } from '../network/apiClient';
 import { RatingChart } from '../components/RatingChart';
 import { AdBanner } from '../components/AdBanner';
+import { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 import {
   AchievementMedal,
   BadgeProgressBar,
@@ -72,7 +74,6 @@ let profileCache: {
   achievements: AchievementsResponseDto | null;
   games: GameHistoryItemDto[];
   localGames: SavedGameRecord[];
-  totalGames: number;
   serverLoaded: number;
   serverTotal: number;
 } | null = null;
@@ -93,13 +94,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t, language } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { identity } = useSession();
+  const isGuest = identity?.isGuest === true;
+  const userId = identity?.userId;
   const { isConnected } = useConnectivity();
   // Own badge reads the live entitlement store (same source as every gate),
   // not the fetched profile snapshot — it flips the moment a purchase lands.
   const premiumState = usePremium();
   const showOwnBadge = isPremiumActive(premiumState);
-  const isGuest = identity?.isGuest === true;
 
   const [profile, setProfile] = useState<UserMeDto | null>(null);
   const [ratingHistory, setRatingHistory] = useState<RatingHistoryPointDto[]>([]);
@@ -117,9 +120,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [recentVisible, setRecentVisible] = useState(5);
   const [selectedMatch, setSelectedMatch] = useState<GameHistoryItemDto | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [totalGames, setTotalGames] = useState(0);
+  // Render mirrors of the refs above: refs drive async pagination, state
+  // drives the footer so it can update without reading refs during render.
+  const [serverLoaded, setServerLoaded] = useState(0);
+  const [serverTotal, setServerTotal] = useState(0);
   const offsetRef = useRef(0);
   const serverTotalRef = useRef(0);
+  const gamesRef = useRef<GameHistoryItemDto[]>([]);
+  // Synchronous guard: state alone lets a double-tap fire two pages at the
+  // same offset, which then skips a page of history.
+  const loadingMoreRef = useRef(false);
+  // Latest history request wins, so a slow silent refresh cannot overwrite a
+  // page the player just loaded.
+  const historySeqRef = useRef(0);
 
   const formatJoined = (value?: string | number): string | null => {
     if (!value) return null;
@@ -132,6 +145,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const fetchProfileData = useCallback(async (silent = false) => {
     // Silent = background refresh with data on screen: never flash a
     // skeleton, never replace the profile with an error.
+    const seq = ++historySeqRef.current;
     if (!silent) {
       setLoading(true);
       setLoadError(null);
@@ -144,109 +158,189 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       } catch (e) {
         meError = e;
       }
+      if (seq !== historySeqRef.current) return;
       if (me) {
         setProfile(me);
+        const prev = profileCache?.userId === me.id ? profileCache : null;
+        // Refresh the whole window already on screen, not just page 1: a
+        // silent remount must not throw away pages the player loaded.
+        const historyLimit = Math.max(PAGE_SIZE, prev?.serverLoaded ?? offsetRef.current);
         const [rSettled, aSettled, localSaved, historySettled] = await Promise.allSettled([
           api.getRatingHistory(me.id, 'CLASSIC_1V1', 20),
           api.getMyAchievements(),
           loadGameHistory(),
-          identity?.isGuest
+          isGuest
             ? Promise.resolve({ games: [], total: 0 })
-            : api.getMyHistory(PAGE_SIZE, 0),
+            : api.getMyHistory(historyLimit, 0),
         ]);
+        if (seq !== historySeqRef.current) return;
 
         if (rSettled.status === 'fulfilled') setRatingHistory(rSettled.value);
         if (aSettled.status === 'fulfilled') setAchievements(aSettled.value);
 
-        const savedLocal = localSaved.status === 'fulfilled' ? localSaved.value : [];
+        const savedLocal = localSaved.status === 'fulfilled' ? localSaved.value : prev?.localGames ?? [];
         setLocalGames(savedLocal);
 
+        const historyError = historySettled.status === 'rejected' ? historySettled.reason : null;
         const serverRes = historySettled.status === 'fulfilled' ? historySettled.value : null;
         const device = deviceHistoryGames(savedLocal);
         const localItems = device.map(mapLocalGameToHistoryItem);
-        const serverGames = serverRes?.games ?? [];
-        const merged = mergeHistoryItems(serverGames, localItems);
 
-        setGames(merged);
-        offsetRef.current = serverGames.length;
-        serverTotalRef.current = serverRes?.total ?? 0;
-        const compTotal = (serverRes?.total ?? 0) + device.length;
-        setTotalGames(compTotal);
+        if (serverRes) {
+          const serverGames = serverRes.games;
+          const merged = mergeHistoryItems(serverGames, localItems);
+          setGames(merged);
+          gamesRef.current = merged;
+          offsetRef.current = serverGames.length;
+          serverTotalRef.current = serverRes.total;
+          setServerLoaded(serverGames.length);
+          setServerTotal(serverRes.total);
 
-        const prev = profileCache?.userId === me.id ? profileCache : null;
-        profileCache = {
-          userId: me.id,
-          profile: me,
-          ratingHistory: rSettled.status === 'fulfilled' ? rSettled.value : prev?.ratingHistory ?? [],
-          achievements: aSettled.status === 'fulfilled' ? aSettled.value : prev?.achievements ?? null,
-          games: merged,
-          localGames: savedLocal,
-          totalGames: compTotal,
-          serverLoaded: serverGames.length,
-          serverTotal: serverRes?.total ?? 0,
-        };
+          profileCache = {
+            userId: me.id,
+            profile: me,
+            ratingHistory: rSettled.status === 'fulfilled' ? rSettled.value : prev?.ratingHistory ?? [],
+            achievements: aSettled.status === 'fulfilled' ? aSettled.value : prev?.achievements ?? null,
+            games: merged,
+            localGames: savedLocal,
+            serverLoaded: serverGames.length,
+            serverTotal: serverRes.total,
+          };
+        } else {
+          // History request failed: keep every server row already loaded.
+          // Only the device games are refreshed; counters stay put.
+          const previousGames = prev?.games ?? gamesRef.current;
+          const merged = previousGames.length > 0
+            ? mergeHistoryItems(previousGames, localItems)
+            : localItems;
+          const keptLoaded = prev?.serverLoaded ?? offsetRef.current;
+          const keptTotal = prev?.serverTotal ?? serverTotalRef.current;
+
+          setGames(merged);
+          gamesRef.current = merged;
+          offsetRef.current = keptLoaded;
+          serverTotalRef.current = keptTotal;
+          setServerLoaded(keptLoaded);
+          setServerTotal(keptTotal);
+
+          if (prev) {
+            profileCache = {
+              ...prev,
+              profile: me,
+              localGames: savedLocal,
+              games: merged,
+            };
+          } else if (!silent && merged.length === 0 && !isGuest) {
+            setLoadError({
+              message: loadMessage(historyError),
+              kind: kindOf(historyError),
+            });
+          }
+        }
       } else {
-        // Fallback for offline: load device matches
+        // Fallback for offline: load device matches, but never erase a list
+        // that is already on screen.
+        const prev =
+          userId && profileCache?.userId === userId ? profileCache : null;
         try {
           const savedLocal = await loadGameHistory();
           setLocalGames(savedLocal);
           const device = deviceHistoryGames(savedLocal);
           const localItems = device.map(mapLocalGameToHistoryItem);
-          setGames(localItems);
-          setTotalGames(device.length);
+          const previousGames = prev?.games ?? gamesRef.current;
+          const merged = previousGames.length > 0
+            ? mergeHistoryItems(previousGames, localItems)
+            : localItems;
+          const keptLoaded = prev?.serverLoaded ?? offsetRef.current;
+          const keptTotal = prev?.serverTotal ?? serverTotalRef.current;
+
+          setGames(merged);
+          gamesRef.current = merged;
+          offsetRef.current = keptLoaded;
+          serverTotalRef.current = keptTotal;
+          setServerLoaded(keptLoaded);
+          setServerTotal(keptTotal);
+
+          if (prev) {
+            profileCache = {
+              ...prev,
+              localGames: savedLocal,
+              games: merged,
+            };
+          }
         } catch {}
 
-        if (!silent) setLoadError({ message: loadMessage(meError), kind: kindOf(meError) });
+        if (!silent && !prev) {
+          setLoadError({ message: loadMessage(meError), kind: kindOf(meError) });
+        }
       }
     } catch {
-      if (!silent) setLoadError({ message: undefined, kind: 'UNKNOWN' });
+      if (!silent && seq === historySeqRef.current) {
+        setLoadError({ message: undefined, kind: 'UNKNOWN' });
+      }
     } finally {
-      setLoading(false);
+      if (seq === historySeqRef.current) setLoading(false);
     }
-  }, [identity?.isGuest]);
+  }, [isGuest, userId]);
 
   useEffect(() => {
-    const mine = profileCache && identity?.userId && profileCache.userId === identity.userId ? profileCache : null;
+    gamesRef.current = games;
+  }, [games]);
+
+  // Invalidate any in-flight history request when this screen unmounts, so a
+  // remounted screen's cache cannot be overwritten by the old instance.
+  useEffect(() => () => {
+    historySeqRef.current += 1;
+  }, []);
+
+  useEffect(() => {
+    const mine = userId && profileCache?.userId === userId ? profileCache : null;
     if (mine) {
       setProfile(mine.profile);
       setRatingHistory(mine.ratingHistory);
       setAchievements(mine.achievements);
       setGames(mine.games);
       setLocalGames(mine.localGames);
-      setTotalGames(mine.totalGames);
       offsetRef.current = mine.serverLoaded;
       serverTotalRef.current = mine.serverTotal;
+      setServerLoaded(mine.serverLoaded);
+      setServerTotal(mine.serverTotal);
       setLoading(false);
       fetchProfileData(true);
     } else {
       fetchProfileData();
     }
-  }, [fetchProfileData, identity?.userId]);
+  }, [fetchProfileData, userId]);
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || isGuest) return;
+    if (loading || loadingMoreRef.current || isGuest) return;
     if (offsetRef.current >= serverTotalRef.current) return;
+    loadingMoreRef.current = true;
+    const seq = ++historySeqRef.current;
     setLoadingMore(true);
     try {
       const serverRes = await api.getMyHistory(PAGE_SIZE, offsetRef.current);
-      if (serverRes) {
-        setGames((prev) => mergeHistoryItems(serverRes.games, prev));
-        offsetRef.current += serverRes.games.length;
-        serverTotalRef.current = serverRes.total;
-        setTotalGames(serverRes.total + deviceHistoryGames(localGames).length);
-        if (profileCache && profileCache.userId === identity?.userId) {
-          profileCache.serverLoaded = offsetRef.current;
-          profileCache.serverTotal = serverRes.total;
-          profileCache.games = mergeHistoryItems(serverRes.games, profileCache.games);
-          profileCache.totalGames = serverRes.total + deviceHistoryGames(localGames).length;
-        }
+      if (!serverRes || seq !== historySeqRef.current) return;
+
+      const merged = mergeHistoryItems(serverRes.games, gamesRef.current);
+      gamesRef.current = merged;
+      setGames(merged);
+      offsetRef.current += serverRes.games.length;
+      serverTotalRef.current = serverRes.total;
+      setServerLoaded(offsetRef.current);
+      setServerTotal(serverRes.total);
+      if (profileCache && profileCache.userId === userId) {
+        profileCache.serverLoaded = offsetRef.current;
+        profileCache.serverTotal = serverRes.total;
+        profileCache.games = merged;
       }
     } catch (e) {
       toast.show(loadMessage(e) ?? t('history.loadFailed'));
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [loadingMore, isGuest, localGames, identity?.userId, t]);
+  }, [isGuest, loading, t, userId]);
 
   const resolveRecord = (
     gameItem: GameHistoryItemDto,
@@ -312,6 +406,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       return true;
     });
   }, [games, filter]);
+
+  // A filter can be empty while older pages still contain matching rows. Keep
+  // that state distinct from a brand-new account with no matches at all.
+  const filterHasNoLoadedMatches = games.length > 0 && filter !== 'ALL';
 
   const winCount = useMemo(() => games.filter((g) => g.outcome === 'WIN').length, [games]);
   const lossCount = useMemo(() => games.filter((g) => g.outcome === 'LOSS').length, [games]);
@@ -382,7 +480,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           onPress={onOpenSettings}
           accessibilityLabel={t('settings.title')}
         >
-          <Feather name="settings" size={18} color={THEME.colors.textSecondary} />
+          <OrbIcon name="settings" size={18} color={THEME.colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
@@ -397,7 +495,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       ) : (
         <ScrollView
           style={styles.scrollArea}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: BOTTOM_NAV_HEIGHT + 30 + insets.bottom },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           {/* Identity Card with stats */}
@@ -431,7 +532,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 )}
                 {joinedLine && (
                   <View style={styles.joinDateRow}>
-                    <Feather name="calendar" size={12} color={THEME.colors.textMuted} />
+                    <OrbIcon name="calendar" size={12} color={THEME.colors.textMuted} />
                     <Text style={styles.joinDateText}>{joinedLine}</Text>
                   </View>
                 )}
@@ -523,9 +624,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 accessibilityLabel={t('profile.viewAllAchievements')}
                 accessibilityRole="button"
               >
-                <Feather name="grid" size={15} color={THEME.colors.textPrimary} />
+                <OrbIcon name="grid" size={15} color={THEME.colors.textPrimary} />
                 <Text style={styles.viewAllText}>{t('profile.viewAllAchievements')}</Text>
-                <Feather name="chevron-right" size={16} color={THEME.colors.textPrimary} />
+                <OrbIcon name="chevron-right" size={16} color={THEME.colors.textPrimary} />
               </TouchableOpacity>
             </View>
           )}
@@ -552,7 +653,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   accessibilityRole="button"
                 >
                   <Text style={styles.fullHistoryText}>Full History</Text>
-                  <Feather name="chevron-right" size={14} color={THEME.colors.primary} />
+                  <OrbIcon name="chevron-right" size={14} color={THEME.colors.primary} />
                 </TouchableOpacity>
               )}
             </View>
@@ -646,16 +747,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                         </Text>
                       </View>
 
-                      <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
+                      <OrbIcon name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
                     </TouchableOpacity>
                   );
                 })}
               </View>
             ) : (
               <View style={styles.emptyMatchesCard}>
-                <Feather name="clock" size={28} color={THEME.colors.textMuted} />
-                <Text style={styles.emptyMatchesTitle}>{t('history.noMatchesRecorded')}</Text>
-                <Text style={styles.emptyMatchesSub}>{t('history.noMatchesSub')}</Text>
+                <OrbIcon
+                  name={filterHasNoLoadedMatches ? 'filter' : 'clock'}
+                  size={28}
+                  color={THEME.colors.textMuted}
+                />
+                <Text style={styles.emptyMatchesTitle}>
+                  {filterHasNoLoadedMatches
+                    ? t('history.filteredEmpty')
+                    : t('history.noMatchesRecorded')}
+                </Text>
+                <Text style={styles.emptyMatchesSub}>
+                  {filterHasNoLoadedMatches
+                    ? t('history.filteredEmptySub')
+                    : t('history.noMatchesSub')}
+                </Text>
               </View>
             )}
 
@@ -670,7 +783,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   {t('profile.loadMore')} ({recentVisible}/{filteredGames.length})
                 </Text>
               </TouchableOpacity>
-            ) : games.length < totalGames && !isGuest ? (
+            ) : !isGuest && serverLoaded < serverTotal ? (
               <TouchableOpacity
                 style={[styles.loadMoreMatchesBtn, loadingMore && styles.loadMoreMatchesBtnBusy]}
                 activeOpacity={0.8}
@@ -678,7 +791,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 onPress={() => void loadMore()}
               >
                 <Text style={styles.loadMoreMatchesText}>
-                  {loadingMore ? t('history.loading') : `${t('history.loadMore')} (${games.length}/${totalGames})`}
+                  {loadingMore
+                    ? t('history.loading')
+                    : `${t('history.loadMore')} (${serverLoaded}/${serverTotal})`}
                 </Text>
               </TouchableOpacity>
             ) : null}
@@ -814,7 +929,7 @@ const createStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: THEME.colors.background,
     borderBottomWidth: 1,
     borderBottomColor: THEME.colors.surfaceMuted,
   },

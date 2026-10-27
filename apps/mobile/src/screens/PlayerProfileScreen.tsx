@@ -7,8 +7,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { OrbIcon } from '../components/OrbIcon';
 import { createInitialState } from '@duoorb/game-core';
 import { THEME, playerColor, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
@@ -97,6 +97,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t, language } = useTranslation();
+  const insets = useSafeAreaInsets();
 
   const formatJoined = (value?: string | number): string | null => {
     if (!value) return null;
@@ -420,7 +421,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <Feather name="arrow-left" size={20} color={THEME.colors.textSecondary} />
+          <OrbIcon name="arrow-left" size={20} color={THEME.colors.textSecondary} />
         </TouchableOpacity>
         <Text style={styles.title}>{t('profile.playerTitle')}</Text>
         <TouchableOpacity
@@ -429,7 +430,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
           accessibilityLabel="More actions"
           accessibilityRole="button"
         >
-          <MaterialIcons name="more-vert" size={20} color={THEME.colors.textSecondary} />
+          <OrbIcon name="more-vert" size={20} color={THEME.colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
@@ -475,7 +476,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
       ) : (
         <ScrollView
           style={styles.scrollArea}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: 28 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
         >
           {/* Identity Card */}
@@ -501,7 +502,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 )}
                 {formatJoined(profile?.createdAt) && (
                   <View style={styles.joinedRow}>
-                    <Feather name="calendar" size={14} color={THEME.colors.textSecondaryStrong} />
+                    <OrbIcon name="calendar" size={14} color={THEME.colors.textSecondaryStrong} />
                     <Text style={styles.joinedText}>{formatJoined(profile?.createdAt)}</Text>
                   </View>
                 )}
@@ -534,7 +535,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                 activeOpacity={0.88}
                 onPress={() => onChallenge({ id: profile!.id, username: profile!.username })}
               >
-                <MaterialCommunityIcons name="sword-cross" size={20} color={THEME.colors.onPrimary} />
+                <OrbIcon name="sword-cross" size={20} color={THEME.colors.onPrimary} />
                 <Text style={styles.challengeBtnText}>{t('profile.challenge')}</Text>
               </TouchableOpacity>
               )}
@@ -569,7 +570,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                   blocked ? 'Unblock player' : viewerIsGuest ? 'Add Friend (sign in required)' : 'Friend action'
                 }
               >
-                <MaterialIcons
+                <OrbIcon
                   name={blocked ? 'block' : viewerIsGuest ? 'person-add' : isFriend ? 'keyboard-arrow-down' : 'person-add'}
                   size={20}
                   color={blocked ? THEME.colors.textPrimary : viewerIsGuest ? THEME.colors.textMuted : friendRequestSent ? THEME.colors.textMuted : THEME.colors.textPrimary}
@@ -689,9 +690,9 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                   accessibilityLabel={t('profile.viewAllAchievements')}
                   accessibilityRole="button"
                 >
-                  <Feather name="grid" size={15} color={THEME.colors.textPrimary} />
+                  <OrbIcon name="grid" size={15} color={THEME.colors.textPrimary} />
                   <Text style={styles.viewAllText}>{t('profile.viewAllAchievements')}</Text>
-                  <Feather name="chevron-right" size={16} color={THEME.colors.textPrimary} />
+                  <OrbIcon name="chevron-right" size={16} color={THEME.colors.textPrimary} />
                 </TouchableOpacity>
               )}
             </View>
@@ -757,7 +758,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
 
             {headToHead?.currentStreak && headToHead.currentStreak.count >= 2 && (
               <View style={styles.streakBanner}>
-                <Feather name="award" size={14} color={THEME.colors.primary} />
+                <OrbIcon name="award" size={14} color={THEME.colors.primary} />
                 <Text style={styles.streakText}>
                   {headToHead.currentStreak.holder === 'YOU'
                     ? `You won ${headToHead.currentStreak.count} matches in a row!`
@@ -868,7 +869,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                         </View>
                       </View>
 
-                      <Feather name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
+                      <OrbIcon name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
                     </TouchableOpacity>
                   );
                 })}
@@ -915,7 +916,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               disabled={blockBusy}
               accessibilityLabel={blocked ? `${t('profile.unblock')} player` : `${t('profile.block')} player`}
             >
-              <Feather
+              <OrbIcon
                 name={blocked ? 'check-circle' : 'slash'}
                 size={15}
                 color={THEME.colors.textSecondary}
@@ -934,7 +935,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               }}
               accessibilityLabel={`${t('profile.report')} player`}
             >
-              <Feather name="flag" size={15} color={THEME.colors.textSecondary} />
+              <OrbIcon name="flag" size={15} color={THEME.colors.textSecondary} />
               <Text style={styles.safetyItemText}>{t('profile.report')}</Text>
             </TouchableOpacity>
           </View>
@@ -964,7 +965,7 @@ const createStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: THEME.colors.backgroundCard,
+    backgroundColor: THEME.colors.background,
     borderBottomWidth: 1,
     borderBottomColor: THEME.colors.surfaceMuted,
   },

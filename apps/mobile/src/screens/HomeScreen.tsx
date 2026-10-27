@@ -10,7 +10,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { runWhenOnline } from '../components/NoConnection';
@@ -22,7 +22,6 @@ import { OnlineMode } from './OnlineScreen';
 import { useTranslation } from '../i18n';
 import { detectWebInstallPlatform } from '../components/InstallPromptModal';
 import { MiniBoardPreview } from '../components/MiniBoardPreview';
-import { BotAvatar } from '../components/BotAvatar';
 import { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 interface HomeScreenProps {
@@ -180,7 +179,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Install App"
             >
-              <Feather name="download" size={13} color={THEME.colors.primary} />
+              <OrbIcon name="download" size={13} color={THEME.colors.primary} />
               <Text style={styles.installPillText}>Install</Text>
             </TouchableOpacity>
           )}
@@ -191,7 +190,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             onPress={onOpenSettings}
             accessibilityLabel={t('home.settingsA11y')}
           >
-            <Feather
+            <OrbIcon
               name="settings"
               size={19}
               color={THEME.colors.textSecondary}
@@ -219,9 +218,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         >
           <MiniBoardPreview preset="online1v1" size={rs(114)} />
           <View style={styles.rowInfo}>
-            <View style={styles.iconContainer}>
-              <Feather name="globe" size={rs(24)} color={THEME.colors.primary} />
-            </View>
             <Text style={styles.rowTitle}>Play Online</Text>
             <Text style={styles.rowSubtitle} numberOfLines={1}>
               Classic 3+0 vs Random
@@ -243,9 +239,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         >
           <MiniBoardPreview preset="botMatch" size={rs(114)} />
           <View style={styles.rowInfo}>
-            <View style={styles.iconContainer}>
-              <BotAvatar avatarKey="martin" size={rs(34)} />
-            </View>
             <Text style={styles.rowTitle}>Play a Bot</Text>
             <Text style={styles.rowSubtitle} numberOfLines={1}>
               Martin · Friendly (800 ELO)
@@ -263,9 +256,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         >
           <MiniBoardPreview preset="friendsRoom" size={rs(114)} />
           <View style={styles.rowInfo}>
-            <View style={styles.iconContainer}>
-              <Feather name="users" size={rs(24)} color="#3B82F6" />
-            </View>
             <Text style={styles.rowTitle}>Play a Friend</Text>
             <Text style={styles.rowSubtitle} numberOfLines={1}>
               Create or join a private room
@@ -281,34 +271,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         >
           <MiniBoardPreview preset="local4p" size={rs(114)} />
           <View style={styles.rowInfo}>
-            <View style={styles.iconContainer}>
-              <Feather name="smartphone" size={rs(24)} color="#D97706" />
-            </View>
             <Text style={styles.rowTitle}>Pass & Play</Text>
             <Text style={styles.rowSubtitle} numberOfLines={1}>
               2–4 players on one device
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Row 5: Match History & Review */}
-        <TouchableOpacity
-          style={styles.featureRow}
-          activeOpacity={0.7}
-          onPress={guarded(() => onOpenHistory?.())}
-        >
-          <MiniBoardPreview preset="historyReview" size={rs(114)} />
-          <View style={styles.rowInfo}>
-            <View style={styles.iconContainer}>
-              <MaterialCommunityIcons
-                name="star-box-outline"
-                size={rs(26)}
-                color={THEME.colors.primary}
-              />
-            </View>
-            <Text style={styles.rowTitle}>Match History</Text>
-            <Text style={styles.rowSubtitle} numberOfLines={1}>
-              Replay & analyze your past games
             </Text>
           </View>
         </TouchableOpacity>
@@ -445,11 +410,6 @@ const createStyles = () =>
       flex: 1,
       paddingLeft: 16,
       justifyContent: 'center',
-    },
-    iconContainer: {
-      height: 34,
-      justifyContent: 'center',
-      marginBottom: 4,
     },
     rowTitle: {
       fontFamily: THEME.fonts.extraBold,

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 
 interface ToastAction {
@@ -46,6 +47,7 @@ export const toast = {
 
 export const AppToast: React.FC = () => {
   const styles = useStyles(createStyles);
+  const insets = useSafeAreaInsets();
   const [current, setCurrent] = useState<ToastRequest | null>(null);
   const queue = useRef<ToastRequest[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,7 +88,7 @@ export const AppToast: React.FC = () => {
   if (!current) return null;
 
   return (
-    <View style={styles.layer} pointerEvents="box-none">
+    <View style={[styles.layer, { bottom: 96 + insets.bottom }]} pointerEvents="box-none">
       <View style={styles.pill}>
         {current.icon != null && <View style={styles.iconWrap}>{current.icon}</View>}
         <Text style={styles.message} numberOfLines={2}>

@@ -25,6 +25,7 @@ import {
 import { AssessmentIcon } from './AnalysisBadge';
 import { THEME, playerColor, useTheme, wallColorForPlayer, wallPreviewColor } from '../theme';
 import { BoardSkin, useBoardSkin } from '../theme/boardTheme';
+import { useOrbPaletteId } from '../theme/orbTheme';
 
 interface GameBoardProps {
   state: GameState;
@@ -290,7 +291,8 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   // Active skin first: rim geometry below depends on it.
   const theme = useTheme();
   const skin: BoardSkin = useBoardSkin();
-  const styles = useMemo(() => getBoardStyles(), [skin, theme]);
+  const orbPaletteId = useOrbPaletteId();
+  const styles = useMemo(() => getBoardStyles(), [skin, theme, orbPaletteId]);
 
   const isTabletScreen = windowWidth >= 600 && (windowWidth <= 1100 || windowHeight >= windowWidth);
   const maxCap = isTabletScreen ? 560 : (Platform.OS === 'web' ? 396 : 420);
@@ -843,6 +845,8 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                     backgroundColor: ball,
                     borderWidth: skin.orbRimWidth ?? 0,
                     borderColor: skin.orbRim ?? 'transparent',
+                    borderBottomWidth: Math.max(1.5, Math.round(orbDiameter * 0.08)),
+                    borderBottomColor: 'rgba(0, 0, 0, 0.28)',
                     transform: [
                       { scale: isSelected ? 1.08 : 1 },
                       { scale: anim.scale },

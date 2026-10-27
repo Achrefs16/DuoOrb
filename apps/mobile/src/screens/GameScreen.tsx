@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, BackHandler, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 
 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AIDifficulty,
   AI_PROFILES,
@@ -25,15 +25,20 @@ import {
   rebuildStateAtStep,
   routeOf,
 } from '@duoorb/game-core';
-import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
 import type { GameSyncDto } from '@duoorb/protocol';
 import { GameBoard, boardRim, isInsideBoard, nearestWallSlot } from '../components/GameBoard';
 import { PlayerStrip, type SeatStatus } from '../components/GameHud';
+import { OnlineOpponentRow, OnlineSelfBar } from '../components/OnlineMatchHud';
+import {
+  COMPACT_STATS_MAX_HEIGHT,
+  MatchStats,
+} from '../components/MatchStats';
+import { DuoOrbLogo } from '../components/DuoOrbLogo';
 import { GameOverModal } from '../components/GameOverModal';
-import { fetchOrComputeReview } from '../analysis/reviewLoader';
 import { reviewCacheKey, cacheReview } from './GameReviewScreen';
 import { PlayerProfileScreen } from './PlayerProfileScreen';
-import { SideChoice } from './MatchSetupScreen';
+import { sideIndexForChoice, type SideChoice } from '../lib/sideChoice';
 import { WallTray } from '../components/WallTray';
 import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playNotifySound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
 import { toast } from '../components/AppToast';
@@ -63,8 +68,9 @@ import { canUndoAiTurn, findUndoTargetStep } from '../lib/undo';
 import { useTranslation } from '../i18n';
 import { BotAvatar } from '../components/BotAvatar';
 import { SmoothStar } from '../components/SmoothStar';
-import { WallIcon } from '../components/WallIcon';
 import { setSfxMuted } from '../audio/sfx';
+
+const BOTTOM_DOCK_HEIGHT = 52;
 
 function formatTimer(seconds?: number): string {
   if (seconds === undefined || seconds <= 0) return '0:00';
@@ -248,6 +254,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // never unmounts mid-match. See profilePlayer.
 }) => {
   const styles = useStyles(createStyles);
+  const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const identity = useIdentity();
   const { t } = useTranslation();
@@ -269,14 +276,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const onlineSendAction = online.sendAction;
   const [offlineSnapshot, setOfflineSnapshot] = useState<Awaited<ReturnType<typeof loadOnlineGameSnapshot>>>(null);
 
-  // Your side in classic AI games, resolved once per mount (random = 50/50
-  // coin flip). In online games, resolved directly by server seat assignment.
-  const [humanIdx, setHumanIdx] = useState(() => {
-    if (type !== 'ai' || mode !== '2p') return 0;
-    if (sideChoice === 'red') return 1;
-    if (sideChoice === 'random') return Math.random() < 0.5 ? 0 : 1;
-    return 0;
-  });
+  // Your side in AI games, resolved once per mount across every mode and
+  // player count. In online games, the server assigns the seat instead.
+  const [humanIdx, setHumanIdx] = useState(() =>
+    type === 'ai' ? sideIndexForChoice(sideChoice, playerCountForMode(mode)) : 0
+  );
 
   useEffect(() => {
     if (type === 'online') {
@@ -455,43 +459,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
   const [showGameOver, setShowGameOver] = useState<boolean>(false);
   const [botStarsEarned, setBotStarsEarned] = useState<1 | 2 | 3 | null>(null);
-  const [localMoveCounts, setLocalMoveCounts] = useState<{ best: number; excellent: number; good: number } | null>(null);
 
-  useEffect(() => {
-    if (state.status !== 'COMPLETED' || state.history.length === 0) {
-      setLocalMoveCounts(null);
-      return;
-    }
-    let cancelled = false;
-    const myId =
-      type === 'online'
-        ? online.myPlayerId
-        : type === 'ai'
-        ? state.players[humanIdx]?.id
-        : state.players[0]?.id;
-
-    void fetchOrComputeReview(initialState, state.history, state.gameId, {
-      isCancelled: () => cancelled,
-    }).then((review) => {
-      if (cancelled || !review) return;
-      const userMoves = review.moveAnalyses.filter((m) => m.playerId === myId);
-      const best = userMoves.filter(
-        (m) =>
-          m.assessment === 'BEST' ||
-          m.assessment === 'BRILLIANT' ||
-          m.assessment === 'GREAT'
-      ).length;
-      const excellent = userMoves.filter((m) => m.assessment === 'EXCELLENT').length;
-      const good = userMoves.filter((m) => m.assessment === 'GOOD').length;
-      setLocalMoveCounts({ best, excellent, good });
-    }).catch(() => {
-      if (!cancelled) setLocalMoveCounts({ best: 0, excellent: 0, good: 0 });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [state.status, state.gameId, state.history, initialState, type, humanIdx, online.myPlayerId]);
+  // Full server review is intentionally NOT started here. The finish modal
+  // uses a shallow local preview; the authoritative request begins only when
+  // the player opens Game Review and passes the access gate.
   // Rewarded-analysis gate (MONETIZATION.md P3.2): the GameOverModal Analyze
   // row funnels through handleAnalyzePress below — premium/unlocked go
   // straight to review, everyone else gets this sheet (one ad = this game).
@@ -502,7 +473,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // Player cards wear the skin too (bg + border + matching ink, always as a
   // set so contrast holds). Undefined = app theme owns the cards.
   const hudSurface =
-    skin.hudCard && skin.hudBorder && skin.hudInk && skin.hudSubInk && skin.hudChip
+    skin.hudCard &&
+    skin.hudBorder &&
+    skin.hudInk &&
+    skin.hudSubInk &&
+    skin.hudChip &&
+    !(THEME.mode === 'dark' && skin.id !== 'walnut')
       ? {
           card: skin.hudCard,
           border: skin.hudBorder,
@@ -780,13 +756,20 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   // Board size, unified for 2p and 4p: full screen width edge-to-edge (effectiveWidth),
   // capped only by vertical space on extremely short devices like Chess.com.
+  // The action dock sits outside boardWrap, so reserve its fixed height too;
+  // otherwise the wall tray can render underneath it on short screens.
   const measuredBoardSize = Math.max(
     200,
     Math.floor(
       Math.min(
         effectiveWidth,
         anchorW > 0 ? anchorW : Number.POSITIVE_INFINITY,
-        windowHeight - topH - bottomH - 8
+        windowHeight -
+          topH -
+          bottomH -
+          BOTTOM_DOCK_HEIGHT -
+          insets.bottom -
+          12
       )
     )
   );
@@ -869,14 +852,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     () => premoveQueue.flatMap((s) => (s.kind === 'move' ? [s.to] : [])),
     [premoveQueue]
   );
+  // Online: a move is in flight (optimistic board already shows the orb at
+  // its destination). Dots computed from the confirmed state would linger
+  // until the server echoes back, so hide them at once.
+  const moveInFlight =
+    type === 'online' && (online.pendingCount > 0 || (!!online.gameState && state !== online.gameState));
   const legalMoves = useMemo(
     () =>
       showSel
         ? [...selHints, ...queuedTos]
-        : humanTurn && currentPlayer
+        : humanTurn && currentPlayer && !moveInFlight
         ? getLegalMoves(state, currentPlayer.id)
         : EMPTY_CELL_LIST,
-    [showSel, selHints, queuedTos, humanTurn, currentPlayer, state]
+    [showSel, selHints, queuedTos, humanTurn, currentPlayer, state, moveInFlight]
   );
   // Dots show for the first pick only; afterwards the queue runs blind on
   // tints (own turn always keeps its normal dots).
@@ -1655,7 +1643,20 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const mySeatFinished = type === 'online' && mySeat?.status === 'FINISHED';
   const myAiFinished = type === 'ai' && myOrb?.status === 'FINISHED';
   const isCompleted = state.status === 'COMPLETED';
+
+  // AI multiplayer has no server to announce your finish. Once your orb
+  // reaches the goal while bots keep racing, offer the same keep-watching /
+  // leave choice online players get instead of trapping you on the board.
+  useEffect(() => {
+    if (type !== 'ai' || !myAiFinished || isCompleted) return;
+    const place = myOrb?.place;
+    if (place == null) return;
+    setFinishModal({ place });
+  }, [type, myAiFinished, isCompleted, myOrb?.place]);
   const isMultiplayer = state.players.length > 2;
+  const compactMatchStats =
+    isMultiplayer &&
+    (windowHeight < COMPACT_STATS_MAX_HEIGHT || windowWidth < 370);
   // Viewer victory (same definition the result modal shows): drives the
   // win-only interstitial on result exit — losses never show one.
   const userWon = state.winnerId
@@ -2415,11 +2416,11 @@ useEffect(() => {
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityLabel="Go back"
         >
-          <Feather name="chevron-left" size={24} color={THEME.colors.textPrimary} />
+          <OrbIcon name="chevron-left" size={24} color={THEME.colors.textPrimary} />
         </TouchableOpacity>
 
         <View style={styles.headerCenterBrand}>
-          <View style={[styles.headerOrbDot, { backgroundColor: THEME.colors.primary }]} />
+          <DuoOrbLogo size={26} inset={0.04} />
           <Text style={styles.headerTitle}>
             DuoOrb
           </Text>
@@ -2428,7 +2429,7 @@ useEffect(() => {
         <View style={styles.headerRight}>
           {type === 'online' ? (
             <View style={styles.connStatusWrap}>
-              <Feather
+              <OrbIcon
                 name={online.connStatus === 'connected' ? 'wifi' : 'wifi-off'}
                 size={18}
                 color={online.connStatus === 'connected' ? THEME.colors.tertiary : THEME.colors.error}
@@ -2448,13 +2449,19 @@ useEffect(() => {
       {type === 'ai' && personality ? (
         (() => {
           if (state.players.length > 2) {
-            // Multi-bot opponent zone (>2P match vs bots): Avatar on top -> Clock -> Walls
+            // Multi-bot opponent zone (>2P match vs bots): avatar/name then
+            // the standard wall + clock stack.
             const botSeats = state.players
               .map((p, i) => ({ player: p, index: i }))
               .filter((x) => x.index !== humanIdx);
 
             return (
-              <View style={styles.multiBotHeroRow}>
+              <View
+                style={[
+                  styles.multiBotHeroRow,
+                  compactMatchStats && styles.multiBotHeroRowCompact,
+                ]}
+              >
                 {botSeats.map(({ player: botPlayer, index: seatIdx }) => {
                   const bot = getBotForSeat(seatIdx);
                   const isBotActive = state.currentPlayerIndex === seatIdx;
@@ -2462,51 +2469,39 @@ useEffect(() => {
                   const botTimer = timers?.[botPlayer.id];
 
                   return (
-                    <View key={botPlayer.id} style={styles.multiBotCol}>
+                    <View
+                      key={botPlayer.id}
+                      style={[
+                        styles.multiBotCol,
+                        compactMatchStats && styles.multiBotColCompact,
+                      ]}
+                    >
                       {/* Avatar on top */}
                       <View style={styles.multiBotAvatarWrap}>
                         <BotAvatar
                           avatarKey={bot?.avatarKey ?? 'martin'}
                           color={botBall}
-                          size={46}
+                          size={compactMatchStats ? 36 : 46}
                           noBg
                         />
                       </View>
-                      <Text style={styles.multiBotName} numberOfLines={1}>
+                      <Text
+                        style={[
+                          styles.multiBotName,
+                          compactMatchStats && styles.multiBotNameCompact,
+                        ]}
+                        numberOfLines={1}
+                      >
                         {bot?.name ?? botPlayer.displayName}
                       </Text>
 
-                      {/* Clock underneath (if timed) */}
-                      {botTimer !== undefined && (
-                        <View
-                          style={[
-                            styles.multiBotTimerBox,
-                            isBotActive && styles.multiBotTimerBoxActive,
-                          ]}
-                        >
-                          <MaterialCommunityIcons
-                            name="timer-outline"
-                            size={12}
-                            color={isBotActive ? THEME.colors.primary : THEME.colors.textMuted}
-                          />
-                          <Text
-                            style={[
-                              styles.multiBotTimerText,
-                              isBotActive && styles.multiBotTimerTextActive,
-                            ]}
-                          >
-                            {formatTimer(botTimer)}
-                          </Text>
-                        </View>
-                      )}
-
-                      {/* Remaining walls underneath */}
-                      <View style={styles.multiBotWallsChip}>
-                        <WallIcon size={13} color={botBall} />
-                        <Text style={styles.multiBotWallsText}>
-                          {botPlayer.wallsRemaining}
-                        </Text>
-                      </View>
+                      <MatchStats
+                        wallsRemaining={botPlayer.wallsRemaining}
+                        timeLeft={botTimer}
+                        ball={botBall}
+                        isActive={isBotActive}
+                        compact={compactMatchStats}
+                      />
                     </View>
                   );
                 })}
@@ -2542,33 +2537,34 @@ useEffect(() => {
                 <View style={{ flex: 1 }} />
               )}
 
-              {/* Bot stats on top right: remaining walls + clock (stacked in one column) */}
+              {/* Bot stats on top right: standard wall + clock stack */}
               {botPlayer && (
-                <View style={styles.botHeroRightStats}>
-                  <View style={styles.statWallsChip}>
-                    <WallIcon size={14} color={botBall} />
-                    <Text style={styles.statWallsText}>
-                      {botPlayer.wallsRemaining}
-                    </Text>
-                  </View>
-
-                  {botTimer !== undefined && (
-                    <View style={[styles.matchTimerBox, isBotActive && styles.matchTimerBoxActive]}>
-                      <MaterialCommunityIcons
-                        name="timer-outline"
-                        size={14}
-                        color={isBotActive ? THEME.colors.primary : THEME.colors.textMuted}
-                      />
-                      <Text style={[styles.matchTimerText, isBotActive && styles.matchTimerTextActive]}>
-                        {formatTimer(botTimer)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
+                <MatchStats
+                  wallsRemaining={botPlayer.wallsRemaining}
+                  timeLeft={botTimer}
+                  ball={botBall}
+                  isActive={isBotActive}
+                />
               )}
             </View>
           );
         })()
+      ) : type === 'online' ? (
+        <View pointerEvents={wallDrag ? 'none' : 'auto'}>
+          <OnlineOpponentRow
+            players={topList}
+            compact={isMultiplayer}
+            compactStats={compactMatchStats}
+            timers={timers}
+            activeId={activeId}
+            seatStatus={onlineSeatStatus}
+            seatPremium={seatPremium}
+            reactionsBySeat={groupedReactions.bySeat}
+            onReactionDone={reactions.dismiss}
+            onPressPlayer={handleOpponentPress}
+            surface={hudSurface}
+          />
+        </View>
       ) : (
         <View
           pointerEvents={wallDrag ? 'none' : 'auto'}
@@ -2583,6 +2579,7 @@ useEffect(() => {
             ratings={seatRatings}
             countryFlags={seatCountryFlags}
             compact
+            compactStats={compactMatchStats}
             grid={splitActive}
             bonus={lastBonus}
             seatStatus={onlineSeatStatus}
@@ -2687,7 +2684,7 @@ useEffect(() => {
                   {/* Human Clock (Right) */}
                   {humanTimer !== undefined && (
                     <View style={[styles.matchTimerBox, isHumanActive && styles.matchTimerBoxActive]}>
-                      <MaterialCommunityIcons
+                      <OrbIcon
                         name="timer-outline"
                         size={15}
                         color={isHumanActive ? THEME.colors.primary : THEME.colors.textMuted}
@@ -2700,6 +2697,26 @@ useEffect(() => {
                 </View>
               );
             })()
+          ) : type === 'online' ? (
+            seatPlayer ? (
+              <View pointerEvents={wallDrag ? 'none' : 'auto'}>
+                <OnlineSelfBar
+                  player={seatPlayer}
+                  isActive={state.currentPlayerIndex === seatIdx}
+                  timeLeft={timers?.[seatPlayer.id]}
+                  status={onlineSeatStatus[seatPlayer.id] ?? null}
+                  isPremium={seatPremium[seatPlayer.id] === true}
+                  bonus={
+                    lastBonus?.playerId === seatPlayer.id
+                      ? lastBonus.amount
+                      : null
+                  }
+                  reactions={groupedReactions.bySeat[seatPlayer.id]}
+                  onReactionDone={reactions.dismiss}
+                  surface={hudSurface}
+                />
+              </View>
+            ) : null
           ) : bottomStripState ? (
             <View pointerEvents={wallDrag ? 'none' : 'auto'}>
               <PlayerStrip
@@ -2708,6 +2725,7 @@ useEffect(() => {
                 ratings={seatRatings}
                 countryFlags={seatCountryFlags}
                 bonus={lastBonus}
+                compactStats={compactMatchStats}
                 hideWallsBadge={!splitActive}
                 grid={splitActive}
                 hideWallsForPlayerId={splitActive ? seatPlayer?.id : undefined}
@@ -2753,7 +2771,16 @@ useEffect(() => {
       </View>
 
       {/* Chess.com style bottom action dock */}
-      <View style={styles.bottomDock}>
+      <View
+        style={[
+          styles.bottomDock,
+          {
+            height: BOTTOM_DOCK_HEIGHT + insets.bottom,
+            paddingBottom: insets.bottom,
+            backgroundColor: skin.pageBackground ?? THEME.colors.background,
+          },
+        ]}
+      >
         {isCompleted ? (
           <>
             <TouchableOpacity
@@ -2761,7 +2788,7 @@ useEffect(() => {
               onPress={() => setOptionsOpen(true)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialCommunityIcons name="format-list-bulleted" size={21} color={dockIconColor} />
+              <OrbIcon name="format-list-bulleted" size={21} color={dockIconColor} />
               <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
             </TouchableOpacity>
 
@@ -2770,7 +2797,7 @@ useEffect(() => {
               onPress={() => setShowGameOver(true)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialCommunityIcons name="file-document-outline" size={21} color={dockIconColor} />
+              <OrbIcon name="file-document-outline" size={21} color={dockIconColor} />
               <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Summary</Text>
             </TouchableOpacity>
 
@@ -2778,9 +2805,12 @@ useEffect(() => {
               style={styles.dockReviewBtn}
               onPress={() => void handleAnalyzePress()}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('analysis.gameReview')}
             >
-              <SmoothStar size={15} color="#FFFFFF" />
-              <Text style={styles.dockReviewText}>Review</Text>
+              <View style={styles.dockReviewCircle}>
+                <SmoothStar size={13} color={THEME.colors.primary} />
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -2793,7 +2823,7 @@ useEffect(() => {
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
+              <OrbIcon name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
               <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
             </TouchableOpacity>
 
@@ -2812,7 +2842,7 @@ useEffect(() => {
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
+              <OrbIcon name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
               <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
             </TouchableOpacity>
           </>
@@ -2823,7 +2853,7 @@ useEffect(() => {
               onPress={() => setOptionsOpen(true)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialCommunityIcons name="format-list-bulleted" size={21} color={dockIconColor} />
+              <OrbIcon name="format-list-bulleted" size={21} color={dockIconColor} />
               <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
             </TouchableOpacity>
 
@@ -2836,7 +2866,7 @@ useEffect(() => {
               {hintLoading ? (
                 <ActivityIndicator size="small" color="#10B981" style={{ height: 21 }} />
               ) : (
-                <MaterialCommunityIcons
+                <OrbIcon
                   name={hintAction ? 'lightbulb-on' : 'lightbulb-on-outline'}
                   size={21}
                   color={hintAction ? '#10B981' : dockIconColor}
@@ -2853,7 +2883,7 @@ useEffect(() => {
               onPress={handleUndoPress}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialCommunityIcons name="undo-variant" size={21} color={undoAvailable ? dockIconColor : dockDisabledColor} />
+              <OrbIcon name="undo-variant" size={21} color={undoAvailable ? dockIconColor : dockDisabledColor} />
               <Text style={[styles.dockLabel, { color: undoAvailable ? dockLabelColor : dockDisabledColor }]}>
                 Undo
               </Text>
@@ -2869,7 +2899,7 @@ useEffect(() => {
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
+              <OrbIcon name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
               <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
             </TouchableOpacity>
 
@@ -2888,7 +2918,7 @@ useEffect(() => {
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
+              <OrbIcon name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
               <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
             </TouchableOpacity>
           </>
@@ -2899,7 +2929,7 @@ useEffect(() => {
               onPress={() => setOptionsOpen(true)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialCommunityIcons name="format-list-bulleted" size={21} color={dockIconColor} />
+              <OrbIcon name="format-list-bulleted" size={21} color={dockIconColor} />
               <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
             </TouchableOpacity>
 
@@ -2908,7 +2938,7 @@ useEffect(() => {
               onPress={() => setChatTrayOpen((v) => !v)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialCommunityIcons name="message-text-outline" size={21} color={chatTrayOpen ? THEME.colors.primary : dockIconColor} />
+              <OrbIcon name="message-text-outline" size={21} color={chatTrayOpen ? THEME.colors.primary : dockIconColor} />
               <Text style={[styles.dockLabel, { color: chatTrayOpen ? THEME.colors.primary : dockLabelColor }]}>Chat</Text>
             </TouchableOpacity>
 
@@ -2922,7 +2952,7 @@ useEffect(() => {
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
+              <OrbIcon name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
               <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
             </TouchableOpacity>
 
@@ -2941,7 +2971,7 @@ useEffect(() => {
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
+              <OrbIcon name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
               <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
             </TouchableOpacity>
           </>
@@ -2952,7 +2982,7 @@ useEffect(() => {
               onPress={() => setOptionsOpen(true)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialCommunityIcons name="format-list-bulleted" size={21} color={dockIconColor} />
+              <OrbIcon name="format-list-bulleted" size={21} color={dockIconColor} />
               <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
             </TouchableOpacity>
 
@@ -2966,7 +2996,7 @@ useEffect(() => {
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
+              <OrbIcon name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
               <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
             </TouchableOpacity>
 
@@ -2985,7 +3015,7 @@ useEffect(() => {
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
+              <OrbIcon name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
               <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
             </TouchableOpacity>
           </>
@@ -2995,22 +3025,14 @@ useEffect(() => {
       {/* Stitch resign confirm: dimmed overlay, white card, red icon. */}
       <Modal visible={resignOpen} transparent animationType="fade">
         <SafeAreaView style={styles.resignOverlay} edges={['top', 'bottom']}>
-          <View
-            style={[
-              styles.resignCard,
-              hudSurface && {
-                backgroundColor: hudSurface.card,
-                borderColor: hudSurface.border,
-              },
-            ]}
-          >
+          <View style={styles.resignCard}>
             <View style={styles.resignIconCircle}>
-              <Feather name="flag" size={28} color={THEME.colors.error} />
+              <OrbIcon name="flag" size={28} color={THEME.colors.textSecondary} />
             </View>
-            <Text style={[styles.resignTitle, hudSurface && { color: hudSurface.ink }]}>
+            <Text style={styles.resignTitle}>
               {t('game.resignTitle')}
             </Text>
-            <Text style={[styles.resignDesc, hudSurface && { color: hudSurface.subInk }]}>
+            <Text style={styles.resignDesc}>
               {type === 'online'
                 ? t('game.resignDescOnline')
                 : t('game.resignDescLocal')}
@@ -3043,7 +3065,7 @@ useEffect(() => {
             <View style={styles.optionsHeader}>
               <Text style={styles.optionsTitle}>Match Options</Text>
               <TouchableOpacity onPress={() => setOptionsOpen(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Feather name="x" size={20} color={THEME.colors.textSecondary} />
+                <OrbIcon name="x" size={20} color={THEME.colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -3059,10 +3081,10 @@ useEffect(() => {
                       }}
                     >
                       <View style={styles.optionRowLeft}>
-                        <Feather name="refresh-cw" size={20} color={THEME.colors.primary} />
+                        <OrbIcon name="refresh-cw" size={20} color={THEME.colors.primary} />
                         <Text style={[styles.optionRowText, { color: THEME.colors.primary }]}>Rematch</Text>
                       </View>
-                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                      <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -3077,10 +3099,10 @@ useEffect(() => {
                       }}
                     >
                       <View style={styles.optionRowLeft}>
-                        <MaterialCommunityIcons name="robot-outline" size={20} color={THEME.colors.textPrimary} />
+                        <OrbIcon name="robot-outline" size={20} color={THEME.colors.textPrimary} />
                         <Text style={styles.optionRowText}>Play vs Different Bot</Text>
                       </View>
-                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                      <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -3091,10 +3113,10 @@ useEffect(() => {
                       }}
                     >
                       <View style={styles.optionRowLeft}>
-                        <Feather name="log-out" size={20} color={THEME.colors.textSecondary} />
+                        <OrbIcon name="log-out" size={20} color={THEME.colors.textSecondary} />
                         <Text style={styles.optionRowText}>Exit Match</Text>
                       </View>
-                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                      <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
                   </>
                 ) : (
@@ -3107,10 +3129,10 @@ useEffect(() => {
                       }}
                     >
                       <View style={styles.optionRowLeft}>
-                        <Feather name="rotate-ccw" size={20} color={THEME.colors.textPrimary} />
+                        <OrbIcon name="rotate-ccw" size={20} color={THEME.colors.textPrimary} />
                         <Text style={styles.optionRowText}>Restart</Text>
                       </View>
-                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                      <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
 
                     {canResign && (
@@ -3122,10 +3144,10 @@ useEffect(() => {
                         }}
                       >
                         <View style={styles.optionRowLeft}>
-                          <Feather name="flag" size={20} color={THEME.colors.error} />
+                          <OrbIcon name="flag" size={20} color={THEME.colors.error} />
                           <Text style={[styles.optionRowText, { color: THEME.colors.error }]}>Resign Match</Text>
                         </View>
-                        <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                        <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                       </TouchableOpacity>
                     )}
 
@@ -3141,10 +3163,10 @@ useEffect(() => {
                       }}
                     >
                       <View style={styles.optionRowLeft}>
-                        <MaterialCommunityIcons name="robot-outline" size={20} color={THEME.colors.textPrimary} />
+                        <OrbIcon name="robot-outline" size={20} color={THEME.colors.textPrimary} />
                         <Text style={styles.optionRowText}>Play vs Different Bot</Text>
                       </View>
-                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                      <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -3155,10 +3177,10 @@ useEffect(() => {
                       }}
                     >
                       <View style={styles.optionRowLeft}>
-                        <Feather name="log-out" size={20} color={THEME.colors.textSecondary} />
+                        <OrbIcon name="log-out" size={20} color={THEME.colors.textSecondary} />
                         <Text style={styles.optionRowText}>Exit to Menu</Text>
                       </View>
-                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                      <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
                   </>
                 )
@@ -3174,10 +3196,10 @@ useEffect(() => {
                         }}
                       >
                         <View style={styles.optionRowLeft}>
-                          <Feather name="refresh-cw" size={20} color={THEME.colors.primary} />
+                          <OrbIcon name="refresh-cw" size={20} color={THEME.colors.primary} />
                           <Text style={[styles.optionRowText, { color: THEME.colors.primary }]}>Rematch</Text>
                         </View>
-                        <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                        <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                       </TouchableOpacity>
 
                       <TouchableOpacity
@@ -3188,10 +3210,10 @@ useEffect(() => {
                         }}
                       >
                         <View style={styles.optionRowLeft}>
-                          <Feather name="play" size={20} color={THEME.colors.textPrimary} />
+                          <OrbIcon name="play" size={20} color={THEME.colors.textPrimary} />
                           <Text style={styles.optionRowText}>New Game</Text>
                         </View>
-                        <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                        <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                       </TouchableOpacity>
                     </>
                   )}
@@ -3205,10 +3227,10 @@ useEffect(() => {
                       }}
                     >
                       <View style={styles.optionRowLeft}>
-                        <Feather name="flag" size={20} color={THEME.colors.error} />
+                        <OrbIcon name="flag" size={20} color={THEME.colors.error} />
                         <Text style={[styles.optionRowText, { color: THEME.colors.error }]}>Resign Match</Text>
                       </View>
-                      <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                      <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
                   )}
 
@@ -3220,10 +3242,10 @@ useEffect(() => {
                     }}
                   >
                     <View style={styles.optionRowLeft}>
-                      <Feather name="log-out" size={20} color={THEME.colors.textSecondary} />
+                      <OrbIcon name="log-out" size={20} color={THEME.colors.textSecondary} />
                       <Text style={styles.optionRowText}>{isCompleted ? 'Exit Match' : 'Exit to Menu'}</Text>
                     </View>
-                    <Feather name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                    <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                   </TouchableOpacity>
                 </>
               )}
@@ -3263,7 +3285,7 @@ useEffect(() => {
         <SafeAreaView style={styles.resignOverlay} edges={['top', 'bottom']}>
           <View style={styles.finishCard}>
             <View style={styles.finishIconCircle}>
-              <Feather name="award" size={30} color={THEME.colors.assessmentInaccuracy} />
+              <OrbIcon name="award" size={30} color={THEME.colors.assessmentInaccuracy} />
             </View>
             <Text style={styles.finishTitle}>
               {finishModal?.place === 1 ? t('game.place1st') : t('game.placeNth', { place: finishModal?.place ?? '' })}
@@ -3287,7 +3309,7 @@ useEffect(() => {
           switch sat on a stale result screen with no progress signal. */}
       {type === 'online' && online.joinError && !online.gameState && !offlineSnapshot && (
         <View style={styles.blockingOverlay}>
-          <Feather name="alert-circle" size={28} color={THEME.colors.danger} />
+          <OrbIcon name="alert-circle" size={28} color={THEME.colors.danger} />
           <Text style={styles.blockingTitle}>{online.joinError}</Text>
           <Text style={styles.blockingSub}>{t('game.searchAgainBack')}</Text>
         </View>
@@ -3318,7 +3340,6 @@ useEffect(() => {
         state={state}
         initialState={initialState}
         type={type}
-        moveCounts={localMoveCounts}
         onOpenPremium={() => {
           setPremiumSource('gameover');
           setPremiumOpen(true);
@@ -3429,7 +3450,7 @@ useEffect(() => {
       >
         <SafeAreaView style={styles.rematchToastOverlay} edges={['top', 'bottom']} pointerEvents="box-none">
           <View style={styles.rematchToast}>
-            <Feather name="rotate-ccw" size={18} color={THEME.colors.primary} />
+            <OrbIcon name="rotate-ccw" size={18} color={THEME.colors.primary} />
             <Text style={styles.rematchToastText}>
               {online.rematchOffered && !rematchIncomingDismissed
                 ? t('game.rematchOffered')
@@ -3509,11 +3530,6 @@ const createStyles = () => StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
-  headerOrbDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
   headerTitle: {
     fontFamily: THEME.fonts.bold,
     fontSize: 16,
@@ -3581,13 +3597,6 @@ const createStyles = () => StyleSheet.create({
     fontWeight: '600',
     color: '#161512',
   },
-  botHeroRightStats: {
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    gap: 4,
-    flexShrink: 0,
-  },
   multiBotHeroRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -3596,10 +3605,20 @@ const createStyles = () => StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 8,
   },
+  multiBotHeroRowCompact: {
+    gap: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+  },
   multiBotCol: {
     alignItems: 'center',
     minWidth: 70,
     gap: 3,
+  },
+  multiBotColCompact: {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: 100,
   },
   multiBotAvatarWrap: {
     position: 'relative',
@@ -3612,53 +3631,8 @@ const createStyles = () => StyleSheet.create({
     textAlign: 'center',
     maxWidth: 76,
   },
-  multiBotTimerBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: THEME.colors.surfaceMuted,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  multiBotTimerBoxActive: {
-    backgroundColor: THEME.colors.primaryLight,
-  },
-  multiBotTimerText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 11,
-    color: THEME.colors.textMuted,
-  },
-  multiBotTimerTextActive: {
-    color: THEME.colors.primary,
-  },
-  multiBotWallsChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  multiBotWallsText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: THEME.colors.textSecondary,
-  },
-  statWallsChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 68,
-    height: 25,
-    borderRadius: 6,
-    backgroundColor: THEME.colors.surfaceMuted,
-    gap: 4,
-  },
-  statWallsText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: THEME.colors.textPrimary,
-    fontVariant: ['tabular-nums'],
+  multiBotNameCompact: {
+    maxWidth: '100%',
   },
   matchTimerBox: {
     flexDirection: 'row',
@@ -3730,10 +3704,9 @@ const createStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    height: 52,
+    height: BOTTOM_DOCK_HEIGHT,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: THEME.colors.outlineVariant,
-    backgroundColor: THEME.colors.surface,
     paddingHorizontal: 8,
   },
   dockItem: {
@@ -3752,21 +3725,20 @@ const createStyles = () => StyleSheet.create({
     color: THEME.colors.textSecondary,
   },
   dockReviewBtn: {
-    flexDirection: 'row',
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
     backgroundColor: THEME.colors.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: 8,
   },
-  dockReviewText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
+  dockReviewCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
   },
   optionsOverlay: {
     flex: 1,
@@ -3915,10 +3887,10 @@ const createStyles = () => StyleSheet.create({
     padding: 16,
   },
   resignCard: {
-    backgroundColor: THEME.colors.surface,
+    backgroundColor: THEME.colors.background,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: THEME.colors.outlineVariant,
+    borderColor: THEME.colors.surfaceHairline,
     padding: 24,
     maxWidth: 320,
     width: '100%',
@@ -3928,9 +3900,9 @@ const createStyles = () => StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 12,
-    backgroundColor: THEME.colors.dangerLight,
+    backgroundColor: THEME.colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: THEME.colors.dangerBorder,
+    borderColor: THEME.colors.surfaceHairline,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -4023,12 +3995,12 @@ const createStyles = () => StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
-    backgroundColor: THEME.colors.dangerBright,
+    backgroundColor: THEME.colors.surfaceMuted,
     alignItems: 'center',
   },
   resignConfirmText: {
     fontFamily: THEME.fonts.semiBold,
-    color: THEME.colors.onPrimary,
+    color: THEME.colors.textPrimary,
     fontSize: 14,
     fontWeight: '600',
   },

@@ -11,8 +11,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon, type OrbIconName } from '../components/OrbIcon';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { runWhenOnline } from '../components/NoConnection';
 import { BlockedUsers } from '../components/BlockedUsers';
@@ -43,11 +44,13 @@ interface SettingsScreenProps {
   onBack: () => void;
   /** Opens the native in-app legal reader (offline-capable). */
   onOpenLegal?: (kind: LegalKind) => void;
+  /** Opens the interactive 4-scenario tutorial. */
+  onOpenTutorial?: () => void;
 }
 
 interface ToggleRow {
   key: keyof UserSettings;
-  icon: React.ComponentProps<typeof Feather>['name'];
+  icon: OrbIconName;
   title: string;
   desc: string;
   disabled?: boolean;
@@ -60,9 +63,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onChange,
   onBack,
   onOpenLegal,
+  onOpenTutorial,
 }) => {
   const styles = useStyles(createStyles);
   const { t, currentLanguage } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [languageOpen, setLanguageOpen] = useState(false);
 
   const gameplayRows: ToggleRow[] = [
@@ -335,7 +340,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     return (
       <View style={[styles.settingRow, row.disabled && styles.settingRowDisabled]}>
         <View style={styles.settingIconBox}>
-          <Feather name={row.icon} size={15} color={THEME.colors.textSecondary} />
+          <OrbIcon name={row.icon} size={15} color={THEME.colors.textSecondary} />
         </View>
         <View style={styles.settingText}>
           <Text style={styles.settingTitle}>{row.title}</Text>
@@ -364,14 +369,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           onPress={onBack}
           accessibilityLabel={t('common.back')}
         >
-          <Feather name="arrow-left" size={20} color={THEME.colors.onSurface} />
+          <OrbIcon name="arrow-left" size={20} color={THEME.colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('settings.title')}</Text>
       </View>
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, { paddingBottom: 32 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -427,7 +432,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <View style={styles.divider} />
               <View style={styles.settingRow}>
                 <View style={styles.settingIconBox}>
-                  <Feather name="mail" size={15} color={THEME.colors.textSecondary} />
+                  <OrbIcon name="mail" size={15} color={THEME.colors.textSecondary} />
                 </View>
                 <View style={styles.settingText}>
                   <Text style={styles.settingTitle}>{t('settings.email')}</Text>
@@ -455,7 +460,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             {isPremiumMember ? (
               <View style={styles.settingRow}>
                 <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                  <MaterialCommunityIcons name="crown" size={15} color={PREMIUM_GOLD} />
+                  <OrbIcon name="crown" size={15} color={PREMIUM_GOLD} />
                 </View>
                 <View style={styles.settingText}>
                   <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.premiumActive')}</Text>
@@ -475,7 +480,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 accessibilityLabel={t('settings.getPremium')}
               >
                 <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                  <MaterialCommunityIcons name="crown" size={15} color={PREMIUM_GOLD} />
+                  <OrbIcon name="crown" size={15} color={PREMIUM_GOLD} />
                 </View>
                 <View style={styles.settingText}>
                   <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.getPremium')}</Text>
@@ -483,7 +488,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     {t('settings.getPremiumDesc', { price: '$3.99' })}
                   </Text>
                 </View>
-                <Feather name="chevron-right" size={14} color="#3A2A00" />
+                <OrbIcon name="chevron-right" size={14} color="#3A2A00" />
               </TouchableOpacity>
             )}
             {isPremiumMember && (
@@ -496,7 +501,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   accessibilityLabel={t('settings.manageSub')}
                 >
                   <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                    <Feather name="settings" size={15} color={PREMIUM_GOLD} />
+                    <OrbIcon name="settings" size={15} color={PREMIUM_GOLD} />
                   </View>
                   <View style={styles.settingText}>
                     <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.manageSub')}</Text>
@@ -504,7 +509,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       {t('settings.manageSubDesc')}
                     </Text>
                   </View>
-                  <Feather name="external-link" size={14} color="#3A2A00" />
+                  <OrbIcon name="external-link" size={14} color="#3A2A00" />
                 </TouchableOpacity>
               </>
             )}
@@ -527,7 +532,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           {!editingDisplayName ? (
             <View style={styles.settingRow}>
               <View style={styles.settingIconBox}>
-                <Feather name="user" size={15} color={THEME.colors.textSecondary} />
+                <OrbIcon name="user" size={15} color={THEME.colors.textSecondary} />
               </View>
               <View style={styles.settingText}>
                 <Text style={styles.settingTitle} numberOfLines={1}>
@@ -540,7 +545,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 onPress={startDisplayNameEdit}
                 accessibilityLabel={t('settings.editDisplayNameA11y')}
               >
-                <Feather name="edit-2" size={14} color={THEME.colors.primary} />
+                <OrbIcon name="edit-2" size={14} color={THEME.colors.primary} />
                 <Text style={styles.editButtonText}>{t('common.edit')}</Text>
               </TouchableOpacity>
             </View>
@@ -592,7 +597,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <>
               <View style={styles.settingRow}>
                 <View style={styles.settingIconBox}>
-                  <Feather name="at-sign" size={15} color={THEME.colors.textSecondary} />
+                  <OrbIcon name="at-sign" size={15} color={THEME.colors.textSecondary} />
                 </View>
                 <View style={styles.settingText}>
                   <Text style={styles.settingTitle} numberOfLines={1}>
@@ -609,7 +614,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   onPress={startUsernameEdit}
                   accessibilityLabel={t('settings.editUsernameA11y')}
                 >
-                  <Feather name="edit-2" size={14} color={THEME.colors.primary} />
+                  <OrbIcon name="edit-2" size={14} color={THEME.colors.primary} />
                   <Text style={styles.editButtonText}>{t('common.edit')}</Text>
                 </TouchableOpacity>
               </View>
@@ -701,13 +706,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             accessibilityRole="button"
           >
             <View style={styles.settingIconBox}>
-              <Feather name="slash" size={15} color={THEME.colors.textSecondary} />
+              <OrbIcon name="slash" size={15} color={THEME.colors.textSecondary} />
             </View>
             <View style={styles.settingText}>
               <Text style={styles.settingTitle}>{t('settings.blockedUsers')}</Text>
               <Text style={styles.settingDesc}>{t('settings.blockedUsersDesc')}</Text>
             </View>
-            <Feather
+            <OrbIcon
               name={showBlocked ? 'chevron-up' : 'chevron-down'}
               size={14}
               color={THEME.colors.textMuted}
@@ -733,6 +738,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           ))}
         </View>
 
+        {/* Tutorial & Rules */}
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>TUTORIAL & RULES</Text>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={onOpenTutorial}
+            accessibilityRole="button"
+            accessibilityLabel="Interactive Tutorial"
+          >
+            <View style={styles.settingIconBox}>
+              <OrbIcon name="play-circle" size={16} color={THEME.colors.primary} />
+            </View>
+            <View style={styles.settingText}>
+              <Text style={styles.settingTitle}>Interactive Tutorial</Text>
+              <Text style={styles.settingDesc}>
+                Replay the 4 guided tactical scenarios with the 3D pointing hand
+              </Text>
+            </View>
+            <OrbIcon name="chevron-right" size={14} color={THEME.colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
         {/* Language */}
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>{t('language.section')}</Text>
@@ -749,7 +776,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Text style={styles.settingTitle}>{currentLanguage.nativeName}</Text>
               <Text style={styles.settingDesc}>{currentLanguage.englishName}</Text>
             </View>
-            <Feather name="chevron-right" size={16} color={THEME.colors.textMuted} />
+            <OrbIcon name="chevron-right" size={16} color={THEME.colors.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -817,12 +844,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </View>
                   {locked ? (
                     <View style={styles.skinLock}>
-                      <MaterialCommunityIcons name="crown" size={13} color={PREMIUM_GOLD} />
+                      <OrbIcon name="crown" size={13} color={PREMIUM_GOLD} />
                       <Text style={styles.skinLockText}>{t('settings.boardPremiumTag')}</Text>
                     </View>
                   ) : (
                     selected && (
-                      <Feather name="check-circle" size={18} color={THEME.colors.primary} />
+                      <OrbIcon name="check-circle" size={18} color={THEME.colors.primary} />
                     )
                   )}
                 </TouchableOpacity>
@@ -830,6 +857,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             );
           })}
         </View>
+
 
         {/* Legal - native in-app reader (offline). Web version linked inside. */}
         <View style={styles.card}>
@@ -840,13 +868,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             accessibilityLabel={t('settings.privacyPolicy')}
           >
             <View style={styles.settingIconBox}>
-              <Feather name="shield" size={15} color={THEME.colors.textSecondary} />
+              <OrbIcon name="shield" size={15} color={THEME.colors.textSecondary} />
             </View>
             <View style={styles.settingText}>
               <Text style={styles.settingTitle}>{t('settings.privacyPolicy')}</Text>
               <Text style={styles.settingDesc}>{t('settings.privacyPolicyDesc')}</Text>
             </View>
-            <Feather name="chevron-right" size={14} color={THEME.colors.textMuted} />
+            <OrbIcon name="chevron-right" size={14} color={THEME.colors.textMuted} />
           </TouchableOpacity>
           <View style={styles.divider} />
           <TouchableOpacity
@@ -855,13 +883,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             accessibilityLabel={t('settings.terms')}
           >
             <View style={styles.settingIconBox}>
-              <Feather name="file-text" size={15} color={THEME.colors.textSecondary} />
+              <OrbIcon name="file-text" size={15} color={THEME.colors.textSecondary} />
             </View>
             <View style={styles.settingText}>
               <Text style={styles.settingTitle}>{t('settings.terms')}</Text>
               <Text style={styles.settingDesc}>{t('settings.termsDesc')}</Text>
             </View>
-            <Feather name="chevron-right" size={14} color={THEME.colors.textMuted} />
+            <OrbIcon name="chevron-right" size={14} color={THEME.colors.textMuted} />
           </TouchableOpacity>
           <View style={styles.divider} />
           <TouchableOpacity
@@ -870,7 +898,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             accessibilityLabel={t('settings.deleteData')}
           >
             <View style={styles.settingIconBox}>
-              <Feather name="trash-2" size={15} color={THEME.colors.textSecondary} />
+              <OrbIcon name="trash-2" size={15} color={THEME.colors.textSecondary} />
             </View>
             <View style={styles.settingText}>
               <Text style={styles.settingTitle}>{t('settings.deleteData')}</Text>
@@ -878,7 +906,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 {t('settings.deleteDataDesc')}
               </Text>
             </View>
-            <Feather name="chevron-right" size={14} color={THEME.colors.textMuted} />
+            <OrbIcon name="chevron-right" size={14} color={THEME.colors.textMuted} />
           </TouchableOpacity>
           <Text style={styles.supportText}>{t('settings.support', { email: LEGAL_CONTACT_EMAIL })}</Text>
         </View>
@@ -897,7 +925,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 onPress={requestDeleteAccount}
                 accessibilityLabel={t('settings.deleteData')}
               >
-                <Feather name="trash-2" size={14} color="#fff" />
+                <OrbIcon name="trash-2" size={14} color="#fff" />
                 <Text style={styles.dangerButtonText}>
                   {deletingAccount ? t('settings.deleting') : t('settings.deleteData')}
                 </Text>
@@ -1086,6 +1114,7 @@ const createStyles = () => StyleSheet.create({
     color: PREMIUM_GOLD,
     letterSpacing: 0.5,
   },
+
   avatarBox: {
     width: 56,
     height: 56,

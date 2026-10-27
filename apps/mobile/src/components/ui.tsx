@@ -195,7 +195,8 @@ const createStyles = () => StyleSheet.create({
     color: THEME.colors.textSecondaryStrong,
   },
   notice: {
-    backgroundColor: THEME.colors.inverseLabel,
+    backgroundColor:
+      THEME.mode === 'dark' ? THEME.colors.surfaceContainerHighest : THEME.colors.inverseLabel,
     borderRadius: THEME.radius.full,
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -204,6 +205,7 @@ const createStyles = () => StyleSheet.create({
     fontFamily: THEME.fonts.semiBold,
     fontSize: 12,
     fontWeight: '600',
-    color: THEME.colors.onPrimary,
+    color: THEME.mode === 'dark' ? THEME.colors.textPrimary : THEME.colors.onPrimary,
   },
+
 });

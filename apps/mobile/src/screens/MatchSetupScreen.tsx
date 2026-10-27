@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AIDifficulty,
   GameMode,
@@ -30,8 +31,9 @@ import {
   getMatchSetupDraft,
   saveMatchSetupDraft,
 } from '../storage/gameStorage';
+import { isSideChoice, type SideChoice } from '../lib/sideChoice';
 
-export type SideChoice = 'blue' | 'red' | 'random';
+export type { SideChoice } from '../lib/sideChoice';
 export type PlayerCount = 2 | 3 | 4;
 type SetupMode = 'classic' | 'center' | 'race';
 type WallsChoice = 10 | 15 | 99;
@@ -73,6 +75,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
 
   const [vsType, setVsType] = useState<'ai' | 'local' | 'challenge' | 'online'>(
     initialKind === 'ai' ? 'online' : initialKind
@@ -95,8 +98,8 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
     draft.botId && botById(draft.botId) ? draft.botId : null
   );
 
-  const [side, setSide] = useState<SideChoice>(
-    draft.side === 'red' || draft.side === 'random' ? draft.side : 'blue'
+  const [side] = useState<SideChoice>(
+    isSideChoice(draft.side) ? draft.side : 'blue'
   );
   const [playerCount, setPlayerCount] = useState<PlayerCount>(
     draft.playerCount === 3 || draft.playerCount === 4 ? draft.playerCount : 2
@@ -186,41 +189,10 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
           style={styles.backBtn}
           accessibilityLabel="Go back"
         >
-          <Feather name="arrow-left" size={24} color={THEME.colors.textPrimary} />
+          <OrbIcon name="arrow-left" size={24} color={THEME.colors.textPrimary} />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          {!optionsOpen && (
-            vsType === 'challenge' ? (
-              <Feather
-                name="shield"
-                size={20}
-                color={THEME.colors.primary}
-                style={styles.headerIcon}
-              />
-            ) : vsType === 'local' ? (
-              <Feather
-                name="smartphone"
-                size={20}
-                color={THEME.colors.primary}
-                style={styles.headerIcon}
-              />
-            ) : vsType === 'ai' ? (
-              <MaterialCommunityIcons
-                name="robot-outline"
-                size={22}
-                color={THEME.colors.primary}
-                style={styles.headerIcon}
-              />
-            ) : (
-              <MaterialCommunityIcons
-                name="chess-pawn"
-                size={22}
-                color={THEME.colors.primary}
-                style={styles.headerIcon}
-              />
-            )
-          )}
           <Text style={styles.headerTitle} numberOfLines={1}>
             {getHeaderTitle()}
           </Text>
@@ -233,7 +205,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
       {!optionsOpen ? (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.hubContent}
+          contentContainerStyle={[styles.hubContent, { paddingBottom: 40 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
         >
           {/* 1. Time & Match Options Selector Button */}
@@ -245,14 +217,14 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             accessibilityLabel={`Match options: ${summaryText}`}
           >
             <View style={styles.selectorLeft}>
-              <Feather
+              <OrbIcon
                 name="clock"
                 size={20}
                 color={THEME.colors.primary}
               />
               <Text style={styles.selectorSummaryText}>{summaryText}</Text>
             </View>
-            <Feather name="chevron-down" size={20} color={THEME.colors.textMuted} />
+            <OrbIcon name="chevron-down" size={20} color={THEME.colors.textMuted} />
           </TouchableOpacity>
 
           {/* 2. Primary 3D Green CTA: Start Game */}
@@ -281,7 +253,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                 activeOpacity={0.8}
                 onPress={() => onOpenRooms?.()}
               >
-                <Feather name="users" size={20} color="#3B82F6" />
+                <OrbIcon name="users" size={20} color={THEME.colors.textSecondary} />
                 <Text style={styles.secRowText}>Play a Friend</Text>
               </TouchableOpacity>
 
@@ -291,11 +263,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                 activeOpacity={0.8}
                 onPress={() => onSelectBotsTab?.()}
               >
-                <MaterialCommunityIcons
-                  name="robot-outline"
-                  size={20}
-                  color={THEME.colors.primary}
-                />
+                <OrbIcon name="cpu" size={20} color={THEME.colors.textSecondary} />
                 <Text style={styles.secRowText}>Play Bots</Text>
               </TouchableOpacity>
 
@@ -305,7 +273,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                 activeOpacity={0.8}
                 onPress={() => setVsType('local')}
               >
-                <Feather name="smartphone" size={20} color="#D97706" />
+                <OrbIcon name="smartphone" size={20} color={THEME.colors.textSecondary} />
                 <Text style={styles.secRowText}>Pass & Play</Text>
               </TouchableOpacity>
 
@@ -316,7 +284,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                 onPress={() => setOptionsOpen(true)}
                 accessibilityLabel="More match options"
               >
-                <Feather name="chevron-down" size={22} color={THEME.colors.textMuted} />
+                <OrbIcon name="chevron-down" size={22} color={THEME.colors.textMuted} />
               </TouchableOpacity>
             </View>
           )}
@@ -324,42 +292,12 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
           {/* If In Local Pass & Play */}
           {vsType === 'local' && (
             <View style={styles.secondaryStack}>
-              {/* Quick Player Count Picker */}
-              <View style={styles.quickPlayerSection}>
-                <Text style={styles.quickPlayerLabel}>Players on this device</Text>
-                <View style={styles.threeColGrid}>
-                  {([2, 3, 4] as const).map((cnt) => {
-                    const isSelected = playerCount === cnt;
-                    return (
-                      <TouchableOpacity
-                        key={cnt}
-                        style={[
-                          styles.timeTile,
-                          isSelected && styles.timeTileSelected,
-                        ]}
-                        activeOpacity={0.75}
-                        onPress={() => setPlayerCount(cnt)}
-                      >
-                        <Text
-                          style={[
-                            styles.timeTileText,
-                            isSelected && styles.timeTileTextSelected,
-                          ]}
-                        >
-                          {cnt} Players
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
               <TouchableOpacity
                 style={styles.secondaryRowBtn}
                 activeOpacity={0.8}
                 onPress={() => setVsType('online')}
               >
-                <Feather name="globe" size={20} color={THEME.colors.primary} />
+                <OrbIcon name="globe" size={20} color={THEME.colors.textSecondary} />
                 <Text style={styles.secRowText}>Switch to Online Match</Text>
               </TouchableOpacity>
 
@@ -368,11 +306,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                 activeOpacity={0.8}
                 onPress={() => onSelectBotsTab?.()}
               >
-                <MaterialCommunityIcons
-                  name="robot-outline"
-                  size={20}
-                  color={THEME.colors.primary}
-                />
+                <OrbIcon name="cpu" size={20} color={THEME.colors.textSecondary} />
                 <Text style={styles.secRowText}>Play Bots</Text>
               </TouchableOpacity>
             </View>
@@ -382,7 +316,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
           {vsType === 'challenge' && challengeName && (
             <View style={styles.challengeBox}>
               <View style={styles.challengeAvatar}>
-                <Feather name="user" size={24} color={THEME.colors.primary} />
+                <OrbIcon name="user" size={24} color={THEME.colors.primary} />
               </View>
               <Text style={styles.challengePrompt}>
                 Live 1v1 challenge ready for <Text style={styles.challengeTargetName}>{challengeName}</Text>
@@ -395,7 +329,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
         /* View B: Time & Match Options (exact same settings & UI as BotsScreen) */
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.optionsContent}
+          contentContainerStyle={[styles.optionsContent, { paddingBottom: 40 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
         >
           <MatchOptionsPicker
@@ -449,9 +383,6 @@ const createStyles = () =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    headerIcon: {
-      marginRight: 8,
     },
     headerTitle: {
       fontFamily: THEME.fonts.extraBold,

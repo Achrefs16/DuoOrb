@@ -13,9 +13,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
 import { THEME, useStyles } from '../theme';
 import { TIME_CONTROLS, TimeControl, NO_TIMER_CONTROL } from '../timeControls';
 import { MatchOptionsPicker, WallsChoice } from '../components/MatchOptionsPicker';
@@ -122,6 +122,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const premium = usePremium();
   const [view] = useState<OnlineMode>(initialView);
   const [clock, setClock] = useState<TimeControl>(initialClock);
@@ -566,7 +567,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             onPress={handleBack}
             accessibilityLabel="Cancel matchmaking"
           >
-            <Feather name="x" size={20} color={THEME.colors.onSurface} />
+            <OrbIcon name="x" size={20} color={THEME.colors.onSurface} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
             {isMatched
@@ -580,7 +581,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
         <ScrollView
           style={styles.mmScroll}
-          contentContainerStyle={styles.mmBody}
+          contentContainerStyle={[styles.mmBody, { paddingBottom: 32 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -751,7 +752,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                     cancelMatch();
                   }}
                 >
-                  <Feather name="x" size={16} color={THEME.colors.onSurface} />
+                  <OrbIcon name="x" size={16} color={THEME.colors.onSurface} />
                   <Text style={styles.cancelSearchText}>{t('common.cancel')}</Text>
                 </TouchableOpacity>
               </>
@@ -774,7 +775,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                     onBack();
                   }}
                 >
-                  <Feather name="x" size={16} color={THEME.colors.onSurface} />
+                  <OrbIcon name="x" size={16} color={THEME.colors.onSurface} />
                   <Text style={styles.cancelSearchText}>{t('online.cancelSearch')}</Text>
                 </TouchableOpacity>
               </>
@@ -792,7 +793,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   runWhenOnline(() => findMatch(matchConfig.mode, matchConfig.clock, matchConfig.wallsEach));
                 }}
               >
-                <Feather name="search" size={16} color={THEME.colors.onPrimary} />
+                <OrbIcon name="search" size={16} color={THEME.colors.onPrimary} />
                 <Text style={styles.retrySearchText}>{t('online.searchAgain')}</Text>
               </TouchableOpacity>
             ) : null}
@@ -831,7 +832,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity style={styles.closeBtn} onPress={handleBack}>
-            <Feather name="arrow-left" size={20} color={THEME.colors.onSurface} />
+            <OrbIcon name="arrow-left" size={20} color={THEME.colors.onSurface} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{activeRoom ? t('online.privateRoom') : t('online.privateRooms')}</Text>
         </View>
@@ -843,14 +844,14 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               accessibilityLabel={t('online.shareCode')}
             >
               <Text style={styles.codePillText}>{activeRoom.code}</Text>
-              <Feather name="copy" size={13} color={THEME.colors.primary} />
+              <OrbIcon name="copy" size={13} color={THEME.colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.shareBtn}
               onPress={() => void handleShareInvite()}
               accessibilityLabel={t('online.shareInvite')}
             >
-              <Feather name="share-2" size={14} color={THEME.colors.primary} />
+              <OrbIcon name="share-2" size={14} color={THEME.colors.primary} />
             </TouchableOpacity>
           </View>
         ) : (
@@ -865,7 +866,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       <ScrollView
         ref={roomsScrollRef}
         style={styles.scrollArea}
-        contentContainerStyle={[styles.content, { flexGrow: 1 }]}
+        contentContainerStyle={[styles.content, { flexGrow: 1, paddingBottom: 28 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
@@ -876,7 +877,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             {/* Config summary card */}
             <View style={styles.lobbySummary}>
               <View style={styles.lobbySummaryIcon}>
-                <MaterialCommunityIcons
+                <OrbIcon
                   name={
                     lobbyModeName === 'Race'
                       ? 'flag-checkered'
@@ -901,7 +902,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   onPress={openRoomSetup}
                   accessibilityLabel="Change room setup"
                 >
-                  <Feather name="sliders" size={15} color={THEME.colors.textPrimary} />
+                  <OrbIcon name="sliders" size={15} color={THEME.colors.textPrimary} />
                   <Text style={styles.lobbySetupText}>{t('online.setup')}</Text>
                 </TouchableOpacity>
               )}
@@ -935,7 +936,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         <Text style={styles.slotWaiting}>{t('online.waitingPlayer')}</Text>
                       </View>
                       <TouchableOpacity style={styles.quickAddBtn} onPress={() => void openQuickAdd()}>
-                        <Feather name="user-plus" size={15} color={THEME.colors.primary} />
+                        <OrbIcon name="user-plus" size={15} color={THEME.colors.primary} />
                         <Text style={styles.quickAddText}>{t('online.quickAdd')}</Text>
                       </TouchableOpacity>
                     </View>
@@ -957,7 +958,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                           {slot.isPremium && <PremiumBadge size="xs" />}
                           {slot.isHost && (
                             <View style={styles.hostBadge}>
-                              <MaterialCommunityIcons name="crown" size={11} color={THEME.colors.primaryDark} />
+                              <OrbIcon name="crown" size={11} color={THEME.colors.primaryDark} />
                               <Text style={styles.hostBadgeText}>{t('online.host')}</Text>
                             </View>
                           )}
@@ -974,7 +975,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         style={[styles.readyPill, slot.isReady ? styles.readyOn : styles.readyOff]}
                         onPress={() => void setReady(!slot.isReady)}
                       >
-                        <Feather
+                        <OrbIcon
                           name="check"
                           size={14}
                           color={slot.isReady ? THEME.colors.assessmentExcellent : THEME.colors.textSecondaryStrong}
@@ -990,7 +991,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                       </TouchableOpacity>
                     ) : (
                       <View style={[styles.readyPill, slot.isReady ? styles.readyOn : styles.readyOff]}>
-                        <Feather
+                        <OrbIcon
                           name="check"
                           size={14}
                           color={slot.isReady ? THEME.colors.assessmentExcellent : THEME.colors.textSecondaryStrong}
@@ -1018,7 +1019,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         accessibilityLabel={`Remove ${slot.displayName}`}
                       >
-                        <Feather name="more-vertical" size={18} color={THEME.colors.statusOffline} />
+                        <OrbIcon name="more-vertical" size={18} color={THEME.colors.statusOffline} />
                       </TouchableOpacity>
                     )}
                     </View>
@@ -1039,7 +1040,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                     <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
                   ) : (
                     <>
-                      <MaterialCommunityIcons name="play" size={20} color={THEME.colors.onPrimary} />
+                      <OrbIcon name="play" size={20} color={THEME.colors.onPrimary} />
                       <Text style={styles.lobbyCtaText}>{t('online.startGame')}</Text>
                     </>
                   )}
@@ -1053,7 +1054,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   onPress={() => setConfirmMode(isHost ? 'close' : 'leave')}
                   accessibilityLabel={isHost ? t('online.closeRoom') : t('online.leaveRoom')}
                 >
-                  <Feather name="log-out" size={15} color={THEME.colors.textSecondary} />
+                  <OrbIcon name="log-out" size={15} color={THEME.colors.textSecondary} />
                   <Text style={styles.lobbyCloseText}>{isHost ? t('online.closeRoom') : t('online.leaveRoom')}</Text>
                 </TouchableOpacity>
               </>
@@ -1111,7 +1112,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             {/* Create Room Card */}
             <View style={styles.rmCard}>
               <View style={styles.rmHeaderRow}>
-                <MaterialCommunityIcons name="plus-circle-outline" size={20} color={THEME.colors.primary} />
+                <OrbIcon name="plus-circle-outline" size={20} color={THEME.colors.primary} />
                 <Text style={styles.rmLabel}>{t('online.createRoom')}</Text>
               </View>
 
@@ -1162,7 +1163,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             onSynced={startPendingRoomGame}
             onFailed={() => setPendingRoomGame(null)}
           />
-          <View style={styles.roomStartingBar}>
+          <View style={[styles.roomStartingBar, { bottom: 24 + insets.bottom }]}>
             <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
             <Text style={styles.roomStartingText}>{t('online.startingMatch')}</Text>
             <TouchableOpacity
@@ -1173,7 +1174,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               accessibilityLabel="Cancel start"
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Feather name="x" size={18} color={THEME.colors.onPrimary} />
+              <OrbIcon name="x" size={18} color={THEME.colors.onPrimary} />
             </TouchableOpacity>
           </View>
         </>
@@ -1185,7 +1186,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           <View style={styles.confirmCard}>
             {confirmMode !== null && typeof confirmMode === 'object' && (
               <View style={styles.kickIconCircle}>
-                <MaterialCommunityIcons name="account-remove" size={22} color={THEME.colors.danger} />
+                <OrbIcon name="account-remove" size={22} color={THEME.colors.danger} />
               </View>
             )}
             <Text style={styles.confirmTitle}>{confirmTitle}</Text>
@@ -1211,7 +1212,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('online.quickAdd')}</Text>
               <TouchableOpacity style={styles.sheetClose} onPress={() => setShowQuickAdd(false)}>
-                <Feather name="x" size={20} color={THEME.colors.textMuted} />
+                <OrbIcon name="x" size={20} color={THEME.colors.textMuted} />
               </TouchableOpacity>
             </View>
             <Text style={styles.quickAddSub}>{t('online.quickAddSub')}</Text>
@@ -1233,7 +1234,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                       </View>
                     </View>
                     <TouchableOpacity style={styles.quickAddBtn} onPress={() => void inviteFriend(friend.id)}>
-                      <Feather name="user-plus" size={15} color={THEME.colors.primary} />
+                      <OrbIcon name="user-plus" size={15} color={THEME.colors.primary} />
                       <Text style={styles.quickAddText}>{t('online.invite')}</Text>
                     </TouchableOpacity>
                   </View>
@@ -1250,11 +1251,11 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           <View style={styles.sheetCard}>
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Feather name="sliders" size={18} color={THEME.colors.primary} />
+                <OrbIcon name="sliders" size={18} color={THEME.colors.primary} />
                 <Text style={styles.modalTitle}>{t('online.roomSetup')}</Text>
               </View>
               <TouchableOpacity style={styles.sheetClose} onPress={() => setShowRoomSetup(false)}>
-                <Feather name="x" size={20} color={THEME.colors.textMuted} />
+                <OrbIcon name="x" size={20} color={THEME.colors.textMuted} />
               </TouchableOpacity>
             </View>
             <Text style={styles.quickAddSub}>
@@ -1311,7 +1312,7 @@ const createStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: THEME.colors.surfaceContainerLowest,
+    backgroundColor: THEME.colors.background,
     borderBottomWidth: 1,
     borderBottomColor: THEME.colors.surfaceContainer,
   },

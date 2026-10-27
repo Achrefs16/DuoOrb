@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
 import { api } from '../network/apiClient';
@@ -89,7 +89,7 @@ export const BlockedUsers: React.FC = () => {
     return (
       <View style={styles.centerWrap}>
         <View style={styles.iconCircle}>
-          <Feather name="slash" size={26} color={THEME.colors.textMuted} />
+          <OrbIcon name="slash" size={26} color={THEME.colors.textMuted} />
         </View>
         <Text style={styles.emptyTitle}>{t('profile.noBlockedUsers').toUpperCase()}</Text>
         <Text style={styles.emptySub}>

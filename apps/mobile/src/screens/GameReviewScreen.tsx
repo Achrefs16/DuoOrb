@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { ActivityIndicator, Animated, PanResponder, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   GameReview,
   GameState,
@@ -135,6 +136,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const styles = useStyles(createStyles);
   const theme = useTheme();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [topH, setTopH] = useState(0);
   const [bottomH, setBottomH] = useState(0);
@@ -157,7 +159,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
       Math.min(
         effectiveWidth,
         anchorW > 0 ? anchorW : Number.POSITIVE_INFINITY,
-        windowHeight - topH - bottomH - 12
+        windowHeight - topH - bottomH - insets.bottom - 12
       )
     )
   );
@@ -647,26 +649,14 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const userPlayer = currentState.players[bottomIdx];
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { paddingBottom: 8 + insets.bottom }]}>
       {/* Top Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <Feather name="arrow-left" size={20} color={THEME.colors.textSecondary} />
+          <OrbIcon name="arrow-left" size={20} color={THEME.colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ alignItems: 'center' }}>
           <Text style={styles.headerTitle}>{bare ? t('review.matchReplay') : t('review.matchReview')}</Text>
-          {!bare && review?.engineVersion && (
-            <Text
-              style={{
-                fontSize: 10,
-                color: review.engineVersion.includes('rust') ? '#69B342' : '#F59E0B',
-                fontFamily: THEME.fonts.medium,
-                marginTop: 1,
-              }}
-            >
-              {review.engineVersion.includes('rust') ? '⚡ Server Engine (Rust MCTS)' : '📱 On-Device (Offline 2-ply)'}
-            </Text>
-          )}
         </View>
         <View style={{ width: 36 }} />
       </View>
@@ -725,7 +715,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               </View>
             </View>
             <View style={styles.hudTimerBox}>
-              <Feather name="clock" size={13} color={THEME.colors.textMuted} />
+              <OrbIcon name="clock" size={13} color={THEME.colors.textMuted} />
               <Text style={styles.hudTimerText}>3:00</Text>
             </View>
           </View>
@@ -800,7 +790,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               </View>
             </View>
             <View style={styles.hudTimerBox}>
-              <Feather name="clock" size={13} color={THEME.colors.textMuted} />
+              <OrbIcon name="clock" size={13} color={THEME.colors.textMuted} />
               <Text style={styles.hudTimerText}>2:48</Text>
             </View>
           </View>
@@ -832,7 +822,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               disabled={currentStep <= 0}
               onPress={() => goTo(0)}
             >
-              <Feather name="chevrons-left" size={18} color={THEME.colors.textSecondary} />
+              <OrbIcon name="chevrons-left" size={18} color={THEME.colors.textSecondary} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -840,14 +830,14 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               disabled={currentStep <= 0}
               onPress={() => goTo(currentStep - 1)}
             >
-              <Feather name="chevron-left" size={18} color={THEME.colors.textSecondary} />
+              <OrbIcon name="chevron-left" size={18} color={THEME.colors.textSecondary} />
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.playPauseBtn}
               onPress={() => setIsPlaying(!isPlaying)}
             >
-              <Feather name={isPlaying ? 'pause' : 'play'} size={20} color={THEME.colors.inverseOnSurface} />
+              <OrbIcon name={isPlaying ? 'pause' : 'play'} size={20} color={THEME.colors.inverseOnSurface} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -867,7 +857,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               disabled={currentStep >= history.length}
               onPress={() => goTo(currentStep + 1)}
             >
-              <Feather name="chevron-right" size={18} color={THEME.colors.textSecondary} />
+              <OrbIcon name="chevron-right" size={18} color={THEME.colors.textSecondary} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -875,7 +865,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               disabled={currentStep >= history.length}
               onPress={() => goTo(history.length)}
             >
-              <Feather name="chevrons-right" size={18} color={THEME.colors.textSecondary} />
+              <OrbIcon name="chevrons-right" size={18} color={THEME.colors.textSecondary} />
             </TouchableOpacity>
 
             {/* Step counter, same as the match screen replay bar. */}
@@ -934,7 +924,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <>
-              <Feather
+              <OrbIcon
                 name={access === 'locked' ? 'lock' : 'bar-chart-2'}
                 size={16}
                 color="#FFFFFF"
@@ -1038,7 +1028,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             expiry mid-review never yanks rendered content (E14). */}
         {!bare && !review && access === 'locked' && (
         <View style={styles.lockCard}>
-          <Feather name="lock" size={20} color={THEME.colors.primary} />
+          <OrbIcon name="lock" size={20} color={THEME.colors.primary} />
           <Text style={styles.lockTitle}>{t('review.lockedTitle')}</Text>
           <Text style={styles.lockCopy}>
             {t('review.lockedSub')}
@@ -1237,7 +1227,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Previous move"
             >
-              <Feather
+              <OrbIcon
                 name="chevron-left"
                 size={22}
                 color={
@@ -1281,7 +1271,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Next move"
             >
-              <Feather
+              <OrbIcon
                 name="chevron-right"
                 size={22}
                 color={
@@ -1306,7 +1296,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Show best move"
             >
-              <Feather
+              <OrbIcon
                 name="star"
                 size={20}
                 color={
@@ -1379,7 +1369,7 @@ const createStyles = () => StyleSheet.create({
   },
   header: {
     height: 56,
-    backgroundColor: THEME.colors.surfaceContainerLowest,
+    backgroundColor: THEME.colors.background,
     borderBottomWidth: 1,
     borderBottomColor: THEME.colors.surfaceContainer,
     marginHorizontal: -12,

@@ -8,8 +8,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon } from '../components/OrbIcon';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { api, LeaderboardEntryDto } from '../network/apiClient';
 import { useSession } from '../network/session';
@@ -17,6 +18,7 @@ import { useConnectivity } from '../network/useConnectivity';
 import { GuestGate } from '../components/GuestGate';
 import { PremiumBadge } from '../components/PremiumBadge';
 import { AdBanner } from '../components/AdBanner';
+import { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 import { NoConnectionSection } from '../components/NoConnection';
 import { kindOf, sectionKind, type ErrorKind } from '../network/errors';
 import { EmptyState } from '../components/StateViews';
@@ -113,6 +115,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [entries, setEntries] = useState<LeaderboardEntryDto[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -362,7 +365,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
           onRetry={() => void fetchLeaderboard()}
         />
       ) : entries.length === 0 ? (
-        <View style={styles.emptyWrap}>
+        <View style={[styles.emptyWrap, { paddingBottom: 48 + insets.bottom }]}>
           <EmptyState
             title={t('leaderboard.noRankingsTitle')}
             description={t('leaderboard.noRankingsDesc')}
@@ -376,7 +379,10 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
           renderItem={renderRow}
           windowSize={11}
           ListHeaderComponent={renderPodium}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: BOTTOM_NAV_HEIGHT + 30 + insets.bottom },
+          ]}
           onEndReached={() => void loadMore()}
           onEndReachedThreshold={0.5}
           onScrollToIndexFailed={(info) => {
@@ -470,10 +476,10 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
               accessibilityLabel="Close"
               accessibilityRole="button"
             >
-              <Feather name="x" size={20} color={THEME.colors.textMuted} />
+              <OrbIcon name="x" size={20} color={THEME.colors.textMuted} />
             </TouchableOpacity>
             <View style={styles.notRankedIconCircle}>
-              <MaterialCommunityIcons
+              <OrbIcon
                 name="trophy-outline"
                 size={34}
                 color={THEME.colors.assessmentInaccuracy}
@@ -519,7 +525,7 @@ const createStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: THEME.colors.surfaceContainerLowest,
+    backgroundColor: THEME.colors.background,
     borderBottomWidth: 1,
     borderBottomColor: THEME.colors.surfaceContainer,
   },

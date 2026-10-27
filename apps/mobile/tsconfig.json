@@ -6,7 +6,10 @@
     "baseUrl": ".",
     "paths": {
       "@duoorb/game-core": ["../../packages/game-core/dist/index.d.ts"],
-      "@duoorb/protocol": ["../../packages/protocol/dist/index.d.ts"]
+      "@duoorb/protocol": ["../../packages/protocol/dist/index.d.ts"],
+      "phosphor-react-native/src/icons/*": [
+        "../../node_modules/phosphor-react-native/lib/typescript/icons/*"
+      ]
     }
   }
 }

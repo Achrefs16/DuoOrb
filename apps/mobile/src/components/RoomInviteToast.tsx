@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RoomInviteDto } from '@duoorb/protocol';
 import { PremiumBadge } from './PremiumBadge';
 import { THEME, useStyles } from '../theme';
@@ -15,12 +16,13 @@ export const RoomInviteToast: React.FC<{
 }> = ({ invite, notice, onAccept, onDecline }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   if (!invite && !notice) return null;
   return (
-    <ToastOverlay bottom={78}>
+    <ToastOverlay bottom={78 + insets.bottom}>
       <ToastCard radius={12} padding={12} borderColor={THEME.colors.surfaceHairline}>
         <View style={styles.row}>
-          <Feather name="user-plus" size={18} color={THEME.colors.primary} />
+          <OrbIcon name="user-plus" size={18} color={THEME.colors.primary} />
           <View style={styles.copy}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Text style={styles.title}>

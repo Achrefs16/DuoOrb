@@ -8,7 +8,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
 
@@ -46,6 +47,7 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const isUndo = variant === 'undo';
 
   const getErrorCopy = (err: string): string => {
@@ -63,9 +65,9 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
   return (
   <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
     <View style={styles.backdrop}>
-      <View style={styles.card}>
+      <View style={[styles.card, { paddingBottom: 32 + insets.bottom }]}>
         <View style={styles.titleRow}>
-          <Feather
+          <OrbIcon
             name={isUndo ? 'rotate-ccw' : 'lock'}
             size={18}
             color={THEME.colors.primary}
@@ -88,7 +90,7 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <>
-              <Feather name="play" size={16} color="#FFFFFF" />
+              <OrbIcon name="play" size={16} color="#FFFFFF" />
               <Text style={styles.watchText}>
                 {isUndo ? t('undoSheet.watch') : t('reward.watch')}
               </Text>

@@ -11,8 +11,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { OrbIcon } from '../components/OrbIcon';
 import * as Clipboard from 'expo-clipboard';
 import { THEME, useStyles } from '../theme';
 import {
@@ -31,6 +31,7 @@ import { useConnectivity } from '../network/useConnectivity';
 import { socketManager } from '../network/socket';
 import { FriendsSkeleton } from '../components/Skeleton';
 import { AdBanner } from '../components/AdBanner';
+import { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 import { KeyboardShift } from '../components/KeyboardShift';
 import { sheetSlideStyle, useSheetSlide } from '../components/sheetAnimation';
 import { nameInitial, resolveName } from '../displayName';
@@ -60,6 +61,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [friends, setFriends] = useState<FriendItemDto[]>([]);
   const [requests, setRequests] = useState<FriendRequestItemDto[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -351,7 +353,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
               activeOpacity={0.8}
               onPress={() => onOpenChallengeSetup({ id: friend.id, username: friend.username })}
             >
-              <MaterialCommunityIcons name="sword-cross" size={14} color={THEME.colors.onPrimary} />
+              <OrbIcon name="sword-cross" size={14} color={THEME.colors.onPrimary} />
               <Text style={styles.playButtonText}>{t('friends.challenge')}</Text>
             </TouchableOpacity>
           )}
@@ -370,7 +372,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
         <View style={styles.header}>
           <Text style={styles.title}>{t('friends.title')}</Text>
         </View>
-        <View style={styles.lockWrap}>
+        <View style={[styles.lockWrap, { paddingBottom: 48 + insets.bottom }]}>
           <GuestGate
             title={t('friends.needSavingTitle')}
             message={t('friends.needSavingMessage')}
@@ -391,14 +393,14 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
           onPress={() => openAddModal()}
           accessibilityLabel={t('friends.addFriend')}
         >
-          <Feather name="user-plus" size={18} color={THEME.colors.onSurface} />
+          <OrbIcon name="user-plus" size={18} color={THEME.colors.onSurface} />
         </TouchableOpacity>
       </View>
 
       {/* Clean Search Input */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBox}>
-          <Feather name="search" size={16} color={THEME.colors.textMuted} />
+          <OrbIcon name="search" size={16} color={THEME.colors.textMuted} />
           <TextInput
             style={styles.searchInput}
             placeholder={t('friends.searchPlaceholder')}
@@ -410,7 +412,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Feather name="x" size={16} color={THEME.colors.textMuted} />
+              <OrbIcon name="x" size={16} color={THEME.colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -429,7 +431,10 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
         <FlatList
           data={[1]}
           keyExtractor={() => 'friends_content'}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: BOTTOM_NAV_HEIGHT + 30 + insets.bottom },
+          ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           renderItem={() => (
@@ -468,7 +473,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                             onPress={() => handleRespondRequest(req.id, true)}
                             accessibilityLabel={t('friends.acceptA11y')}
                           >
-                            <Feather name="check" size={16} color={THEME.colors.onPrimary} />
+                            <OrbIcon name="check" size={16} color={THEME.colors.onPrimary} />
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.declineBtn}
@@ -476,7 +481,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                             onPress={() => handleRespondRequest(req.id, false)}
                             accessibilityLabel={t('friends.declineA11y')}
                           >
-                            <Feather name="x" size={16} color={THEME.colors.textSecondary} />
+                            <OrbIcon name="x" size={16} color={THEME.colors.textSecondary} />
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -516,7 +521,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
 
               {friends.length === 0 && requests.length === 0 && (
                 <View style={styles.zeroFriendsBox}>
-                  <Feather name="users" size={40} color={THEME.colors.textMuted} />
+                  <OrbIcon name="users" size={40} color={THEME.colors.textMuted} />
                   <Text style={styles.zeroFriendsTitle}>{t('friends.noFriendsTitle')}</Text>
                   <Text style={styles.zeroFriendsSub}>
                     {t('friends.noFriendsSub')}
@@ -586,7 +591,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 }}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Feather name="x" size={20} color={THEME.colors.textMuted} />
+                <OrbIcon name="x" size={20} color={THEME.colors.textMuted} />
               </TouchableOpacity>
             </View>
 
@@ -609,7 +614,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 onPress={() => void handleAddByName()}
                 accessibilityLabel="Search"
               >
-                <Feather name="search" size={20} color={THEME.colors.onPrimary} />
+                <OrbIcon name="search" size={20} color={THEME.colors.onPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -658,7 +663,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
 
                       {alreadyFriend || justSent || isSelf ? (
                         <View style={styles.sentTag}>
-                          <Feather name="check" size={12} color={THEME.colors.textMuted} />
+                          <OrbIcon name="check" size={12} color={THEME.colors.textMuted} />
                           <Text style={styles.sentTagText}>
                             {alreadyFriend ? t('profile.friends') : isSelf ? t('leaderboard.you') : t('profile.sent')}
                           </Text>
@@ -672,7 +677,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                           }}
                           accessibilityLabel={`Add ${user.username}`}
                         >
-                          <Feather name="user-plus" size={14} color={THEME.colors.textPrimary} />
+                          <OrbIcon name="user-plus" size={14} color={THEME.colors.textPrimary} />
                           <Text style={styles.sendRequestBtnText}>{t('friends.add')}</Text>
                         </TouchableOpacity>
                       )}
@@ -694,7 +699,7 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                 style={styles.ownIdCopy}
                 onPress={() => void copyOwnId()}
               >
-                <Feather name="copy" size={16} color={THEME.colors.primary} />
+                <OrbIcon name="copy" size={16} color={THEME.colors.primary} />
                 <Text style={styles.ownIdCopyText}>{copiedTick ? t('friends.copied') : t('friends.copy')}</Text>
               </TouchableOpacity>
             </View>
@@ -724,7 +729,7 @@ const createStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: THEME.colors.surfaceContainerLowest,
+    backgroundColor: THEME.colors.background,
     borderBottomWidth: 1,
     borderBottomColor: THEME.colors.surfaceContainer,
   },
@@ -976,7 +981,7 @@ const createStyles = () => StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 4,
-    backgroundColor: THEME.colors.inverseLabel,
+    backgroundColor: THEME.colors.primary,
   },
   playButtonDisabled: {
     backgroundColor: THEME.colors.surfaceContainerHigh,

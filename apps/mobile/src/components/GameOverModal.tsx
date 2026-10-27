@@ -8,18 +8,25 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { GameState, BotPersonality } from '@duoorb/game-core';
+import { OrbIcon } from './OrbIcon';
+import { GameState, BotPersonality, type MoveAssessment } from '@duoorb/game-core';
 import type { GameEndedDto } from '@duoorb/protocol';
 import { THEME, playerColor, useStyles } from '../theme';
-import { useTranslation } from '../i18n';
+import { useTranslation, type TranslationKey } from '../i18n';
 import { PremiumBadge } from './PremiumBadge';
 import { SmoothStar } from './SmoothStar';
 import { AdBanner } from './AdBanner';
+import { AssessmentIcon } from './AnalysisBadge';
 import { modeLabel } from '../matchModes';
 import { nameInitial } from '../displayName';
 import { usePremium, isPremiumActive } from '../monetization/premium';
-import { fetchOrComputeReview } from '../analysis/reviewLoader';
+import {
+  emptyMoveQualityCounts,
+  getQuickReviewCounts,
+  selectGameOverBadges,
+  type GameOverBadgeSelection,
+  type MoveQualityCounts,
+} from '../analysis/quickReview';
 
 export interface GameOverModalProps {
   visible: boolean;
@@ -57,7 +64,6 @@ export interface GameOverModalProps {
   onHome: () => void;
   onClose: () => void;
   onOpenPremium?: () => void;
-  moveCounts?: { best: number; excellent: number; good: number } | null;
 }
 
 function ordinal(place: number): string {
@@ -66,6 +72,87 @@ function ordinal(place: number): string {
   if (place === 3) return '3RD';
   return `${place}TH`;
 }
+
+const ASSESSMENT_LABEL_KEYS: Record<MoveAssessment, TranslationKey> = {
+  BRILLIANT: 'assessment.brilliant',
+  GREAT: 'assessment.great',
+  BEST: 'assessment.best',
+  EXCELLENT: 'assessment.excellent',
+  GOOD: 'assessment.good',
+  INACCURACY: 'assessment.inaccuracy',
+  MISTAKE: 'assessment.mistake',
+  BLUNDER: 'assessment.blunder',
+  // The modal never renders Forced; this keeps the record exhaustive without
+  // adding a user-facing label for a one-choice turn.
+  FORCED: 'assessment.good',
+};
+
+const LEFT_BADGE_CYCLE: MoveAssessment[] = [
+  'BRILLIANT',
+  'GREAT',
+  'EXCELLENT',
+  'GOOD',
+];
+const RIGHT_BADGE_CYCLE: MoveAssessment[] = [
+  'BLUNDER',
+  'MISTAKE',
+  'INACCURACY',
+];
+const QUICK_REVEAL_DELAY_MS = 620;
+
+interface MoveBadgeProps {
+  assessment: MoveAssessment;
+  count: number | null;
+  loading: boolean;
+  cycle?: MoveAssessment[];
+  offset?: number;
+  shimmer: Animated.Value;
+}
+
+const MoveBadge: React.FC<MoveBadgeProps> = ({
+  assessment,
+  count,
+  loading,
+  cycle = [],
+  offset = 0,
+  shimmer,
+}) => {
+  const styles = useStyles(createStyles);
+  const { t } = useTranslation();
+  const [cycleIndex, setCycleIndex] = useState(offset);
+
+  useEffect(() => {
+    if (!loading || cycle.length <= 1) return;
+    const timer = setInterval(() => {
+      setCycleIndex((current) => (current + 1) % cycle.length);
+    }, 65);
+    return () => clearInterval(timer);
+  }, [loading, cycle]);
+
+  const shown = loading && cycle.length > 0
+    ? cycle[cycleIndex % cycle.length]
+    : assessment;
+
+  return (
+    <View style={styles.badgeColumn}>
+      <View style={styles.badgeTopRow}>
+        <View style={styles.badgeIconSlot}>
+          <AssessmentIcon assessment={shown} size={20} />
+        </View>
+        {count == null ? (
+          <Animated.Text style={[styles.badgeCount, { opacity: shimmer }]}>
+            ···
+          </Animated.Text>
+        ) : (
+          <Text style={styles.badgeCount}>{count}</Text>
+        )}
+      </View>
+      <Text style={styles.badgeLabel} numberOfLines={1}>
+        {t(ASSESSMENT_LABEL_KEYS[shown])}
+      </Text>
+    </View>
+  );
+};
 
 export const GameOverModal: React.FC<GameOverModalProps> = ({
   visible,
@@ -94,7 +181,6 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onHome,
   onClose,
   onOpenPremium,
-  moveCounts,
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
@@ -124,44 +210,101 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     }
   }, [visible, pop]);
 
-  // Local move counts computation fallback (on-device only)
-  const [internalCounts, setInternalCounts] = useState<{ best: number; excellent: number; good: number } | null>(null);
+  // Quick, on-device badge counts. No network request is made here: the
+  // authoritative server review starts only when the user opens Game Review.
+  const fallbackPlayerId = state.players[0]?.id ?? null;
+  const [quickCounts, setQuickCounts] = useState<MoveQualityCounts | null>(null);
+  const [badgeSelection, setBadgeSelection] =
+    useState<GameOverBadgeSelection | null>(null);
+  const [shimmer] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
-    if (!visible) return;
-    if (moveCounts) {
-      setInternalCounts(moveCounts);
-      return;
-    }
-    if (!initialState || !state.history || state.history.length === 0) {
-      setInternalCounts({ best: 0, excellent: 0, good: 0 });
+    if (!visible) {
+      setQuickCounts(null);
+      setBadgeSelection(null);
       return;
     }
 
+    setQuickCounts(null);
+    setBadgeSelection(null);
     let cancelled = false;
-    void fetchOrComputeReview(initialState, state.history, state.gameId, {
-      isCancelled: () => cancelled,
-    }).then((review) => {
-      if (cancelled || !review) return;
-      const targetPlayerId = myPlayerId ?? (state.players[0]?.id || '');
-      const userMoves = review.moveAnalyses.filter((m) => m.playerId === targetPlayerId);
-      const best = userMoves.filter(
-        (m) =>
-          m.assessment === 'BEST' ||
-          m.assessment === 'BRILLIANT' ||
-          m.assessment === 'GREAT'
-      ).length;
-      const excellent = userMoves.filter((m) => m.assessment === 'EXCELLENT').length;
-      const good = userMoves.filter((m) => m.assessment === 'GOOD').length;
-      setInternalCounts({ best, excellent, good });
-    }).catch(() => {
-      if (!cancelled) setInternalCounts({ best: 0, excellent: 0, good: 0 });
-    });
+    let revealTimer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+
+    // Let the result card paint first. The scan only covers the viewer's
+    // moves and normally finishes long before the user reads the result.
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      const targetPlayerId = myPlayerId ?? fallbackPlayerId;
+      let counts = emptyMoveQualityCounts();
+      if (initialState && targetPlayerId && state.history.length > 0) {
+        try {
+          counts = getQuickReviewCounts(
+            initialState,
+            state.history,
+            targetPlayerId
+          );
+        } catch {
+          // A malformed old local game must not break the finish modal.
+          counts = emptyMoveQualityCounts();
+        }
+      }
+      if (cancelled) return;
+      // Keep the rapid icon cycle readable even when the local scan returns
+      // in a few milliseconds; the reveal is capped at a short, snappy beat.
+      const remaining = Math.max(
+        0,
+        QUICK_REVEAL_DELAY_MS - (Date.now() - startedAt)
+      );
+      revealTimer = setTimeout(() => {
+        if (cancelled) return;
+        setQuickCounts(counts);
+        setBadgeSelection(selectGameOverBadges(counts));
+      }, remaining);
+    }, 0);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
+      if (revealTimer) clearTimeout(revealTimer);
     };
-  }, [visible, moveCounts, initialState, state.history, myPlayerId, state.gameId]);
+  }, [
+    visible,
+    initialState,
+    state.history,
+    myPlayerId,
+    fallbackPlayerId,
+  ]);
+
+  useEffect(() => {
+    if (!visible || quickCounts) {
+      shimmer.stopAnimation();
+      shimmer.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, {
+          toValue: 0.35,
+          duration: 420,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmer, {
+          toValue: 1,
+          duration: 420,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      shimmer.setValue(1);
+    };
+  }, [visible, quickCounts, shimmer]);
+
+  const leftBadge = badgeSelection?.left ?? 'GREAT';
+  const rightBadge = badgeSelection?.right ?? 'EXCELLENT';
 
   const userWon = isWinner !== undefined ? isWinner : winner?.id === (myPlayerId ?? 'p1');
   const outcomeWin = !isDraw && !!userWon;
@@ -251,7 +394,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityLabel={t('gameover.closeResultA11y')}
           >
-            <Feather name="x" size={18} color={THEME.colors.textMuted} />
+            <OrbIcon name="x" size={18} color={THEME.colors.textMuted} />
           </TouchableOpacity>
 
           {/* Header Title & Subtitle */}
@@ -289,7 +432,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               {ratingDelta !== undefined ? (
                 <View style={styles.ratingDeltaBlock}>
                   <View style={styles.ratingClockIconCircle}>
-                    <Feather name="clock" size={13} color={THEME.colors.primary} />
+                    <OrbIcon name="clock" size={13} color={THEME.colors.primary} />
                   </View>
                   <Text style={styles.ratingValue}>
                     {Math.round(ratingAfter ?? ratingBefore)}
@@ -340,7 +483,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                       </Text>
                     </View>
                     {(p.place ?? 99) === 1 && (
-                      <Feather name="award" size={16} color={THEME.colors.assessmentInaccuracy} />
+                      <OrbIcon name="award" size={16} color={THEME.colors.assessmentInaccuracy} />
                     )}
                   </View>
                 );
@@ -348,43 +491,30 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </View>
           )}
 
-          {/* Move Quality Counters (Chess.com 3 Signature Badges) */}
+          {/* Move Quality Counters — Best stays centered; the outer slots
+              surface the strongest positive/negative result for this game. */}
           <View style={styles.badgesContainer}>
-            <View style={styles.badgeColumn}>
-              <View style={styles.badgeTopRow}>
-                <View style={[styles.badgeIconCircle, { backgroundColor: '#2563EB' }]}>
-                  <Text style={styles.badgeIconSymbol}>!</Text>
-                </View>
-                <Text style={styles.badgeCount}>
-                  {internalCounts ? internalCounts.good : '—'}
-                </Text>
-              </View>
-              <Text style={styles.badgeLabel}>Great</Text>
-            </View>
-
-            <View style={styles.badgeColumn}>
-              <View style={styles.badgeTopRow}>
-                <View style={[styles.badgeIconCircle, { backgroundColor: '#69B342' }]}>
-                  <SmoothStar size={12} color="#FFFFFF" />
-                </View>
-                <Text style={styles.badgeCount}>
-                  {internalCounts ? internalCounts.best : '—'}
-                </Text>
-              </View>
-              <Text style={styles.badgeLabel}>Best</Text>
-            </View>
-
-            <View style={styles.badgeColumn}>
-              <View style={styles.badgeTopRow}>
-                <View style={[styles.badgeIconCircle, { backgroundColor: '#69B342' }]}>
-                  <MaterialCommunityIcons name="thumb-up" size={11} color="#FFFFFF" />
-                </View>
-                <Text style={styles.badgeCount}>
-                  {internalCounts ? internalCounts.excellent : '—'}
-                </Text>
-              </View>
-              <Text style={styles.badgeLabel}>Excellent</Text>
-            </View>
+            <MoveBadge
+              assessment={leftBadge}
+              count={quickCounts ? quickCounts[leftBadge] : null}
+              loading={!quickCounts}
+              cycle={LEFT_BADGE_CYCLE}
+              shimmer={shimmer}
+            />
+            <MoveBadge
+              assessment="BEST"
+              count={quickCounts ? quickCounts.BEST : null}
+              loading={!quickCounts}
+              shimmer={shimmer}
+            />
+            <MoveBadge
+              assessment={rightBadge}
+              count={quickCounts ? quickCounts[rightBadge] : null}
+              loading={!quickCounts}
+              cycle={RIGHT_BADGE_CYCLE}
+              offset={1}
+              shimmer={shimmer}
+            />
           </View>
 
           {/* Hero 3D Green Primary Button: Game Review */}
@@ -406,7 +536,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   activeOpacity={0.75}
                   onPress={onNewGame}
                 >
-                  <MaterialCommunityIcons name="robot-outline" size={17} color={THEME.colors.textPrimary} />
+                  <OrbIcon name="robot-outline" size={17} color={THEME.colors.textPrimary} />
                   <Text style={styles.secondaryBtnText}>New Bot</Text>
                 </TouchableOpacity>
 
@@ -415,7 +545,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   activeOpacity={0.75}
                   onPress={onRematch}
                 >
-                  <Feather name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
+                  <OrbIcon name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
                   <Text style={styles.secondaryBtnText}>Rematch</Text>
                 </TouchableOpacity>
               </>
@@ -426,7 +556,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   activeOpacity={0.75}
                   onPress={onRematch}
                 >
-                  <Feather name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
+                  <OrbIcon name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
                   <Text style={styles.secondaryBtnText}>Rematch</Text>
                 </TouchableOpacity>
 
@@ -435,7 +565,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   activeOpacity={0.75}
                   onPress={onNewGame}
                 >
-                  <Feather name="play" size={15} color={THEME.colors.textPrimary} />
+                  <OrbIcon name="play" size={15} color={THEME.colors.textPrimary} />
                   <Text style={styles.secondaryBtnText}>New Game</Text>
                 </TouchableOpacity>
               </>
@@ -446,7 +576,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   activeOpacity={0.75}
                   onPress={onRematch}
                 >
-                  <Feather name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
+                  <OrbIcon name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
                   <Text style={styles.secondaryBtnText}>Rematch</Text>
                 </TouchableOpacity>
 
@@ -455,7 +585,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   activeOpacity={0.75}
                   onPress={onHome}
                 >
-                  <Feather name="log-out" size={15} color={THEME.colors.textPrimary} />
+                  <OrbIcon name="log-out" size={15} color={THEME.colors.textPrimary} />
                   <Text style={styles.secondaryBtnText}>Exit Match</Text>
                 </TouchableOpacity>
               </>
@@ -470,7 +600,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               onPress={onViewOpponentProfile}
               accessibilityRole="button"
             >
-              <Feather name="user" size={14} color={THEME.colors.textSecondary} />
+              <OrbIcon name="user" size={14} color={THEME.colors.textSecondary} />
               <Text style={styles.viewProfileText}>{t('gameover.viewProfile')}</Text>
             </TouchableOpacity>
           )}
@@ -485,7 +615,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   activeOpacity={0.7}
                   onPress={onOpenPremium}
                 >
-                  <Feather name="slash" size={13} color={THEME.colors.primary} />
+                  <OrbIcon name="slash" size={13} color={THEME.colors.primary} />
                   <Text style={styles.removeAdsText}>Remove Ads</Text>
                 </TouchableOpacity>
               )}
@@ -681,31 +811,27 @@ const createStyles = () => StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  badgeIconCircle: {
+  badgeIconSlot: {
     width: 20,
     height: 20,
-    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  badgeIconSymbol: {
-    fontFamily: THEME.fonts.extraBold,
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    lineHeight: 15,
   },
   badgeCount: {
     fontFamily: THEME.fonts.extraBold,
     fontSize: 19,
     fontWeight: '900',
     color: THEME.colors.onSurface,
+    minWidth: 28,
+    textAlign: 'center',
   },
   badgeLabel: {
     fontFamily: THEME.fonts.medium,
     fontSize: 12,
     fontWeight: '600',
     color: THEME.colors.onSurfaceVariant,
+    textAlign: 'center',
+    minHeight: 16,
   },
   gameReviewBtn: {
     width: '100%',

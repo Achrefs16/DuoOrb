@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import NetInfo from '@react-native-community/netinfo';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
@@ -34,7 +34,7 @@ export const NoConnectionSection: React.FC<{
   const { t } = useTranslation();
   return (
     <View style={styles.section}>
-      <Feather name="cloud-off" size={48} color={THEME.colors.textMuted} />
+      <OrbIcon name="cloud-off" size={48} color={THEME.colors.textMuted} />
       <Text style={styles.sectionTitle}>{t('connection.noConnection')}</Text>
       <Text style={styles.sectionMessage}>
         {message ??
@@ -97,7 +97,7 @@ export const OfflineModal: React.FC = () => {
     >
       <View style={styles.overlay}>
         <View style={styles.card}>
-          <Feather name="cloud-off" size={40} color={THEME.colors.textMuted} />
+          <OrbIcon name="cloud-off" size={40} color={THEME.colors.textMuted} />
           <Text style={styles.cardTitle}>
             {kind === 'offline' ? t('connection.youAreOffline') : t('connection.sorry')}
           </Text>

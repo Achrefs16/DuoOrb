@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { OrbIcon, type OrbIconName } from './OrbIcon';
 import { THEME, useStyles, useTheme } from '../theme';
 import type { BadgeCategory, BadgeProgress, BadgeTier } from '../network/apiClient';
 
@@ -70,7 +70,7 @@ export const AchievementMedal: React.FC<MedalProps> = ({
         },
       ]}
     >
-      <Feather
+      <OrbIcon
         name={(locked ? 'lock' : icon) as 'award'}
         size={Math.round(size * 0.4)}
         color={metal.face}
@@ -81,7 +81,7 @@ export const AchievementMedal: React.FC<MedalProps> = ({
 
 export const CATEGORY_META: Record<
   BadgeCategory,
-  { title: string; icon: keyof typeof Feather.glyphMap }
+  { title: string; icon: OrbIconName }
 > = {
   streak: { title: 'WIN STREAKS', icon: 'zap' },
   rank: { title: 'BOARD RANKS', icon: 'chevrons-up' },

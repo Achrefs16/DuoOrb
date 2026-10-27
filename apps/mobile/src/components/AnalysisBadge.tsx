@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { MoveAssessment } from '@duoorb/game-core';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { OrbIcon } from './OrbIcon';
 import { SmoothStar } from './SmoothStar';
 import { THEME, useStyles } from '../theme';
 import { assessmentBadgeColor, assessmentColor } from '../analysisUi';
@@ -39,7 +39,7 @@ export const AssessmentIcon: React.FC<AssessmentIconProps> = ({
       case 'EXCELLENT':
       case 'GOOD':
         return (
-          <MaterialCommunityIcons
+          <OrbIcon
             name="thumb-up"
             size={Math.max(9, Math.round(size * 0.52))}
             color="#FFFFFF"

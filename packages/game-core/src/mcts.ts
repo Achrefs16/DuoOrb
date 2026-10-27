@@ -1,6 +1,11 @@
 import type { CellCoord, GameAction, GameState, WallCoord } from './types.js';
 import { getLegalMoves } from './movement.js';
-import { getShortestDistance, getShortestPath } from './pathfinding.js';
+import {
+  doesWallIntersectPath,
+  getShortestDistance,
+  getShortestDistanceCached,
+  getShortestPath,
+} from './pathfinding.js';
 import { isLegalWallPlacement } from './walls.js';
 import { applyAction } from './ruleset.js';
 
@@ -132,6 +137,7 @@ function findPathBlockingWalls(
 
   const results: { wall: WallCoord; delay: number }[] = [];
   for (const slot of candidates) {
+    if (!doesWallIntersectPath(path, slot)) continue;
     if (!isLegalWallPlacement(st, actorId, slot)) continue;
     const after = getShortestDistance(target.position, target.goalDirection, [...st.walls, slot], st.mode);
     if (after > base) {
@@ -140,6 +146,64 @@ function findPathBlockingWalls(
   }
   results.sort((a, b) => b.delay - a.delay);
   return results;
+}/**
+ * Evaluates whether a pawn step walks into an immediate adjacent dead-end corridor trap
+ * (where an opponent can inflict a >= 4 step detour with an adjacent wall).
+ */
+function evaluatePawnStepDanger(
+  st: GameState,
+  moverId: string,
+  to: CellCoord,
+  horizon = 8
+): { isPoisoned: boolean; maxDelay: number; lethalWall: WallCoord | null } {
+  const mover = st.players.find((p) => p.id === moverId);
+  if (!mover) return { isPoisoned: false, maxDelay: 0, lethalWall: null };
+
+  const applied = applyAction(st, { type: 'MOVE', to });
+  if (!applied.success) return { isPoisoned: false, maxDelay: 0, lethalWall: null };
+
+  const moverAfter = applied.state.players.find((p) => p.id === moverId);
+  if (!moverAfter) return { isPoisoned: false, maxDelay: 0, lethalWall: null };
+
+  const baseDistAfterStep = getShortestDistance(
+    moverAfter.position,
+    moverAfter.goalDirection,
+    applied.state.walls,
+    applied.state.mode
+  );
+  if (baseDistAfterStep === 0) {
+    return { isPoisoned: false, maxDelay: 0, lethalWall: null };
+  }
+
+  let maxDelay = 0;
+  let lethalWall: WallCoord | null = null;
+
+  for (const foe of applied.state.players) {
+    if (foe.id === moverId || foe.status !== 'ACTIVE' || foe.wallsRemaining <= 0) continue;
+    const blocks = findPathBlockingWalls(applied.state, foe.id, moverAfter, horizon);
+    const foeBaseDist = getShortestDistance(foe.position, foe.goalDirection, applied.state.walls, applied.state.mode);
+    for (const b of blocks) {
+      // Must be physically adjacent to the pawn's new position to be an immediate trap
+      const isAdjacent = Math.abs(b.wall.row - to.row) <= 1 && Math.abs(b.wall.col - to.col) <= 1;
+      if (!isAdjacent) continue;
+
+      const foeAfterDist = getShortestDistance(foe.position, foe.goalDirection, [...applied.state.walls, b.wall], applied.state.mode);
+      const foeSelfDelay = Math.max(0, foeAfterDist - foeBaseDist);
+      const netThreat = b.delay - foeSelfDelay;
+      if (netThreat > maxDelay) {
+        maxDelay = netThreat;
+        lethalWall = b.wall;
+      }
+    }
+  }
+
+  // A true lethal corridor trap forces a severe backtrack detour (>= 4)
+  const threshold = 4;
+  return {
+    isPoisoned: maxDelay >= threshold,
+    maxDelay,
+    lethalWall,
+  };
 }
 
 function findBlockingWall(
@@ -152,7 +216,7 @@ function findBlockingWall(
   return blocks.length > 0 ? blocks[0].wall : null;
 }
 
-function probableWalls(st: GameState, playerId: string, horizon = 6): WallCoord[] {
+function probableWalls(st: GameState, playerId: string, horizon = 6, _isEasy = false): WallCoord[] {
   const out = new Map<string, WallCoord>();
   const add = (slot: WallCoord): void => {
     if (slot.row < 0 || slot.row > 7 || slot.col < 0 || slot.col > 7) return;
@@ -170,27 +234,22 @@ function probableWalls(st: GameState, playerId: string, horizon = 6): WallCoord[
   if (criticalFoe) {
     const blocks = findPathBlockingWalls(st, playerId, criticalFoe, horizon);
     for (const b of blocks) {
-      add(b.wall);
+      if (b.delay >= 1) add(b.wall);
     }
     return [...out.values()];
   }
 
   const me = st.players.find((p) => p.id === playerId);
-  const bordering = (row: number, col: number): WallCoord[] => [
-    { row: row - 1, col, orientation: 'H' },
-    { row, col, orientation: 'H' },
-    { row, col: col - 1, orientation: 'V' },
-    { row, col, orientation: 'V' },
-  ];
-  if (me) {
-    for (const slot of bordering(me.position.row, me.position.col)) {
-      if (isLegalWallPlacement(st, playerId, slot)) add(slot);
-    }
-  }
+  const isOpening = st.walls.length <= 2 && (me ? getShortestDistance(me.position, me.goalDirection, st.walls, st.mode) >= 6 : false);
+
+  // Generate candidate walls that STOP/DELAY active opponents.
+  // Walls that do not delay an opponent (delay <= 0) are strictly pruned.
   for (const foe of st.players) {
     if (foe.id === playerId || foe.status !== 'ACTIVE') continue;
     const blocks = findPathBlockingWalls(st, playerId, foe, horizon);
-    for (let i = 0; i < Math.min(6, blocks.length); i++) {
+    for (let i = 0; i < Math.min(10, blocks.length); i++) {
+      if (blocks[i].delay <= 0) continue;
+      if (isOpening && blocks[i].delay <= 2) continue;
       add(blocks[i].wall);
     }
   }
@@ -222,7 +281,7 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
   const started = Date.now();
   const simulations = Math.max(1, Math.floor(opts.simulations ?? 1200));
   const uctConst = opts.uctConst ?? 0.5;
-  const maxRollout = Math.max(1, Math.floor(opts.maxRolloutPlies ?? 14));
+  const maxRollout = Math.max(1, Math.floor(opts.maxRolloutPlies ?? 6));
   const rng = mulberry32(opts.seed ?? ((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0));
   const playerCount = state.players.length;
 
@@ -287,12 +346,12 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
   const isRacingFarBehind = minFoeDist > 1 && myDist >= minFoeDist + 3;
   const isHint = Boolean(opts.isHint);
   const isEasy = simulations < 200 || opts.difficulty === 'easy';
-  const shouldSprint = !isHint && (isLeadingRace || isCloseRace || isRacingFarBehind) && !hasCriticalFoe;
-  const wallProb = shouldSprint ? 0.05 : (opts.wallMoveProb ?? (isHint ? 0.45 : (isEasy ? 0.12 : 0.3)));
-  const blockProb = opts.blockMoveProb ?? (isHint ? 0.85 : (isEasy ? 0.20 : 0.35));
-  const configuredHorizon = opts.wallHorizon ?? (isHint ? 20 : (isEasy ? 3 : 6));
   const maxOpeningPly = state.players.length * 2;
-  const isOpeningSprint = !isHint && state.moveNumber <= maxOpeningPly && myDist >= 7 && minFoeDist >= 7;
+  const isOpeningSprint = state.moveNumber <= maxOpeningPly && myDist >= 6 && minFoeDist >= 6;
+  const shouldSprint = !isEasy && (isOpeningSprint || isLeadingRace || isCloseRace || isRacingFarBehind) && !hasCriticalFoe;
+  const wallProb = shouldSprint ? 0.05 : (opts.wallMoveProb ?? (isHint ? 0.28 : (isEasy ? 0.12 : 0.28)));
+  const blockProb = opts.blockMoveProb ?? (isHint ? 0.40 : (isEasy ? 0.20 : 0.35));
+  const configuredHorizon = opts.wallHorizon ?? (isHint ? 16 : (isEasy ? 3 : 6));
   const effectiveHorizon = isOpeningSprint ? Math.min(configuredHorizon, 4) : configuredHorizon;
   const missDefenseProb = opts.missDefenseProb !== undefined
     ? Number(opts.missDefenseProb)
@@ -352,7 +411,7 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
         : legal;
       moves.push(...viableMoves.map((to) => ({ type: 'MOVE' as const, to })));
       if (mover.wallsRemaining > 0) {
-        for (const slot of probableWalls(st, mover.id, effectiveHorizon)) {
+        for (const slot of probableWalls(st, mover.id, effectiveHorizon, isEasy)) {
           moves.push({ type: 'PLACE_WALL' as const, wall: slot });
         }
       }
@@ -378,20 +437,29 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
   const stateOutcome = (s: GameState): number[] => {
     const term = winnerIndexOf(s);
     if (term !== null) return outcomeOf(term);
-    const dists = s.players.map((p) =>
-      p.status === 'ACTIVE'
-        ? getShortestDistance(p.position, p.goalDirection, s.walls, s.mode)
-        : Infinity
-    );
+
+    const activePlayers = s.players.filter((p) => p.status === 'ACTIVE');
+    const avgWalls = activePlayers.length > 0
+      ? activePlayers.reduce((acc, p) => acc + p.wallsRemaining, 0) / activePlayers.length
+      : 0;
+
+    const effDists = s.players.map((p) => {
+      if (p.status !== 'ACTIVE') return Infinity;
+      const d = getShortestDistance(p.position, p.goalDirection, s.walls, s.mode);
+      if (!Number.isFinite(d)) return Infinity;
+      const wallAdv = (p.wallsRemaining - avgWalls) * 1.2;
+      return Math.max(0, d - wallAdv);
+    });
+
     let bestDist = Infinity;
-    for (const d of dists) {
+    for (const d of effDists) {
       if (d < bestDist) bestDist = d;
     }
     if (!Number.isFinite(bestDist)) return outcomeOf(-1);
     const out = new Array<number>(playerCount).fill(0);
     let sum = 0;
     for (let i = 0; i < playerCount; i++) {
-      const d = dists[i];
+      const d = effDists[i];
       if (!Number.isFinite(d)) {
         out[i] = 0;
       } else {
@@ -419,8 +487,8 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
       // 1. Immediate win check in rollout: if mover is 1 step from goal, step in!
       if (getShortestDistance(mover.position, mover.goalDirection, st.walls, st.mode) === 1) {
         const path = getShortestPath(mover.position, mover.goalDirection, st.walls, st.mode);
-        if (path && path.length > 0) {
-          action = { type: 'MOVE', to: { ...path[0] } };
+        if (path && path.length > 1) {
+          action = { type: 'MOVE', to: { ...path[1] } };
         }
       }
       // 2. Critical defense in rollout: if a foe is 1 step from goal and mover has walls, block!
@@ -440,8 +508,8 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
       if (!action && r < 1 - wallProb) {
         // March along a shortest path.
         const path = getShortestPath(mover.position, mover.goalDirection, st.walls, st.mode);
-        if (path && path.length > 0) {
-          action = { type: 'MOVE', to: { ...path[0] } };
+        if (path && path.length > 1) {
+          action = { type: 'MOVE', to: { ...path[1] } };
         }
       }
       if (!action && mover.wallsRemaining > 0) {
@@ -462,7 +530,7 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
         }
       }
       if (!action && mover.wallsRemaining > 0) {
-        const walls = probableWalls(st, mover.id, effectiveHorizon);
+        const walls = probableWalls(st, mover.id, effectiveHorizon, isEasy);
         if (walls.length > 0 && rng() < 0.5) {
           const slot = walls[Math.floor(rng() * walls.length)];
           action = { type: 'PLACE_WALL', wall: slot };
@@ -566,10 +634,10 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
         .sort((a, b) => a.dist - b.dist);
 
       for (const { child } of moveChildren) {
-        if (child.visits >= best.visits * 0.3) {
+        if (child.visits >= best.visits * 0.25) {
           const childRate = child.visits > 0 ? child.rewards[rootMover.index] / child.visits : 0;
           const bestRate = best.visits > 0 ? best.rewards[rootMover.index] / best.visits : 0;
-          if (childRate >= bestRate - 0.08) {
+          if (childRate >= bestRate - 0.15) {
             best = child;
             break;
           }
@@ -603,7 +671,7 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
         ? sorted.filter((c) => {
             const m = c.move;
             if (m && m.type === 'MOVE') {
-              return getShortestDistance(m.to, rootMover.goalDirection, state.walls, state.mode) <= myDist;
+              return getShortestDistance(m.to, rootMover.goalDirection, state.walls, state.mode) < myDist;
             }
             return true;
           })
@@ -698,6 +766,45 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
         }
       }
     }
+
+    // Tactical Refutation Guard:
+    // If the chosen move is a pawn step that walks into an immediate adjacent dead-end trap (>= 4 delay),
+    // refute it by selecting a safe alternative pawn step (e.g. open flank or safe bypass).
+    // Never force-place a zero-delay self-wall or cross-cut wall!
+    if (!isEasy && best.move?.type === 'MOVE') {
+      const stepTo = best.move.to;
+      const danger = evaluatePawnStepDanger(state, rootMover.id, stepTo, effectiveHorizon);
+      if (danger.isPoisoned && danger.lethalWall) {
+        let bestCounterAction: GameAction | null = null;
+        let bestCounterScore = -Infinity;
+
+        // Search explored root children for a safe alternative pawn move
+        for (const child of root.children) {
+          if (!child.move || child.move.type !== 'MOVE') continue;
+          const altTo = child.move.to;
+          if (altTo.row !== stepTo.row || altTo.col !== stepTo.col) {
+            const stepDist = getShortestDistance(stepTo, rootMover.goalDirection, state.walls, state.mode);
+            const altDist = getShortestDistance(altTo, rootMover.goalDirection, state.walls, state.mode);
+            if (altDist <= stepDist + 1) {
+              const altDanger = evaluatePawnStepDanger(state, rootMover.id, altTo, effectiveHorizon);
+              if (!altDanger.isPoisoned) {
+                const childRate = child.visits > 0 ? child.rewards[rootMover.index] / child.visits : 0.5;
+                if (childRate > bestCounterScore) {
+                  bestCounterScore = childRate;
+                  bestCounterAction = child.move;
+                }
+              }
+            }
+          }
+        }
+
+        if (bestCounterAction) {
+          lastMctsStats.elapsedMs = Date.now() - started;
+          return bestCounterAction;
+        }
+      }
+    }
+
     return best.move;
   };
 
@@ -707,9 +814,9 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
 export function mctsBestAction(state: GameState, opts: MctsOptions = {}): GameAction | null {
   const session = createMctsSession(state, opts);
   if (session.immediateWinAction !== undefined) return session.immediateWinAction;
-  const deadline = opts.timeBudgetMs ? Date.now() + opts.timeBudgetMs : Infinity;
+  const simDeadline = opts.timeBudgetMs ? Date.now() + Math.max(10, Math.floor(opts.timeBudgetMs * 0.72)) : Infinity;
   for (let sim = 0; sim < session.simulations; sim++) {
-    if (sim > 16 && (sim & 15) === 0 && Date.now() >= deadline) {
+    if (sim > 4 && (sim & 3) === 0 && Date.now() >= simDeadline) {
       break;
     }
     session.stepSimulation();
@@ -724,15 +831,15 @@ export async function mctsBestActionAsync(
 ): Promise<GameAction | null> {
   const session = createMctsSession(state, opts);
   if (session.immediateWinAction !== undefined) return session.immediateWinAction;
-  const deadline = opts.timeBudgetMs ? Date.now() + opts.timeBudgetMs : Infinity;
-  const CHUNK_SIZE = 150;
+  const simDeadline = opts.timeBudgetMs ? Date.now() + Math.max(10, Math.floor(opts.timeBudgetMs * 0.72)) : Infinity;
+  const CHUNK_SIZE = 100;
   for (let sim = 0; sim < session.simulations; sim += CHUNK_SIZE) {
     if (hooks?.shouldCancel?.()) return null;
     const end = Math.min(session.simulations, sim + CHUNK_SIZE);
     for (let i = sim; i < end; i++) {
       session.stepSimulation();
     }
-    if (Date.now() >= deadline) break;
+    if (Date.now() >= simDeadline) break;
     await new Promise<void>((r) => setTimeout(r, 0));
   }
   return session.finalize();
