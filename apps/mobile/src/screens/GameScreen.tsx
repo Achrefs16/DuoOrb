@@ -1500,6 +1500,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (state.status !== 'IN_PROGRESS') return;
     if (type === 'online') {
       online.resign();
+      // Offline/unverified: the resign is queued by the socket facade and
+      // will be delivered after verification. Do not leave the player on a
+      // dead board waiting for a game:ended event that cannot arrive right
+      // now — the explicit resign is their exit. Online resignations still
+      // wait for the authoritative GameOver flow.
+      if (onlineConnStatus !== 'connected' || socketManager.isVerified() !== true) {
+        onHome();
+      }
     } else if (type === 'ai') {
       // Actor matters: resigning mid-AI-think must crown the AI, not you.
       // In multiplayer AI games the match must end right here as your loss:

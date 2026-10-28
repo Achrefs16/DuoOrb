@@ -30,7 +30,20 @@ export class MatchmakingService {
   private readonly EXPANSION_RATE_PER_SEC = 20;
 
   public addToQueue(req: MatchmakingRequest): void {
-    // Remove if already in queue
+    // Re-announcing the SAME search (verified reconnect, matched-event
+    // reconcile tick) is idempotent and must not reset the player's place in
+    // line. A genuinely new search has no matching queue entry (cancel
+    // removes it) or a different configuration.
+    const previous = this.queue.find((q) => q.userId === req.userId);
+    if (
+      previous &&
+      previous.mode === req.mode &&
+      previous.timeControlMinutes === req.timeControlMinutes &&
+      (previous.incrementSeconds ?? 0) === (req.incrementSeconds ?? 0) &&
+      (previous.wallsEach ?? 10) === (req.wallsEach ?? 10)
+    ) {
+      req.joinedAt = previous.joinedAt;
+    }
     this.queue = this.queue.filter((q) => q.userId !== req.userId);
     this.queue.push(req);
   }

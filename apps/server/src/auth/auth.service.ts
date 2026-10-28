@@ -11,6 +11,29 @@ export interface AuthenticatedUser {
   displayName: string;
 }
 
+export type AuthFailureReason = 'missing' | 'expired' | 'invalid' | 'unavailable';
+
+/**
+ * A verification failure with enough detail for the client to distinguish a
+ * dead credential from a transient dependency outage. Without this every
+ * JWKS/network hiccup was reported as "Invalid or expired token", so the
+ * client refreshed once, got the same token, and parked the session.
+ */
+export class AuthVerificationError extends UnauthorizedException {
+  constructor(
+    message: string,
+    public readonly authReason: AuthFailureReason,
+    public readonly authRetryable: boolean
+  ) {
+    super(message);
+  }
+
+  /** Kept as a non-enumerable-friendly alias for older catch sites. */
+  get retryable(): boolean {
+    return this.authRetryable;
+  }
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -43,7 +66,7 @@ export class AuthService {
    */
   async verifyToken(token: string): Promise<{ sub: string; email?: string; user_metadata?: any }> {
     if (!token) {
-      throw new UnauthorizedException('Missing authentication token.');
+      throw new AuthVerificationError('Missing authentication token.', 'missing', false);
     }
 
     // Guest tokens are local HMACs, so this is fast and works before Supabase
@@ -61,7 +84,11 @@ export class AuthService {
       if (jwksUrl) {
         this.jwks = createRemoteJWKSet(new URL(jwksUrl));
       } else {
-        throw new UnauthorizedException('SUPABASE_JWKS_URL not configured on server.');
+        throw new AuthVerificationError(
+          'SUPABASE_JWKS_URL not configured on server.',
+          'unavailable',
+          false
+        );
       }
     }
 
@@ -72,7 +99,7 @@ export class AuthService {
 
       const sub = payload.sub;
       if (!sub) {
-        throw new UnauthorizedException('Invalid token: missing subject.');
+        throw new AuthVerificationError('Invalid token: missing subject.', 'invalid', false);
       }
 
       return {
@@ -81,8 +108,33 @@ export class AuthService {
         user_metadata: payload.user_metadata,
       };
     } catch (err: any) {
-      this.logger.warn(`JWT verification failed: ${err.message}`);
-      throw new UnauthorizedException(`Invalid or expired token: ${err.message}`);
+      if (err instanceof AuthVerificationError) throw err;
+      const message = String(err?.message ?? 'unknown verification error');
+      const code = String(err?.code ?? '');
+      this.logger.warn(`JWT verification failed: ${message}`);
+      // `jose` distinguishes token failures from JWKS fetch failures only by
+      // code/message. Treat explicit expiry as terminal; treat network and
+      // JWKS timeouts as retryable so a brief Supabase outage does not park a
+      // perfectly valid account.
+      const transient =
+        code === 'ERR_JWKS_TIMEOUT' ||
+        code === 'ERR_JWKS_NO_MATCHING_KEY' ||
+        /fetch failed|network|timed? ?out|ECONN|ENOTFOUND|EAI_AGAIN/i.test(message);
+      const expired =
+        code === 'ERR_JWT_EXPIRED' ||
+        /jwt expired|token expired|expired/i.test(message);
+      if (transient) {
+        throw new AuthVerificationError(
+          `Authorization service unavailable: ${message}`,
+          'unavailable',
+          true
+        );
+      }
+      throw new AuthVerificationError(
+        `Invalid or expired token: ${message}`,
+        expired ? 'expired' : 'invalid',
+        false
+      );
     }
   }
 

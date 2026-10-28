@@ -114,36 +114,188 @@ describe('GameGateway.handleDisconnect', () => {
   });
 
   it('tells the OPPONENT seat only, with the playerId, never the leaver', () => {
-    seat('uA', 'sock-A');
-    // uA reconnects on a second device while their first socket dies, so
-    // their own socket is still sitting in the game room.
-    f.room.add('sock-A');
-    f.room.add('sock-A2');
-    f.room.add('sock-B');
-    (g.gateway as any).socketUserMap.set('sock-A2', {
-      userId: 'uA',
-      displayName: 'uA',
-      rating: 1500,
-      verified: true,
-    });
-    f.room.add('sock-C');
+    vi.useFakeTimers();
+    try {
+      seat('uA', 'sock-A');
+      // uA reconnects on a second device while their first socket dies, so
+      // their own socket is still sitting in the game room.
+      f.room.add('sock-A');
+      f.room.add('sock-A2');
+      f.room.add('sock-B');
+      (g.gateway as any).socketUserMap.set('sock-A2', {
+        userId: 'uA',
+        displayName: 'uA',
+        rating: 1500,
+        verified: true,
+      });
+      f.room.add('sock-C');
+      // The debounced announcement re-reads the authoritative deadline
+      // before emitting; a real game exists at this point.
+      (g.gateway as any).gameService.getGame = vi.fn().mockReturnValue({
+        state: { status: 'IN_PROGRESS' },
+        disconnectGraceEndsAt: { uA: Date.now() + 60_000 },
+      });
 
-    g.gateway.handleDisconnect(fakeSocket('sock-A'));
+      g.gateway.handleDisconnect(fakeSocket('sock-A'));
+      vi.advanceTimersByTime(1600);
 
-    const disc = f.emits.filter((e) => e.event === 'game:opponentDisconnected');
-    expect(disc).toHaveLength(1);
-    expect(disc[0].target).toEqual(['sock-B', 'sock-C']);
-    expect(disc[0].payload).toMatchObject({
-      userId: 'uA',
-      playerId: 'p1',
-      gracePeriodSeconds: 60,
-    });
+      const disc = f.emits.filter((e) => e.event === 'game:opponentDisconnected');
+      expect(disc).toHaveLength(1);
+      expect(disc[0].target).toEqual(['sock-B', 'sock-C']);
+      expect(disc[0].payload).toMatchObject({
+        userId: 'uA',
+        playerId: 'p1',
+        gracePeriodSeconds: 59,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does nothing for a socket with no identity', () => {
     g.gateway.handleDisconnect(fakeSocket('sock-UNKNOWN'));
     expect(g.handleDisconnectSpy).not.toHaveBeenCalled();
     expect(f.emits).toHaveLength(0);
+  });
+});
+
+/**
+ * Slow-handshake reconnect: the old socket can die while the replacement is
+ * still fetching JWKS. Teardown is parked for a bounded window, then either
+ * discarded by the verified replacement or finalized exactly once.
+ */
+describe('GameGateway pending handshake reservation', () => {
+  function makeReconnectGateway(guestId: string | null, verifyPromise: Promise<any>) {
+    const prisma = { isConnected: false, profile: { updateMany: vi.fn() } };
+    const authService = { verifyToken: vi.fn().mockReturnValue(verifyPromise) };
+    const guestService = { verifyAccessToken: vi.fn().mockReturnValue(guestId) };
+    const gateway = new GameGateway(authService as any, prisma as any, guestService as any);
+    const f = fakeServer();
+    (gateway as any).server = f.server;
+    const handleDisconnectSpy = vi.fn().mockReturnValue({ gracePeriodSeconds: 60, playerId: 'p1' });
+    (gateway as any).gameService.handleDisconnect = handleDisconnectSpy;
+    return { gateway, f, handleDisconnectSpy };
+  }
+
+  function seedLive(gateway: GameGateway, userId: string, socketId: string) {
+    const gw = gateway as any;
+    gw.socketUserMap.set(socketId, { userId, displayName: userId, rating: 1500, verified: true });
+    gw.userSocketMap.set(userId, socketId);
+    gw.activeGameUserMap.set(userId, 'g1');
+  }
+
+  function replacementSocket(id: string, userId: string) {
+    return {
+      id,
+      handshake: { query: { userId, displayName: 'A' }, auth: { token: 'token' } },
+      disconnected: false,
+      emit: vi.fn(),
+      join: vi.fn(),
+    } as any;
+  }
+
+  it('discards the parked old teardown when the replacement verifies', async () => {
+    let rejectVerify!: (reason?: any) => void;
+    const verifyPromise = new Promise((_, reject) => {
+      rejectVerify = reject;
+    });
+    const { gateway, f, handleDisconnectSpy } = makeReconnectGateway('uA', verifyPromise);
+    seedLive(gateway, 'uA', 'sock-OLD');
+    f.room.add('sock-OLD');
+    f.room.add('sock-B');
+    const client = replacementSocket('sock-NEW', 'uA');
+
+    const connecting = gateway.handleConnection(client);
+    expect((gateway as any).pendingHandshakes.has('uA')).toBe(true);
+
+    gateway.handleDisconnect(fakeSocket('sock-OLD'));
+    // Parked: no grace, no queue/presence teardown, old routing still present.
+    expect(handleDisconnectSpy).not.toHaveBeenCalled();
+    expect((gateway as any).userSocketMap.get('uA')).toBe('sock-OLD');
+    expect((gateway as any).socketUserMap.has('sock-OLD')).toBe(true);
+
+    rejectVerify(Object.assign(new Error('JWKS still fetching'), {
+      authReason: 'unavailable',
+      authRetryable: true,
+    }));
+    await connecting;
+
+    // The guest token verified, so the replacement owns the session; the old
+    // socket is stale bookkeeping and never reaches gameService.
+    expect(handleDisconnectSpy).not.toHaveBeenCalled();
+    expect((gateway as any).pendingHandshakes.has('uA')).toBe(false);
+    expect((gateway as any).userSocketMap.get('uA')).toBe('sock-NEW');
+    expect((gateway as any).socketUserMap.has('sock-OLD')).toBe(false);
+    expect(f.emits.filter((e) => e.event === 'game:opponentDisconnected')).toHaveLength(0);
+    expect(client.emit).toHaveBeenCalledWith(
+      'session:authState',
+      expect.objectContaining({ verified: true, userId: 'uA' })
+    );
+    gateway.onModuleDestroy();
+  });
+
+  it('finalizes the parked teardown immediately when the replacement fails auth', async () => {
+    let rejectVerify!: (reason?: any) => void;
+    const verifyPromise = new Promise((_, reject) => {
+      rejectVerify = reject;
+    });
+    // No guest identity: the failed account credential leaves this socket
+    // unverified, so its claim on uA must not protect uA's old socket.
+    const { gateway, f, handleDisconnectSpy } = makeReconnectGateway(null, verifyPromise);
+    seedLive(gateway, 'uA', 'sock-OLD');
+    f.room.add('sock-OLD');
+    const client = replacementSocket('sock-NEW', 'uA');
+
+    const connecting = gateway.handleConnection(client);
+    gateway.handleDisconnect(fakeSocket('sock-OLD'));
+    expect(handleDisconnectSpy).not.toHaveBeenCalled();
+
+    rejectVerify(Object.assign(new Error('expired'), { authReason: 'expired' }));
+    await connecting;
+
+    expect(handleDisconnectSpy).toHaveBeenCalledTimes(1);
+    expect(handleDisconnectSpy.mock.calls[0][0]).toBe('g1');
+    expect(handleDisconnectSpy.mock.calls[0][1]).toBe('uA');
+    expect((gateway as any).pendingHandshakes.has('uA')).toBe(false);
+    expect((gateway as any).userSocketMap.has('uA')).toBe(false);
+    gateway.onModuleDestroy();
+  });
+
+  it('finalizes after the TTL when the replacement never completes, then debounces normally', () => {
+    vi.useFakeTimers();
+    try {
+      const g = makeGateway();
+      const f = fakeServer();
+      (g.gateway as any).server = f.server;
+      seedLive(g.gateway, 'uA', 'sock-OLD');
+      f.room.add('sock-OLD');
+      f.room.add('sock-B');
+      (g.gateway as any).reservePendingHandshake('uA', 'sock-NEW');
+
+      g.gateway.handleDisconnect(fakeSocket('sock-OLD'));
+      expect(g.handleDisconnectSpy).not.toHaveBeenCalled();
+      expect((g.gateway as any).pendingHandshakes.get('uA').deferredDisconnect.socketId).toBe('sock-OLD');
+
+      vi.advanceTimersByTime(3_000);
+      expect(g.handleDisconnectSpy).toHaveBeenCalledTimes(1);
+      expect((g.gateway as any).pendingHandshakes.has('uA')).toBe(false);
+      expect((g.gateway as any).userSocketMap.has('uA')).toBe(false);
+
+      // The normal disconnect path still debounces before telling opponents.
+      (g.gateway as any).gameService.getGame = vi.fn().mockReturnValue({
+        state: { status: 'IN_PROGRESS' },
+        disconnectGraceEndsAt: { uA: Date.now() + 60_000 },
+      });
+      vi.advanceTimersByTime(1_500);
+      const disc = f.emits.filter((e) => e.event === 'game:opponentDisconnected');
+      expect(disc).toHaveLength(1);
+      expect(disc[0].target).toEqual(['sock-B']);
+      expect(disc[0].payload).toMatchObject({ userId: 'uA', playerId: 'p1' });
+      g.gateway.onModuleDestroy();
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -494,6 +646,87 @@ describe('GameGateway createGameChecked + migrateIdentity (F2)', () => {
     expect(refused.success).toBe(false);
     expect(gw.userSocketMap.get('uLive')).toBe('s-live');
     expect(gw.userSocketMap.has('uAcc2')).toBe(false);
+  });
+});
+
+/**
+ * P4 matchmaking recovery: a search issued after a missed match event (or a
+ * reconnect) must route the player back into the game the server already
+ * created, not answer ALREADY_IN_GAME and strand the other seat. A stale map
+ * entry for a finished seat must be cleared so the player can search again.
+ */
+describe('GameGateway matchmaking active-game recovery (P4)', () => {
+  function activeGame(seatStatus: 'ACTIVE' | 'FINISHED') {
+    return {
+      id: 'g1',
+      mode: '2p' as const,
+      state: {
+        status: 'IN_PROGRESS',
+        players: [
+          { id: 'p1', displayName: 'A', status: seatStatus },
+          { id: 'p2', displayName: 'B', status: 'ACTIVE' },
+        ],
+      },
+      userPlayerIds: { uA: 'p1', uB: 'p2' },
+      ratings: { uA: { rating: 1510 }, uB: { rating: 1490 } },
+      premiumUserIds: ['uB'],
+    };
+  }
+
+  function recoveryGateway(game: ReturnType<typeof activeGame>) {
+    const { gateway } = makeGateway();
+    const gw = gateway as any;
+    const f = fakeServer('g1');
+    gw.server = f.server;
+    f.liveSockets.set('sock-A', { join: vi.fn(), connected: true } as any);
+    f.room.add('sock-A');
+    gw.socketUserMap.set('sock-A', {
+      userId: 'uA',
+      displayName: 'A',
+      rating: 1500,
+      verified: true,
+    });
+    gw.userSocketMap.set('uA', 'sock-A');
+    gw.activeGameUserMap.set('uA', 'g1');
+    vi.spyOn(gw.gameService, 'getGame').mockReturnValue(game as any);
+    const client = { id: 'sock-A', handshake: { query: {} }, emit: vi.fn() };
+    return { gw, f, client };
+  }
+
+  it('resumes the live game instead of returning ALREADY_IN_GAME', () => {
+    const { gw, client } = recoveryGateway(activeGame('ACTIVE'));
+    const ack = vi.fn();
+
+    gw.handleFindMatch(
+      client,
+      { mode: '2p', timeControlMinutes: 3, incrementSeconds: 0, wallsEach: 10 },
+      ack
+    );
+
+    expect(client.emit).toHaveBeenCalledWith(
+      'matchmaking:matched',
+      expect.objectContaining({ gameId: 'g1', mode: '2p' })
+    );
+    expect(ack).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true, resumed: true, gameId: 'g1' })
+    );
+    expect(client.emit).not.toHaveBeenCalledWith('game:error', expect.anything());
+  });
+
+  it('clears a stale map entry and queues when this seat already finished', () => {
+    const { gw, client } = recoveryGateway(activeGame('FINISHED'));
+    const ack = vi.fn();
+
+    gw.handleFindMatch(
+      client,
+      { mode: '2p', timeControlMinutes: 3, incrementSeconds: 0, wallsEach: 10 },
+      ack
+    );
+
+    expect(gw.activeGameUserMap.has('uA')).toBe(false);
+    expect(gw.matchmakingService.getQueueLength()).toBe(1);
+    expect(ack).toHaveBeenCalledWith(expect.objectContaining({ success: true, queued: true }));
+    expect(client.emit).not.toHaveBeenCalledWith('matchmaking:matched', expect.anything());
   });
 });
 

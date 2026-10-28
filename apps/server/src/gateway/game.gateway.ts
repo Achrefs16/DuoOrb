@@ -44,15 +44,51 @@ interface SocketUserInfo {
   isPremium?: boolean;
 }
 
+/**
+ * A live socket whose teardown has been parked while a replacement transport
+ * verifies. It keeps its maps, queue line, presence and game seat untouched
+ * until the reservation resolves.
+ */
+interface DeferredDisconnect {
+  socketId: string;
+  userInfo: SocketUserInfo;
+}
+
+/**
+ * Short reservation created when a new transport claims a user who already
+ * has a live socket. It gives the replacement time to prove its credential
+ * before the old socket's disconnect is allowed to arm grace, leave rooms or
+ * notify opponents.
+ */
+interface PendingHandshake {
+  userId: string;
+  /** The unverified replacement socket. */
+  socketId: string;
+  expiresAt: number;
+  timer: NodeJS.Timeout;
+  deferredDisconnect?: DeferredDisconnect;
+}
+
 /** The six quick-reaction kinds. Mirrors the mobile `ReactionKind` union. */
 const REACTION_KINDS = new Set(['laugh', 'wow', 'cry', 'angry', 'clap', 'fire']);
 /** Minimum ms between relays from one socket: absorbs tap floods. */
 const REACTION_THROTTLE_MS = 500;
+/**
+ * How long a replacement transport may take to verify before the old socket's
+ * disconnect becomes real. Long enough to cover a cold JWKS fetch; short
+ * enough that a genuine disconnect is still announced promptly.
+ */
+const PENDING_HANDSHAKE_TTL_MS = 3_000;
 
 @WebSocketGateway({
   // Same allowlist as the HTTP API so the two cannot drift. Resolved at module
   // load, which is after dotenv has populated process.env.
   cors: resolveCorsOrigins(),
+  // Detect a half-open mobile connection sooner than the Socket.IO 4.8
+  // defaults (25s interval + 20s timeout). 20s/20s keeps the worst-case
+  // detection near 40s while remaining tolerant of slow cellular radios.
+  pingInterval: 20_000,
+  pingTimeout: 20_000,
 })
 export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(GameGateway.name);
@@ -88,6 +124,29 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   private socketUserMap = new Map<string, SocketUserInfo>(); // socketId -> SocketUserInfo
   private userSocketMap = new Map<string, string>();         // userId -> socketId
   private activeGameUserMap = new Map<string, string>();     // userId -> gameId
+  /**
+   * Monotonic per-user connection generations. A stale socket's disconnect
+   * must never tear down a session that a newer transport already owns —
+   * even if the map pointer was temporarily overwritten during a handshake.
+   */
+  private connectionEpochs = new Map<string, number>();      // userId -> latest epoch
+  private socketEpochs = new Map<string, number>();          // socketId -> epoch
+  /**
+   * Claimed userId -> replacement transport currently verifying. A reservation
+   * is not identity: it grants no gameplay or queue rights and only parks the
+   * OLD socket's teardown for a bounded window. Created before the first await
+   * in handleConnection so a disconnect arriving during JWKS verification is
+   * not mistaken for a genuine leave.
+   */
+  private pendingHandshakes = new Map<string, PendingHandshake>();
+  /**
+   * Short debounce before telling opponents about a disconnect. A Socket.IO
+   * transport reconnect closes the old socket and opens a new one; the
+   * replacement's `game:join` usually lands within a second. Announcing
+   * immediately made the opponent card blink and the grace pill flash for a
+   * player who never actually left.
+   */
+  private opponentDisconnectTimers = new Map<string, NodeJS.Timeout>();
   /** gameId -> roomId, for games created from a private room lobby. Lets the
    * room be handed back to its lobby when that game finishes. */
   private gameRoomMap = new Map<string, string>();
@@ -115,6 +174,10 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       clearInterval(this.sweepInterval);
       this.sweepInterval = undefined;
     }
+    for (const pending of this.pendingHandshakes.values()) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingHandshakes.clear();
   }
 
   afterInit() {    // 2-second periodic sweep for matchmaking queue
@@ -151,6 +214,8 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // opaque per-socket handle and is only upgraded below by a credential
     // the server itself verifies — never by client-asserted query fields.
     const qName = client.handshake.query?.displayName as string | undefined;
+    const qUserId = client.handshake.query?.userId as string | undefined;
+    const qPreviousUserId = client.handshake.query?.previousUserId as string | undefined;
     const earlyId = `anon-${client.id.substring(0, 6)}`;
     this.socketUserMap.set(client.id, {
       userId: earlyId,
@@ -169,16 +234,36 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       (client.handshake.headers?.authorization?.replace('Bearer ', '') as string) ||
       (client.handshake.query?.token as string);
 
+    // These are CLAIMS only, never identity: they let a disconnect know that
+    // a replacement transport for this user is already verifying. The actual
+    // identity below still comes exclusively from the verified credential.
+    // A forged claim can park a live user's teardown for at most the TTL and
+    // cannot extend an existing reservation.
+    const claimedUserIds = new Set<string>();
+    if (qUserId) claimedUserIds.add(qUserId);
+    if (qPreviousUserId) claimedUserIds.add(qPreviousUserId);
+    if (rawToken) {
+      for (const claimedUserId of claimedUserIds) {
+        this.reservePendingHandshake(claimedUserId, client.id);
+      }
+    }
+
     let userId: string | null = null;
     let displayName = qName ?? `Player ${client.id.substring(0, 4)}`;
     let rating = 1500;
     let verified = false;
+    let authReason: 'verified' | 'missing' | 'expired' | 'invalid' | 'unavailable' =
+      rawToken ? 'invalid' : 'missing';
+    let authRetryable = false;
 
     if (rawToken) {
       const guestUserId = this.guestService?.verifyAccessToken(rawToken) ?? null;
       if (guestUserId) {
         userId = guestUserId;
         verified = true;
+        // The token itself names the identity, so this claim is authoritative
+        // even if the handshake query omitted or spoofed userId.
+        this.reservePendingHandshake(guestUserId, client.id);
       }
     }
 
@@ -210,8 +295,13 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
           userId = provisioned.id;
           verified = true;
         }
-      } catch {
-        this.logger.warn(`No Supabase identity on ${client.id}; staying unverified.`);
+      } catch (err: any) {
+        authReason = err?.authReason ?? 'invalid';
+        authRetryable = err?.authRetryable === true;
+        this.logger.warn(
+          `No Supabase identity on ${client.id}; staying unverified ` +
+            `(reason=${authReason}, retryable=${authRetryable}): ${err?.message ?? 'unknown'}`
+        );
       }
     }
 
@@ -219,6 +309,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // client-asserted query.userId is untrusted input: it must never
     // become identity, presence, or matchmaking state.
     const effectiveId = userId ?? earlyId;
+    if (!verified) {
+      // The replacement failed its credential check, so any old-socket
+      // teardown it was holding must proceed now instead of waiting out the
+      // reservation TTL.
+      this.failPendingHandshakesForSocket(client.id);
+    }
 
     let isPremium = false;
     // Fetch the universal rating and premium status if DB is available
@@ -251,8 +347,16 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     try {
       // A newer connection may have superseded this one while awaiting.
       if (client.disconnected) {
+        this.failPendingHandshakesForSocket(client.id);
         return;
       }
+      // The credential verified: the replacement is now authoritative, so
+      // discard any old-socket teardown parked for this user before publishing
+      // the new mapping. No grace timer was armed while it was parked.
+      if (verified) this.resolvePendingHandshakeSuccess(effectiveId);
+      const epoch = (this.connectionEpochs.get(effectiveId) ?? 0) + 1;
+      this.connectionEpochs.set(effectiveId, epoch);
+      this.socketEpochs.set(client.id, epoch);
       const userInfo: SocketUserInfo = { userId: effectiveId, displayName, rating, verified, isPremium };
       this.socketUserMap.set(client.id, userInfo);
       this.userSocketMap.delete(earlyId);
@@ -270,7 +374,31 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       // Handshake verdict (ONLINE_HEALTH Phase A): the transport connects
       // even with an expired credential, so the client learns verified EXACTLY
       // once per handshake here — never by inferring from `connected`.
-      client.emit('session:authState', { verified, userId: effectiveId });
+      // The reason/retryable split keeps a JWKS outage from looking like a
+      // revoked login, and the resume hint lets a client recover a match whose
+      // one-shot matched event it never saw.
+      const activeGameId =
+        verified && this.isUserInLiveGame(effectiveId)
+          ? this.activeGameUserMap.get(effectiveId)
+          : undefined;
+      client.emit(
+        'session:authState',
+        verified
+          ? {
+              verified: true,
+              userId: effectiveId,
+              connectionEpoch: epoch,
+              activeGameId,
+              reason: 'verified' as const,
+              retryable: false,
+            }
+          : {
+              verified: false,
+              userId: effectiveId,
+              reason: authReason,
+              retryable: authRetryable,
+            }
+      );
       if (verified) this.broadcastPresenceCount();
       // Cache the live rating for lobby display: enrichRoom falls back to
       // this when the member has no live socket, instead of a fictional
@@ -286,17 +414,28 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       // the old seat. Refusals (previous session still live) keep the new
       // identity as-is: the caller surfaces NOT_SEATED and searches again.
       if (verified) {
-        const previousUserId = client.handshake.query?.previousUserId as string | undefined;
-        if (previousUserId && previousUserId !== effectiveId) {
-          const migrated = this.migrateIdentity(previousUserId, effectiveId, displayName, client, rating);
-          if (!migrated.success) {
-            this.logger.warn(`Reconnect migration refused ${previousUserId} -> ${effectiveId}: ${migrated.error}`);
+        if (qPreviousUserId && qPreviousUserId !== effectiveId) {
+          const migrated = this.migrateIdentity(qPreviousUserId, effectiveId, displayName, client, rating);
+          if (migrated.success) {
+            // Guest → account reconnect: the old identity's seat and room
+            // membership now belong to this verified socket, so its parked
+            // disconnect is a successful handover, not a leave.
+            this.resolvePendingHandshakeSuccess(qPreviousUserId);
+          } else {
+            this.logger.warn(`Reconnect migration refused ${qPreviousUserId} -> ${effectiveId}: ${migrated.error}`);
           }
         }
       }
+      // Any claim this socket made that was not converted into its verified
+      // identity (or a successful migration) was spoofed or stale. Let the
+      // old socket's real disconnect proceed immediately.
+      this.failPendingHandshakesForSocket(client.id);
 
       this.logger.log(`Socket connected: ${client.id} (User: ${effectiveId}, Rating: ${rating})`);
     } catch (err: any) {
+      // Never leave an old socket's teardown parked forever because this
+      // handshake threw after registering its reservation.
+      this.failPendingHandshakesForSocket(client.id);
       this.logger.error(`Error in handleConnection: ${err.message}`);
     }
   }
@@ -466,6 +605,11 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     if (!userInfo) return;
 
     const { userId } = userInfo;
+    // If THIS socket was the replacement and died before proving its
+    // credential, release its reservation now. Any old-socket teardown parked
+    // behind it becomes a real disconnect immediately.
+    this.failPendingHandshakesForSocket(client.id);
+
     // A newer socket already speaks for this user (reconnect / second
     // device): THIS socket is the stale one and its teardown must not touch
     // the live session. Without this a normal reconnect forfeited the
@@ -474,11 +618,55 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // reclaimed. Same guard as the connect path, which refuses to overwrite
     // identity for a socket that went away mid-handshake.
     const live = this.userSocketMap.get(userId);
-    if (live && live !== client.id) {
+    const epoch = this.socketEpochs.get(client.id) ?? 0;
+    const latestEpoch = this.connectionEpochs.get(userId) ?? 0;
+    if ((live && live !== client.id) || epoch < latestEpoch) {
       this.logger.log(
-        `Socket disconnected (stale, superseded by ${live}): ${client.id} (User: ${userId})`
+        `Socket disconnected (stale, superseded by ${live ?? 'a newer handshake'}): ${client.id} (User: ${userId})`
       );
       this.socketUserMap.delete(client.id);
+      this.socketEpochs.delete(client.id);
+      return;
+    }
+
+    // A replacement transport for this user is still verifying. Park the
+    // whole teardown — queue line, presence, rooms, game grace and opponent
+    // notice — for a bounded window. If the replacement verifies, it resumes
+    // the session as if this socket never dropped; if it fails or the TTL
+    // expires, finalizeDisconnect runs the normal path exactly once.
+    const pending = this.pendingHandshakes.get(userId);
+    if (
+      pending &&
+      pending.socketId !== client.id &&
+      pending.expiresAt > Date.now() &&
+      !pending.deferredDisconnect
+    ) {
+      pending.deferredDisconnect = { socketId: client.id, userInfo };
+      this.logger.log(
+        `Socket disconnect parked for pending handshake: ${client.id} (User: ${userId}, replacement ${pending.socketId})`
+      );
+      return;
+    }
+
+    this.finalizeDisconnect(client.id, userInfo);
+  }
+
+  /**
+   * The single teardown path for a genuinely gone socket. Called directly
+   * when no replacement is verifying, or once a pending handshake fails /
+   * expires. Re-checks staleness because resolution can happen asynchronously.
+   */
+  private finalizeDisconnect(socketId: string, userInfo: SocketUserInfo): void {
+    const { userId } = userInfo;
+    const live = this.userSocketMap.get(userId);
+    const epoch = this.socketEpochs.get(socketId) ?? 0;
+    const latestEpoch = this.connectionEpochs.get(userId) ?? 0;
+    if ((live && live !== socketId) || epoch < latestEpoch) {
+      this.logger.log(
+        `Socket disconnect dropped (stale, superseded by ${live ?? 'a newer handshake'}): ${socketId} (User: ${userId})`
+      );
+      this.socketUserMap.delete(socketId);
+      this.socketEpochs.delete(socketId);
       return;
     }
 
@@ -510,30 +698,107 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         // WHICH opponent dropped in a 3P/4P table.
         const others = this.otherSeatSockets(gameId, userId);
         if (others.length > 0) {
-          this.server.to(others).emit('game:opponentDisconnected', {
-            userId,
-            playerId: res.playerId,
-            gracePeriodSeconds: res.gracePeriodSeconds,
-            // Server's own deadline: the client counts down to this instead
-            // of decrementing a local copy, so a backgrounded or throttled
-            // phone can never display a grace window the server would not
-            // honour.
-            graceEndsAt: res.graceEndsAt,
-          });
+          this.scheduleOpponentDisconnect(gameId, userId, res, others);
         }
       }
     }
 
-    this.socketUserMap.delete(client.id);
+    this.socketUserMap.delete(socketId);
+    this.socketEpochs.delete(socketId);
     // Only retract the user→socket mapping if it still points at THIS
     // socket. Deleting unconditionally would strand a newer connection.
-    if (this.userSocketMap.get(userId) === client.id) {
+    if (this.userSocketMap.get(userId) === socketId) {
       this.userSocketMap.delete(userId);
     }
     // Heartbeat bookkeeping leaves with the session: a reconnect starts its
     // throttle fresh, and the map cannot grow without bound.
     this.presencePingAt.delete(userId);
-    this.logger.log(`Socket disconnected: ${client.id} (User: ${userId})`);
+    this.logger.log(`Socket disconnected: ${socketId} (User: ${userId})`);
+  }
+
+  /**
+   * Reserve a bounded window for a replacement transport. Only a claim for a
+   * currently LIVE VERIFIED user creates a reservation, and an active one is
+   * never overwritten or extended: a forged handshake can delay that user's
+   * teardown by at most one TTL, not indefinitely.
+   */
+  private reservePendingHandshake(userId: string, socketId: string): void {
+    if (!userId || userId.startsWith('anon-')) return;
+    const liveSocketId = this.userSocketMap.get(userId);
+    if (!liveSocketId || liveSocketId === socketId) return;
+    const liveUser = this.socketUserMap.get(liveSocketId);
+    if (!liveUser?.verified || liveUser.userId !== userId) return;
+    if (this.pendingHandshakes.has(userId)) return;
+
+    const timer = setTimeout(() => {
+      this.expirePendingHandshake(userId, socketId);
+    }, PENDING_HANDSHAKE_TTL_MS);
+    timer.unref?.();
+    this.pendingHandshakes.set(userId, {
+      userId,
+      socketId,
+      expiresAt: Date.now() + PENDING_HANDSHAKE_TTL_MS,
+      timer,
+    });
+    this.logger.log(
+      `Pending handshake reserved for ${userId}: ${socketId} -> ${liveSocketId} (${PENDING_HANDSHAKE_TTL_MS}ms)`
+    );
+  }
+
+  /** The replacement proved its credential: discard any parked old teardown. */
+  private resolvePendingHandshakeSuccess(userId: string): void {
+    const pending = this.pendingHandshakes.get(userId);
+    if (!pending) return;
+    this.finishPendingHandshake(pending, true);
+  }
+
+  /** The replacement failed or died: any parked old teardown is now real. */
+  private failPendingHandshakesForSocket(socketId: string): void {
+    for (const pending of [...this.pendingHandshakes.values()]) {
+      if (pending.socketId === socketId) {
+        this.finishPendingHandshake(pending, false);
+      }
+    }
+  }
+
+  private expirePendingHandshake(userId: string, socketId: string): void {
+    const pending = this.pendingHandshakes.get(userId);
+    if (!pending || pending.socketId !== socketId) return;
+    this.finishPendingHandshake(pending, false);
+    if (pending.deferredDisconnect) {
+      this.logger.warn(
+        `Pending handshake expired; finalized disconnect for ${pending.deferredDisconnect.socketId} (User: ${userId})`
+      );
+    }
+  }
+
+  private finishPendingHandshake(pending: PendingHandshake, success: boolean): void {
+    if (this.pendingHandshakes.get(pending.userId) !== pending) return;
+    this.pendingHandshakes.delete(pending.userId);
+    clearTimeout(pending.timer);
+
+    if (success) {
+      const deferred = pending.deferredDisconnect;
+      if (deferred) {
+        // The old socket is superseded. Its identity/game state already
+        // belongs to the verified replacement (handleConnection publishes the
+        // new mapping immediately after this), so only stale per-socket
+        // bookkeeping is removed — never queue, presence, room seat or grace.
+        this.socketUserMap.delete(deferred.socketId);
+        this.socketEpochs.delete(deferred.socketId);
+        this.logger.log(
+          `Socket disconnect discarded after successful reconnect: ${deferred.socketId} (User: ${pending.userId})`
+        );
+      }
+      return;
+    }
+
+    if (pending.deferredDisconnect) {
+      this.finalizeDisconnect(
+        pending.deferredDisconnect.socketId,
+        pending.deferredDisconnect.userInfo
+      );
+    }
   }
 
   /**
@@ -554,6 +819,59 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       out.push(socketId);
     }
     return out;
+  }
+
+  private opponentDisconnectKey(gameId: string, userId: string): string {
+    return `${gameId}:${userId}`;
+  }
+
+  /**
+   * Announce a disconnect only after a short debounce. A transport reconnect
+   * closes the old socket and opens the new one; the replacement's verified
+   * `game:join` is the authoritative "I am back" signal and cancels this
+   * timer before opponents ever see a false grace card.
+   */
+  private scheduleOpponentDisconnect(
+    gameId: string,
+    userId: string,
+    res: { playerId: string; gracePeriodSeconds: number; graceEndsAt: number },
+    othersAtDisconnect: string[]
+  ): void {
+    const key = this.opponentDisconnectKey(gameId, userId);
+    if (this.opponentDisconnectTimers.has(key)) return;
+    const timer = setTimeout(() => {
+      this.opponentDisconnectTimers.delete(key);
+      const game = this.gameService.getGame(gameId);
+      if (!game || game.state.status !== 'IN_PROGRESS') return;
+      const graceEndsAt = game.disconnectGraceEndsAt[userId];
+      if (!graceEndsAt) return; // reconnected before the debounce elapsed
+      // Use the snapshot captured BEFORE the leaver's socketUserMap entry is
+      // deleted. Re-deriving the list here would include the dead leaver
+      // socket (its identity mapping is gone, but it can linger in the room
+      // for a tick), i.e. exactly the false "opponent disconnected" we are
+      // debouncing. Filter to sockets still in the room at fire time.
+      const room = this.server.sockets.adapter.rooms.get(gameId);
+      const others = othersAtDisconnect.filter((id) => room?.has(id));
+      if (others.length === 0) return;
+      this.server.to(others).emit('game:opponentDisconnected', {
+        userId,
+        playerId: res.playerId,
+        gracePeriodSeconds: Math.max(0, Math.ceil((graceEndsAt - Date.now()) / 1000)),
+        // Server's own deadline: the client counts down to this instead of
+        // decrementing a local copy, so a backgrounded or throttled phone can
+        // never display a grace window the server would not honour.
+        graceEndsAt,
+      });
+    }, 1500);
+    timer.unref?.();
+    this.opponentDisconnectTimers.set(key, timer);
+  }
+
+  private cancelOpponentDisconnect(gameId: string, userId: string): void {
+    const key = this.opponentDisconnectKey(gameId, userId);
+    const timer = this.opponentDisconnectTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.opponentDisconnectTimers.delete(key);
   }
 
   // -------------------------------------------------------------
@@ -861,18 +1179,54 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('matchmaking:find')
   handleFindMatch(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number }
+    @MessageBody() payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number },
+    @Ack() ack?: (result: {
+      success: boolean;
+      queued?: boolean;
+      resumed?: boolean;
+      gameId?: string;
+      opponents?: Array<{ userId: string; displayName: string; rating: number; isPremium?: boolean }>;
+      code?: string;
+    }) => void
   ) {
     const user = this.getUser(client);
     if (!user.verified) {
       client.emit('game:error', { code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
+      ack?.({ success: false, code: 'UNAUTHENTICATED' });
       return;
     }
     const busyGameId = this.activeGameUserMap.get(user.userId);
     const busyGame = busyGameId ? this.gameService.getGame(busyGameId) : undefined;
-    if (busyGame && busyGame.state.status === 'IN_PROGRESS') {
-      client.emit('game:error', { code: 'ALREADY_IN_GAME', message: 'Finish your current game first.' });
-      return { success: false };
+    const busySeat = busyGame?.userPlayerIds[user.userId];
+    if (
+      busyGame &&
+      busyGame.state.status === 'IN_PROGRESS' &&
+      busySeat &&
+      this.isUserInLiveGame(user.userId)
+    ) {
+      // Reconnect recovery: the search may have been re-issued after the
+      // matched event was missed or the transport dropped. The server already
+      // knows the only correct destination — route the player back instead of
+      // saying ALREADY_IN_GAME and leaving the other device alone in the match.
+      this.matchmakingService.removeFromQueue(user.userId);
+      const opponents = Object.entries(busyGame.userPlayerIds)
+        .filter(([, userId]) => userId !== user.userId)
+        .map(([playerId, userId]) => {
+          const seat = busyGame.state.players.find((p) => p.id === playerId);
+          return {
+            userId,
+            displayName: seat?.displayName ?? 'Opponent',
+            rating: busyGame.ratings[userId]?.rating ?? 1500,
+            isPremium: busyGame.premiumUserIds?.includes(userId) ?? false,
+          };
+        });
+      client.emit('matchmaking:matched', {
+        gameId: busyGame.id,
+        mode: busyGame.mode,
+        opponents,
+      });
+      ack?.({ success: true, resumed: true, gameId: busyGame.id, opponents });
+      return { success: true, resumed: true };
     }
     if (busyGameId) this.activeGameUserMap.delete(user.userId);
     this.matchmakingService.addToQueue({
@@ -886,6 +1240,10 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       joinedAt: Date.now(),
       socketId: client.id,
     });
+    // Ack is the client's proof that the queue accepted this search. The
+    // reconcile tick uses it to recover a missed matched event; legacy
+    // clients that emit without a callback simply ignore it.
+    ack?.({ success: true, queued: true });
 
     this.runMatchmakingSweep();
   }
@@ -1101,7 +1459,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   private requeuePlayer(player: MatchmakingRequest): void {
     const sid = this.userSocketMap.get(player.userId);
     const live = sid ? this.server.sockets.sockets.get(sid) : undefined;
-    if (!live || !sid) return;
+    if (!live || !sid || live.connected === false) return;
     const info = this.socketUserMap.get(sid);
     this.matchmakingService.requeue({
       ...player,
@@ -1114,9 +1472,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   private async runMatchmakingSweep() {
     // Dead entries never reach findMatches: purge them first so a drifted
     // queue (missed socket update, async gap) cannot seat a ghost table.
-    const purged = this.matchmakingService.purgeDisconnected((sid) =>
-      this.server.sockets.sockets.has(sid)
-    );
+    const purged = this.matchmakingService.purgeDisconnected((sid) => {
+      const socket = this.server.sockets.sockets.get(sid);
+      // A socket object can linger for a tick after transport death. `has`
+      // alone is not liveness; require an actually connected socket.
+      return !!socket && socket.connected !== false;
+    });
     if (purged.length > 0) {
       this.logger.log(`Matchmaking purged ${purged.length} dead queue entries.`);
     }
@@ -1186,6 +1547,13 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       for (const player of players) {
         const liveSid = this.userSocketMap.get(player.userId);
         if (!liveSid) continue;
+        const target = this.server.sockets.sockets.get(liveSid);
+        if (!target || target.connected === false) {
+          // A seat can drop between createGameChecked and this emit. Do not
+          // pretend the one-shot event was delivered; the client's verified
+          // find reconciliation / activeGameId resume is the recovery path.
+          continue;
+        }
         this.server
           .to(liveSid)
           .emit('matchmaking:matched', {
@@ -1210,20 +1578,34 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('game:leave')
   async handleLeaveGame(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId: string }
+    @MessageBody() payload: { gameId: string },
+    @Ack() ack?: (res: { ok: boolean; code?: string; message?: string }) => void
   ) {
     const user = this.getUser(client);
-    if (!user.verified) return;
+    if (!user.verified) {
+      ack?.({ ok: false, code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
+      return;
+    }
     client.leave(payload.gameId);
     const game = this.gameService.getGame(payload.gameId);
-    if (!game || game.state.status !== 'IN_PROGRESS') return;
-    if (!game.userPlayerIds[user.userId]) return;
+    if (!game || game.state.status !== 'IN_PROGRESS') {
+      ack?.({ ok: true });
+      return;
+    }
+    if (!game.userPlayerIds[user.userId]) {
+      ack?.({ ok: true });
+      return;
+    }
     const result = await this.gameService.leaveGame(payload.gameId, user.userId);
-    if (!result.left) return;
+    if (!result.left) {
+      ack?.({ ok: false, code: 'LEAVE_FAILED', message: result.error });
+      return;
+    }
     if (!result.forfeited) {
       // Finished player walked away: free the seat, keep the placement.
       this.setPresence(user.userId, { isPlaying: false });
       this.activeGameUserMap.delete(user.userId);
+      ack?.({ ok: true });
       return;
     }
     if (result.recorded) {
@@ -1231,10 +1613,15 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     }
     if (result.finished) {
       this.server.to(payload.gameId).emit('game:playerFinished', { gameId: payload.gameId, ...result.finished });
+      if (!result.ended) {
+        this.activeGameUserMap.delete(result.finished.userId);
+        this.setPresence(result.finished.userId, { isPlaying: false });
+      }
     }
     if (result.ended) {
       await this.endGame(payload.gameId, result.ended);
     }
+    ack?.({ ok: true });
   }
 
   @SubscribeMessage('game:join')
@@ -1273,13 +1660,23 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       return;
     }
     client.join(payload.gameId);
-    // Point at live games only: a drop mid-pump still arms grace through
-    // this mapping, but joining a finished table must not resurrect a
-    // mapping that completion already cleared (M13).
-    if (this.gameService.getGame(payload.gameId)?.state.status === 'IN_PROGRESS') {
+    // Point at live games only, and only while this seat is still ACTIVE.
+    // A dropped mid-pump still arms grace through this mapping, but joining a
+    // finished table — or a FINISHED seat in a continuing 3P/4P match — must
+    // not resurrect a mapping that completion/forfeit already cleared (M13).
+    const joinedGame = this.gameService.getGame(payload.gameId);
+    const joinedSeatId = joinedGame?.userPlayerIds[user.userId];
+    const joinedSeat = joinedSeatId
+      ? joinedGame?.state.players.find((p) => p.id === joinedSeatId)
+      : undefined;
+    if (joinedGame?.state.status === 'IN_PROGRESS' && joinedSeat?.status === 'ACTIVE') {
       this.activeGameUserMap.set(user.userId, payload.gameId);
     }
 
+    // Verified rejoin cancels the debounced "opponent disconnected" event
+    // before it reaches the table. This is what keeps a fast transport
+    // reconnect from flashing the grace card on every other seat.
+    this.cancelOpponentDisconnect(payload.gameId, user.userId);
     // Kill the grace timer NOW, synchronously. The loop below awaits a DB
     // round-trip per unconfirmed move; if the grace window expires inside it,
     // the server forfeits a seat whose owner is standing right here. The
@@ -1436,6 +1833,14 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       this.server.to(payload.gameId).emit('game:actionAccepted', result.recorded);
       if (result.finished) {
         this.server.to(payload.gameId).emit('game:playerFinished', { gameId: payload.gameId, ...result.finished });
+        if (!result.ended) {
+          // Finished seat, match continues (3P/4P). They are a spectator now:
+          // free the active-game mapping immediately so matchmaking/challenges
+          // cannot lie with ALREADY_IN_GAME, and a later disconnect does not
+          // arm grace for a seat that can no longer forfeit.
+          this.activeGameUserMap.delete(result.finished.userId);
+          this.setPresence(result.finished.userId, { isPlaying: false });
+        }
       }
       if (result.ended) {
         // `result.recorded` was already emitted above; endGame only sends it
@@ -1451,11 +1856,13 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('game:resign')
   async handleResign(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId: string }
+    @MessageBody() payload: { gameId: string },
+    @Ack() ack?: (res: { ok: boolean; code?: string; message?: string }) => void
   ) {
     const user = this.getUser(client);
     if (!user.verified) {
       client.emit('game:error', { code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
+      ack?.({ ok: false, code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
       return;
     }
     const result = await this.gameService.resign(payload.gameId, user.userId);
@@ -1463,19 +1870,29 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       this.server.to(payload.gameId).emit('game:actionAccepted', result.recorded);
       if (result.finished) {
         this.server.to(payload.gameId).emit('game:playerFinished', { gameId: payload.gameId, ...result.finished });
+        // Mid-game forfeit: the seat is FINISHED and the match continues for
+        // the rest. Free the active mapping now; otherwise this player is
+        // told ALREADY_IN_GAME and looks trapped after resigning.
+        this.activeGameUserMap.delete(result.finished.userId);
+        this.setPresence(result.finished.userId, { isPlaying: false });
       }
       if (!result.ended) {
         // Mid-game forfeit: the match continues for the rest.
         if (!result.finished) {
           client.emit('game:error', { code: 'RESIGN_FAILED', message: 'Resign did not complete.' });
+          ack?.({ ok: false, code: 'RESIGN_FAILED', message: 'Resign did not complete.' });
+        } else {
+          ack?.({ ok: true });
         }
         return;
       }
       // Terminal resign: recorded + finished already emitted above; endGame
       // persists, announces the ending, and frees seats/presence/room.
       await this.endGame(payload.gameId, result.ended);
+      ack?.({ ok: true });
     } else {
       client.emit('game:error', { code: 'RESIGN_FAILED', message: result.error });
+      ack?.({ ok: false, code: 'RESIGN_FAILED', message: result.error });
     }
   }
 
@@ -1723,7 +2140,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     const offline = args.seatUserIds.filter((id) => {
       const sid = this.userSocketMap.get(id);
       const s = sid ? this.server.sockets.sockets.get(sid) : undefined;
-      if (!s) return true;
+      if (!s || s.connected === false) return true;
       liveSockets.set(id, s);
       return false;
     });
@@ -1825,6 +2242,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
    * emitted their `actionAccepted` before knowing the game ended.
    */
   private async endGame(gameId: string, ended: GameEndedDto, move?: RecordedAction): Promise<void> {
+    const finishedGame = this.gameService.getGame(gameId);
+    if (finishedGame) {
+      for (const userId of Object.keys(finishedGame.userPlayerIds ?? {})) {
+        this.cancelOpponentDisconnect(gameId, userId);
+      }
+    }
     try {
       await this.gameService.persistCompleted(gameId);
     } catch (err: any) {
@@ -1864,6 +2287,11 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       // their board misses the TIMEOUT move until a resync.
       if (lastMove) this.server.to(gameId).emit('game:actionAccepted', lastMove);
       this.server.to(gameId).emit('game:playerFinished', { gameId, ...finished });
+      // A finished seat is a spectator even if the match continues. Free the
+      // active-game mapping now so the AFK/grace forfeit path cannot leave a
+      // stale ALREADY_IN_GAME entry behind (3P/4P especially).
+      this.activeGameUserMap.delete(finished.userId);
+      this.setPresence(finished.userId, { isPlaying: false });
       return;
     }
     if (!ended) return;

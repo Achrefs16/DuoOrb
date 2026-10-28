@@ -173,8 +173,11 @@ export interface ClientToServerEvents {
     /** Client's unconfirmed tail for reconnect reconciliation (capped). */
     pendingActions?: { clientActionId: string; action: GameAction }[];
   }) => void;
-  'game:leave': (payload: { gameId: string }) => void;
-'game:action': (
+  'game:leave': (
+    payload: { gameId: string },
+    ack?: (res: { ok: boolean; code?: string; message?: string }) => void
+  ) => void;
+  'game:action': (
     payload: {
       gameId: string;
       action: GameAction;
@@ -203,7 +206,11 @@ export interface ClientToServerEvents {
    * and queue entries from the profile — never from client strings.
    */
   'session:sync': () => void;
-  'game:resign': (payload: { gameId: string }) => void;  'game:rematch': (payload: { gameId: string }) => void;
+  'game:resign': (
+    payload: { gameId: string },
+    ack?: (res: { ok: boolean; code?: string; message?: string }) => void
+  ) => void;
+  'game:rematch': (payload: { gameId: string }) => void;
   /**
    * Explicit rematch decline. Without it a dismissed offer lived out its full
    * server TTL while the offeror waited — the decline lets the other side
@@ -234,8 +241,18 @@ export interface ClientToServerEvents {
   /** Pull the room's authoritative state. Used when re-entering a lobby from
    * a finished match, where the client only holds a pre-match snapshot. */
   'room:sync': (payload: { roomId?: string; code?: string }, callback?: (res: { success: boolean; error?: string }) => void) => void;
-  'matchmaking:find': (payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number }) => void;
-  'matchmaking:cancel': () => void;
+  'matchmaking:find': (
+    payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number },
+    callback?: (res: {
+      success: boolean;
+      queued?: boolean;
+      resumed?: boolean;
+      gameId?: string;
+      opponents?: Array<{ userId: string; displayName: string; rating: number; isPremium?: boolean }>;
+      code?: string;
+    }) => void
+  ) => void;
+  'matchmaking:cancel': (callback?: (res: { success: boolean }) => void) => void;
   /**
    * Presence heartbeat (ONLINE_HEALTH C1): verified sockets ping at most
    * every ~60s so `updatedAt` stays fresh while the app is open. The 5-minute
@@ -301,6 +318,9 @@ export interface ServerToClientEvents {
   'matchmaking:matched': (payload: {
     gameId: string;
     roomId?: string;
+    mode?: GameMode;
+    /** True when this is a reconnect/resume of an already-created game. */
+    resumed?: boolean;
     /** Everyone else seated in the match, for the opponent-found card. */
     opponents?: Array<{ userId: string; displayName: string; rating: number; isPremium?: boolean }>;
   }) => void;
@@ -321,7 +341,21 @@ export interface ServerToClientEvents {
    * client whether the server recognized it. Clients must treat connected +
    * unverified as offline-with-retry, never as healthy.
    */
-  'session:authState': (payload: { verified: boolean; userId: string }) => void;
+  'session:authState': (payload: {
+    verified: boolean;
+    userId: string;
+    /** Monotonic generation of this user's accepted transport. */
+    connectionEpoch?: number;
+    /** A resumable live game, if the server still has this user seated. */
+    activeGameId?: string;
+    /**
+     * Why an unverified handshake was rejected. `unavailable` is transient
+     * (JWKS/network) and should be retried with backoff; `expired`/`invalid`
+     * need a credential refresh or a definitive sign-in.
+     */
+    reason?: 'verified' | 'missing' | 'expired' | 'invalid' | 'unavailable';
+    retryable?: boolean;
+  }) => void;
   /**
    * Live online-player count, broadcast on verified connect/disconnect
    * (same 5-minute freshness rule as GET /presence/online). Clients use it

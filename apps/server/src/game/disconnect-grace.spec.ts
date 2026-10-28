@@ -105,24 +105,24 @@ describe('disconnect grace', () => {
     expect(game.state.winnerId).toBe('p2');
   });
 
-  it('a SECOND disconnect replaces the timer instead of stacking an orphan on it', () => {
+  it('a SECOND disconnect preserves the live deadline instead of restarting it', () => {
     const game = makeGame(svc);
     const onForfeit = vi.fn();
-    svc.handleDisconnect('g1', 'uA', onForfeit);
+    const first = svc.handleDisconnect('g1', 'uA', onForfeit)!;
     const firstTimer = game.disconnectedUsers.uA.timeoutId;
-    svc.handleDisconnect('g1', 'uA', onForfeit);
+    vi.advanceTimersByTime(5_000);
+    const second = svc.handleDisconnect('g1', 'uA', onForfeit)!;
     const secondTimer = game.disconnectedUsers.uA.timeoutId;
 
-    // One live entry only — the orphan is exactly what used to forfeit a
-    // player who had already come back.
-    expect(secondTimer).not.toBe(firstTimer);
+    // Transport churn re-entering this path is idempotent: one timer, the
+    // original deadline, and no fresh 45s handed to the absent player while
+    // opponents watch the countdown jump.
+    expect(secondTimer).toBe(firstTimer);
+    expect(second.graceEndsAt).toBe(first.graceEndsAt);
+    expect(second.gracePeriodSeconds).toBe(40);
     expect(Object.keys(game.disconnectedUsers)).toEqual(['uA']);
-
-    // Even if the orphaned callback were still delivered, it must not act.
-    // Generations are monotonic (bumped on arm AND cancel, never deleted):
-    // two disconnect cycles bump four times, so the first cycle's token (2)
-    // can never equal the live one (4).
-    expect(game.disconnectGenerations.uA).toBe(4);
+    // One arm (the cancel+arm pair) — not a second cycle.
+    expect(game.disconnectGenerations.uA).toBe(2);
   });
 
   it('an orphaned callback cannot delete the live entry or forfeit', () => {

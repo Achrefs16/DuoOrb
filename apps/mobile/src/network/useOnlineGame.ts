@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { AppState } from 'react-native';
 import { GameAction, GameError, GameState, RecordedAction, applyAction } from '@duoorb/game-core';
 import { ClockStateDto, GameEndedDto, GameSyncDto } from '@duoorb/protocol';
-import { socketManager, ConnectionStatus } from './socket';
+import { socketManager, useVerified, ConnectionStatus } from './socket';
 import { getIdentity, useIdentity } from './auth';
 import { refreshSessionOnce } from './apiClient';
 
@@ -127,6 +127,13 @@ export function useOnlineGame({ gameId, initialSync, onGameEnded, onError }: Use
    * `game:sync.you` below fixes the lookup itself.
    */
   const identity = useIdentity();
+  /**
+   * Transport `connected` is not readiness: the server verifies the token
+   * asynchronously and publishes the user route afterwards. Joins/actions
+   * must wait for this flag, or a normal reconnect starts with a rejected
+   * join and a refresh/rejoin loop.
+   */
+  const verified = useVerified();
   const [gameState, setGameState] = useState<GameState | null>(() => initialSync?.state ?? null);
   const [clocks, setClocks] = useState<Record<string, number>>(() => {
     const seeded: Record<string, number> = {};
@@ -680,13 +687,16 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
   // token). Skipped on first connect — mount already joins. Rejoin-path: no
   // attempt reset (see joinGame), and never for a finished game.
   useEffect(() => {
-    if (connStatus === 'connected') {
+    // `connected` alone is a transport fact, not an authenticated session.
+    // Waiting for verified means the reconnect join lands on a socket the
+    // server will actually accept.
+    if (connStatus === 'connected' && verified === true) {
       if (everConnectedRef.current && !gameEndedResult && gameStatus !== 'COMPLETED') {
         joinGame(false);
       }
       everConnectedRef.current = true;
     }
-  }, [connStatus, joinGame, gameEndedResult, gameStatus]);
+  }, [connStatus, verified, joinGame, gameEndedResult, gameStatus]);
 
   // Seat miss, owned here instead of the screen: sync arrived but no seat
   // resolved (identity hydrating a moment after the first sync). Same single
@@ -827,6 +837,8 @@ setOpponentGrace({});
         WALL_CROSSES_EXISTING: 'A wall cannot cross another wall.',
         WALL_ALREADY_OCCUPIED: 'That wall slot is taken.',
         NO_WALLS_REMAINING: 'No walls left to place.',
+        RESIGN_FAILED: 'Could not resign. Check your connection and try again.',
+        LEAVE_FAILED: 'Could not leave the match. Check your connection and try again.',
       };
       const message = messages[error.code] ?? 'Could not join that match. Go back and try again.';
       setPending([]);
@@ -1279,8 +1291,23 @@ setOpponentGrace({});
 
   const resign = useCallback(() => {
     const socket = socketManager.getSocket();
-    socket.emit('game:resign', { gameId });
-  }, [gameId]);
+    // Ack makes the action observable: if the connection is down the facade
+    // queues it (and delivers it after verification), but a server-side
+    // rejection is no longer silent. Without an ack the modal just vanished
+    // and the player had no idea whether the seat was still live.
+    socket.emit(
+      'game:resign',
+      { gameId },
+      (res: { ok?: boolean; code?: string; message?: string }) => {
+        if (res?.ok === false) {
+          handleError({
+            code: (res.code ?? 'RESIGN_FAILED') as GameError['code'],
+            message: res.message ?? 'Could not resign. Try again.',
+          });
+        }
+      }
+    );
+  }, [gameId, handleError]);
 
   const offerRematch = useCallback(() => {
     const socket = socketManager.getSocket();

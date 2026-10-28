@@ -1539,17 +1539,35 @@ public async recoverInProgressGames(hooks: {
     // `graceEndsAt`, so a slow or sleeping phone cannot extend it. It is a
     // different mechanism from the AFK limit (see AFK_TIMEOUT_MS), and the
     // two never share a timer.
+    //
+    // Continuity rule: a second disconnect before the first window expires
+    // must NOT restart the countdown. Transport churn (old socket closing
+    // after the replacement is already handshaking, auth retry, offline
+    // watcher) used to call this path twice and give the player a fresh 45s
+    // while every opponent watched the timer jump back to full. If a live
+    // grace entry already exists, it is already the authoritative timer;
+    // return it untouched.
+    const existingGraceEndsAt = game.disconnectGraceEndsAt[userId];
+    const existingEntry = game.disconnectedUsers[userId];
+    if (existingGraceEndsAt !== undefined && existingEntry) {
+      const remainingMs = Math.max(0, existingGraceEndsAt - Date.now());
+      return {
+        gracePeriodSeconds: Math.ceil(remainingMs / 1000),
+        playerId,
+        graceEndsAt: existingGraceEndsAt,
+      };
+    }
+
     const graceSeconds = 45;
     const armedAt = Date.now();
     const graceEndsAt = armedAt + graceSeconds * 1000;
 
-    // A second disconnect before the first grace expires must REPLACE the
-    // old timer, not stack on top of it: an orphaned timer would fire while
-    // the player is already back and forfeit a game they are playing. The
-    // generation token is the belt to that braces — a callback that has
-    // already been queued when the timer is cleared still runs, and it must
-    // recognize that its entry is no longer the live one. Runs BEFORE the
-    // deadline is recorded, because cancelling clears it.
+    // No live timer: clear any half-state left by a race (deadline without an
+    // entry, or vice versa), then arm exactly one. The generation token is
+    // the belt to that braces — a callback that has already been queued when
+    // the timer is cleared still runs, and it must recognize that its entry
+    // is no longer the live one. Runs BEFORE the deadline is recorded, because
+    // cancelling clears it.
     this.cancelDisconnectGrace(gameId, userId);
     game.disconnectGraceEndsAt[userId] = graceEndsAt;
 

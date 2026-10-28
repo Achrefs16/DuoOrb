@@ -259,11 +259,28 @@ describe('offline emit queue', () => {
     created[0].connected = false; // network drops
   });
 
-  /** Network returns: the socket reports connected and the queue flushes. */
+  /**
+   * Network returns: the transport connects, then the server publishes the
+   * verified handshake verdict. Queue flushing is owned by the verdict, not
+   * by the raw connect event.
+   */
   function comeBackOnline(): void {
     created[0].connected = true;
     created[0].__fire('connect');
+    created[0].__fire('session:authState', { verified: true, userId: 'u_one' });
   }
+
+  it('does not flush gameplay intents on transport connect alone', () => {
+    socket.emit('game:join', { gameId: 'g1' });
+
+    created[0].connected = true;
+    created[0].__fire('connect');
+    expect(created[0].emitted.map((e: any) => e.event)).not.toContain('game:join');
+
+    // The server's async handshake verdict is the readiness signal.
+    created[0].__fire('session:authState', { verified: true, userId: 'u_one' });
+    expect(created[0].emitted.map((e: any) => e.event)).toContain('game:join');
+  });
 
   it('buffers only the four allowlisted gameplay events', () => {
     socket.emit('game:join', { gameId: 'g1' });
@@ -293,16 +310,24 @@ describe('offline emit queue', () => {
     expect(replayed).not.toContain('challenge:send');
   });
 
-  it('never replays a queued game:leave into the reconnected session', () => {
-    // Player pressed "leave match" on a flaky connection...
+  it('replays a deliberate leave for the game it names', () => {
+    // Pressing leave while offline must not trap the player: the payload is
+    // game-scoped, so delivering it later can only free that seat.
     socket.emit('game:leave', { gameId: 'old-game' });
-    // ...and by the time the socket is back they are in a different match.
+    comeBackOnline();
+
+    expect(created[0].emitted.map((e: any) => e.event)).toContain('game:leave');
+  });
+
+  it('drops a queued leave once the player is scoped to a different game', () => {
+    socket.emit('game:leave', { gameId: 'old-game' });
+    socketMod.socketManager.setScopedGame('new-game');
     comeBackOnline();
 
     expect(created[0].emitted.map((e: any) => e.event)).not.toContain('game:leave');
   });
 
-  it('still replays the moves that were in flight around that leave', () => {
+  it('replays the moves and leave that were in flight together', () => {
     socket.emit('game:action', {
       gameId: 'old-game',
       action: { type: 'MOVE', to: { row: 0, col: 0 } },
@@ -314,7 +339,7 @@ describe('offline emit queue', () => {
 
     const replayed = created[0].emitted.map((e: any) => e.event);
     expect(replayed).toContain('game:action');
-    expect(replayed).not.toContain('game:leave');
+    expect(replayed).toContain('game:leave');
   });
 
   it('drops queued intents for a previous game once scoped', () => {
@@ -452,10 +477,13 @@ describe('reconnect core (F6)', () => {
     expect(socketMod.socketManager.getStatus()).toBe('disconnected');
 
     // Guest refresh lands: same account, new token. Rotation clears the
-    // dead credential, so the next ensure reconnects on it.
+    // dead credential and rebuilds immediately, so the next handshake
+    // presents the new token instead of reusing the rejected transport.
     auth.patchIdentity({ accessToken: 'token-two' });
     socketMod.socketManager.getSocket();
-    expect(created[0].connected).toBe(true);
+    expect(created).toHaveLength(2);
+    expect(created[1].opts.auth).toEqual({ token: 'token-two' });
+    expect(created[1].connected).toBe(true);
     expect(socketMod.socketManager.getStatus()).toBe('connected');
   });
 
@@ -517,6 +545,28 @@ describe('verified transport state and re-auth recovery', () => {
     refreshResult = false;
   });
 
+  it('a transport reconnect must re-verify before auth-required emits', () => {
+    const socket = socketMod.socketManager.getSocket();
+    auth.setIdentity(identity('u_one', futureJwt()));
+    created[0].__fire('session:authState', { verified: true });
+    expect(socketMod.socketManager.isVerified()).toBe(true);
+
+    // Socket.IO drops and reconnects the SAME raw object. The old verdict
+    // cannot carry over to the new handshake.
+    created[0].connected = false;
+    created[0].__fire('disconnect', 'transport close');
+    expect(socketMod.socketManager.isVerified()).toBeNull();
+
+    socket.emit('game:join', { gameId: 'g1' });
+    created[0].connected = true;
+    created[0].__fire('connect');
+    expect(created[0].emitted.filter((e: any) => e.event === 'game:join')).toHaveLength(0);
+
+    // Only the new handshake verdict releases the queued join.
+    created[0].__fire('session:authState', { verified: true });
+    expect(created[0].emitted.filter((e: any) => e.event === 'game:join')).toHaveLength(1);
+  });
+
   it('starts unknown, tracks verified true, resets on rebuild', () => {
     expect(socketMod.socketManager.isVerified()).toBeNull();
     socketMod.socketManager.getSocket();
@@ -566,6 +616,49 @@ describe('verified transport state and re-auth recovery', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(created).toHaveLength(2);
     expect(socketMod.socketManager.getStatus()).toBe('disconnected');
+  });
+
+  it('retryable backend outage backs off and rebuilds instead of parking', async () => {
+    vi.useFakeTimers();
+    try {
+      socketMod.socketManager.getSocket();
+      auth.setIdentity(identity('u_one', futureJwt()));
+      expect(created).toHaveLength(1);
+
+      // JWKS/network outage: the credential is fine, the verifier is not.
+      created[0].__fire('session:authState', {
+        verified: false,
+        userId: 'u_one',
+        reason: 'unavailable',
+        retryable: true,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(socketMod.socketManager.getStatus()).toBe('reconnecting');
+      expect(created).toHaveLength(1);
+
+      // Next attempt can verify: it rebuilds the transport and re-presents
+      // the same credential instead of parking it as dead.
+      refreshResult = true;
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(created).toHaveLength(2);
+      expect(created[1].connected).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not re-crank or flip status while socket.io is already reconnecting', () => {
+    socketMod.socketManager.getSocket();
+    auth.setIdentity(identity('u_one', futureJwt()));
+    const raw = created[0];
+    raw.connected = false;
+    raw.__fire('disconnect', 'transport close');
+    expect(socketMod.socketManager.getStatus()).toBe('reconnecting');
+
+    const connect = vi.spyOn(raw, 'connect');
+    socketMod.socketManager.getSocket();
+    expect(socketMod.socketManager.getStatus()).toBe('reconnecting');
+    expect(connect).not.toHaveBeenCalled();
   });
 
   it('explicit retry clears the park and cranks immediately', async () => {
