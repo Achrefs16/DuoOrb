@@ -1,28 +1,40 @@
 import React, { memo } from 'react';
-import { OrbIcon } from './OrbIcon';
-/**
- * Premium member badge (MONETIZATION.md P5.2): a small gold crown rendered
- * next to display names. Fixed 13px box — callers render it only when the
- * row's `isPremium` is true, so non-premium rows never shift and late data
- * (match seats resolve from the frozen sync list) cannot move layout.
- */
+import { Image, type StyleProp, type ImageStyle } from 'react-native';
 
+const DIAMOND_IMG = require('../../assets/dimand.png');
+
+/**
+ * Premium member badge: small diamond image rendered next to display names
+ * (matching chess.com diamond membership). Callers render it when `isPremium`
+ * is true.
+ */
 export const PREMIUM_GOLD = '#D9A62E';
 
 const SIZE_MAP: Record<string, number> = {
-  xs: 11,
-  sm: 13,
-  md: 16,
-  lg: 20,
+  xs: 14,
+  sm: 16,
+  md: 20,
+  lg: 24,
 };
 
-const PremiumBadgeInner: React.FC<{ size?: number | 'xs' | 'sm' | 'md' | 'lg' }> = ({ size = 13 }) => {
-  const pixelSize = typeof size === 'number' ? size : (SIZE_MAP[size] ?? 13);
+export interface PremiumBadgeProps {
+  size?: number | 'xs' | 'sm' | 'md' | 'lg';
+  style?: StyleProp<ImageStyle>;
+}
+
+const PremiumBadgeInner: React.FC<PremiumBadgeProps> = ({ size = 16, style }) => {
+  const pixelSize = typeof size === 'number' ? size : (SIZE_MAP[size] ?? 16);
   return (
-    <OrbIcon
-      name="crown"
-      size={pixelSize}
-      color={PREMIUM_GOLD}
+    <Image
+      source={DIAMOND_IMG}
+      style={[
+        {
+          width: pixelSize,
+          height: pixelSize,
+        },
+        style,
+      ]}
+      resizeMode="contain"
       accessibilityRole="image"
       accessibilityLabel="Premium member"
     />

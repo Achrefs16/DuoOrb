@@ -782,27 +782,28 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'center',
   },
   badgeWin: {
-    backgroundColor: THEME.colors.tertiaryLight,
+    backgroundColor: THEME.colors.win,
   },
   badgeLoss: {
-    backgroundColor: THEME.colors.secondaryContainer,
+    backgroundColor: THEME.colors.loss,
   },
   badgeNeutral: {
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: THEME.colors.draw,
   },
   miniOutcomeText: {
     fontFamily: THEME.fonts.extraBold,
     fontSize: 14,
     fontWeight: '800',
+    color: '#FFFFFF',
   },
   textWin: {
-    color: THEME.colors.tertiary,
+    color: '#FFFFFF',
   },
   textLoss: {
-    color: THEME.colors.secondary,
+    color: '#FFFFFF',
   },
   textNeutral: {
-    color: THEME.colors.textMuted,
+    color: '#FFFFFF',
   },
   matchRowMeta: {
     gap: 1,

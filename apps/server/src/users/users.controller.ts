@@ -25,6 +25,22 @@ export class UsersController {
     return this.usersService.getMe(user.id);
   }
 
+  @Get('me/bot-stars')
+  @UseGuards(JwtAuthGuard)
+  async getBotStars(@CurrentUser() user: AuthenticatedUser) {
+    return { botStars: await this.usersService.getBotStars(user.id) };
+  }
+
+  @Post('me/bot-stars')
+  @UseGuards(JwtAuthGuard)
+  async syncBotStars(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { botStars?: any }
+  ) {
+    const merged = await this.usersService.syncBotStars(user.id, body.botStars ?? {});
+    return { botStars: merged };
+  }
+
   @Patch('me/profile')
   @UseGuards(JwtAuthGuard)
   async updateProfile(

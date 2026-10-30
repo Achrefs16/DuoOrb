@@ -86,6 +86,7 @@ model Profile {
   /// "revenuecat" | "grant" — where the current entitlement came from.
   premiumSource     String?
   premiumUpdatedAt  DateTime?
+  botStars          Json?
   createdAt DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -99,7 +100,7 @@ model Rating {
   // ONE universal DuoOrb rating per user (G2_UNIFIED_V1): every ranked
   // online game — 1v1 or multiplayer, any mode — moves this single row.
   rating      Float    @default(1500.0)
-  rd          Float    @default(350.0)
+  rd          Float    @default(180.0)
   vol         Float    @default(0.06)
   gamesPlayed Int      @default(0)
   wins        Int      @default(0)

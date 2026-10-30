@@ -649,6 +649,99 @@ describe('GameGateway createGameChecked + migrateIdentity (F2)', () => {
   });
 });
 
+describe('GameGateway ranking policy: only 1v1 classical matches are rated', () => {
+  function liveGateway() {
+    const { gateway } = makeGateway();
+    const gw = gateway as any;
+    const f = fakeServer('g1');
+    gw.server = f.server;
+    return { gw, f };
+  }
+
+  function seatLive(gw: any, userId: string, socketId: string, clients: Map<string, any>) {
+    gw.socketUserMap.set(socketId, { userId, displayName: userId, rating: 1500, verified: true });
+    gw.userSocketMap.set(userId, socketId);
+    clients.set(socketId, { id: socketId, join: () => {} });
+  }
+
+  it('rates 1v1 classical match (mode 2p, 2 players)', async () => {
+    const { gw } = liveGateway();
+    const clients = new Map<string, any>();
+    seatLive(gw, 'uA', 'sock-A', clients);
+    seatLive(gw, 'uB', 'sock-B', clients);
+    gw.server.sockets.sockets.get = (id: string) => clients.get(id);
+    const createSpy = vi.spyOn(gw.gameService, 'createGame');
+
+    const res = await gw.createGameChecked({
+      gameId: 'g-ranked-1v1',
+      mode: '2p',
+      seatUserIds: ['uA', 'uB'],
+      timeControlMinutes: 3,
+      isRanked: true,
+    });
+
+    expect(res.success).toBe(true);
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ isRanked: true })
+    );
+  });
+
+  it('forces unranked for any +2 player game even if isRanked: true requested', async () => {
+    const { gw } = liveGateway();
+    const clients = new Map<string, any>();
+    seatLive(gw, 'uA', 'sock-A', clients);
+    seatLive(gw, 'uB', 'sock-B', clients);
+    seatLive(gw, 'uC', 'sock-C', clients);
+    gw.server.sockets.sockets.get = (id: string) => clients.get(id);
+    const createSpy = vi.spyOn(gw.gameService, 'createGame');
+
+    const res = await gw.createGameChecked({
+      gameId: 'g-unranked-3p',
+      mode: 'race3',
+      seatUserIds: ['uA', 'uB', 'uC'],
+      timeControlMinutes: 3,
+      isRanked: true,
+    });
+
+    expect(res.success).toBe(true);
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ isRanked: false })
+    );
+  });
+
+  it('forces unranked for rooms (handleRoomStart)', async () => {
+    const { gw } = liveGateway();
+    const clients = new Map<string, any>();
+    seatLive(gw, 'uA', 'sock-A', clients);
+    seatLive(gw, 'uB', 'sock-B', clients);
+    gw.server.sockets.sockets.get = (id: string) => clients.get(id);
+
+    vi.spyOn(gw.roomService, 'startRoom').mockReturnValue({
+      success: true,
+      room: {
+        id: 'r1',
+        mode: '2p',
+        timeControlMinutes: 3,
+        incrementSeconds: 0,
+        wallsEach: 10,
+        slots: [],
+      },
+      players: [
+        { userId: 'uA', displayName: 'A' },
+        { userId: 'uB', displayName: 'B' },
+      ],
+    } as any);
+
+    const createSpy = vi.spyOn(gw.gameService, 'createGame');
+    const client = { id: 'sock-A', handshake: { query: {} }, emit: vi.fn() };
+    await gw.handleRoomStart(client, { roomId: 'r1' });
+
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ isRanked: false })
+    );
+  });
+});
+
 /**
  * P4 matchmaking recovery: a search issued after a missed match event (or a
  * reconnect) must route the player back into the game the server already
@@ -1007,5 +1100,66 @@ describe('GameGateway join pump edges (F11)', () => {
       if (game?.flagTimeout) clearTimeout(game.flagTimeout);
       if (game) for (const t of game.afkTimers.values()) clearTimeout(t);
     }
+  });
+
+  describe('Public Rooms Gateway Handlers', () => {
+    it('lists public rooms and handles subscription', async () => {
+      const { gateway } = makeGateway();
+      const { server } = fakeServer();
+      gateway.server = server;
+
+      (gateway as any).socketUserMap.set('sock-host', {
+        userId: 'uHost',
+        displayName: 'Alice',
+        rating: 1650,
+        verified: true,
+      });
+      (gateway as any).userSocketMap.set('uHost', 'sock-host');
+
+      const clientHost = {
+        id: 'sock-host',
+        handshake: { query: {} },
+        join: vi.fn(),
+        leave: vi.fn(),
+        emit: vi.fn(),
+      } as any;
+
+      const createRes = gateway.handleCreateRoom(clientHost, {
+        mode: 'center2',
+        timeControlMinutes: 5,
+        incrementSeconds: 3,
+        wallsEach: 15,
+        isPublic: true,
+      });
+
+      expect(createRes.success).toBe(true);
+      expect((createRes as any).room?.isPublic).toBe(true);
+
+      const listRes = gateway.handleListPublic();
+      expect(listRes.success).toBe(true);
+      expect(listRes.rooms).toHaveLength(1);
+      expect(listRes.rooms[0].mode).toBe('center2');
+      expect(listRes.rooms[0].hostDisplayName).toBe('Alice');
+      expect(listRes.rooms[0].hostRating).toBe(1650);
+      expect(listRes.rooms[0].wallsEach).toBe(15);
+      expect(listRes.rooms[0].occupiedSlots).toBe(1);
+      expect(listRes.rooms[0].totalSlots).toBe(2);
+
+      const clientSubscriber = {
+        id: 'sock-sub',
+        handshake: { query: {} },
+        join: vi.fn(),
+        leave: vi.fn(),
+        emit: vi.fn(),
+      } as any;
+
+      const subRes = gateway.handleSubscribePublic(clientSubscriber);
+      expect(subRes.success).toBe(true);
+      expect(clientSubscriber.join).toHaveBeenCalledWith('public_rooms_lobby');
+      expect(clientSubscriber.emit).toHaveBeenCalledWith(
+        'room:publicRoomsUpdated',
+        expect.arrayContaining([expect.objectContaining({ mode: 'center2' })])
+      );
+    });
   });
 });

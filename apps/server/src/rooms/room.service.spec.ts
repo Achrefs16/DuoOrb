@@ -145,3 +145,39 @@ describe('invite lifecycle + disconnect hygiene (F10)', () => {
     expect(out[0].room?.status).toBe('WAITING');
   });
 });
+
+describe('Public Rooms', () => {
+  it('filters public waiting rooms with open slots and excludes full/in-game/private rooms', () => {
+    const svc = new RoomService();
+    // 1. Private room (default)
+    const priv = svc.createRoom('h1', 'H1', '2p', 3, 0, 10, false);
+    // 2. Public waiting room with open slot
+    const pubOpen = svc.createRoom('h2', 'H2', 'race3', 3, 0, 10, true);
+    // 3. Public room that is full
+    const pubFull = svc.createRoom('h3', 'H3', '2p', 3, 0, 10, true);
+    svc.joinRoom(pubFull.code, 'p2', 'Player 2');
+    // 4. Public room that started game
+    const pubInGame = svc.createRoom('h4', 'H4', '2p', 3, 0, 10, true);
+    pubInGame.status = 'IN_GAME';
+
+    const publicRooms = svc.getPublicRooms();
+    expect(publicRooms).toHaveLength(1);
+    expect(publicRooms[0].id).toBe(pubOpen.id);
+    expect(publicRooms[0].isPublic).toBe(true);
+  });
+
+  it('allows host to toggle isPublic via configureRoom', () => {
+    const svc = new RoomService();
+    const room = svc.createRoom('h1', 'H1', '2p', 3, 0, 10, false);
+    expect(room.isPublic).toBe(false);
+    expect(svc.getPublicRooms()).toHaveLength(0);
+
+    svc.configureRoom(room.id, 'h1', { isPublic: true });
+    expect(svc.getRoom(room.id)?.isPublic).toBe(true);
+    expect(svc.getPublicRooms()).toHaveLength(1);
+
+    svc.configureRoom(room.id, 'h1', { isPublic: false });
+    expect(svc.getRoom(room.id)?.isPublic).toBe(false);
+    expect(svc.getPublicRooms()).toHaveLength(0);
+  });
+});

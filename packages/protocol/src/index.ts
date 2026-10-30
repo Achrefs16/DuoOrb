@@ -60,6 +60,24 @@ export interface RoomDto {
   wallsEach: number;          // walls per player for the room's game
   status: 'WAITING' | 'STARTING' | 'IN_GAME';
   createdAt: number;
+  /** Whether the room is visible in the public lobby list. Defaults to false (private). */
+  isPublic?: boolean;
+}
+
+export interface PublicRoomSummaryDto {
+  id: string;
+  code: string;
+  mode: GameMode;
+  hostId: string;
+  hostDisplayName: string;
+  hostRating?: number;
+  hostIsPremium?: boolean;
+  totalSlots: number;
+  occupiedSlots: number;
+  timeControlMinutes: number;
+  incrementSeconds: number;
+  wallsEach: number;
+  createdAt: number;
 }
 
 export interface ClockStateDto {
@@ -112,6 +130,12 @@ export interface GameEndedDto {
   ratingChanges?: Record<string, { before: number; after: number; delta: number }>;
   /** Complete final ordering for multiplayer (1-based places). 1v1 omits it. */
   placements?: { playerId: string; userId: string; place: number }[];
+  isRanked?: boolean;
+}
+
+export interface PlayerCosmeticsDto {
+  ballSkinId?: string;
+  wallSkinId?: string;
 }
 
 export interface GameSyncDto {
@@ -119,6 +143,7 @@ export interface GameSyncDto {
   clock: ClockStateDto;
   missingActions: RecordedAction[];
   playerUserIds?: Record<string, string>;
+  isRanked?: boolean;
   /**
    * UserIds holding effective premium at game creation (P5.2 seat/GameOver
    * badges). FROZEN for the match — a mid-match subscription appears from the
@@ -126,6 +151,8 @@ export interface GameSyncDto {
    * old servers = no badges, never an error.
    */
   premiumUserIds?: string[];
+  /** Equipped cosmetic skins per player id (e.g. 'p1' -> { ballSkinId, wallSkinId }) */
+  playerCosmetics?: Record<string, PlayerCosmeticsDto>;
   /**
    * The seat THIS socket is sitting in, resolved by the server from the
    * verified token. The client must use this rather than searching
@@ -222,7 +249,7 @@ export interface ClientToServerEvents {
    * anything outside them is dropped, never stored, never sequenced.
    */
   'game:reaction': (payload: { gameId: string; reaction: string }) => void;
-  'room:create': (payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
+  'room:create': (payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; isPublic?: boolean }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
   'room:join': (payload: { code: string }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
   'room:ready': (payload: { roomId: string; isReady: boolean }) => void;
   /**
@@ -230,7 +257,7 @@ export interface ClientToServerEvents {
    * the updated room; every member also gets it via room:state broadcast.
    */
   'room:configure': (
-    payload: { roomId: string; mode?: GameMode; timeControlMinutes?: number; incrementSeconds?: number; wallsEach?: number },
+    payload: { roomId: string; mode?: GameMode; timeControlMinutes?: number; incrementSeconds?: number; wallsEach?: number; isPublic?: boolean },
     callback?: (res: { success: boolean; room?: RoomDto; error?: string }) => void
   ) => void;
   'room:start': (payload: { roomId: string }) => void;
@@ -241,8 +268,21 @@ export interface ClientToServerEvents {
   /** Pull the room's authoritative state. Used when re-entering a lobby from
    * a finished match, where the client only holds a pre-match snapshot. */
   'room:sync': (payload: { roomId?: string; code?: string }, callback?: (res: { success: boolean; error?: string }) => void) => void;
+  /** Request the current list of open public waiting rooms */
+  'room:listPublic': (callback: (res: { success: boolean; rooms?: PublicRoomSummaryDto[]; error?: string }) => void) => void;
+  /** Join the lobby:public_rooms room for live updates of open public rooms */
+  'room:subscribePublic': () => void;
+  /** Leave the lobby:public_rooms room */
+  'room:unsubscribePublic': () => void;
   'matchmaking:find': (
-    payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number },
+    payload: {
+      mode: GameMode;
+      timeControlMinutes: number;
+      incrementSeconds?: number;
+      wallsEach?: number;
+      ballSkinId?: string;
+      wallSkinId?: string;
+    },
     callback?: (res: {
       success: boolean;
       queued?: boolean;
@@ -253,6 +293,8 @@ export interface ClientToServerEvents {
     }) => void
   ) => void;
   'matchmaking:cancel': (callback?: (res: { success: boolean }) => void) => void;
+  /** Inform server of current equipped ball and wall cosmetic skins */
+  'cosmetics:equip': (payload: { ballSkinId?: string; wallSkinId?: string }) => void;
   /**
    * Presence heartbeat (ONLINE_HEALTH C1): verified sockets ping at most
    * every ~60s so `updatedAt` stays fresh while the app is open. The 5-minute
@@ -315,6 +357,8 @@ export interface ServerToClientEvents {
   'room:kicked': (payload: { roomId: string }) => void;
   'room:inviteReceived': (invite: RoomInviteDto) => void;
   'room:inviteDeclined': (payload: { inviteId: string; byUserId: string }) => void;
+  /** Broadcast of updated public rooms list */
+  'room:publicRoomsUpdated': (rooms: PublicRoomSummaryDto[]) => void;
   'matchmaking:matched': (payload: {
     gameId: string;
     roomId?: string;

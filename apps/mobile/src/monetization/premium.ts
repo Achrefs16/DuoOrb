@@ -30,6 +30,30 @@ export interface PremiumMe {
 }
 
 const PREMIUM_CACHE_KEY = '@duoorb:premium:v1';
+const DEV_PREMIUM_KEY = '@duoorb:dev_premium_override';
+
+const isTestEnv = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+export const isDevEnvironment = typeof __DEV__ !== 'undefined' && Boolean(__DEV__);
+
+/**
+ * Developer override: defaults to null (disabled) so the app tests with real
+ * Google Play / RevenueCat subscriptions and actual free tier limits.
+ */
+let devOverride: boolean | null = null;
+
+export function setDevPremiumOverride(enabled: boolean | null): void {
+  devOverride = enabled;
+  if (enabled === null) {
+    void AsyncStorage.removeItem(DEV_PREMIUM_KEY).catch(() => {});
+  } else {
+    void AsyncStorage.setItem(DEV_PREMIUM_KEY, enabled ? 'true' : 'false').catch(() => {});
+  }
+  emit();
+}
+
+export function getDevPremiumOverride(): boolean | null {
+  return devOverride;
+}
 
 /** Normal offline trust window for a server-confirmed entitlement. */
 const OFFLINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -74,6 +98,7 @@ function coerce(me: PremiumMe): Pick<PremiumState, 'isPremium' | 'premiumExpires
  * granting Premium forever without ever re-checking the server.
  */
 export function isPremiumActive(s: PremiumState = current): boolean {
+  if (devOverride !== null) return devOverride;
   if (!s.isPremium) return false;
   const now = Date.now();
   if (s.premiumExpiresAt) {
@@ -118,6 +143,17 @@ export async function refreshPremium(): Promise<PremiumState> {
 /** Offline-boot fast path: cached state, expiry still enforced by isPremiumActive. */
 export async function hydratePremiumCache(): Promise<PremiumState> {
   try {
+    const devRaw = await AsyncStorage.getItem(DEV_PREMIUM_KEY);
+    if (devRaw !== null) {
+      devOverride = devRaw === 'true';
+    } else {
+      devOverride = null;
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
     const raw = await AsyncStorage.getItem(PREMIUM_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<PremiumState>;
@@ -144,12 +180,17 @@ export async function hydratePremiumCache(): Promise<PremiumState> {
 
 /** Live premium state for gates, banners and badges. */
 export function usePremium(): PremiumState {
-  return useSyncExternalStore(subscribe, () => current, () => current);
+  const state = useSyncExternalStore(subscribe, () => current, () => current);
+  if (devOverride !== null) {
+    return { ...state, isPremium: devOverride };
+  }
+  return state;
 }
 
 /** Test seam: drops in-memory state without touching disk. */
 export function __resetPremiumForTests(): void {
   current = { ...EMPTY };
+  devOverride = null;
   listeners.clear();
 }
 

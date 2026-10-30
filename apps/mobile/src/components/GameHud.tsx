@@ -267,12 +267,8 @@ export const InGamePlayerChip: React.FC<InGamePlayerChipProps> = ({
               numberOfLines={1}
             >
               {player.displayName}
-              {isPremium && (
-                <Text>
-                  {' '}<PremiumBadge />
-                </Text>
-              )}
             </Text>
+            {isPremium && <PremiumBadge size="xs" />}
 
             {isActive && <View style={[styles.turnDot, { backgroundColor: ball }]} />}
           </View>
@@ -434,22 +430,20 @@ export const PlayerStrip: React.FC<{
                 )}
               </Pressable>
               <View style={styles.gridMeta}>
-                <Text
-                  onPress={onPressIdentity}
-                  suppressHighlighting
-                  accessibilityRole={onPressIdentity ? 'button' : undefined}
-                  accessibilityLabel={identityLabel}
-                  style={[styles.gridName, surface && { color: surface.ink }]}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {p.displayName}
-                  {seatPremium?.[p.id] === true && (
-                    <Text>
-                      {' '}<PremiumBadge />
-                    </Text>
-                  )}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text
+                    onPress={onPressIdentity}
+                    suppressHighlighting
+                    accessibilityRole={onPressIdentity ? 'button' : undefined}
+                    accessibilityLabel={identityLabel}
+                    style={[styles.gridName, surface && { color: surface.ink }]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {p.displayName}
+                  </Text>
+                  {seatPremium?.[p.id] === true && <PremiumBadge size="xs" />}
+                </View>
                 <View style={styles.compactSub}>
                   {seat ? (
                     <Text
@@ -548,21 +542,19 @@ export const PlayerStrip: React.FC<{
                 )}
               </Pressable>
               <View style={styles.compactMeta}>
-                <Text
-                  onPress={onPressIdentity}
-                  suppressHighlighting
-                  accessibilityRole={onPressIdentity ? 'button' : undefined}
-                  accessibilityLabel={identityLabel}
-                  style={[styles.compactName, surface && { color: surface.ink }]}
-                  numberOfLines={1}
-                >
-                  {p.displayName}
-                  {seatPremium?.[p.id] === true && (
-                    <Text>
-                      {' '}<PremiumBadge />
-                    </Text>
-                  )}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text
+                    onPress={onPressIdentity}
+                    suppressHighlighting
+                    accessibilityRole={onPressIdentity ? 'button' : undefined}
+                    accessibilityLabel={identityLabel}
+                    style={[styles.compactName, surface && { color: surface.ink }]}
+                    numberOfLines={1}
+                  >
+                    {p.displayName}
+                  </Text>
+                  {seatPremium?.[p.id] === true && <PremiumBadge size="xs" />}
+                </View>
                 <View style={styles.compactSub}>
                   {seat ? (
                     <Text

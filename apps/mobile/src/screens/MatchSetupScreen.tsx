@@ -78,7 +78,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
   const insets = useSafeAreaInsets();
 
   const [vsType, setVsType] = useState<'ai' | 'local' | 'challenge' | 'online'>(
-    initialKind === 'ai' ? 'online' : initialKind
+    initialKind
   );
   const [optionsOpen, setOptionsOpen] = useState<boolean>(false);
 
@@ -170,6 +170,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
     if (optionsOpen) return 'Time & Options';
     if (vsType === 'challenge') return `Challenge ${challengeName ?? ''}`;
     if (vsType === 'local') return 'Pass & Play';
+    if (vsType === 'ai') return 'Play a Bot';
     return 'New Game';
   };
 
@@ -234,20 +235,15 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             onPress={handleLaunchGame}
           >
             <Text style={styles.primaryCtaText}>
-              {vsType === 'challenge'
-                ? 'Send Challenge'
-                : vsType === 'online'
-                ? 'Start Game'
-                : vsType === 'local'
-                ? 'Start Match'
-                : 'Play'}
+              {vsType === 'challenge' ? 'Send Challenge' : 'Start Game'}
             </Text>
           </TouchableOpacity>
 
-          {/* 3. Secondary Navigation Stack (When in Online / New Game Hub) */}
-          {vsType === 'online' && (
+          {/* 3. Secondary Navigation Stack — one shared New Game hub for
+              online, bots and pass-and-play. Only the mode-switch row changes
+              label, so the same intent always presents the same structure. */}
+          {vsType !== 'challenge' && (
             <View style={styles.secondaryStack}>
-              {/* Play a Friend Button - Centered icon + text matching Chess.com */}
               <TouchableOpacity
                 style={styles.secondaryRowBtn}
                 activeOpacity={0.8}
@@ -257,7 +253,6 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                 <Text style={styles.secRowText}>Play a Friend</Text>
               </TouchableOpacity>
 
-              {/* Play Bots Button - Centered icon + text matching Chess.com */}
               <TouchableOpacity
                 style={styles.secondaryRowBtn}
                 activeOpacity={0.8}
@@ -267,17 +262,23 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                 <Text style={styles.secRowText}>Play Bots</Text>
               </TouchableOpacity>
 
-              {/* Pass & Play Button - Centered icon + text matching Chess.com */}
               <TouchableOpacity
                 style={styles.secondaryRowBtn}
                 activeOpacity={0.8}
-                onPress={() => setVsType('local')}
+                onPress={() =>
+                  setVsType(vsType === 'online' ? 'local' : 'online')
+                }
               >
-                <OrbIcon name="smartphone" size={20} color={THEME.colors.textSecondary} />
-                <Text style={styles.secRowText}>Pass & Play</Text>
+                <OrbIcon
+                  name={vsType === 'online' ? 'smartphone' : 'globe'}
+                  size={20}
+                  color={THEME.colors.textSecondary}
+                />
+                <Text style={styles.secRowText}>
+                  {vsType === 'online' ? 'Pass & Play' : 'Play Online'}
+                </Text>
               </TouchableOpacity>
 
-              {/* Centered Expand Chevron Button matching row 7 in Chess.com screenshot */}
               <TouchableOpacity
                 style={styles.chevronExpandBtn}
                 activeOpacity={0.8}
@@ -285,29 +286,6 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                 accessibilityLabel="More match options"
               >
                 <OrbIcon name="chevron-down" size={22} color={THEME.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* If In Local Pass & Play */}
-          {vsType === 'local' && (
-            <View style={styles.secondaryStack}>
-              <TouchableOpacity
-                style={styles.secondaryRowBtn}
-                activeOpacity={0.8}
-                onPress={() => setVsType('online')}
-              >
-                <OrbIcon name="globe" size={20} color={THEME.colors.textSecondary} />
-                <Text style={styles.secRowText}>Switch to Online Match</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.secondaryRowBtn}
-                activeOpacity={0.8}
-                onPress={() => onSelectBotsTab?.()}
-              >
-                <OrbIcon name="cpu" size={20} color={THEME.colors.textSecondary} />
-                <Text style={styles.secRowText}>Play Bots</Text>
               </TouchableOpacity>
             </View>
           )}

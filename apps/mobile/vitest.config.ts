@@ -23,6 +23,14 @@ export default defineConfig({
         }
         return null;
       },
+      transform(code: string, id: string) {
+        if (id.endsWith('.ts') || id.endsWith('.tsx')) {
+          if (code.includes('.png') || code.includes('.wav') || code.includes('.mp3')) {
+            return code.replace(/require\(['"][^'"]+\.(png|jpg|jpeg|wav|mp3)['"]\)/g, '{}');
+          }
+        }
+        return null;
+      },
     },
   ],
   test: {

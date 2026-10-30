@@ -165,14 +165,18 @@ describe('Clocks and Fischer Increment', () => {
       return service.processAction('timeout-active', userId, { type: 'MOVE', to });
     };
 
-    // Both sides move inside every 45s allowance, so no AFK watchdog ever
-    // fires — but Bob's 60s clock still runs out on his second turn.
-    expect(moveFor('p1').success).toBe(true); // t0
-    vi.advanceTimersByTime(30_000);
-    expect(moveFor('p2').success).toBe(true); // t30: Bob spent 30s, 30s left
+    // Both sides move inside every 30s allowance, so no AFK watchdog ever
+    // fires — but Bob's 60s clock still runs out when his total thinking time exceeds 60s.
+    expect(moveFor('p1').success).toBe(true); // t0: Alice spends 0s, 60s left
+    vi.advanceTimersByTime(25_000);
+    expect(moveFor('p2').success).toBe(true); // t25: Bob spent 25s, 35s left
+    vi.advanceTimersByTime(10_000);
+    expect(moveFor('p1').success).toBe(true); // t35: Alice spent 10s, 50s left
     vi.advanceTimersByTime(20_000);
-    expect(moveFor('p1').success).toBe(true); // t50: Alice spent 20s, 40s left
-    vi.advanceTimersByTime(31_000); // t81: Bob's remaining 30s ran out at t80
+    expect(moveFor('p2').success).toBe(true); // t55: Bob spent 20s, 15s left
+    vi.advanceTimersByTime(10_000);
+    expect(moveFor('p1').success).toBe(true); // t65: Alice spent 10s, 40s left
+    vi.advanceTimersByTime(16_000); // Bob's remaining 15s ran out (15s < 30s AFK)
 
     expect(timeoutFired).toBe(true);
     expect(endedReason).toBe('TIMEOUT');

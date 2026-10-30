@@ -52,7 +52,7 @@ export const AI_PROFILES: Record<AIDifficulty, AIProfile> = {
     depth: 3,
     randomness: 0.0,
     weights: { pathDifference: 12.0, wallAdvantage: 1.5, mobility: 0.8, pathways: 0.9, tightness: 1.2, placement: 2.0 },
-    maxCandidateWalls: 8,
+    maxCandidateWalls: 12,
     timeBudgetMs: 350,
     simulations: 400,
     engine: 'mcts',

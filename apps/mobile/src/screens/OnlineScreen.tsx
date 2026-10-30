@@ -28,7 +28,7 @@ import type { GameSyncDto } from '@duoorb/protocol';
 import { OnlineJoinGate } from '../components/OnlineJoinGate';
 import { AdBanner } from '../components/AdBanner';
 import { runWhenOnline } from '../components/NoConnection';
-import { useRooms } from '../network/useRooms';
+import { useRooms, usePublicRooms } from '../network/useRooms';
 import { api } from '../network/apiClient';
 import { useIdentity } from '../network/auth';
 import { nameInitial, resolveName } from '../displayName';
@@ -36,7 +36,7 @@ import { useTranslation } from '../i18n';
 import { PremiumBadge } from '../components/PremiumBadge';
 import { usePremium, isPremiumActive } from '../monetization/premium';
 
-export type OnlineMode = 'quick' | 'rooms';
+export type OnlineMode = 'quick' | 'rooms' | 'public';
 
 /**
  * One seat in the matchup card: same avatar/tag/name/rating language for YOU
@@ -55,25 +55,25 @@ const MmSeat: React.FC<{
 }> = ({ tag, name, rating, avatar, avatarStyle, letterStyle, isPremium }) => {
   const styles = useStyles(createStyles);
   return (
-  <View style={styles.mmPlayerCol}>
-    <View style={avatarStyle}>
-      {typeof avatar === 'string' ? (
-        <Text style={letterStyle ?? styles.mmAvatarLetterOpp}>{avatar}</Text>
-      ) : (
-        avatar
-      )}
+    <View style={styles.mmPlayerCol}>
+      <View style={avatarStyle}>
+        {typeof avatar === 'string' ? (
+          <Text style={letterStyle ?? styles.mmAvatarLetterOpp}>{avatar}</Text>
+        ) : (
+          avatar
+        )}
+      </View>
+      <Text style={styles.mmPlayerTag}>{tag}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+        <Text style={styles.mmPlayerName} numberOfLines={1}>
+          {name}
+        </Text>
+        {isPremium && <PremiumBadge size="xs" />}
+      </View>
+      <View style={styles.mmRatingPill}>
+        <Text style={styles.mmRatingText}>{rating}</Text>
+      </View>
     </View>
-    <Text style={styles.mmPlayerTag}>{tag}</Text>
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-      <Text style={styles.mmPlayerName} numberOfLines={1}>
-        {name}
-      </Text>
-      {isPremium && <PremiumBadge size="xs" />}
-    </View>
-    <View style={styles.mmRatingPill}>
-      <Text style={styles.mmRatingText}>{rating}</Text>
-    </View>
-  </View>
   );
 };
 
@@ -258,6 +258,13 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
     initialRoom,
   });
 
+  const { publicRooms } = usePublicRooms();
+  const [roomTab, setRoomTab] = useState<'public' | 'friends'>(() =>
+    initialView === 'public' ? 'public' : 'friends'
+  );
+  const [showPublicHostForm, setShowPublicHostForm] = useState(false);
+  const [showFriendHostForm, setShowFriendHostForm] = useState(false);
+
   useEffect(() => {
     if (activeRoom) lastRoomRef.current = activeRoom;
   }, [activeRoom]);
@@ -417,7 +424,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             url: inviteUrl,
           });
           return;
-        } catch {}
+        } catch { }
       }
       await copyCode(inviteUrl, t('online.inviteLinkCopied') || 'Invite link copied!');
     } else {
@@ -485,20 +492,20 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
     confirmMode !== null && typeof confirmMode === 'object'
       ? 'Kick Player?'
       : confirmMode === 'close'
-      ? t('online.confirmCloseTitle')
-      : t('online.confirmLeaveTitle');
+        ? t('online.confirmCloseTitle')
+        : t('online.confirmLeaveTitle');
   const confirmDesc =
     confirmMode !== null && typeof confirmMode === 'object'
       ? `Are you sure you want to remove ${confirmMode.name} from the room?`
       : confirmMode === 'close'
-      ? t('online.confirmCloseDesc')
-      : t('online.confirmLeaveDesc');
+        ? t('online.confirmCloseDesc')
+        : t('online.confirmLeaveDesc');
   const confirmCTA =
     confirmMode !== null && typeof confirmMode === 'object'
       ? 'Kick Player'
       : confirmMode === 'close'
-      ? t('online.closeRoom')
-      : t('online.leaveRoom');
+        ? t('online.closeRoom')
+        : t('online.leaveRoom');
 
   // Room setup editor (host only). Same pickers as the create form, in the
   // same Quick-Add bottom sheet — a table can switch Center Rush to Race
@@ -529,8 +536,8 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       activeRoom.timeControlMinutes === 0
         ? NO_TIMER_CONTROL
         : TIME_CONTROLS.find(
-            (tc) => tc.minutes === activeRoom.timeControlMinutes && tc.incrementSeconds === activeRoom.incrementSeconds
-          ) ?? TIME_CONTROLS[0]
+          (tc) => tc.minutes === activeRoom.timeControlMinutes && tc.incrementSeconds === activeRoom.incrementSeconds
+        ) ?? TIME_CONTROLS[0]
     );
     setShowRoomSetup(true);
   }, [activeRoom, isHost]);
@@ -573,8 +580,8 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
             {isMatched
               ? 'Match Found'
               : matchPlayerCount === 2
-              ? 'Finding Opponent'
-              : `Filling ${matchPlayerCount}-Player Table`}
+                ? 'Finding Opponent'
+                : `Filling ${matchPlayerCount}-Player Table`}
           </Text>
           <View style={{ width: 36 }} />
         </View>
@@ -610,123 +617,123 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               plus one column per seat, in the same seat language, so every
               filled seat names its player and every open seat pulses. */}
           {matchPlayerCount === 2 ? (
-          <View style={styles.mmMatchCard}>
-            <View style={styles.mmPlayerCol}>
-              <View style={styles.mmAvatarYou}>
-                <Text style={styles.mmAvatarLetterYou}>
-                  {nameInitial(identity?.displayName ?? '')}
-                </Text>
-              </View>
-              <Text style={styles.mmPlayerTag}>{t('leaderboard.you')}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                <Text style={styles.mmPlayerName} numberOfLines={1}>
-                  {resolveName(identity?.displayName ?? '', 'You')}
-                </Text>
-                {isPremiumActive(premium) && <PremiumBadge size="xs" />}
-              </View>
-              <View style={styles.mmRatingPill}>
-                <Text style={styles.mmRatingText}>
-                  {myRating !== null ? myRating : '—'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.mmVersusCol}>
-              <Text style={styles.mmVersusText}>{t('online.versus')}</Text>
-              <View style={styles.mmDotsRow}>
-                <Animated.View style={[styles.mmDot, { opacity: pulseStyles.dotA }]} />
-                <Animated.View style={[styles.mmDot, { opacity: pulseStyles.dotB }]} />
-                <Animated.View style={[styles.mmDot, { opacity: pulseStyles.dotC }]} />
-              </View>
-            </View>
-
-            <View style={styles.mmPlayerCol}>
-              <View style={styles.mmAvatarSlot}>
-                {foundGame?.opponents[0] ? (
-                  <Text style={styles.mmAvatarLetterOpp}>
-                    {nameInitial(foundGame.opponents[0]?.displayName)}
+            <View style={styles.mmMatchCard}>
+              <View style={styles.mmPlayerCol}>
+                <View style={styles.mmAvatarYou}>
+                  <Text style={styles.mmAvatarLetterYou}>
+                    {nameInitial(identity?.displayName ?? '')}
                   </Text>
-                ) : isMatched ? (
-                  <Text style={styles.mmAvatarLetterOpp}>O</Text>
-                ) : (
-                  <>
-                    <Animated.View style={[styles.mmSlotPing, pulseStyles.ping]} />
-                    <Text style={styles.mmSlotDash}>—</Text>
-                  </>
-                )}
+                </View>
+                <Text style={styles.mmPlayerTag}>{t('leaderboard.you')}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                  <Text style={styles.mmPlayerName} numberOfLines={1}>
+                    {resolveName(identity?.displayName ?? '', 'You')}
+                  </Text>
+                  {isPremiumActive(premium) && <PremiumBadge size="xs" />}
+                </View>
+                <View style={styles.mmRatingPill}>
+                  <Text style={styles.mmRatingText}>
+                    {myRating !== null ? myRating : '—'}
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.mmPlayerTag}>
-                {isMatched ? t('online.ready').toUpperCase() : 'OPEN'}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                <Text style={styles.mmPlayerName} numberOfLines={1}>
-                  {foundGame?.opponents[0]
-                    ? foundGame.opponents[0].displayName
-                    : isMatched
-                    ? t('history.opponent')
-                    : t('online.waitingPlayer')}
-                </Text>
-                {foundGame?.opponents[0]?.isPremium && <PremiumBadge size="xs" />}
+
+              <View style={styles.mmVersusCol}>
+                <Text style={styles.mmVersusText}>{t('online.versus')}</Text>
+                <View style={styles.mmDotsRow}>
+                  <Animated.View style={[styles.mmDot, { opacity: pulseStyles.dotA }]} />
+                  <Animated.View style={[styles.mmDot, { opacity: pulseStyles.dotB }]} />
+                  <Animated.View style={[styles.mmDot, { opacity: pulseStyles.dotC }]} />
+                </View>
               </View>
-              <View style={styles.mmRatingPill}>
-                <Text style={styles.mmRatingText}>
-                  {foundGame?.opponents[0]
-                    ? Math.round(foundGame.opponents[0].rating)
-                    : isMatched
-                    ? t('online.ready').toUpperCase()
-                    : '—'}
-                </Text>
-              </View>
-            </View>
-          </View>
-          ) : (
-          <View style={styles.mmMatchCard}>
-            <MmSeat
-              tag={t('leaderboard.you')}
-              name={resolveName(identity?.displayName ?? '', 'You')}
-              rating={myRating !== null ? String(myRating) : '—'}
-              avatar={nameInitial(identity?.displayName ?? '')}
-              avatarStyle={styles.mmAvatarYouSm}
-              letterStyle={styles.mmAvatarLetterSmYou}
-              isPremium={isPremiumActive(premium)}
-            />
-            {Array.from(
-              { length: matchPlayerCount - 1 },
-              (_, i) => foundGame?.opponents[i] ?? null
-            ).map((opp, i) => (
-              <MmSeat
-                key={opp ? opp.userId : `open-${i}`}
-                tag={opp || isMatched ? t('online.ready').toUpperCase() : 'OPEN'}
-                name={
-                  opp ? opp.displayName : isMatched ? t('online.ready') : t('online.waitingPlayer')
-                }
-                rating={
-                  opp
-                    ? String(Math.round(opp.rating))
-                    : isMatched
-                    ? t('online.ready').toUpperCase()
-                    : '—'
-                }
-                avatar={
-                  opp ? (
-                    nameInitial(opp.displayName)
+
+              <View style={styles.mmPlayerCol}>
+                <View style={styles.mmAvatarSlot}>
+                  {foundGame?.opponents[0] ? (
+                    <Text style={styles.mmAvatarLetterOpp}>
+                      {nameInitial(foundGame.opponents[0]?.displayName)}
+                    </Text>
                   ) : isMatched ? (
-                    'O'
+                    <Text style={styles.mmAvatarLetterOpp}>O</Text>
                   ) : (
                     <>
-                      <Animated.View
-                        style={[styles.mmSlotPingSm, pulseStyles.ping]}
-                      />
+                      <Animated.View style={[styles.mmSlotPing, pulseStyles.ping]} />
                       <Text style={styles.mmSlotDash}>—</Text>
                     </>
-                  )
-                }
-                avatarStyle={styles.mmAvatarSlotSm}
-                letterStyle={styles.mmAvatarLetterSm}
-                isPremium={opp?.isPremium}
+                  )}
+                </View>
+                <Text style={styles.mmPlayerTag}>
+                  {isMatched ? t('online.ready').toUpperCase() : 'OPEN'}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                  <Text style={styles.mmPlayerName} numberOfLines={1}>
+                    {foundGame?.opponents[0]
+                      ? foundGame.opponents[0].displayName
+                      : isMatched
+                        ? t('history.opponent')
+                        : t('online.waitingPlayer')}
+                  </Text>
+                  {foundGame?.opponents[0]?.isPremium && <PremiumBadge size="xs" />}
+                </View>
+                <View style={styles.mmRatingPill}>
+                  <Text style={styles.mmRatingText}>
+                    {foundGame?.opponents[0]
+                      ? Math.round(foundGame.opponents[0].rating)
+                      : isMatched
+                        ? t('online.ready').toUpperCase()
+                        : '—'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.mmMatchCard}>
+              <MmSeat
+                tag={t('leaderboard.you')}
+                name={resolveName(identity?.displayName ?? '', 'You')}
+                rating={myRating !== null ? String(myRating) : '—'}
+                avatar={nameInitial(identity?.displayName ?? '')}
+                avatarStyle={styles.mmAvatarYouSm}
+                letterStyle={styles.mmAvatarLetterSmYou}
+                isPremium={isPremiumActive(premium)}
               />
-            ))}
-          </View>
+              {Array.from(
+                { length: matchPlayerCount - 1 },
+                (_, i) => foundGame?.opponents[i] ?? null
+              ).map((opp, i) => (
+                <MmSeat
+                  key={opp ? opp.userId : `open-${i}`}
+                  tag={opp || isMatched ? t('online.ready').toUpperCase() : 'OPEN'}
+                  name={
+                    opp ? opp.displayName : isMatched ? t('online.ready') : t('online.waitingPlayer')
+                  }
+                  rating={
+                    opp
+                      ? String(Math.round(opp.rating))
+                      : isMatched
+                        ? t('online.ready').toUpperCase()
+                        : '—'
+                  }
+                  avatar={
+                    opp ? (
+                      nameInitial(opp.displayName)
+                    ) : isMatched ? (
+                      'O'
+                    ) : (
+                      <>
+                        <Animated.View
+                          style={[styles.mmSlotPingSm, pulseStyles.ping]}
+                        />
+                        <Text style={styles.mmSlotDash}>—</Text>
+                      </>
+                    )
+                  }
+                  avatarStyle={styles.mmAvatarSlotSm}
+                  letterStyle={styles.mmAvatarLetterSm}
+                  isPremium={opp?.isPremium}
+                />
+              ))}
+            </View>
           )}
 
           {/* Action */}
@@ -810,14 +817,14 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
     activeRoom?.mode === '2p'
       ? 'Classic'
       : activeRoom?.mode === '4p' || activeRoom?.mode === 'center2' || activeRoom?.mode === 'center3'
-      ? 'Center Rush'
-      : 'Race';
+        ? 'Center Rush'
+        : 'Race';
   const lobbyClock = activeRoom
     ? activeRoom.timeControlMinutes === 0
       ? 'No Timer'
       : activeRoom.incrementSeconds > 0
-      ? `${activeRoom.timeControlMinutes}+${activeRoom.incrementSeconds}`
-      : `${activeRoom.timeControlMinutes} min`
+        ? `${activeRoom.timeControlMinutes}+${activeRoom.incrementSeconds}`
+        : `${activeRoom.timeControlMinutes} min`
     : '';
   const lobbyWalls = activeRoom
     ? activeRoom.wallsEach >= 99
@@ -834,7 +841,11 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           <TouchableOpacity style={styles.closeBtn} onPress={handleBack}>
             <OrbIcon name="arrow-left" size={20} color={THEME.colors.onSurface} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{activeRoom ? t('online.privateRoom') : t('online.privateRooms')}</Text>
+          <Text style={styles.headerTitle}>
+            {activeRoom
+              ? (activeRoom.isPublic ? 'Public Table' : t('online.privateRoom'))
+              : (roomTab === 'public' ? 'Public Tables' : t('online.privateRooms'))}
+          </Text>
         </View>
         {activeRoom ? (
           <View style={styles.headerRight}>
@@ -863,292 +874,463 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
         style={styles.kav}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-      <ScrollView
-        ref={roomsScrollRef}
-        style={styles.scrollArea}
-        contentContainerStyle={[styles.content, { flexGrow: 1, paddingBottom: 28 + insets.bottom }]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        automaticallyAdjustKeyboardInsets
-      >
-        {activeRoom ? (
-          /* ACTIVE ROOM LOBBY */
-          <>
-            {/* Config summary card */}
-            <View style={styles.lobbySummary}>
-              <View style={styles.lobbySummaryIcon}>
-                <OrbIcon
-                  name={
-                    lobbyModeName === 'Race'
-                      ? 'flag-checkered'
-                      : lobbyModeName === 'Center Rush'
-                      ? 'bullseye-arrow'
-                      : 'sword-cross'
-                  }
-                  size={22}
-                  color={THEME.colors.primary}
-                />
+        <ScrollView
+          ref={roomsScrollRef}
+          style={styles.scrollArea}
+          contentContainerStyle={[styles.content, { flexGrow: 1, paddingBottom: 28 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets
+        >
+          {activeRoom ? (
+            /* ACTIVE ROOM LOBBY */
+            <>
+              {/* Config summary card */}
+              <View style={styles.lobbySummary}>
+                <View style={styles.lobbySummaryIcon}>
+                  <OrbIcon
+                    name={
+                      lobbyModeName === 'Race'
+                        ? 'flag-checkered'
+                        : lobbyModeName === 'Center Rush'
+                          ? 'bullseye-arrow'
+                          : 'sword-cross'
+                    }
+                    size={22}
+                    color={THEME.colors.primary}
+                  />
+                </View>
+                <View style={styles.lobbySummaryText}>
+                  <Text style={styles.lobbySummaryTitle}>{lobbyModeName}</Text>
+                  <Text style={styles.lobbySummarySub}>
+                    {activeRoom.slots.length} Players · {lobbyClock} ({lobbyWalls})
+                  </Text>
+                </View>
+                {isHost && (
+                  <TouchableOpacity
+                    style={styles.lobbySetupBtn}
+                    activeOpacity={0.8}
+                    onPress={openRoomSetup}
+                    accessibilityLabel="Change room setup"
+                  >
+                    <OrbIcon name="sliders" size={15} color={THEME.colors.textPrimary} />
+                    <Text style={styles.lobbySetupText}>{t('online.setup')}</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-              <View style={styles.lobbySummaryText}>
-                <Text style={styles.lobbySummaryTitle}>{lobbyModeName}</Text>
-                <Text style={styles.lobbySummarySub}>
-                  {activeRoom.slots.length} Players · {lobbyClock} ({lobbyWalls})
+
+              {/* Players header + count */}
+              <View style={styles.slotsHeader}>
+                <Text style={styles.slotsTitle}>{t('online.playersCount')}</Text>
+                <Text style={styles.slotsCount}>
+                  {lobbyOccupied}/{activeRoom.slots.length}
                 </Text>
               </View>
-              {isHost && (
-                <TouchableOpacity
-                  style={styles.lobbySetupBtn}
-                  activeOpacity={0.8}
-                  onPress={openRoomSetup}
-                  accessibilityLabel="Change room setup"
-                >
-                  <OrbIcon name="sliders" size={15} color={THEME.colors.textPrimary} />
-                  <Text style={styles.lobbySetupText}>{t('online.setup')}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
 
-            {/* Players header + count */}
-            <View style={styles.slotsHeader}>
-              <Text style={styles.slotsTitle}>{t('online.playersCount')}</Text>
-              <Text style={styles.slotsCount}>
-                {lobbyOccupied}/{activeRoom.slots.length}
-              </Text>
-            </View>
+              {/* Participant slots */}
+              <View style={styles.slotsList}>
+                {activeRoom.slots.map((slot) => {
+                  const isMe = slot.userId === identity?.userId;
+                  const isOccupied = slot.userId !== null;
+                  const initial = nameInitial(slot.displayName);
 
-            {/* Participant slots */}
-            <View style={styles.slotsList}>
-              {activeRoom.slots.map((slot) => {
-                const isMe = slot.userId === identity?.userId;
-                const isOccupied = slot.userId !== null;
-                const initial = nameInitial(slot.displayName);
-
-                if (!isOccupied) {
-                  // Every open slot carries Quick Add, for the host and for
-                  // members alike: anyone in the lobby can pull an online
-                  // friend in from their own list.
-                  return (
-                    <View key={slot.index} style={[styles.slotItem, styles.slotEmptyCard]}>
-                      <View style={styles.slotLeft}>
-                        <View style={[styles.slotAvatar, styles.slotAvatarEmpty]}>
-                          <Text style={styles.slotInitialEmpty}>?</Text>
+                  if (!isOccupied) {
+                    // Every open slot carries Quick Add, for the host and for
+                    // members alike: anyone in the lobby can pull an online
+                    // friend in from their own list.
+                    return (
+                      <View key={slot.index} style={[styles.slotItem, styles.slotEmptyCard]}>
+                        <View style={styles.slotLeft}>
+                          <View style={[styles.slotAvatar, styles.slotAvatarEmpty]}>
+                            <Text style={styles.slotInitialEmpty}>?</Text>
+                          </View>
+                          <Text style={styles.slotWaiting}>{t('online.waitingPlayer')}</Text>
                         </View>
-                        <Text style={styles.slotWaiting}>{t('online.waitingPlayer')}</Text>
+                        <TouchableOpacity style={styles.quickAddBtn} onPress={() => void openQuickAdd()}>
+                          <OrbIcon name="user-plus" size={15} color={THEME.colors.primary} />
+                          <Text style={styles.quickAddText}>{t('online.quickAdd')}</Text>
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity style={styles.quickAddBtn} onPress={() => void openQuickAdd()}>
-                        <OrbIcon name="user-plus" size={15} color={THEME.colors.primary} />
-                        <Text style={styles.quickAddText}>{t('online.quickAdd')}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  );
-                }
+                    );
+                  }
 
-                return (
-                  <View key={slot.index} style={styles.slotItem}>
-                    <View style={styles.slotLeft}>
-                      <View style={styles.slotAvatar}>
-                        <Text style={styles.slotInitial}>{initial}</Text>
-                      </View>
-                      <View>
-                        <View style={styles.slotNameRow}>
-                          <Text style={styles.slotUsername} numberOfLines={1}>
-                            {slot.displayName}
-                            {isMe ? ` ${t('gameover.you')}` : ''}
-                          </Text>
-                          {slot.isPremium && <PremiumBadge size="xs" />}
-                          {slot.isHost && (
-                            <View style={styles.hostBadge}>
-                              <OrbIcon name="crown" size={11} color={THEME.colors.primaryDark} />
-                              <Text style={styles.hostBadgeText}>{t('online.host')}</Text>
-                            </View>
+                  return (
+                    <View key={slot.index} style={styles.slotItem}>
+                      <View style={styles.slotLeft}>
+                        <View style={styles.slotAvatar}>
+                          <Text style={styles.slotInitial}>{initial}</Text>
+                        </View>
+                        <View>
+                          <View style={styles.slotNameRow}>
+                            <Text style={styles.slotUsername} numberOfLines={1}>
+                              {slot.displayName}
+                              {isMe ? ` ${t('gameover.you')}` : ''}
+                            </Text>
+                            {(slot.isPremium || (isMe && isPremiumActive(premium))) && <PremiumBadge size="xs" />}
+                            {slot.isHost && (
+                              <View style={styles.hostBadge}>
+                                <OrbIcon name="crown" size={11} color={THEME.colors.primaryDark} />
+                                <Text style={styles.hostBadgeText}>{t('online.host')}</Text>
+                              </View>
+                            )}
+                          </View>
+                          {slot.rating !== undefined && (
+                            <Text style={styles.slotRating}>{Math.round(slot.rating)}</Text>
                           )}
                         </View>
-                        {slot.rating !== undefined && (
-                          <Text style={styles.slotRating}>{Math.round(slot.rating)}</Text>
+                      </View>
+
+                      <View style={styles.slotRight}>
+                        {isMe ? (
+                          <TouchableOpacity
+                            style={[styles.readyPill, slot.isReady ? styles.readyOn : styles.readyOff]}
+                            onPress={() => void setReady(!slot.isReady)}
+                          >
+                            <OrbIcon
+                              name="check"
+                              size={14}
+                              color={slot.isReady ? THEME.colors.assessmentExcellent : THEME.colors.textSecondaryStrong}
+                            />
+                            <Text
+                              style={[
+                                styles.readyPillText,
+                                slot.isReady ? styles.readyOnText : styles.readyOffText,
+                              ]}
+                            >
+                              {slot.isReady ? t('online.ready') : t('online.notReady')}
+                            </Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={[styles.readyPill, slot.isReady ? styles.readyOn : styles.readyOff]}>
+                            <OrbIcon
+                              name="check"
+                              size={14}
+                              color={slot.isReady ? THEME.colors.assessmentExcellent : THEME.colors.textSecondaryStrong}
+                            />
+                            <Text
+                              style={[
+                                styles.readyPillText,
+                                slot.isReady ? styles.readyOnText : styles.readyOffText,
+                              ]}
+                            >
+                              {slot.isReady ? t('online.ready') : t('online.notReady')}
+                            </Text>
+                          </View>
+                        )}
+                        {isHost && !isMe && slot.userId && (
+                          <TouchableOpacity
+                            style={styles.kickBtn}
+                            onPress={() =>
+                              setConfirmMode({
+                                kind: 'kick',
+                                userId: slot.userId!,
+                                name: slot.displayName ?? 'this player',
+                              })
+                            }
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            accessibilityLabel={`Remove ${slot.displayName}`}
+                          >
+                            <OrbIcon name="more-vertical" size={18} color={THEME.colors.statusOffline} />
+                          </TouchableOpacity>
                         )}
                       </View>
                     </View>
+                  );
+                })}
+              </View>
 
-                    <View style={styles.slotRight}>
-                    {isMe ? (
-                      <TouchableOpacity
-                        style={[styles.readyPill, slot.isReady ? styles.readyOn : styles.readyOff]}
-                        onPress={() => void setReady(!slot.isReady)}
-                      >
-                        <OrbIcon
-                          name="check"
-                          size={14}
-                          color={slot.isReady ? THEME.colors.assessmentExcellent : THEME.colors.textSecondaryStrong}
-                        />
-                        <Text
-                          style={[
-                            styles.readyPillText,
-                            slot.isReady ? styles.readyOnText : styles.readyOffText,
-                          ]}
-                        >
-                          {slot.isReady ? t('online.ready') : t('online.notReady')}
-                        </Text>
-                      </TouchableOpacity>
+              {/* Lobby action */}
+              {isHost ? (
+                <>
+                  <TouchableOpacity
+                    style={[styles.lobbyCta, (!canStart || roomLoading) && styles.btnDisabled]}
+                    disabled={!canStart || roomLoading}
+                    onPress={() => void startRoom()}
+                  >
+                    {roomLoading ? (
+                      <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
                     ) : (
-                      <View style={[styles.readyPill, slot.isReady ? styles.readyOn : styles.readyOff]}>
-                        <OrbIcon
-                          name="check"
-                          size={14}
-                          color={slot.isReady ? THEME.colors.assessmentExcellent : THEME.colors.textSecondaryStrong}
-                        />
-                        <Text
-                          style={[
-                            styles.readyPillText,
-                            slot.isReady ? styles.readyOnText : styles.readyOffText,
-                          ]}
-                        >
-                          {slot.isReady ? t('online.ready') : t('online.notReady')}
+                      <>
+                        <OrbIcon name="play" size={20} color={THEME.colors.onPrimary} />
+                        <Text style={styles.lobbyCtaText}>{t('online.startGame')}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  {!canStart && (
+                    <Text style={styles.lobbyHint}>{t('online.waitingReady')}</Text>
+                  )}
+                  <TouchableOpacity
+                    style={styles.lobbyCloseBtn}
+                    activeOpacity={0.7}
+                    onPress={() => setConfirmMode(isHost ? 'close' : 'leave')}
+                    accessibilityLabel={isHost ? t('online.closeRoom') : t('online.leaveRoom')}
+                  >
+                    <OrbIcon name="log-out" size={15} color={THEME.colors.textSecondary} />
+                    <Text style={styles.lobbyCloseText}>{isHost ? t('online.closeRoom') : t('online.leaveRoom')}</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.lobbyCta, isReady && styles.lobbyCtaReady]}
+                  onPress={() => void setReady(!isReady)}
+                >
+                  <Text style={styles.lobbyCtaText}>
+                    {isReady ? t('common.cancel') : t('online.ready')}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {!!roomError && <Text style={styles.errorText}>{roomError}</Text>}
+              <AdBanner placement="lobby" />
+            </>
+          ) : (
+            /* CREATE & JOIN: segmented Public Tables vs Play a Friend */
+            <>
+              {/* Segmented Filter Control */}
+              <View style={styles.roomPillsRow}>
+                <TouchableOpacity
+                  style={[styles.roomPill, roomTab === 'public' && styles.roomPillActive]}
+                  activeOpacity={0.8}
+                  onPress={() => setRoomTab('public')}
+                >
+                  <OrbIcon
+                    name="earth"
+                    size={15}
+                    color={roomTab === 'public' ? THEME.colors.inverseOnSurface : THEME.colors.textMuted}
+                  />
+                  <Text style={[styles.roomPillText, roomTab === 'public' && styles.roomPillTextActive]}>
+                    Public Tables {publicRooms.length > 0 ? `(${publicRooms.length})` : ''}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.roomPill, roomTab === 'friends' && styles.roomPillActive]}
+                  activeOpacity={0.8}
+                  onPress={() => setRoomTab('friends')}
+                >
+                  <OrbIcon
+                    name="users"
+                    size={15}
+                    color={roomTab === 'friends' ? THEME.colors.inverseOnSurface : THEME.colors.textMuted}
+                  />
+                  <Text style={[styles.roomPillText, roomTab === 'friends' && styles.roomPillTextActive]}>
+                    Play a Friend
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {roomTab === 'public' ? (
+                <>
+                  {/* Public Tables List Card */}
+                  <View style={styles.rmCard}>
+                    <View style={styles.rmHeaderRow}>
+                      <OrbIcon name="earth" size={20} color={THEME.colors.primary} />
+                      <Text style={styles.rmLabel}>Open Tables ({publicRooms.length})</Text>
+                    </View>
+
+                    {publicRooms.length === 0 ? (
+                      <View style={styles.emptyPublicState}>
+                        <Text style={styles.emptyPublicRoomsText}>
+                          No open tables right now. Host one below to play casual variants with anyone online!
                         </Text>
                       </View>
+                    ) : (
+                      <View style={styles.publicRoomsList}>
+                        {publicRooms.map((pubRoom) => (
+                          <View key={pubRoom.id} style={styles.publicRoomItem}>
+                            <View style={styles.publicRoomInfo}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <Text style={styles.publicRoomModeTitle}>
+                                  {modeLabel(pubRoom.mode)}
+                                </Text>
+                                <View style={styles.publicRoomCasualBadge}>
+                                  <Text style={styles.publicRoomCasualText}>Casual</Text>
+                                </View>
+                              </View>
+                              <Text style={styles.publicRoomSubText}>
+                                {pubRoom.timeControlMinutes === 0
+                                  ? 'No Timer'
+                                  : `${pubRoom.timeControlMinutes}+${pubRoom.incrementSeconds}`}{' '}
+                                · {pubRoom.wallsEach === 99 ? '∞' : pubRoom.wallsEach} Walls · {pubRoom.occupiedSlots}/{pubRoom.totalSlots} Players
+                              </Text>
+                              <Text style={styles.publicRoomHostText}>
+                                Host: {pubRoom.hostDisplayName} ({pubRoom.hostRating ?? 1500})
+                              </Text>
+                            </View>
+                            <TouchableOpacity
+                              style={styles.publicRoomJoinBtn}
+                              disabled={roomLoading}
+                              activeOpacity={0.82}
+                              onPress={() => runWhenOnline(() => joinRoom(pubRoom.code))}
+                            >
+                              <Text style={styles.publicRoomJoinBtnText}>Join</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                      </View>
                     )}
-                    {isHost && !isMe && slot.userId && (
-                      <TouchableOpacity
-                        style={styles.kickBtn}
-                        onPress={() =>
-                          setConfirmMode({
-                            kind: 'kick',
-                            userId: slot.userId!,
-                            name: slot.displayName ?? 'this player',
-                          })
-                        }
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        accessibilityLabel={`Remove ${slot.displayName}`}
-                      >
-                        <OrbIcon name="more-vertical" size={18} color={THEME.colors.statusOffline} />
-                      </TouchableOpacity>
-                    )}
-                    </View>
                   </View>
-                );
-              })}
-            </View>
 
-            {/* Lobby action */}
-            {isHost ? (
-              <>
-                <TouchableOpacity
-                  style={[styles.lobbyCta, (!canStart || roomLoading) && styles.btnDisabled]}
-                  disabled={!canStart || roomLoading}
-                  onPress={() => void startRoom()}
-                >
-                  {roomLoading ? (
-                    <ActivityIndicator size="small" color={THEME.colors.onPrimary} />
+                  {/* Host a Table Section (collapsed by default) */}
+                  {!showPublicHostForm ? (
+                    <TouchableOpacity
+                      style={styles.hostTriggerBtn}
+                      activeOpacity={0.85}
+                      onPress={() => setShowPublicHostForm(true)}
+                    >
+                      <OrbIcon name="plus" size={18} color="#FFFFFF" />
+                      <Text style={styles.hostTriggerBtnText}>Host a Public Table</Text>
+                    </TouchableOpacity>
                   ) : (
-                    <>
-                      <OrbIcon name="play" size={20} color={THEME.colors.onPrimary} />
-                      <Text style={styles.lobbyCtaText}>{t('online.startGame')}</Text>
-                    </>
+                    <View style={styles.rmCard}>
+                      <View style={styles.rmHeaderBetween}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <OrbIcon name="plus-circle" size={20} color={THEME.colors.primary} />
+                          <Text style={styles.rmLabel}>Host a Public Table</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.collapseBtn}
+                          onPress={() => setShowPublicHostForm(false)}
+                        >
+                          <OrbIcon name="x" size={18} color={THEME.colors.textMuted} />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.rmSubLabel}>
+                        Choose mode and rules. Anyone online can join your table.
+                      </Text>
+
+                      <MatchOptionsPicker
+                        mode={roomKind}
+                        onModeChange={setRoomKind}
+                        playerCount={roomCount}
+                        onPlayerCountChange={setRoomCount}
+                        walls={wallsCount}
+                        onWallsChange={setWallsCount}
+                        clock={clock}
+                        onClockChange={setClock}
+                      />
+
+                      <TouchableOpacity
+                        style={[styles.rmCta, roomLoading && styles.btnDisabled]}
+                        activeOpacity={0.88}
+                        disabled={roomLoading}
+                        onPress={() =>
+                          runWhenOnline(() =>
+                            createRoom(roomType, clock, wallsCount, true)
+                          )
+                        }
+                      >
+                        {roomLoading ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Text style={styles.rmCtaText}>Create Public Table</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
                   )}
-                </TouchableOpacity>
-                {!canStart && (
-                  <Text style={styles.lobbyHint}>{t('online.waitingReady')}</Text>
-                )}
-                <TouchableOpacity
-                  style={styles.lobbyCloseBtn}
-                  activeOpacity={0.7}
-                  onPress={() => setConfirmMode(isHost ? 'close' : 'leave')}
-                  accessibilityLabel={isHost ? t('online.closeRoom') : t('online.leaveRoom')}
-                >
-                  <OrbIcon name="log-out" size={15} color={THEME.colors.textSecondary} />
-                  <Text style={styles.lobbyCloseText}>{isHost ? t('online.closeRoom') : t('online.leaveRoom')}</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <TouchableOpacity
-                style={[styles.lobbyCta, isReady && styles.lobbyCtaReady]}
-                onPress={() => void setReady(!isReady)}
-              >
-                <Text style={styles.lobbyCtaText}>
-                  {isReady ? t('common.cancel') : t('online.ready')}
-                </Text>
-              </TouchableOpacity>
-            )}
-            {!!roomError && <Text style={styles.errorText}>{roomError}</Text>}
-            <AdBanner placement="lobby" />
-          </>
-        ) : (
-          /* CREATE & JOIN CARDS: join-by-code first, room setup below. */
-          <>
-            {/* Join Room Card */}
-            <View style={styles.rmCard}>
-              <Text style={styles.rmLabel}>{t('online.joinRoom')}</Text>
-              <View style={styles.rmJoinRow}>
-                <TextInput
-                  style={styles.rmJoinInput}
-                  placeholder={t('online.enterCode')}
-                  placeholderTextColor={THEME.colors.statusOffline}
-                  value={roomCodeInput}
-                  onChangeText={(t) => setRoomCodeInput(t.toUpperCase())}
-                  maxLength={7}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  returnKeyType="join"
-                  onFocus={() => roomsScrollRef.current?.scrollToEnd({ animated: true })}
-                  onSubmitEditing={() => {
-                    if (roomCodeInput.trim() && !roomLoading) {
-                      runWhenOnline(() => joinRoom(roomCodeInput.trim()));
-                    }
-                  }}
-                />
-                <TouchableOpacity
-                  style={[
-                    styles.rmJoinBtn,
-                    (!roomCodeInput.trim() || roomLoading) && styles.joinBtnDisabled,
-                  ]}
-                  disabled={!roomCodeInput.trim() || roomLoading}
-                  onPress={() => runWhenOnline(() => joinRoom(roomCodeInput.trim()))}
-                >
-                  <Text style={styles.rmJoinBtnText}>{t('online.join')}</Text>
-                </TouchableOpacity>
-              </View>
-              {roomError && <Text style={styles.errorText}>{roomError}</Text>}
-            </View>
+                </>
+              ) : (
+                <>
+                  {/* Join Room Card */}
+                  <View style={styles.rmCard}>
+                    <Text style={styles.rmLabel}>{t('online.joinRoom')}</Text>
+                    <Text style={styles.rmSubLabel}>
+                      Enter the 6-letter room code shared by your friend.
+                    </Text>
+                    <View style={styles.rmJoinRow}>
+                      <TextInput
+                        style={styles.rmJoinInput}
+                        placeholder={t('online.enterCode')}
+                        placeholderTextColor={THEME.colors.textMuted}
+                        value={roomCodeInput}
+                        onChangeText={(t) => setRoomCodeInput(t.toUpperCase())}
+                        maxLength={7}
+                        autoCapitalize="characters"
+                        autoCorrect={false}
+                        returnKeyType="join"
+                        onFocus={() => roomsScrollRef.current?.scrollToEnd({ animated: true })}
+                        onSubmitEditing={() => {
+                          if (roomCodeInput.trim() && !roomLoading) {
+                            runWhenOnline(() => joinRoom(roomCodeInput.trim()));
+                          }
+                        }}
+                      />
+                      <TouchableOpacity
+                        style={[
+                          styles.rmJoinBtn,
+                          (!roomCodeInput.trim() || roomLoading) && styles.joinBtnDisabled,
+                        ]}
+                        disabled={!roomCodeInput.trim() || roomLoading}
+                        onPress={() => runWhenOnline(() => joinRoom(roomCodeInput.trim()))}
+                      >
+                        <Text style={styles.rmJoinBtnText}>{t('online.join')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {roomError && <Text style={styles.errorText}>{roomError}</Text>}
+                  </View>
 
-            {/* Create Room Card */}
-            <View style={styles.rmCard}>
-              <View style={styles.rmHeaderRow}>
-                <OrbIcon name="plus-circle-outline" size={20} color={THEME.colors.primary} />
-                <Text style={styles.rmLabel}>{t('online.createRoom')}</Text>
-              </View>
+                  {/* Create Private Room Section (collapsed by default) */}
+                  {!showFriendHostForm ? (
+                    <TouchableOpacity
+                      style={styles.hostTriggerBtn}
+                      activeOpacity={0.85}
+                      onPress={() => setShowFriendHostForm(true)}
+                    >
+                      <OrbIcon name="plus" size={18} color="#FFFFFF" />
+                      <Text style={styles.hostTriggerBtnText}>Create Private Room</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.rmCard}>
+                      <View style={styles.rmHeaderBetween}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <OrbIcon name="plus-circle" size={20} color={THEME.colors.primary} />
+                          <Text style={styles.rmLabel}>Create Private Room</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.collapseBtn}
+                          onPress={() => setShowFriendHostForm(false)}
+                        >
+                          <OrbIcon name="x" size={18} color={THEME.colors.textMuted} />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.rmSubLabel}>
+                        You will receive a 6-letter code to invite your friends.
+                      </Text>
 
-              <MatchOptionsPicker
-                mode={roomKind}
-                onModeChange={setRoomKind}
-                playerCount={roomCount}
-                onPlayerCountChange={setRoomCount}
-                walls={wallsCount}
-                onWallsChange={setWallsCount}
-                clock={clock}
-                onClockChange={setClock}
-              />
+                      <MatchOptionsPicker
+                        mode={roomKind}
+                        onModeChange={setRoomKind}
+                        playerCount={roomCount}
+                        onPlayerCountChange={setRoomCount}
+                        walls={wallsCount}
+                        onWallsChange={setWallsCount}
+                        clock={clock}
+                        onClockChange={setClock}
+                      />
 
-              {/* Create Room Button */}
-              <TouchableOpacity
-                style={[styles.rmCta, roomLoading && styles.btnDisabled]}
-                activeOpacity={0.88}
-                disabled={roomLoading}
-                onPress={() =>
-                  runWhenOnline(() =>
-                    createRoom(roomType, clock, wallsCount)
-                  )
-                }
-              >
-                {roomLoading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.rmCtaText}>{t('online.createRoom')}</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-            <AdBanner placement="lobby" />
-          </>
-        )}
-      </ScrollView>
+                      <TouchableOpacity
+                        style={[styles.rmCta, roomLoading && styles.btnDisabled]}
+                        activeOpacity={0.88}
+                        disabled={roomLoading}
+                        onPress={() =>
+                          runWhenOnline(() =>
+                            createRoom(roomType, clock, wallsCount, false)
+                          )
+                        }
+                      >
+                        {roomLoading ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Text style={styles.rmCtaText}>{t('online.createRoom')}</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
+              )}
+              <AdBanner placement="lobby" />
+            </>
+          )}
+        </ScrollView>
       </KeyboardAvoidingView>
 
       {/* Room game gate. Lives at the view root ON PURPOSE, not inside the
@@ -1208,92 +1390,92 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       {showQuickAdd && (
         <Modal visible transparent animationType="slide">
           <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
-          <View style={styles.sheetCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('online.quickAdd')}</Text>
-              <TouchableOpacity style={styles.sheetClose} onPress={() => setShowQuickAdd(false)}>
-                <OrbIcon name="x" size={20} color={THEME.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.quickAddSub}>{t('online.quickAddSub')}</Text>
-            <ScrollView style={styles.modalResultsScroll} contentContainerStyle={styles.modalResultsContent}>
-              {onlineFriends.length === 0 ? (
-                <Text style={styles.searchHint}>{t('online.noOnlineFriends')}</Text>
-              ) : (
-                onlineFriends.map((friend) => (
-                  <View key={friend.id} style={styles.searchResultItem}>
-                    <View style={styles.searchResultLeft}>
-                      <View style={styles.searchAvatar}>
-                        <Text style={styles.searchAvatarText}>
-                          {nameInitial(friend)}
-                        </Text>
+            <View style={styles.sheetCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{t('online.quickAdd')}</Text>
+                <TouchableOpacity style={styles.sheetClose} onPress={() => setShowQuickAdd(false)}>
+                  <OrbIcon name="x" size={20} color={THEME.colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.quickAddSub}>{t('online.quickAddSub')}</Text>
+              <ScrollView style={styles.modalResultsScroll} contentContainerStyle={styles.modalResultsContent}>
+                {onlineFriends.length === 0 ? (
+                  <Text style={styles.searchHint}>{t('online.noOnlineFriends')}</Text>
+                ) : (
+                  onlineFriends.map((friend) => (
+                    <View key={friend.id} style={styles.searchResultItem}>
+                      <View style={styles.searchResultLeft}>
+                        <View style={styles.searchAvatar}>
+                          <Text style={styles.searchAvatarText}>
+                            {nameInitial(friend)}
+                          </Text>
+                        </View>
+                        <View>
+                          <Text style={styles.searchUsername}>{resolveName(friend)}</Text>
+                          <Text style={styles.searchHandle}>@{friend.username} · {friend.status === 'PLAYING' ? t('online.inMatch') : t('online.onlineStatus')}</Text>
+                        </View>
                       </View>
-                      <View>
-                        <Text style={styles.searchUsername}>{resolveName(friend)}</Text>
-                        <Text style={styles.searchHandle}>@{friend.username} · {friend.status === 'PLAYING' ? t('online.inMatch') : t('online.onlineStatus')}</Text>
-                      </View>
+                      <TouchableOpacity style={styles.quickAddBtn} onPress={() => void inviteFriend(friend.id)}>
+                        <OrbIcon name="user-plus" size={15} color={THEME.colors.primary} />
+                        <Text style={styles.quickAddText}>{t('online.invite')}</Text>
+                      </TouchableOpacity>
                     </View>
-                    <TouchableOpacity style={styles.quickAddBtn} onPress={() => void inviteFriend(friend.id)}>
-                      <OrbIcon name="user-plus" size={15} color={THEME.colors.primary} />
-                      <Text style={styles.quickAddText}>{t('online.invite')}</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))
-              )}
-            </ScrollView>
-          </View>
+                  ))
+                )}
+              </ScrollView>
+            </View>
           </SafeAreaView>
         </Modal>
       )}
       {showRoomSetup && (
         <Modal visible transparent animationType="slide">
           <SafeAreaView style={styles.sheetOverlay} edges={['top', 'bottom']}>
-          <View style={styles.sheetCard}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <OrbIcon name="sliders" size={18} color={THEME.colors.primary} />
-                <Text style={styles.modalTitle}>{t('online.roomSetup')}</Text>
+            <View style={styles.sheetCard}>
+              <View style={styles.modalHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <OrbIcon name="sliders" size={18} color={THEME.colors.primary} />
+                  <Text style={styles.modalTitle}>{t('online.roomSetup')}</Text>
+                </View>
+                <TouchableOpacity style={styles.sheetClose} onPress={() => setShowRoomSetup(false)}>
+                  <OrbIcon name="x" size={20} color={THEME.colors.textMuted} />
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity style={styles.sheetClose} onPress={() => setShowRoomSetup(false)}>
-                <OrbIcon name="x" size={20} color={THEME.colors.textMuted} />
+              <Text style={styles.quickAddSub}>
+                {t('online.roomSetupSub')}
+              </Text>
+
+              <ScrollView
+                style={styles.modalSetupScroll}
+                contentContainerStyle={styles.modalSetupContent}
+                showsVerticalScrollIndicator={true}
+                nestedScrollEnabled={true}
+              >
+                <MatchOptionsPicker
+                  mode={setupKind}
+                  onModeChange={setSetupKind}
+                  playerCount={setupCount}
+                  onPlayerCountChange={setSetupCount}
+                  walls={setupWalls}
+                  onWallsChange={setSetupWalls}
+                  clock={setupClock}
+                  onClockChange={setSetupClock}
+                />
+              </ScrollView>
+
+              <TouchableOpacity
+                style={[styles.rmCta, styles.sheetSaveBtn, setupSaving && styles.btnDisabled]}
+                activeOpacity={0.88}
+                disabled={setupSaving}
+                onPress={() => void saveRoomSetup()}
+              >
+                {setupSaving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.rmCtaText}>{t('online.saveSetup')}</Text>
+                )}
               </TouchableOpacity>
+              {!!roomError && <Text style={styles.errorText}>{roomError}</Text>}
             </View>
-            <Text style={styles.quickAddSub}>
-              {t('online.roomSetupSub')}
-            </Text>
-
-            <ScrollView
-              style={styles.modalSetupScroll}
-              contentContainerStyle={styles.modalSetupContent}
-              showsVerticalScrollIndicator={true}
-              nestedScrollEnabled={true}
-            >
-              <MatchOptionsPicker
-                mode={setupKind}
-                onModeChange={setSetupKind}
-                playerCount={setupCount}
-                onPlayerCountChange={setSetupCount}
-                walls={setupWalls}
-                onWallsChange={setSetupWalls}
-                clock={setupClock}
-                onClockChange={setSetupClock}
-              />
-            </ScrollView>
-
-            <TouchableOpacity
-              style={[styles.rmCta, styles.sheetSaveBtn, setupSaving && styles.btnDisabled]}
-              activeOpacity={0.88}
-              disabled={setupSaving}
-              onPress={() => void saveRoomSetup()}
-            >
-              {setupSaving ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Text style={styles.rmCtaText}>{t('online.saveSetup')}</Text>
-              )}
-            </TouchableOpacity>
-            {!!roomError && <Text style={styles.errorText}>{roomError}</Text>}
-          </View>
           </SafeAreaView>
         </Modal>
       )}
@@ -1771,13 +1953,152 @@ const createStyles = () => StyleSheet.create({
     fontWeight: '700',
     color: THEME.colors.inverseLabel,
   },
+  emptyPublicRoomsText: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 13,
+    color: THEME.colors.textMuted,
+    lineHeight: 18,
+    marginTop: 6,
+  },
+  publicRoomsList: {
+    marginTop: 8,
+    gap: 8,
+  },
+  publicRoomItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.colors.surfaceMuted,
+  },
+  publicRoomInfo: {
+    flex: 1,
+    marginRight: 10,
+  },
+  publicRoomModeTitle: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 14,
+    color: THEME.colors.textPrimary,
+  },
+  publicRoomCasualBadge: {
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  publicRoomCasualText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 10,
+    color: THEME.colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  publicRoomSubText: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
+    marginTop: 2,
+  },
+  publicRoomHostText: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    marginTop: 1,
+  },
+  publicRoomJoinBtn: {
+    backgroundColor: THEME.colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  publicRoomJoinBtnText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 13,
+    color: '#FFFFFF',
+  },
+  roomPillsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderRadius: 14,
+    padding: 4,
+    alignSelf: 'stretch',
+    marginBottom: 12,
+  },
+  roomPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  roomPillActive: {
+    backgroundColor: THEME.colors.inverseSurface,
+  },
+  roomPillText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.textMuted,
+  },
+  roomPillTextActive: {
+    color: THEME.colors.inverseOnSurface,
+    fontWeight: '700',
+  },
+  rmHeaderBetween: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  rmSubLabel: {
+    fontFamily: THEME.fonts.regular,
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    marginBottom: 14,
+    lineHeight: 16,
+  },
+  collapseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.surfaceMuted,
+  },
+  hostTriggerBtn: {
+    width: '100%',
+    backgroundColor: THEME.colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderBottomWidth: 3,
+    borderBottomColor: THEME.colors.primaryBevel,
+    marginTop: 4,
+  },
+  hostTriggerBtnText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  emptyPublicState: {
+    paddingVertical: 12,
+  },
   confirmOverlay: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    backgroundColor: THEME.colors.modalBackdrop,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
@@ -2269,7 +2590,7 @@ const createStyles = () => StyleSheet.create({
   },
   sheetOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    backgroundColor: THEME.colors.modalBackdropSubtle,
     justifyContent: 'flex-end',
   },
   sheetCard: {

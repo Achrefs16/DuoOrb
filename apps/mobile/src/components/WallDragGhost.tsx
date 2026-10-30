@@ -1,8 +1,9 @@
 import React, { createContext, memo, useContext } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import type { WallCoord } from '@duoorb/game-core';
 import { wallRect } from './GameBoard';
 import { useBoardSkin } from '../theme/boardTheme';
+import { useEquippedWallSkin } from '../theme/cosmeticsCatalog';
 
 /**
  * Drag-ghost state, kept OUT of GameBoard's props on purpose.
@@ -51,21 +52,58 @@ interface DragGhostProps {
 export const WallDragGhost = memo(function WallDragGhost({ cell, gap }: DragGhostProps) {
   const { slot, legal, color } = useContext(WallDragGhostContext);
   const skin = useBoardSkin();
+  const customWall = useEquippedWallSkin();
   if (!slot) return null;
   const rect = wallRect(slot, cell, gap);
+  const isH = slot.orientation === 'H';
+  const thicknessExtra = Math.max(3, Math.round(gap * 0.45));
+  const top = isH ? rect.top - thicknessExtra / 2 : rect.top;
+  const left = isH ? rect.left : rect.left - thicknessExtra / 2;
+  const width = isH ? rect.width : rect.width + thicknessExtra;
+  const height = isH ? rect.height + thicknessExtra : rect.height;
+
   // Held preview wears the skin like a placed wall: neutral fences preview
   // as wood, so tray → drag → placed never changes design mid-gesture.
   const neutral = skin.wallStyle === 'neutral' && skin.neutralWall;
+
+  if (customWall && legal) {
+    return (
+      <View
+        pointerEvents="none"
+        style={[
+          styles.previewWall,
+          {
+            top,
+            left,
+            width,
+            height,
+            overflow: 'hidden',
+            borderRadius:
+              skin.wallRadius === 'capsule'
+                ? Math.min(width, height) / 2
+                : skin.wallRadius,
+          },
+        ]}
+      >
+        <Image
+          source={slot.orientation === 'H' ? customWall.assets.wallH : customWall.assets.wallV}
+          style={{ width, height, opacity: 0.8 }}
+          resizeMode="stretch"
+        />
+      </View>
+    );
+  }
+
   return (
     <View
       pointerEvents="none"
       style={[
         styles.previewWall,
         {
-          top: rect.top,
-          left: rect.left,
-          width: rect.width,
-          height: rect.height,
+          top,
+          left,
+          width,
+          height,
           backgroundColor: !legal
             ? 'rgba(220, 38, 38, 0.45)'
             : neutral
@@ -73,7 +111,7 @@ export const WallDragGhost = memo(function WallDragGhost({ cell, gap }: DragGhos
               : color,
           borderRadius:
             skin.wallRadius === 'capsule'
-              ? Math.min(rect.width, rect.height) / 2
+              ? Math.min(width, height) / 2
               : skin.wallRadius,
         },
       ]}

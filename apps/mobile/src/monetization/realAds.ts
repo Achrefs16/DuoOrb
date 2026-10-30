@@ -44,14 +44,14 @@ export function __resetAdsSessionForTests(): void {
   recordedThisLaunch = false;
 }
 
-/** Pure visibility rule (unit-tested): premium/launcher/first-session/failure. */
+/** Pure visibility rule (unit-tested): premium/launcher/session-zero/failure. */
 export function shouldShowBanner(opts: {
   isPremium: boolean;
   sessions: number;
   loadFailed: boolean;
 }): boolean {
   if (opts.isPremium) return false;
-  if (opts.sessions < 2) return false;
+  if (opts.sessions < 1) return false;
   if (opts.loadFailed) return false;
   return true;
 }

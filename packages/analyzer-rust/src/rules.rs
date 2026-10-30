@@ -1,6 +1,6 @@
 use crate::board::{Board, BOARD_SIZE};
-use crate::pathfinding::{is_goal_cell, EdgeMasks, GoalMask};
-use crate::types::{CellCoord, GameAction, GameState, PlayerState, WallCoord};
+use crate::pathfinding::{is_goal_cell, EdgeMasks, GoalMask, PlayerPathEdges};
+use crate::types::{CellCoord, GameAction, GameState, Orientation, PlayerState, WallCoord};
 
 #[inline(always)]
 pub fn is_cell_within_board(c: CellCoord) -> bool {
@@ -122,6 +122,70 @@ pub fn is_legal_wall_placement(
     true
 }
 
+/// Fast wall legality check that bypasses BFS whenever the wall does not intersect
+/// any active player's current shortest path.
+pub fn is_legal_wall_fast(
+    state: &GameState,
+    player_id: &str,
+    wall: &WallCoord,
+    board: &Board,
+    path_edges: &[PlayerPathEdges],
+) -> bool {
+    let player = match state.players.iter().find(|p| p.id == player_id) {
+        Some(p) => p,
+        None => return false,
+    };
+
+    if player.walls_remaining <= 0 {
+        return false;
+    }
+
+    if board.does_wall_conflict(wall) {
+        return false;
+    }
+
+    // FAST CHECK: If wall does NOT intersect any active player's shortest path,
+    // their existing path to goal remains 100% open. Zero BFS required.
+    let mut touches_any_path = false;
+    for (idx, p) in state.players.iter().enumerate() {
+        if p.status == "ACTIVE" && idx < path_edges.len() {
+            let touches = match wall.orientation {
+                Orientation::H => path_edges[idx].intersects_h_wall(wall.row as u8, wall.col as u8),
+                Orientation::V => path_edges[idx].intersects_v_wall(wall.row as u8, wall.col as u8),
+            };
+            if touches {
+                touches_any_path = true;
+                break;
+            }
+        }
+    }
+
+    if !touches_any_path {
+        return true;
+    }
+
+    // SLOW CHECK: Wall crosses a shortest path; run speculative BFS
+    let mut spec_board = *board;
+    spec_board.place_wall(wall);
+
+    let edge_masks = EdgeMasks::from_board(&spec_board);
+    for p in &state.players {
+        if p.status == "ACTIVE" {
+            let goal_mask = GoalMask::from_goal_and_mode(p.goal_direction, &state.mode);
+            if edge_masks.shortest_distance(p.position.row as u8, p.position.col as u8, goal_mask) < 0 {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+pub fn is_legal_action(state: &GameState, action: &GameAction) -> bool {
+    let mut board = Board::from_walls(&state.walls);
+    apply_action(state, action, &mut board).is_some()
+}
+
 pub fn apply_action(
     state: &GameState,
     action: &GameAction,
@@ -183,6 +247,7 @@ pub fn apply_action(
         iterations += 1;
     }
     next_state.current_player_index = next_idx;
+    next_state.move_number += 1;
 
     Some(next_state)
 }
@@ -217,6 +282,7 @@ mod tests {
                 seat("p3", 8, 8, GoalDirection::Center),
             ],
             walls: vec![],
+            move_number: 0,
             status: "IN_PROGRESS".to_string(),
         };
         let mut board = Board::new();
@@ -244,6 +310,7 @@ mod tests {
                 seat("p2", 1, 4, GoalDirection::Top),
             ],
             walls: vec![],
+            move_number: 0,
             status: "IN_PROGRESS".to_string(),
         };
         let mut board = Board::new();

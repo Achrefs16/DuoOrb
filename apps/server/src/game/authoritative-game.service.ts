@@ -12,14 +12,20 @@ import {
 } from '@duoorb/game-core';
 import { ClockStateDto, GameEndedDto, GameSyncDto } from '@duoorb/protocol';
 import {
+  DEFAULT_INITIAL_RATING,
+  DEFAULT_INITIAL_RD,
+  DEFAULT_INITIAL_VOL,
   Glicko2Service,
   GlickoPlayer,
+  PROVISIONAL_GAMES_THRESHOLD,
+  PROVISIONAL_MAX_LOSS,
   RATING_ALGORITHM_VERSION,
   infoWeightForPlayerCount,
 } from '../rating/glicko2.service.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { AiwinsService } from '../aiwins/aiwins.service.js';
 import { BillingService } from '../billing/billing.service.js';
+import { GUEST_ID_PREFIX } from '../guest/guest.service.js';
 import { Logger } from '@nestjs/common';
 
 /**
@@ -38,7 +44,7 @@ const MAX_LATENCY_REFUND_MS = 1200;
  * two never share a timer or an indicator. The warning fires with the full
  * allowance (the countdown IS the warning, shown on that seat's card).
  */
-export const AFK_TIMEOUT_MS = 45_000;
+export const AFK_TIMEOUT_MS = 30_000;
 
 /**
  * Stillness before the inactivity countdown surfaces on cards. The forfeit
@@ -46,17 +52,16 @@ export const AFK_TIMEOUT_MS = 45_000;
  * waits this long: a player thinking through the opening seconds must not
  * be told they are about to forfeit, and emitting at turn start flashed the
  * pill for a frame before the move's own afkCleared wiped it. After the
- * delay the countdown shows the true remainder (30s of a 45s allowance).
+ * delay the countdown shows the true remainder (15s of a 30s allowance).
  */
 export const AFK_NOTICE_DELAY_MS = 15_000;
 
 /**
  * Join quorum: how long a created game waits for every seat's first
  * `game:join` before treating no-shows as disconnected (standard 45s grace
- * from there). Covers slow clients without billing the opening turn to
- * whoever arrived first (see clockStarted).
+ * from there). Reduced to 20s for 3+0 Blitz responsiveness.
  */
-export const JOIN_QUORUM_MS = 90_000;
+export const JOIN_QUORUM_MS = 20_000;
 
 /** EWMA weight for the latency estimate. Heavily favours recent samples. */
 const LATENCY_SMOOTHING = 0.3;
@@ -74,6 +79,7 @@ export interface ActiveOnlineGame {
    * so existing unit-test fixtures keep compiling.
    */
   premiumUserIds?: string[];
+  playerCosmetics?: Record<string, { ballSkinId?: string; wallSkinId?: string }>;
   ratings: Record<string, GlickoPlayer>;  // userId -> GlickoPlayer
   clocksMs: Record<string, number>;      // playerId -> remaining ms
   incrementSeconds: number;
@@ -438,7 +444,7 @@ export class AuthoritativeGameService {
   public createGame(params: {
     gameId: string;
     mode: GameMode;
-    users: { userId: string; displayName: string; rating: GlickoPlayer }[];
+    users: { userId: string; displayName: string; rating: GlickoPlayer; ballSkinId?: string; wallSkinId?: string }[];
     timeControlMinutes: number;
     incrementSeconds?: number;
     wallsEach?: number;
@@ -471,6 +477,7 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
     const userPlayerIds: Record<string, string> = {};
     const ratings: Record<string, GlickoPlayer> = {};
     const clocksMs: Record<string, number> = {};
+    const playerCosmetics: Record<string, { ballSkinId?: string; wallSkinId?: string }> = {};
 
     const initialTimeMs = this.initialTimeMs(params.timeControlMinutes);
     const incrementSec = params.incrementSeconds ?? 0;
@@ -481,6 +488,12 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
       userPlayerIds[u.userId] = playerId;
       ratings[u.userId] = u.rating;
       clocksMs[playerId] = initialTimeMs;
+      if (u.ballSkinId || u.wallSkinId) {
+        playerCosmetics[playerId] = {
+          ballSkinId: u.ballSkinId,
+          wallSkinId: u.wallSkinId,
+        };
+      }
     });
 
     const activeGame: ActiveOnlineGame = {
@@ -489,6 +502,7 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
       mode: params.mode,
       playerUserIds,
       userPlayerIds,
+      playerCosmetics,
       premiumUserIds: params.premiumUserIds ?? [],
       ratings,
       clocksMs,
@@ -791,9 +805,9 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
       playerUserIds[playerId] = pr.userId;
       userPlayerIds[pr.userId] = playerId;
       ratings[pr.userId] = {
-        rating: pr.ratingBefore ?? 1500,
-        rd: pr.rdBefore ?? 350,
-        vol: pr.volBefore ?? 0.06,
+        rating: pr.ratingBefore ?? DEFAULT_INITIAL_RATING,
+        rd: pr.rdBefore ?? DEFAULT_INITIAL_RD,
+        vol: pr.volBefore ?? DEFAULT_INITIAL_VOL,
       };
     });
 
@@ -1882,8 +1896,10 @@ public async recoverInProgressGames(hooks: {
       clock: clockDto,
       missingActions: missing,
       playerUserIds: game.playerUserIds,
+      isRanked: game.isRanked,
       // Frozen at creation (P5.2): badges never pop in mid-match.
       premiumUserIds: game.premiumUserIds ?? [],
+      playerCosmetics: game.playerCosmetics,
       you: forUserId ? game.userPlayerIds[forUserId] ?? null : undefined,
       // Current turn's inactivity deadline, when one applies: a client that
       // attaches (or re-attaches) mid-turn missed the one-shot warning, so
@@ -1933,7 +1949,7 @@ public async recoverInProgressGames(hooks: {
       const before = new Map<string, GlickoPlayer>();
       for (const p of seats) {
         const uId = game.playerUserIds[p.id];
-        before.set(p.id, game.ratings[uId] || { rating: 1500, rd: 350, vol: 0.06 });
+        before.set(p.id, game.ratings[uId] || { rating: DEFAULT_INITIAL_RATING, rd: DEFAULT_INITIAL_RD, vol: DEFAULT_INITIAL_VOL, gamesPlayed: 0 });
       }
       if (seats.length === 2) {
         const [s1, s2] = seats;
@@ -1959,7 +1975,23 @@ public async recoverInProgressGames(hooks: {
         const uId = game.playerUserIds[p.id];
         const b = before.get(p.id)!;
         const a = updated[p.id];
-        ratingChanges[uId] = { before: b.rating, after: a.rating, delta: a.rating - b.rating };
+        let delta = a.rating - b.rating;
+
+        // First matches protection:
+        // For players in their first 5 matches, cushion rating loss so early learning
+        // losses do not drop ~300 points in 2 matches.
+        // Established players (gamesPlayed >= 5) are 100% unaffected.
+        const gamesPlayed = b.gamesPlayed ?? 0;
+        if (gamesPlayed < PROVISIONAL_GAMES_THRESHOLD && delta < -PROVISIONAL_MAX_LOSS) {
+          delta = -PROVISIONAL_MAX_LOSS;
+          a.rating = b.rating + delta;
+        }
+
+        ratingChanges[uId] = { before: b.rating, after: a.rating, delta };
+        game.ratings[uId] = {
+          ...a,
+          gamesPlayed: gamesPlayed + 1,
+        };
       }
     }
 
@@ -2006,6 +2038,7 @@ public async recoverInProgressGames(hooks: {
       endedAt: Date.now(),
       ratingChanges,
       placements,
+      isRanked: game.isRanked,
     };
   }
 
@@ -2216,9 +2249,9 @@ public async recoverInProgressGames(hooks: {
             ratingBefore: change.before,
             ratingAfter: change.after,
             delta: change.delta,
-            rdBefore: beforeModel?.rd ?? 350,
+            rdBefore: beforeModel?.rd ?? DEFAULT_INITIAL_RD,
             rdAfter: updated.rd,
-            volBefore: beforeModel?.vol ?? 0.06,
+            volBefore: beforeModel?.vol ?? DEFAULT_INITIAL_VOL,
             volAfter: updated.vol,
             algorithmVersion: RATING_ALGORITHM_VERSION,
           },
@@ -2229,11 +2262,12 @@ public async recoverInProgressGames(hooks: {
 
     // Online achievements, after the commit: the rating row and the game
     // row above are fresh, so the engine reads settled ledger state.
-    // ratingChanges is empty for unranked games — nothing to evaluate.
     // Never throws into completion; a badge must not break a game ending.
-    const rankedUserIds = Object.keys(ratingChanges);
-    if (this.aiwins && rankedUserIds.length > 0) {
-      for (const uId of rankedUserIds) {
+    const userIdsToEvaluate = Array.from(
+      new Set([...Object.keys(ratingChanges), ...Object.values(game.playerUserIds)])
+    ).filter((id): id is string => Boolean(id) && !id.startsWith(GUEST_ID_PREFIX));
+    if (this.aiwins && userIdsToEvaluate.length > 0) {
+      for (const uId of userIdsToEvaluate) {
         try {
           await this.aiwins.evaluateOnlineGame(uId);
         } catch (e) {

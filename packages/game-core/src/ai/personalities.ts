@@ -322,7 +322,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         'Incredible route! Can we play a rematch?',
       ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'bram',
@@ -340,7 +340,7 @@ export const BOT_ROSTER: BotPersonality[] = [
       depth: 2,
       randomness: 0.1,
       weights: weights({ wallAdvantage: 2.4, tightness: 1.6, mobility: 0.4 }, NORMAL_W),
-      maxCandidateWalls: 8,
+      maxCandidateWalls: 12,
       timeBudgetMs: 90,
       wallHorizon: 6,
       blunderRate: 0.1,
@@ -421,7 +421,7 @@ export const BOT_ROSTER: BotPersonality[] = [
       depth: 2,
       randomness: 0.1,
       weights: weights({ wallAdvantage: 2.2, tightness: 1.4, pathDifference: 10.0 }, NORMAL_W),
-      maxCandidateWalls: 8,
+      maxCandidateWalls: 12,
       timeBudgetMs: 110,
       wallHorizon: 6,
       blunderRate: 0.06,
@@ -502,7 +502,7 @@ export const BOT_ROSTER: BotPersonality[] = [
       depth: 3,
       randomness: 0.08,
       weights: weights({ pathways: 1.1, mobility: 0.9, wallAdvantage: 2.0 }, NORMAL_W),
-      maxCandidateWalls: 8,
+      maxCandidateWalls: 12,
       timeBudgetMs: 120,
       wallHorizon: 7,
       varietyWindow: 0.05,
@@ -577,7 +577,7 @@ export const BOT_ROSTER: BotPersonality[] = [
       depth: 3,
       randomness: 0.05,
       weights: weights({ pathways: 1.3, mobility: 1.1, wallAdvantage: 1.2 }, HARD_W),
-      maxCandidateWalls: 8,
+      maxCandidateWalls: 12,
       timeBudgetMs: 150,
       wallHorizon: 7,
       varietyWindow: 0.04,
@@ -634,7 +634,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         'Honored to play against such sharp moves. Well done.',
       ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'marcus',
@@ -974,52 +974,52 @@ export const BOT_ROSTER: BotPersonality[] = [
     avatarGlyph: 'F',
     style: "Playful desert fox. Bounces between tiles, yips excitedly.",
     bio: "Finn is an energetic fennec fox kit with oversized ears and a green bandana. He treats DuoOrb as a game of tag across the dunes, hopping between squares with pure joy.",
-    quote: "*Yip! (Tilts giant ears forward and wags bushy tail)*",
+    quote: "Yip! Yip!",
     banter: {
-      taunt: ["*Yip! (Playful tail swish)*", "*Bounces on front paws!*"],
-      praise: ["*Perks giant ears in wonder!*", "*Excited little chuff!*"],
+      taunt: ["Yip! Yip!", "Yip-yip!", "Chuff!"],
+      praise: ["Yip! ♡", "Chuff-chuff!"],
     },
     dialogue: {
       greetings: [
-        "*Yip! Yip! (Bounces excitedly on front paws, giant ears twitching)*",
-        "*Sniffs the board curiously and wags bushy tail.*",
-        "*Perks enormous ears straight up in cheerful anticipation!*"
-],
+        "Yip! Yip!",
+        "Yip!",
+        "Chuff!",
+      ],
       playerBlock: [
-        "*Tilts giant ears to the left with a puzzled squeak.*",
-        "*Paws curiously at the wooden wall before darting around it!*",
-        "*Sniffs the barrier, sneezes, and trots the other way.*"
-],
+        "Yip?",
+        "Awoo?",
+        "Chuff!",
+      ],
       botTrap: [
-        "*Yip! (Slaps a barrier down and scurries back with a proud tail wag!)*",
-        "*Playful chuff! Look at the little sandcastle wall!*",
-        "*Drops a wall and pounces playfully behind it!*"
-],
+        "Yip! Yip!",
+        "Chuff-chuff!",
+        "Yip!",
+      ],
       closeRace: [
-        "*Ears flutter in the desert breeze! Rapid little pitter-patter paws!*",
-        "*Yips with excitement! Neck and neck across the dunes!*",
-        "*Bounces side to side in pure racing joy!*"
-],
+        "Yip-yip-yip!",
+        "Chuff!",
+        "Yip!",
+      ],
       botLead: [
-        "*Paws scamper ahead! Tail held high and proud!*",
-        "*Yip-yip! Looking back over shoulder with a foxy grin!*",
-        "*Happy little hops toward the finish line!*"
-],
+        "Yip-yip!",
+        "Yip!",
+        "Chuff!",
+      ],
       playerLead: [
-        "*Perks ears forward, bounding faster across the sand!*",
-        "*Whines softly in playful protest! Wait up!*",
-        "*Curious head tilt as you surge ahead!*"
-],
+        "Whine...",
+        "Yip?",
+        "Chuff!",
+      ],
       win: [
-        "*Happy high-pitched yips! Does a joyful zoomie around the table!*",
-        "*Buries nose in front paws with a happy little squeal.*",
-        "*Rolls in the sand with pure victory delight!*"
-],
+        "Yip! Yip! Yip!",
+        "Chuff!",
+        "Yip~!",
+      ],
       lose: [
-        "*Flops ears backward into airplane mode, then happily licks your finger.*",
-        "*Yip! (Gives a cheerful sneeze and hops ready for a rematch!)*",
-        "*Curled up beside your winning orb with a contented purr.*"
-],
+        "Whine...",
+        "Yip?",
+        "Chuff...",
+      ],
     },
     premium: false,
   },
@@ -1099,7 +1099,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "Good game! High five!"
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'leo',
@@ -1177,7 +1177,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "Good race! Next time I'm skipping the detour!"
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'tariq',
@@ -1255,7 +1255,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "You navigated the sands with wisdom. A well-earned triumph!"
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'ren',
@@ -1332,7 +1332,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "You saw the winning line before I did. Good match!"
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'mateo',
@@ -1510,52 +1510,52 @@ export const BOT_ROSTER: BotPersonality[] = [
     avatarGlyph: 'A',
     style: "Solemn owl in dark cloak. Calculates angles with 180-degree head rotations.",
     bio: "Perched silently in a dark blue travel hood, Archimedes observes the board with icy cyan eyes. He calculates board geometry with silent mechanical precision.",
-    quote: "*Hoo-hoo... (Rotates head 180 degrees with chilling precision)*",
+    quote: "Hoo-hoo...",
     banter: {
-      taunt: ["*Hoo-hoo... (Head rotates 180 degrees)*", "*Clicks beak in silent calculation.*"],
-      praise: ["*Piercing blue gaze of respect.*", "*Slow, dignified ruffle of feathers.*"],
+      taunt: ["Hoo-hoo...", "Clack.", "Hoo..."],
+      praise: ["Hoo.", "Hoo-hoo..."],
     },
     dialogue: {
       greetings: [
-        "*Hoo-hoo... (Rotates head 180 degrees with chilling mechanical precision)*",
-        "*Blinks large piercing cyan eyes twice. Adjusts dark blue hood.*",
-        "*Soft click of beak. The examination begins.*"
-],
+        "Hoo-hoo...",
+        "Hoo...",
+        "Clack.",
+      ],
       playerBlock: [
-        "*Sharp head tilt. Ruffles midnight blue feathers.*",
-        "*Hoo. (Calculates the detour in silence)*",
-        "*Stares with unblinking blue eyes as the flight path shifts.*"
-],
+        "Hoo?",
+        "Clack-clack.",
+        "Hoo...",
+      ],
       botTrap: [
-        "*Spreads wings slightly. A vertical wall drops with feather-light silence.*",
-        "*A low, resonant hoot. The corridor is sealed.*",
-        "*Clacks beak once. The mouse is inside the ravine.*"
-],
+        "Hoo-hoo...",
+        "Hoot!",
+        "Clack.",
+      ],
       closeRace: [
-        "*Perches forward with intense nocturnal focus.*",
-        "*Silent wing beats. Down to the final branches.*",
-        "*Hoo-hoo... The decisive nocturnal ply.*"
-],
+        "Hoo...",
+        "Hoo-hoo...",
+        "Clack.",
+      ],
       botLead: [
-        "*Glides forward without disturbing a single tile.*",
-        "*Calculated trajectory proceeding with zero variance.*",
-        "*Silent overhead flight toward the goal line.*"
-],
+        "Hoo-hoo...",
+        "Hoo...",
+        "Hoot!",
+      ],
       playerLead: [
-        "*Blinks once in mild appraisal of your speed.*",
-        "*Head rotates 90 degrees to calibrate interception.*",
-        "*A sharp ruffle of wings. Defensive talon placement.*"
-],
+        "Hoo?",
+        "Clack!",
+        "Hoo...",
+      ],
       win: [
-        "*Solemn hoot of victory. Folds wings neatly over chest.*",
-        "*Perches stoically. The geometry was true.*",
-        "*A dignified bow from beneath the scholar hood.*"
-],
+        "Hoo-hoo...",
+        "Hoot!",
+        "Hoo...",
+      ],
       lose: [
-        "*Blinks in slow surprise. Bows feathered head once in tribute.*",
-        "*Soft clack of beak. An unexpected flight path.*",
-        "*Hoo... The scholar takes notes on your brilliance.*"
-],
+        "Hoo...",
+        "Clack.",
+        "Hoo-hoo...",
+      ],
     },
     premium: false,
   },
@@ -1575,7 +1575,7 @@ export const BOT_ROSTER: BotPersonality[] = [
       depth: 2,
       randomness: 0.08,
       weights: weights({ mobility: 0.7, pathways: 0.8, wallAdvantage: 1.6 }, NORMAL_W),
-      maxCandidateWalls: 8,
+      maxCandidateWalls: 12,
       timeBudgetMs: 105,
       wallHorizon: 6,
     },
@@ -1631,7 +1631,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "A true ranger's victory! Rematch whenever you're ready."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'dmitri',
@@ -1649,7 +1649,7 @@ export const BOT_ROSTER: BotPersonality[] = [
       depth: 2,
       randomness: 0.08,
       weights: weights({ wallAdvantage: 2.2, tightness: 1.5, mobility: 0.4 }, NORMAL_W),
-      maxCandidateWalls: 8,
+      maxCandidateWalls: 12,
       timeBudgetMs: 110,
       wallHorizon: 6,
       wallStyle: 'horizontal_barricade',
@@ -1706,7 +1706,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "You out-built my defense. Respect."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'layla',
@@ -1724,7 +1724,7 @@ export const BOT_ROSTER: BotPersonality[] = [
       depth: 2,
       randomness: 0.08,
       weights: weights({ pathDifference: 10.5, wallAdvantage: 1.8, mobility: 0.6 }, NORMAL_W),
-      maxCandidateWalls: 8,
+      maxCandidateWalls: 12,
       timeBudgetMs: 115,
       wallHorizon: 7,
     },
@@ -1780,7 +1780,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "You earned that victory fair and square! Let's run it back!"
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'dante',
@@ -1798,7 +1798,7 @@ export const BOT_ROSTER: BotPersonality[] = [
       depth: 3,
       randomness: 0.08,
       weights: weights({ wallAdvantage: 2.0, placement: 1.8 }, NORMAL_W),
-      maxCandidateWalls: 8,
+      maxCandidateWalls: 12,
       timeBudgetMs: 120,
       wallHorizon: 7,
       wallStyle: 'flank_trap',
@@ -1855,7 +1855,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "Magnifico! A duel to be remembered! Rematch over espresso?"
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'meiling',
@@ -1873,7 +1873,7 @@ export const BOT_ROSTER: BotPersonality[] = [
       depth: 3,
       randomness: 0.06,
       weights: weights({ pathways: 1.0, tightness: 1.1, mobility: 0.8 }, NORMAL_W),
-      maxCandidateWalls: 8,
+      maxCandidateWalls: 12,
       timeBudgetMs: 125,
       wallHorizon: 7,
       wallStyle: 'vertical_corridor',
@@ -1930,7 +1930,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "An inspiring game! I learned a lot from your lines."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'amara',
@@ -1948,7 +1948,7 @@ export const BOT_ROSTER: BotPersonality[] = [
       depth: 3,
       randomness: 0.06,
       weights: weights({ wallAdvantage: 1.8, mobility: 0.9, pathDifference: 10.5 }, NORMAL_W),
-      maxCandidateWalls: 8,
+      maxCandidateWalls: 12,
       timeBudgetMs: 130,
       wallHorizon: 7,
     },
@@ -2004,7 +2004,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "A brilliant match! Let's play again soon."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'gideon',
@@ -2022,7 +2022,7 @@ export const BOT_ROSTER: BotPersonality[] = [
       depth: 3,
       randomness: 0.04,
       weights: weights({ pathDifference: 12.5, tightness: 1.3, pathways: 1.0 }, HARD_W),
-      maxCandidateWalls: 8,
+      maxCandidateWalls: 12,
       timeBudgetMs: 160,
       wallHorizon: 8,
     },
@@ -2227,7 +2227,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "My compliments to your vision. Truly exceptional play."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'torstein',
@@ -2301,7 +2301,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "Sk\u00e5l! You earned that victory with warrior-class pathing."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'kofi',
@@ -2375,7 +2375,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "Phenomenal performance! You traded the endgame with perfection."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'diego',
@@ -2450,7 +2450,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "A legendary voyage! Rematch whenever you're ready to set sail again."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'hassan',
@@ -2524,7 +2524,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "An unforgettable game! I salute your supreme tactical vision."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'jin',
@@ -2551,54 +2551,54 @@ export const BOT_ROSTER: BotPersonality[] = [
     avatarGlyph: 'J',
     style: "Dignified feline monk. Commands corridors with glowing crystal.",
     bio: "Cloaked in dark teal robes with golden trim and holding a glowing emerald crystal between cushioned paws, Master Jin has meditated in high mountain monasteries for fifteen feline years.",
-    quote: "*Purrrrr... (Clasps paws around the green crystal and gives a serene, dignified nod)*",
+    quote: "Purrrrr...",
     banter: {
-      taunt: ["*Taps crystal softly against the grid.*", "*Silent, knowing feline blink.*"],
-      praise: ["*Whiskers twitch in deep approval.*", "*Soft, respectful bow of the hooded head.*"],
+      taunt: ["Purrrrr...", "Meow.", "Purr..."],
+      praise: ["Purrrrr...", "Purr."],
     },
     dialogue: {
       greetings: [
-        "*Clasps paws around the green crystal and bows respectfully.*",
-        "*Deep, resonant purr like a rolling temple gong.*",
-        "*Pricks white-tufted ears forward and awaits your first stone.*"
-],
+        "Purrrrr...",
+        "Meow.",
+        "Purr...",
+      ],
       playerBlock: [
-        "*Smooth stroke of white whiskers with left paw. A thoughtful barrier.*",
-        "*Nods slowly. The crystal pulses with a calm green light.*",
-        "*Low, contemplative purr as the monastery path redirects.*"
-],
+        "Purr...",
+        "Mew.",
+        "Purrrrr...",
+      ],
       botTrap: [
-        "*Taps crystal softly against the wooden grid. The corridor bends.*",
-        "*A low, contented hum. The maze flows like water around stone.*",
-        "*Closes green eyes for a moment of quiet meditation. The trap holds.*"
-],
+        "Purrrrr...",
+        "Meow.",
+        "Purr.",
+      ],
       closeRace: [
-        "*Both golden-green eyes narrow in serene meditation. The final step.*",
-        "*A gentle, solemn tail swish. Precision under pressure.*",
-        "*The emerald crystal glows with radiant intensity.*"
-],
+        "Purr...",
+        "Mrrr...",
+        "Purrrrr...",
+      ],
       botLead: [
-        "*Glides forward with majestic feline grace.*",
-        "*Unwavering tranquility as the baseline approaches.*",
-        "*The crystal illuminates a flawless path forward.*"
-],
+        "Purrrrr...",
+        "Meow.",
+        "Purr...",
+      ],
       playerLead: [
-        "*Ears perk forward with keen appreciation of your speed.*",
-        "*Soft intake of breath. The crystal casts a protective barrier.*",
-        "*Whiskers bristle slightly. A formidable disciple.*"
-],
+        "Mrrr...",
+        "Purr.",
+        "Meow?",
+      ],
       win: [
-        "*Bows deeply, closing golden-green eyes in peace. Purrrrr.*",
-        "*A solemn tail swish of respect. Well fought, disciple.*",
-        "*Taps paws together in silent blessing. A noble contest.*"
-],
+        "Purrrrr...",
+        "Meow.",
+        "Purr...",
+      ],
       lose: [
-        "*Whiskers twitch in admiration. Hands you a glowing crystal shard.*",
-        "*Purrs with proud reverence. The student has surpassed the master.*",
-        "*A deep, reverent bow from the feline sage. A historic achievement.*"
-],
+        "Purrrrr...",
+        "Meow.",
+        "Purr...",
+      ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'sterling',
@@ -2673,7 +2673,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "I tip my glasses to you. A true titan's victory."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'kenzo',
@@ -2823,7 +2823,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "A historic triumph. Honored to have witnessed such profound endgame calculation."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'nexus9',
@@ -2898,7 +2898,7 @@ export const BOT_ROSTER: BotPersonality[] = [
         "A historic defeat. Hardware parameters archived for deep analysis. Well played."
 ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'boba',
@@ -2926,54 +2926,54 @@ export const BOT_ROSTER: BotPersonality[] = [
     avatarGlyph: 'B',
     style: "Chubby hamster with golden bell. Cute face of pure dread.",
     bio: "Chubby, round, with velvety pink ears and a regal purple bowtie, Boba looks like a stuffed toy. But when his tiny paws touch the board, his bell rings once\u2014and grandmasters shudder.",
-    quote: "*Ting! (Tiny golden bell chimes as Boba twitches pink nose)*",
+    quote: "Ting! Ting!",
     banter: {
-      taunt: ["*Ting! (Tiny bell rings as your lane disappears)*", "*Poufs cheeks innocently while closing your final route.*"],
-      praise: ["*Surprised little squeak! Cheeks twitch in awe.*", "*Taps tiny paws in polite applause.*"],
+      taunt: ["Ting!", "Squeak! ♡", "Ting! Ting!"],
+      praise: ["Squeak! ♡", "Ting!"],
     },
     dialogue: {
       greetings: [
-        "*Tiny bell chimes: Ting! Boba twitches pink nose and sniffs the grid.*",
-        "*Stuffs a sunflower seed into cheek pouch. Looks up with adorable round eyes.*",
-        "*Squeak! \u2661 (Sits back on tiny haunches, ready to dismantle your strategy)*"
-],
+        "Ting!",
+        "Squeak! ♡",
+        "Squeak-squeak!",
+      ],
       playerBlock: [
-        "*Ting! (Tiny bell chimes as Boba takes one step sideways without flinching)*",
-        "*Poufs cheeks twice. That wall was in the simulation 8 plies ago.*",
-        "*Tiny paws adjust. The sunflower seed remains unbothered.*"
-],
+        "Squeak?",
+        "Ting!",
+        "Chitter...",
+      ],
       botTrap: [
-        "*Squeak! \u2661 (Tiny paw pats a wall into place. All exit lanes are dead)*",
-        "*Boba happily nibbles a seed while your clock drains and your panic sets in.*",
-        "*Ting! (The bell rings your doom while Boba looks hopelessly adorable)*"
-],
+        "Squeak! ♡",
+        "Ting!",
+        "Squeak-squeak!",
+      ],
       closeRace: [
-        "*Big black boba eyes widen with intense focus. Whisker calculation mode.*",
-        "*Pitter-patter paws sprint with terrifying geometric perfection.*",
-        "*Ting! Ting! The bell chimes the final countdown.*"
-],
+        "Ting! Ting!",
+        "Squeak!",
+        "Chitter!",
+      ],
       botLead: [
-        "*Waddles forward like a golden puffball of absolute destruction.*",
-        "*Chubby cheeks poufed in supreme confidence.*",
-        "*Two tiny steps from sealing the match.*"
-],
+        "Squeak! ♡",
+        "Ting!",
+        "Squeee!",
+      ],
       playerLead: [
-        "*Freezes mid-nibble! Tiny ears perk straight up in alert mode.*",
-        "*Rapid whisker twitches! Deploying emergency dimensional trap.*",
-        "*A high-pitched squeak as Boba accelerates his calculation.*"
-],
+        "Squeak?!",
+        "Chitter!",
+        "Squeak...",
+      ],
       win: [
-        "*Joyful squeaks! Tiny bell rings as Boba grooms its whiskers in victory.*",
-        "*Puffs up into a fluffy round sphere of pure mathematical supremacy.*",
-        "*Waddles over to your trapped orb and gives it a cute little paw pat.*"
-],
+        "Squeee! ♡",
+        "Ting! Ting!",
+        "Squeak!",
+      ],
       lose: [
-        "*Eyes widen in absolute astonishment. Drops its sunflower seed in shock.*",
-        "*Tiny squeak of pure admiration. Bows its little round head to a legend.*",
-        "*Climbs onto your winning orb with respect. A historic miracle.*"
-],
+        "Squeak...",
+        "Ting...",
+        "Chitter...",
+      ],
     },
-    premium: false,
+    premium: true,
   },
   {
     id: 'milo',
@@ -3003,54 +3003,54 @@ export const BOT_ROSTER: BotPersonality[] = [
     avatarGlyph: 'M',
     style: "Adorable orange kitten with deadpan unblinking eyes. UNBEATABLE.",
     bio: "At first glance, Milo is an utterly adorable ginger kitten with huge, glossy dark eyes and an innocent, deadpan expression. Behind those cute eyes lies an ancient, hyper-dimensional calculation engine that chokes every escape route with zero emotion.",
-    quote: "*Meow.* (Slowly tilts head by three degrees with giant unblinking eyes)",
+    quote: "Meow... Meow.",
     banter: {
-      taunt: ["*Stares into your soul with giant unblinking dark pupils.*", "*Meow.* (Slowly grooms left paw as your corridor closes)"],
-      praise: ["*Slow, deliberate blink of recognition.*", "*Soft purr. An actual opponent.*"],
+      taunt: ["Meow.", "Purrrrr...", "Meow!"],
+      praise: ["Purr...", "Meow."],
     },
     dialogue: {
       greetings: [
-        "*Stares unblinkingly into your soul with giant black pupils.*",
-        "*Soft, slow blink. Tilts head by three degrees.*",
-        "*Meow.* (A tiny, pitch-perfect, deceptively sweet chirp)"
-],
+        "Meow.",
+        "Purr...",
+        "Mew.",
+      ],
       playerBlock: [
-        "*Slowly turns ears sideways. Doesn't even glance down at your wall.*",
-        "*Licks right paw with absolute nonchalance. Your detour was anticipated.*",
-        "*Narrow gaze. The tip of its striped tail twitches once.*"
-],
+        "Meow?",
+        "Mrrr.",
+        "Meow.",
+      ],
       botTrap: [
-        "*Meow!* (Places a wall with a soft paw pat. You are now in a dead end.)",
-        "*Purrs deeply as your escape corridor quietly shrinks to zero.*",
-        "*Soft chuff. Settles down into a loaf position. Checkmate.*"
-],
+        "Meow!",
+        "Purrrrr...",
+        "Hiss.",
+      ],
       closeRace: [
-        "*Pupils dilate until its eyes are pure darkness. Whiskers bristle forward.*",
-        "*Silent, calculated stalking posture. Not a single wasted muscle.*",
-        "*Low, rhythmic thrumming purr of inescapable doom.*"
-],
+        "Mrrrp.",
+        "Purr...",
+        "Meow.",
+      ],
       botLead: [
-        "*Grooms its left ear calmly. It knows the math.*",
-        "*Meow.* (Casual forward step without looking at you)",
-        "*Tail held in a relaxed, confident question-mark curve.*"
-],
+        "Purrrrr...",
+        "Meow.",
+        "Meow~",
+      ],
       playerLead: [
-        "*Ears twitch backward. Tail swishes in a tight, calculating rhythm.*",
-        "*Glares with sudden intense feline laser-focus.*",
-        "*Slowly stands up. The void engine engages maximum throttle.*"
-],
+        "Hiss!",
+        "Mrrr...",
+        "Mrow?",
+      ],
       win: [
-        "*Purrrrr... rolls onto its back and shows its belly. You never stood a chance.*",
-        "*Meow.* (Gently rubs cheek against your trapped orb, claiming it as a trophy.)",
-        "*Stares past you into the distance. It is already thinking about its nap.*"
-],
+        "Purrrrr...",
+        "Meow.",
+        "Meow!",
+      ],
       lose: [
-        "*Jaw drops slightly in genuine shock. Stares at the board in disbelief.*",
-        "*Puffs up tail into a bottle brush. Hisses softly with deep respect.*",
-        "*Headbutts your hand in begrudging acceptance. A historic miracle.*"
-],
+        "Hiss!",
+        "Meow?!",
+        "Purr...",
+      ],
     },
-    premium: false,
+    premium: true,
   },
 ];
 

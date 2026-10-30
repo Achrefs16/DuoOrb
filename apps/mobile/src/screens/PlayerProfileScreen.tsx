@@ -27,6 +27,7 @@ import { MatchResultModal } from '../components/MatchResultModal';
 import { RatingChart } from '../components/RatingChart';
 import { GuestGate } from '../components/GuestGate';
 import { PremiumBadge } from '../components/PremiumBadge';
+import { usePremium, isPremiumActive } from '../monetization/premium';
 import { toast } from '../components/AppToast';
 import { NoConnectionSection } from '../components/NoConnection';
 import { actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
@@ -415,6 +416,9 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
 
   const initial = (profile?.displayName || profile?.username || 'O').charAt(0).toUpperCase();
   const viewerName = identity?.displayName ?? '';
+  const isMe = Boolean(identity && (profile?.id === identity.userId || profile?.username === identity.username));
+  const premium = usePremium();
+  const isViewerPremium = isPremiumActive(premium);
 
   return (
     <View style={styles.container}>
@@ -487,14 +491,12 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </View>
 
               <View style={styles.identityMeta}>
-                <Text style={styles.usernameText} numberOfLines={1}>
-                  {profile?.displayName || profile?.username}
-                  {profile?.isPremium === true && (
-                    <Text>
-                      {' '}<PremiumBadge />
-                    </Text>
-                  )}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.usernameText} numberOfLines={1}>
+                    {profile?.displayName || profile?.username}
+                  </Text>
+                  {(profile?.isPremium === true || (isMe && isViewerPremium)) && <PremiumBadge size="sm" />}
+                </View>
                 {!!profile?.username && (
                   <Text style={styles.handleText} numberOfLines={1}>
                     @{profile.username}
@@ -749,7 +751,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
               </View>
 
               <View style={styles.h2hSide}>
-                <Text style={[styles.h2hScore, { color: THEME.colors.tertiaryContainer }]}>
+                <Text style={[styles.h2hScore, { color: THEME.colors.success }]}>
                   {headToHead?.myWins ?? 0}
                 </Text>
                 <Text style={styles.h2hSideLabel}>{t('profile.youWon')}</Text>
@@ -846,7 +848,7 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
                     >
                       <View style={styles.matchLeft}>
                         <View style={[styles.resultBadge, isWin ? styles.badgeWin : styles.badgeLoss]}>
-                          <Text style={[styles.resultBadgeText, isWin ? styles.textWin : styles.textLoss]}>
+                          <Text style={styles.resultBadgeText}>
                             {isWin ? 'W' : 'L'}
                           </Text>
                         </View>
@@ -1514,21 +1516,22 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'center',
   },
   badgeWin: {
-    backgroundColor: THEME.colors.tertiaryLight,
+    backgroundColor: THEME.colors.win,
   },
   badgeLoss: {
-    backgroundColor: THEME.colors.secondaryContainer,
+    backgroundColor: THEME.colors.loss,
   },
   resultBadgeText: {
     fontFamily: THEME.fonts.extraBold,
     fontSize: 14,
     fontWeight: '800',
+    color: '#FFFFFF',
   },
   textWin: {
-    color: THEME.colors.tertiary,
+    color: THEME.colors.success,
   },
   textLoss: {
-    color: THEME.colors.secondary,
+    color: THEME.colors.danger,
   },
   matchModeText: {
     fontFamily: THEME.fonts.semiBold,
@@ -1577,7 +1580,7 @@ const createStyles = () => StyleSheet.create({
   // Guest sign-in dialog: instant dim, card from the shared gate.
   signInOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: THEME.colors.modalBackdrop,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -1589,7 +1592,7 @@ const createStyles = () => StyleSheet.create({
   },
   removeOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: THEME.colors.modalBackdrop,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,

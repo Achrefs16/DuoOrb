@@ -10,7 +10,9 @@ import {
   applyAction,
   createInitialState,
   rebuildStateAtStep,
+  serializeGameRecord,
 } from '@duoorb/game-core';
+import { copyTextToClipboard } from '../lib/clipboard';
 import { AnalysisBadge, AssessmentIcon } from '../components/AnalysisBadge';
 import {
   DetailsRows,
@@ -194,6 +196,27 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   const [rewardError, setRewardError] = useState<string | null>(null);
   const premium = usePremium();
   const upgradeBusyRef = useRef(false);
+  const [copiedMoves, setCopiedMoves] = useState(false);
+
+  const handleCopyMoves = async () => {
+    if (!history || history.length === 0) return;
+    try {
+      const finalState = rebuildStateAtStep(initialState, history, history.length);
+      const customNames: Record<string, string> = {};
+      if (botPersonality) {
+        customNames['p2'] = botPersonality.name;
+        customNames['1'] = botPersonality.name;
+      }
+      const text = serializeGameRecord(finalState, customNames);
+      const ok = await copyTextToClipboard(text);
+      if (ok) {
+        setCopiedMoves(true);
+        setTimeout(() => setCopiedMoves(false), 2500);
+      }
+    } catch (e) {
+      console.warn('Failed to copy moves in review', e);
+    }
+  };
 
   // Full review controls (UI only — analysis data untouched).
   // showBest: reveals the best move arrow and target on the board when tapped on a wrong move.
@@ -209,7 +232,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
   // instead. Re-opening an upgraded game is free — the unlock key is per
   // gameId:historyLength (E13).
   const handleAnalyzeUpgrade = async () => {
-    if (!onUpgradeToFull || upgradeBusyRef.current) return;
+    if (!onUpgradeToFull || upgradeBusyRef.current || initialState.mode !== '2p') return;
     upgradeBusyRef.current = true;
     try {
       const gId = accessKey?.gameId ?? initialState?.gameId ?? `game-${Date.now()}`;
@@ -308,6 +331,22 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
       });
       if (!cancelled && res) {
         setReview(res);
+        void (async () => {
+          try {
+            await api.claimAchievement('analysis-first');
+            const pId = initialState.players[perspectiveIdx ?? 0]?.id ?? 'p1';
+            const myMoves = (res.moveAnalyses || []).filter((m: any) => m.playerId === pId);
+            const blunders = myMoves.filter((m: any) => m.assessment === 'BLUNDER').length;
+            const mistakes = myMoves.filter((m: any) => m.assessment === 'MISTAKE').length;
+            const brilliant = myMoves.filter((m: any) => m.assessment === 'BRILLIANT').length;
+            if (myMoves.length >= 15 && blunders === 0 && mistakes === 0) {
+              await api.claimAchievement('analysis-clean');
+            }
+            if (brilliant > 0) {
+              await api.claimAchievement('analysis-brilliant');
+            }
+          } catch {}
+        })();
       }
     }, 0);
     return () => {
@@ -658,7 +697,18 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         <View style={{ alignItems: 'center' }}>
           <Text style={styles.headerTitle}>{bare ? t('review.matchReplay') : t('review.matchReview')}</Text>
         </View>
-        <View style={{ width: 36 }} />
+        <TouchableOpacity
+          style={styles.headerRightBtn}
+          onPress={handleCopyMoves}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel={t('gameover.copyMoves')}
+        >
+          <OrbIcon
+            name={copiedMoves ? 'check' : 'copy'}
+            size={18}
+            color={copiedMoves ? '#69B342' : THEME.colors.textSecondary}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Bare replays scroll the classic layout. Full reviews use the fixed
@@ -912,7 +962,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         {/* Bare -> full upgrade (History/Profile Analyze path): same gate as
             the win/lose modal — premium/dev/unlocked go straight to review,
             locked gets the one-ad sheet. Dev builds never see the sheet. */}
-        {bare && onUpgradeToFull && (
+        {bare && onUpgradeToFull && initialState.mode === '2p' && (
         <TouchableOpacity
           style={[styles.upgradeBtn, access === 'checking' && styles.btnDisabled]}
           onPress={handleAnalyzeUpgrade}
@@ -1349,7 +1399,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
         onWatch={handleWatchUpgradeAd}
         onPremium={() => {
           setRewardOpen(false);
-          onOpenPremium?.();
+          setTimeout(() => {
+            onOpenPremium?.();
+          }, 120);
         }}
         onClose={() => setRewardOpen(false)}
       />
@@ -1379,6 +1431,13 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'space-between',
   },
   backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerRightBtn: {
     width: 36,
     height: 36,
     borderRadius: 8,

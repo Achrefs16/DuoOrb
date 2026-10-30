@@ -35,12 +35,9 @@ vi.mock('../network/apiClient', () => ({
  * suppression, failure collapse, and graceful absence of the native SDK.
  */
 describe('banner visibility', () => {
-  it('hides for premium, first session, and load failure', () => {
+  it('hides for premium, session zero, and load failure; shows for active sessions', () => {
     expect(
       shouldShowBanner({ isPremium: true, sessions: 9, loadFailed: false })
-    ).toBe(false);
-    expect(
-      shouldShowBanner({ isPremium: false, sessions: 1, loadFailed: false })
     ).toBe(false);
     expect(
       shouldShowBanner({ isPremium: false, sessions: 0, loadFailed: false })
@@ -48,6 +45,9 @@ describe('banner visibility', () => {
     expect(
       shouldShowBanner({ isPremium: false, sessions: 5, loadFailed: true })
     ).toBe(false);
+    expect(
+      shouldShowBanner({ isPremium: false, sessions: 1, loadFailed: false })
+    ).toBe(true);
     expect(
       shouldShowBanner({ isPremium: false, sessions: 2, loadFailed: false })
     ).toBe(true);

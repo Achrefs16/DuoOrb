@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { type LanguageCode, isLanguageCode } from '../i18n';
 import { isSideChoice } from '../lib/sideChoice';
 import { type OrbPaletteId, parseOrbPaletteId, setOrbPaletteId } from '../theme/orbTheme';
+import { api } from '../network/apiClient';
 
 export interface SavedGameRecord {
   id: string;
@@ -88,8 +89,12 @@ export interface UserSettings {
   testThink: boolean;
   /** Board surface palette: 'light' free, 'midnight' free in dark mode. */
   themeName: 'light' | 'midnight';
-  /** Premium board skin id: 'classic' free, 'walnut', 'tactile', 'stone'. */
-  boardSkinId: 'classic' | 'walnut' | 'tactile' | 'stone';
+  /** Board skin id: 'classic' free, 'tactile', 'tactileDark', 'stone'. */
+  boardSkinId: 'classic' | 'tactile' | 'tactileDark' | 'stone';
+  /** Ball / Orb skin id (e.g. 'classic', 'infernal_dragon', 'clockwork', etc.). */
+  ballSkinId?: string;
+  /** Wall skin id (e.g. 'classic', 'cyber_pulse', 'golden_labyrinth', etc.). */
+  wallSkinId?: string;
   /** Player ball / orb color palette. */
   orbPaletteId: OrbPaletteId;
   /** App-wide dark mode. Device flag, independent of the board theme. */
@@ -112,6 +117,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   testThink: false,
   themeName: 'light',
   boardSkinId: 'tactile',
+  ballSkinId: 'classic',
+  wallSkinId: 'classic',
   orbPaletteId: 'classic',
   darkMode: false,
 };
@@ -293,9 +300,68 @@ export async function loadBotStars(): Promise<BotStarMap> {
   return inMemoryBotStars;
 }
 
+/** Merges two BotStarMap instances monotonically (best stars, highest wins, max margin). */
+export function mergeBotStarsMaps(local: BotStarMap, remote: BotStarMap): BotStarMap {
+  const merged: BotStarMap = { ...local };
+  for (const [key, rem] of Object.entries(remote)) {
+    if (!rem || typeof rem !== 'object') continue;
+    const loc = merged[key];
+    const stars = Math.max(loc?.stars ?? 0, rem.stars ?? 0);
+    if (!isBotStarCount(stars)) continue;
+    merged[key] = {
+      botKey: rem.botKey || key,
+      stars,
+      wins: Math.max(
+        loc?.wins ?? 0,
+        typeof rem.wins === 'number' && Number.isFinite(rem.wins) ? Math.max(0, Math.floor(rem.wins)) : 0
+      ),
+      bestMarginSteps: Math.max(
+        loc?.bestMarginSteps ?? 0,
+        typeof rem.bestMarginSteps === 'number' && Number.isFinite(rem.bestMarginSteps)
+          ? Math.max(0, Math.floor(rem.bestMarginSteps))
+          : 0
+      ),
+      updatedAt:
+        rem.updatedAt && (!loc?.updatedAt || rem.updatedAt > loc.updatedAt)
+          ? rem.updatedAt
+          : loc?.updatedAt || new Date().toISOString(),
+    };
+  }
+  return merged;
+}
+
+/** Ingests bot mastery records returned by the server (e.g. from /api/me or sync). */
+export async function ingestServerBotStars(serverBotStars: BotStarMap | undefined | null): Promise<BotStarMap> {
+  if (!serverBotStars || typeof serverBotStars !== 'object') return loadBotStars();
+  const current = await loadBotStars();
+  const merged = mergeBotStarsMaps(current, serverBotStars);
+  inMemoryBotStars = merged;
+  try {
+    storage.setItem(STORAGE_KEY_BOT_STARS, JSON.stringify(inMemoryBotStars));
+  } catch (e) {
+    console.error('Failed to save merged bot stars', e);
+  }
+  return inMemoryBotStars;
+}
+
+/** Synchronizes local bot stars with the server cloud storage. */
+export async function syncBotStarsWithBackend(): Promise<BotStarMap> {
+  const current = await loadBotStars();
+  try {
+    const res = await api.syncBotStars(current);
+    if (res?.botStars) {
+      return await ingestServerBotStars(res.botStars);
+    }
+  } catch {
+    // Offline / guest offline / unreachable: local storage remains intact
+  }
+  return inMemoryBotStars;
+}
+
 /**
  * Records a win and keeps the player's best mastery. More stars are never lost
- * by a later win, and the best lead is kept for the next grading hint.
+ * by a later win. `bestMarginSteps` is kept as match metadata; stars are
+ * assist-based.
  */
 export async function recordBotVictoryStars(
   botKey: string,
@@ -317,6 +383,8 @@ export async function recordBotVictoryStars(
   } catch (e) {
     console.error('Failed to save bot mastery', e);
   }
+  // Fire-and-forget cloud sync if online
+  syncBotStarsWithBackend().catch(() => {});
   return next;
 }
 
@@ -359,11 +427,17 @@ export async function loadSettings(): Promise<UserSettings> {
       // Whitelist the board skin the same way: unknown ids (downgrade,
       // corrupt store) fall back to classic instead of breaking the board.
       if (
-        inMemorySettings.boardSkinId !== 'walnut' &&
         inMemorySettings.boardSkinId !== 'tactile' &&
+        inMemorySettings.boardSkinId !== 'tactileDark' &&
         inMemorySettings.boardSkinId !== 'stone'
       ) {
         inMemorySettings.boardSkinId = 'classic';
+      }
+      if (!inMemorySettings.ballSkinId || typeof inMemorySettings.ballSkinId !== 'string') {
+        inMemorySettings.ballSkinId = 'classic';
+      }
+      if (!inMemorySettings.wallSkinId || typeof inMemorySettings.wallSkinId !== 'string') {
+        inMemorySettings.wallSkinId = 'classic';
       }
       inMemorySettings.orbPaletteId = parseOrbPaletteId(inMemorySettings.orbPaletteId);
       setOrbPaletteId(inMemorySettings.orbPaletteId);

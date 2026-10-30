@@ -4,10 +4,8 @@ import Svg, { Ellipse, Path, Rect } from 'react-native-svg';
 import type { BoardSkin } from '../theme/boardTheme';
 
 /**
- * Painted wood texture for the walnut skin. Static SVG — no images, no
- * animation, a few dozen nodes total. Grain paths are hand-drawn waves in
- * a 200×200 box, stretched with `slice` so they read as wood at any size
- * without tiling seams.
+ * Painted background texture backdrop. Static SVG — no images, no
+ * animation, a few dozen nodes total.
  */
 
 /** Hand-drawn grain waves (horizontal planks). */
@@ -87,7 +85,7 @@ interface BackdropProps {
   texture: NonNullable<BoardSkin['pageTexture']>;
 }
 
-/** Full-bleed walnut table backdrop. Parent gives it `StyleSheet.absoluteFill`. */
+/** Full-bleed table backdrop. Parent gives it `StyleSheet.absoluteFill`. */
 export const SkinBackdrop: React.FC<BackdropProps> = memo(({ texture }) => (
   <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
     <Svg width="100%" height="100%" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid slice">
@@ -102,8 +100,7 @@ interface GrainProps {
 }
 
 /**
- * Oak grain woven through the walnut playing field: absolute, behind the
- * cells, pointer-transparent. Cells + grooves read as inlay on real wood.
+ * Wood grain woven through the playing field: absolute, behind the cells.
  */
 export const BoardGrain: React.FC<GrainProps> = memo(({ size }) => (
   <View

@@ -1,3 +1,6 @@
+/**
+ * @deprecated Deprecated in favor of @duoorb/analyzer-rust and duoorb-ai-native pure-Rust AlphaZero ONNX engine.
+ */
 import type { GameAction, GameState } from '../types.js';
 import type { AIProfile, ScoredCandidate, SearchContext } from './types.js';
 import { boardOf, routeOf } from '../ai-structure.js';

@@ -155,7 +155,7 @@ export const ReportDialog: React.FC<ReportDialogProps> = ({
 };
 
 const createStyles = () => StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.55)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  overlay: { flex: 1, backgroundColor: THEME.colors.modalBackdrop, alignItems: 'center', justifyContent: 'center', padding: 20 },
   card: { width: '100%', maxWidth: 420, maxHeight: '85%', backgroundColor: THEME.colors.backgroundCard, borderRadius: THEME.radius.lg, padding: 18, gap: 8 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontFamily: THEME.fonts.bold, fontSize: 16, color: THEME.colors.textPrimary },

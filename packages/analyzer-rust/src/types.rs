@@ -21,7 +21,7 @@ pub struct WallCoord {
     pub orientation: Orientation,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum GameAction {
     #[serde(rename = "MOVE")]
@@ -47,15 +47,15 @@ pub struct RecordedAction {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GoalDirection {
-    #[serde(rename = "TOP")]
+    #[serde(rename = "TOP", alias = "top")]
     Top,
-    #[serde(rename = "BOTTOM")]
+    #[serde(rename = "BOTTOM", alias = "bottom")]
     Bottom,
-    #[serde(rename = "LEFT")]
+    #[serde(rename = "LEFT", alias = "left")]
     Left,
-    #[serde(rename = "RIGHT")]
+    #[serde(rename = "RIGHT", alias = "right")]
     Right,
-    #[serde(rename = "CENTER")]
+    #[serde(rename = "CENTER", alias = "center")]
     Center,
 }
 
@@ -87,6 +87,8 @@ pub struct GameState {
     pub players: Vec<PlayerState>,
     #[serde(default)]
     pub walls: Vec<WallCoord>,
+    #[serde(rename = "moveNumber", default)]
+    pub move_number: u32,
     #[serde(default)]
     pub status: String,
 }

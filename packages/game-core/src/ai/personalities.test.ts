@@ -25,9 +25,19 @@ describe('bot roster data', () => {
     }
   });
 
-  it('marks every roster entry free with full presentation, bio, quote, dialogue + banter', () => {
+  it('marks premium-only bots with premium: true and free/ad-unlockable with premium: false', () => {
+    const premiumOnlyIds = new Set([
+      'clara', 'leo', 'tariq', 'ren', 'elias',
+      'fiona', 'dmitri', 'layla', 'dante', 'meiling', 'amara', 'jamal',
+      'samira', 'torstein', 'kofi', 'diego', 'hassan', 'jin',
+      'sterling', 'valeria', 'nexus9', 'boba', 'milo'
+    ]);
     for (const b of BOT_ROSTER) {
-      expect(b.premium).toBe(false);
+      if (premiumOnlyIds.has(b.id)) {
+        expect(b.premium).toBe(true);
+      } else {
+        expect(b.premium).toBe(false);
+      }
       expect(b.name.trim().length).toBeGreaterThan(0);
       expect(b.title.trim().length).toBeGreaterThan(0);
       expect(['beginner', 'intermediate', 'master', 'grandmaster']).toContain(b.tier);

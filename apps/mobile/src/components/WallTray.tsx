@@ -1,6 +1,7 @@
 import React, { useMemo, useRef } from 'react';
 import {
   GestureResponderEvent,
+  Image,
   PanResponder,
   StyleSheet,
   Text,
@@ -10,6 +11,7 @@ import {
 import { Orientation } from '@duoorb/game-core';
 import { THEME, hexToRgba, useTheme } from '../theme';
 import { BoardSkin, useBoardPalette } from '../theme/boardTheme';
+import { useEquippedWallSkin } from '../theme/cosmeticsCatalog';
 
 interface WallTrayProps {
   /** Current player's ball color — both pieces share it. */
@@ -69,15 +71,15 @@ const WallPiece: React.FC<PieceProps> = ({
   // Same palette as the board (P5.1): the tray is board chrome, not menu UI.
   const theme = useTheme();
   const trayPalette = useBoardPalette();
+  const customWall = useEquippedWallSkin();
   const styles = useMemo(() => getTrayStyles(trayPalette), [trayPalette, theme]);
-  // Walnut inventory is stained wood like the fences, not player-colored.
+  // Neutral wall skins use the skin fence color rather than player color.
   const barColor =
     trayPalette.wallStyle === 'neutral' && trayPalette.neutralWall
       ? trayPalette.neutralWall
       : color;
   const flatBar = trayPalette.wallStyle !== 'glow';
-  // Sharp rectangles on walnut like the placed fences; classic and glacier
-  // keep their capsule pieces.
+  // Corner radius: capsule pieces for classic/tactile, or styled radius for custom skins.
   const barRadius =
     trayPalette.wallRadius === 'capsule' || trayPalette.id === 'classic'
       ? Math.min(barW, barH) / 2
@@ -126,12 +128,34 @@ const WallPiece: React.FC<PieceProps> = ({
             width: barW,
             height: barH,
             borderRadius: barRadius,
+            overflow: 'hidden',
           },
           held
             ? { backgroundColor: hexToRgba(barColor, 0.2) }
             : { backgroundColor: barColor },
+          customWall && {
+            backgroundColor: 'transparent',
+            borderColor: 'transparent',
+          },
         ]}
-      />
+      >
+        {customWall && (
+          <Image
+            source={
+              barW > barH
+                ? (customWall.assets.wallTray || customWall.assets.wallH)
+                : customWall.assets.wallV
+            }
+            style={{
+              width: barW,
+              height: barH,
+              borderRadius: barRadius,
+              opacity: held ? 0.25 : 1,
+            }}
+            resizeMode="stretch"
+          />
+        )}
+      </View>
     </View>
   );
 };
@@ -156,6 +180,7 @@ export const WallTray: React.FC<WallTrayProps> = ({
   const inactive = disabled || count <= 0;
   const theme = useTheme();
   const trayPalette = useBoardPalette();
+  const customWall = useEquippedWallSkin();
   const styles = useMemo(() => getTrayStyles(trayPalette), [trayPalette, theme]);
 
   const slotW = 68 * s;
@@ -170,8 +195,8 @@ export const WallTray: React.FC<WallTrayProps> = ({
           color={color}
           held={held === 'H'}
           disabled={inactive}
-          barW={(swapVisuals ? 10 : 36) * s}
-          barH={(swapVisuals ? 36 : 10) * s}
+          barW={(swapVisuals ? 14 : 42) * s}
+          barH={(swapVisuals ? 42 : 14) * s}
           touchW={slotW}
           touchH={slotH}
           label={swapVisuals ? 'Vertical' : 'Horizontal'}
@@ -191,8 +216,8 @@ export const WallTray: React.FC<WallTrayProps> = ({
           color={color}
           held={held === 'V'}
           disabled={inactive}
-          barW={(swapVisuals ? 36 : 10) * s}
-          barH={(swapVisuals ? 10 : 36) * s}
+          barW={(swapVisuals ? 42 : 14) * s}
+          barH={(swapVisuals ? 14 : 42) * s}
           touchW={slotW}
           touchH={slotH}
           label={swapVisuals ? 'Horizontal' : 'Vertical'}

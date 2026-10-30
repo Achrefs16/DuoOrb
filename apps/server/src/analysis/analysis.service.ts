@@ -114,6 +114,30 @@ export class AnalysisService {
       });
     }
 
+    // Game Review is exclusively supported for Classic 2-Player (2p)
+    if (safeState.mode !== '2p') {
+      this.logger.log(`Analysis skipped for unsupported mode "${safeState.mode}" in game ${gameId}`);
+      return {
+        gameId,
+        mode: safeState.mode,
+        totalMoves: 0,
+        accuracies: {},
+        moveAnalyses: [],
+        winChanceHistory: [],
+        criticalMoments: [],
+        decidingMoments: [],
+        summary: {
+          keyLesson: {
+            title: 'Classic 2P Only',
+            detail: 'Comprehensive Game Review is exclusively supported for Classic 2-Player matches.',
+          },
+          confidence: 'unsupported',
+        },
+        engineVersion: 'duoorb-rust-hybrid-4.0',
+        analysisVersion: AnalysisService.ANALYSIS_VERSION,
+      } as unknown as GameReview;
+    }
+
     // 4. Compute analysis asynchronously in Rust via NAPI worker thread
     const startTime = performance.now();
     const rawReview = await analyzeGameAsync(safeState, safeHistory);

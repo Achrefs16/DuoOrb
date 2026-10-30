@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { UsersService } from './users.service.js';
+import { UsersService, mergeBotStars, BotStarMap } from './users.service.js';
 
 /**
  * Friend search must not offer the searching account back to them.
@@ -166,5 +166,65 @@ describe('linkGuest adopts the guest rating', () => {
     expect(res.merged).toBe(true);
     expect(res.adoptedRatings).toBe(false);
     expect(upserts).toHaveLength(0);
+  });
+});
+
+describe('Bot Stars Cloud Sync & Monotonic Merge', () => {
+  it('merges incoming stars with existing stars monotonically without regressing', () => {
+    const existing: BotStarMap = {
+      novice: { botKey: 'novice', stars: 2, wins: 3, bestMarginSteps: 4, updatedAt: '2026-10-01T00:00:00.000Z' },
+      master: { botKey: 'master', stars: 1, wins: 1, bestMarginSteps: 1, updatedAt: '2026-10-01T00:00:00.000Z' },
+    };
+
+    const incoming: BotStarMap = {
+      // Novice had 2 stars, incoming has 3 stars (upgrade)
+      novice: { botKey: 'novice', stars: 3, wins: 5, bestMarginSteps: 6, updatedAt: '2026-10-02T00:00:00.000Z' },
+      // Master had 1 star, incoming had 1 star but 0 wins / worse margin (should keep max)
+      master: { botKey: 'master', stars: 1, wins: 0, bestMarginSteps: 0, updatedAt: '2026-10-02T00:00:00.000Z' },
+      // Adept is new
+      adept: { botKey: 'adept', stars: 2, wins: 2, bestMarginSteps: 3, updatedAt: '2026-10-02T00:00:00.000Z' },
+    };
+
+    const merged = mergeBotStars(existing, incoming);
+    expect(merged.novice.stars).toBe(3);
+    expect(merged.novice.wins).toBe(5);
+    expect(merged.novice.bestMarginSteps).toBe(6);
+
+    // Master keeps previous 1 win and 1 margin step, never regresses
+    expect(merged.master.stars).toBe(1);
+    expect(merged.master.wins).toBe(1);
+    expect(merged.master.bestMarginSteps).toBe(1);
+
+    // Adept added
+    expect(merged.adept.stars).toBe(2);
+    expect(merged.adept.wins).toBe(2);
+  });
+
+  it('syncBotStars updates profile and returns merged result', async () => {
+    let savedData: any = null;
+    const fakePrisma = {
+      isConnected: true,
+      profile: {
+        findUnique: async () => ({
+          botStars: {
+            novice: { botKey: 'novice', stars: 2, wins: 2, bestMarginSteps: 4, updatedAt: '2026-10-01T00:00:00.000Z' },
+          },
+        }),
+        update: async (args: any) => {
+          savedData = args.data;
+          return args;
+        },
+      },
+    } as any;
+
+    const svc = new UsersService(fakePrisma);
+    const result = await svc.syncBotStars('u123', {
+      novice: { botKey: 'novice', stars: 3, wins: 4, bestMarginSteps: 8, updatedAt: '2026-10-02T00:00:00.000Z' },
+    });
+
+    expect(result.novice.stars).toBe(3);
+    expect(result.novice.wins).toBe(4);
+    expect(result.novice.bestMarginSteps).toBe(8);
+    expect(savedData.botStars.novice.stars).toBe(3);
   });
 });

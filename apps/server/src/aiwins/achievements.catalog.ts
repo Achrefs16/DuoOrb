@@ -17,7 +17,15 @@
  * Once earned a badge is kept forever, even if form dips afterwards.
  */
 
-export type AchievementCategory = 'streak' | 'rank' | 'milestone' | 'mastery';
+export type AchievementCategory =
+  | 'bot'
+  | 'battle'
+  | 'tactics'
+  | 'social'
+  | 'streak'
+  | 'milestone'
+  | 'rank'
+  | 'mastery';
 
 /** Metal ladder, bronze → diamond. Drives the medallion colors client-side. */
 export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
@@ -33,7 +41,8 @@ export type AchievementStat =
   | 'rankedGames'
   | 'rankedWins'
   | 'rating'
-  | 'hardWins';
+  | 'hardWins'
+  | 'botStars';
 
 export interface AchievementDef {
   code: string;
@@ -417,6 +426,242 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     category: 'mastery',
     tier: 'platinum',
   },
+  // ------------------------------------------------------------------
+  // BOT MASTERY — Bot personalities, Bot Stars, and tier milestones.
+  // ------------------------------------------------------------------
+  {
+    code: 'bot-first-win',
+    name: 'Robo Buster',
+    description: 'Your first victory against a bot personality.',
+    requirement: 'Defeat 1 bot personality.',
+    icon: 'award',
+    category: 'bot',
+    tier: 'bronze',
+  },
+  {
+    code: 'bot-stars-10',
+    name: 'Rising Apprentice',
+    description: 'Ten Bot Stars collected across the roster.',
+    requirement: 'Earn 10 total Bot Stars.',
+    icon: 'star',
+    category: 'bot',
+    tier: 'bronze',
+    stat: 'botStars',
+    target: 10,
+  },
+  {
+    code: 'bot-stars-30',
+    name: 'Star Collector',
+    description: 'Thirty Bot Stars collected across the roster.',
+    requirement: 'Earn 30 total Bot Stars.',
+    icon: 'star',
+    category: 'bot',
+    tier: 'silver',
+    stat: 'botStars',
+    target: 30,
+  },
+  {
+    code: 'bot-stars-60',
+    name: 'Galaxy Brain',
+    description: 'Sixty Bot Stars collected across the roster.',
+    requirement: 'Earn 60 total Bot Stars.',
+    icon: 'shield',
+    category: 'bot',
+    tier: 'gold',
+    stat: 'botStars',
+    target: 60,
+  },
+  {
+    code: 'bot-stars-100',
+    name: 'Cosmic Master',
+    description: 'One hundred Bot Stars collected. Pure robotic domination.',
+    requirement: 'Earn 100 total Bot Stars.',
+    icon: 'sun',
+    category: 'bot',
+    tier: 'diamond',
+    stat: 'botStars',
+    target: 100,
+  },
+  {
+    code: 'bot-tier-beginner',
+    name: 'Grade Schooler',
+    description: 'Every Beginner bot defeated. The fundamentals are locked in.',
+    requirement: 'Defeat all 9 Beginner bots.',
+    icon: 'check-circle',
+    category: 'bot',
+    tier: 'bronze',
+  },
+  {
+    code: 'bot-tier-inter',
+    name: 'Tactician',
+    description: 'Every Intermediate bot defeated. Tricky lines no longer surprise you.',
+    requirement: 'Defeat all 13 Intermediate bots.',
+    icon: 'layers',
+    category: 'bot',
+    tier: 'silver',
+  },
+  {
+    code: 'bot-tier-master',
+    name: 'Dragon Tamer',
+    description: 'Every Master bot defeated. You stand at the gates of greatness.',
+    requirement: 'Defeat all 10 Master bots.',
+    icon: 'crown',
+    category: 'bot',
+    tier: 'gold',
+  },
+  {
+    code: 'bot-tier-gm',
+    name: 'Grandmaster Bane',
+    description: 'Every Grandmaster bot humbled, including the strongest engines.',
+    requirement: 'Defeat all 7 Grandmaster bots.',
+    icon: 'award',
+    category: 'bot',
+    tier: 'diamond',
+  },
+  {
+    code: 'bot-flawless-achref',
+    name: 'Architect of Victory',
+    description: 'Defeated Achref (2400) with 3 stars. No hints, no undos, pure mastery.',
+    requirement: 'Earn 3 stars against Achref.',
+    icon: 'zap',
+    category: 'bot',
+    tier: 'platinum',
+  },
+  {
+    code: 'bot-flawless-milo',
+    name: 'The Final Boss',
+    description: 'Defeated Milo (2900) with 3 stars. The peak of DuoOrb puzzle power.',
+    requirement: 'Earn 3 stars against Milo.',
+    icon: 'sun',
+    category: 'bot',
+    tier: 'diamond',
+  },
+  // ------------------------------------------------------------------
+  // BATTLE MODES — Center Rush, Race mode, 4-Player, and wall variants.
+  // ------------------------------------------------------------------
+  {
+    code: 'mode-center-first',
+    name: 'Bullseye',
+    description: 'Your first Center Rush victory. Rushed straight to the heart.',
+    requirement: 'Win 1 Center Rush match.',
+    icon: 'target',
+    category: 'battle',
+    tier: 'bronze',
+  },
+  {
+    code: 'mode-center-10',
+    name: 'Core Commander',
+    description: 'Ten Center Rush victories. The center is your home.',
+    requirement: 'Win 10 Center Rush matches.',
+    icon: 'crosshair',
+    category: 'battle',
+    tier: 'silver',
+  },
+  {
+    code: 'mode-race-first',
+    name: 'Sprint Specialist',
+    description: 'Your first Race mode victory. Fast feet, no looking back.',
+    requirement: 'Win 1 Race match.',
+    icon: 'activity',
+    category: 'battle',
+    tier: 'bronze',
+  },
+  {
+    code: 'mode-race-10',
+    name: 'Velocity Demon',
+    description: 'Ten Race mode victories. Nobody catches you.',
+    requirement: 'Win 10 Race matches.',
+    icon: 'trending-up',
+    category: 'battle',
+    tier: 'silver',
+  },
+  {
+    code: 'mode-multi-podium',
+    name: 'Full House',
+    description: 'Took 1st place in a chaotic 4-player match.',
+    requirement: 'Win a 4-player game.',
+    icon: 'grid',
+    category: 'battle',
+    tier: 'gold',
+  },
+  {
+    code: 'mode-walls-99',
+    name: 'Labyrinth Architect',
+    description: 'Won a match with 99 walls configured. A maze of your own making.',
+    requirement: 'Win a match with 99 walls.',
+    icon: 'shield',
+    category: 'battle',
+    tier: 'silver',
+  },
+  // ------------------------------------------------------------------
+  // TACTICAL PLAY — Game Review, Move Quality & Clean Games.
+  // ------------------------------------------------------------------
+  {
+    code: 'analysis-first',
+    name: 'Post-Mortem',
+    description: 'Reviewed and analyzed your first completed match.',
+    requirement: 'Analyze 1 match with the game review engine.',
+    icon: 'search',
+    category: 'tactics',
+    tier: 'bronze',
+  },
+  {
+    code: 'analysis-clean',
+    name: 'Flawless Game',
+    description: 'Completed a match with 0 Blunders and 0 Mistakes (minimum 15 plies).',
+    requirement: 'Finish a game with 0 blunders and 0 mistakes.',
+    icon: 'check-circle',
+    category: 'tactics',
+    tier: 'silver',
+  },
+  {
+    code: 'analysis-brilliant',
+    name: 'Spark of Genius',
+    description: 'Executed a move rated as Brilliant (!!) by the analysis engine.',
+    requirement: 'Find 1 Brilliant move in game analysis.',
+    icon: 'zap',
+    category: 'tactics',
+    tier: 'gold',
+  },
+  // ------------------------------------------------------------------
+  // SOCIAL & STYLE — Friends, Challenges, Locker & Showcase.
+  // ------------------------------------------------------------------
+  {
+    code: 'social-first-friend',
+    name: 'Better Together',
+    description: 'Added your first friend to your DuoOrb network.',
+    requirement: 'Have at least 1 friend.',
+    icon: 'users',
+    category: 'social',
+    tier: 'bronze',
+  },
+  {
+    code: 'social-friend-duel',
+    name: 'Friendly Rivalry',
+    description: 'Completed a direct challenge match against a friend.',
+    requirement: 'Play a match against a friend.',
+    icon: 'activity',
+    category: 'social',
+    tier: 'bronze',
+  },
+  {
+    code: 'cosmetic-custom',
+    name: 'In Style',
+    description: 'Equipped a custom ball or wall skin from the locker.',
+    requirement: 'Equip any non-default cosmetic skin.',
+    icon: 'sliders',
+    category: 'social',
+    tier: 'bronze',
+  },
+  {
+    code: 'showcase-full',
+    name: 'Medaled Up',
+    description: 'Equipped 3 earned badges to your profile showcase.',
+    requirement: 'Equip 3 badges on your profile.',
+    icon: 'award',
+    category: 'social',
+    tier: 'bronze',
+  },
 ];
 
 /** Showcase slots on a profile. Three badges max. */
@@ -482,6 +727,27 @@ export const RATING_MILESTONES: { code: string; at: number }[] = [
   { code: 'rating-1800', at: 1800 },
   { code: 'rating-2000', at: 2000 },
   { code: 'rating-2200', at: 2200 },
+];
+
+/** Bot Star thresholds, in award order. */
+export const BOT_STAR_MILESTONES: { code: string; at: number }[] = [
+  { code: 'bot-stars-10', at: 10 },
+  { code: 'bot-stars-30', at: 30 },
+  { code: 'bot-stars-60', at: 60 },
+  { code: 'bot-stars-100', at: 100 },
+];
+
+export const BEGINNER_BOT_IDS = [
+  'martin', 'pip', 'elias', 'barnaby', 'finn', 'clara', 'leo', 'tariq', 'ren',
+];
+export const INTERMEDIATE_BOT_IDS = [
+  'bram', 'nelson', 'vex', 'jamal', 'mateo', 'zara', 'archimedes', 'fiona', 'dmitri', 'layla', 'dante', 'meiling', 'amara',
+];
+export const MASTER_BOT_IDS = [
+  'marcus', 'viktor', 'gideon', 'sora', 'samira', 'torstein', 'kofi', 'diego', 'hassan', 'jin',
+];
+export const GRANDMASTER_BOT_IDS = [
+  'achref', 'sterling', 'kenzo', 'valeria', 'nexus9', 'boba', 'milo',
 ];
 
 /** Plies at or below which a hard win counts as swift, per mode shape. */

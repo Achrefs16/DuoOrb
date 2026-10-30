@@ -1,13 +1,32 @@
 export interface GlickoPlayer {
   rating: number; // default 1500
-  rd: number;     // rating deviation, default 350
+  rd: number;     // rating deviation, default 180
   vol: number;    // volatility, default 0.06
+  gamesPlayed?: number;
 }
 
 export interface MatchResult {
   opponent: GlickoPlayer;
   score: number; // 1.0 = win, 0.5 = draw, 0.0 = loss
 }
+
+/**
+ * Standard default parameters for newly created accounts.
+ * RD is set to 180 (modern online match-by-match rate) to avoid
+ * wild single-match swings while keeping rapid skill calibration.
+ */
+export const DEFAULT_INITIAL_RATING = 1500;
+export const DEFAULT_INITIAL_RD = 180;
+export const DEFAULT_INITIAL_VOL = 0.06;
+
+/**
+ * Provisional calibration guardrails:
+ * During the first 5 matches, rating drops are cushioned to a maximum
+ * loss per match so learning players don't drop ~300 points in 2 matches.
+ * Established players (gamesPlayed >= 5) are 100% unaffected.
+ */
+export const PROVISIONAL_GAMES_THRESHOLD = 5;
+export const PROVISIONAL_MAX_LOSS = 45;
 
 /**
  * Rating algorithm version stamped on every rating_history row so future

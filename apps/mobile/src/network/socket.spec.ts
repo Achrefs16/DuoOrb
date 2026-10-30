@@ -133,7 +133,7 @@ describe('socket transport follows the canonical identity', () => {
     auth.setIdentity(identity('u_one', 'token-one'));
 
     expect(created).toHaveLength(1);
-    expect(created[0].opts.auth).toEqual({ token: 'token-one' });
+    expect(created[0].opts.auth).toMatchObject({ token: 'token-one' });
     expect(created[0].opts.query.userId).toBe('u_one');
     expect(created[0].connected).toBe(true);
     expect(socketMod.socketManager.getStatus()).toBe('connected');
@@ -152,7 +152,7 @@ describe('socket transport follows the canonical identity', () => {
     // updates auth in place instead — see below).
     auth.setIdentity(identity('u_two', 'token-two'));
     expect(created).toHaveLength(2);
-    expect(created[1].opts.auth).toEqual({ token: 'token-two' });
+    expect(created[1].opts.auth).toMatchObject({ token: 'token-two' });
 
     // The listener must still be attached to the NEW transport.
     created[1].__fire('challenge:received', { id: 'c2' });
@@ -185,7 +185,7 @@ describe('socket transport follows the canonical identity', () => {
 
     expect(created).toHaveLength(2);
     expect(created[1].opts.query.userId).toBe('acct-uuid');
-    expect(created[1].opts.auth).toEqual({ token: 'token-account' });
+    expect(created[1].opts.auth).toMatchObject({ token: 'token-account' });
     // The old transport is gone, not merely idle.
     expect(created[0].connected).toBe(false);
   });
@@ -482,7 +482,7 @@ describe('reconnect core (F6)', () => {
     auth.patchIdentity({ accessToken: 'token-two' });
     socketMod.socketManager.getSocket();
     expect(created).toHaveLength(2);
-    expect(created[1].opts.auth).toEqual({ token: 'token-two' });
+    expect(created[1].opts.auth).toMatchObject({ token: 'token-two' });
     expect(created[1].connected).toBe(true);
     expect(socketMod.socketManager.getStatus()).toBe('connected');
   });

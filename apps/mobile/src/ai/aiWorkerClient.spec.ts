@@ -40,6 +40,40 @@ describe('aiWorkerClient routing & native fallback', () => {
     expect(action).toEqual(sampleAction);
   });
 
+  it('uses getRankedActionsNative for hard bot personality selection when available', async () => {
+    const candidateAction: GameAction = { type: 'MOVE', to: { row: 6, col: 4 } };
+    const rankedCandidates = [
+      { action: candidateAction, visits: 25000, q: 0.8 },
+      { action: { type: 'MOVE', to: { row: 7, col: 5 } } as GameAction, visits: 10000, q: 0.7 },
+    ];
+    const mockGetRankedActionsNative = vi.fn().mockResolvedValue(rankedCandidates);
+    const mockGetBestActionNative = vi.fn().mockResolvedValue(sampleAction);
+    const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
+
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'android' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: mockIsNativeAiAvailable,
+      getRankedActionsNative: mockGetRankedActionsNative,
+      getBestActionNative: mockGetBestActionNative,
+    }));
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(initialState, achrefProfile, 12345);
+
+    expect(mockIsNativeAiAvailable).toHaveBeenCalled();
+    expect(mockGetRankedActionsNative).toHaveBeenCalledWith(
+      initialState,
+      50000,
+      8,
+      40
+    );
+    expect(mockGetBestActionNative).not.toHaveBeenCalled();
+    expect(action).toBeDefined();
+  });
+
   it('routes to native module with 100,000 sims & 8 threads when isHint is true', async () => {
     const mockGetBestActionNative = vi.fn().mockResolvedValue(sampleAction);
     const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
@@ -211,5 +245,89 @@ describe('aiWorkerClient routing & native fallback', () => {
   it('cancelAiSearch clears pending requests without crashing', async () => {
     const { cancelAiSearch } = await import('./aiWorkerClient');
     expect(() => cancelAiSearch()).not.toThrow();
+  });
+
+  it('routes to getBotActionNative when botId and native module are present', async () => {
+    const mockBotAction = { type: 'MOVE', to: { row: 6, col: 4 } } as GameAction;
+    const mockGetBotActionNative = vi.fn().mockResolvedValue(mockBotAction);
+    const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
+
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'android' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: mockIsNativeAiAvailable,
+      getBotActionNative: mockGetBotActionNative,
+    }));
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(initialState, achrefProfile, 12345, { botId: 'viktor' });
+
+    expect(mockIsNativeAiAvailable).toHaveBeenCalled();
+    expect(mockGetBotActionNative).toHaveBeenCalledWith(initialState, 'viktor', 12345);
+    expect(action).toEqual(mockBotAction);
+  });
+
+  it('routes to getHintNative when isHint is true and getHintNative is available', async () => {
+    const mockHintAction = { type: 'MOVE', to: { row: 6, col: 4 } } as GameAction;
+    const mockHintResponse = {
+      bestAction: mockHintAction,
+      winProbability: 0.88,
+      tacticalTag: 'RACE_SPRINT',
+      explanation: 'Sprint forward to claim the lead',
+      notation: 'e6',
+      alternatives: [],
+    };
+    const mockGetHintNative = vi.fn().mockResolvedValue(mockHintResponse);
+    const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
+
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'ios' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: mockIsNativeAiAvailable,
+      getHintNative: mockGetHintNative,
+    }));
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(initialState, achrefProfile, 12345, { isHint: true });
+
+    expect(mockIsNativeAiAvailable).toHaveBeenCalled();
+    expect(mockGetHintNative).toHaveBeenCalledWith(initialState);
+    expect(action).toEqual(mockHintAction);
+  });
+
+  it('routes non-2p modes (4p, center2, race4) to game-core heuristic engine even when native module is available', async () => {
+    const state4p = createInitialState({ mode: '4p' });
+    const mockGetBotActionNative = vi.fn();
+    const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
+    const jsMove: GameAction = { type: 'MOVE', to: { row: 7, col: 4 } };
+    const mockGetBestActionAsync = vi.fn().mockResolvedValue(jsMove);
+
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'android' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: mockIsNativeAiAvailable,
+      getBotActionNative: mockGetBotActionNative,
+    }));
+
+    vi.doMock('@duoorb/game-core', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@duoorb/game-core')>();
+      return {
+        ...actual,
+        getBestActionAsync: mockGetBestActionAsync,
+      };
+    });
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(state4p, achrefProfile, 12345, { botId: 'viktor' });
+
+    expect(mockGetBotActionNative).not.toHaveBeenCalled();
+    expect(mockGetBestActionAsync).toHaveBeenCalled();
+    expect(action).toEqual(jsMove);
   });
 });

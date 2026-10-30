@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { GameMode } from '@duoorb/game-core';
 import { TimeControl } from '../timeControls';
 import { socketManager, useVerified } from './socket';
+import { getBallSkinId, getWallSkinId } from '../theme/cosmeticsCatalog';
 
 export type MatchmakingState = 'idle' | 'searching' | 'matched';
 
@@ -90,6 +91,8 @@ export function useMatchmaking({ onMatched }: UseMatchmakingOptions) {
           timeControlMinutes: config.clock.minutes,
           incrementSeconds: config.clock.incrementSeconds ?? 0,
           wallsEach: config.wallsEach,
+          ballSkinId: getBallSkinId(),
+          wallSkinId: getWallSkinId(),
         },
         (res: {
           success?: boolean;

@@ -8,4 +8,5 @@ export * from './candidates.js';
 export * from './search.js';
 export * from './ranking.js';
 export * from './engine.js';
+export * from './nativePersonality.js';
 export { mctsBestAction, mctsBestActionAsync, mctsStats, type MctsOptions, type MctsStats } from '../mcts.js';

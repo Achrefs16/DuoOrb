@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -36,12 +37,21 @@ import { AchievementsModal } from '../components/AchievementsModal';
 import { MatchResultModal } from '../components/MatchResultModal';
 import { GuestGate } from '../components/GuestGate';
 import { PremiumBadge } from '../components/PremiumBadge';
-import { isPremiumActive, usePremium } from '../monetization/premium';
+import { isPremiumActive, refreshPremium, usePremium } from '../monetization/premium';
 import { toast } from '../components/AppToast';
 import { NoConnectionSection } from '../components/NoConnection';
 import { actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
 import { ProfileSkeleton } from '../components/Skeleton';
-import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
+import { SavedGameRecord, loadGameHistory, saveSettings } from '../storage/gameStorage';
+import { CosmeticsCustomizerModal } from '../components/CosmeticsCustomizerModal';
+import { PremiumSheet } from '../components/PremiumSheet';
+import {
+  COSMETIC_SKINS,
+  useBallSkinId,
+  useWallSkinId,
+  setBallSkinId,
+  setWallSkinId,
+} from '../theme/cosmeticsCatalog';
 import {
   deviceHistoryGames,
   mapLocalGameToHistoryItem,
@@ -112,6 +122,25 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [showAchievements, setShowAchievements] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ message?: string; kind: ErrorKind } | null>(null);
+
+  // Equipment & Style customization state
+  const [cosmeticsCategory, setCosmeticsCategory] = useState<'ball' | 'wall' | null>(null);
+  const [premiumOpen, setPremiumOpen] = useState(false);
+  const equippedBallId = useBallSkinId();
+  const equippedWallId = useWallSkinId();
+
+  const activeBall = COSMETIC_SKINS[equippedBallId] ?? null;
+  const activeWall = COSMETIC_SKINS[equippedWallId] ?? null;
+
+  const handleEquipBall = useCallback((id: string) => {
+    setBallSkinId(id);
+    void saveSettings({ ballSkinId: id });
+  }, []);
+
+  const handleEquipWall = useCallback((id: string) => {
+    setWallSkinId(id);
+    void saveSettings({ wallSkinId: id });
+  }, []);
 
   // Match History state
   const [games, setGames] = useState<GameHistoryItemDto[]>([]);
@@ -464,6 +493,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       case 'bronze': return t('achievements.bronze');
       case 'silver': return t('achievements.silver');
       case 'gold': return t('achievements.gold');
+      case 'platinum': return t('achievements.platinum');
       case 'diamond': return t('achievements.diamond');
       default: return tier ?? '';
     }
@@ -512,14 +542,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </View>
 
               <View style={styles.identityInfo}>
-                <Text style={styles.profileName} numberOfLines={1}>
-                  {profile?.displayName || profile?.username || 'Player'}
-                  {showOwnBadge && (
-                    <Text>
-                      {' '}<PremiumBadge />
-                    </Text>
-                  )}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.profileName} numberOfLines={1}>
+                    {profile?.displayName || profile?.username || 'Player'}
+                  </Text>
+                  {showOwnBadge && <PremiumBadge size="sm" />}
+                </View>
                 {!!profile?.username && (
                   <Text style={styles.handleText} numberOfLines={1}>
                     @{profile.username}
@@ -569,6 +597,69 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               />
             </View>
           )}
+
+          {/* Equipment & Style Customization */}
+          <View style={styles.cosmeticsSection}>
+            <View style={styles.cosmeticsHeaderLeft}>
+              <OrbIcon name="palette-swatch" size={16} color={THEME.colors.primary} />
+              <Text style={styles.sectionHeading}>Equipment & Style</Text>
+            </View>
+
+            <View style={styles.cosmeticsCard}>
+              {/* Ball Slot */}
+              <TouchableOpacity
+                style={styles.cosmeticSlot}
+                activeOpacity={0.75}
+                onPress={() => setCosmeticsCategory('ball')}
+                accessibilityRole="button"
+                accessibilityLabel="Choose Ball Skin"
+              >
+                <View style={styles.cosmeticPreviewCircle}>
+                  {activeBall ? (
+                    <Image source={activeBall.assets.orb} style={styles.slotOrbImg} resizeMode="contain" />
+                  ) : (
+                    <View style={styles.slotClassicOrb} />
+                  )}
+                </View>
+                <View style={styles.cosmeticSlotInfo}>
+                  <Text style={styles.slotCategory}>BALL SKIN</Text>
+                  <Text style={styles.slotName} numberOfLines={1}>
+                    {activeBall ? activeBall.name : 'Classic Duo'}
+                  </Text>
+                </View>
+                <OrbIcon name="chevron-right" size={16} color={THEME.colors.textMuted} />
+              </TouchableOpacity>
+
+              <View style={styles.cosmeticSlotDivider} />
+
+              {/* Wall Slot */}
+              <TouchableOpacity
+                style={styles.cosmeticSlot}
+                activeOpacity={0.75}
+                onPress={() => setCosmeticsCategory('wall')}
+                accessibilityRole="button"
+                accessibilityLabel="Choose Wall Skin"
+              >
+                <View style={styles.cosmeticPreviewRect}>
+                  {activeWall ? (
+                    <Image source={activeWall.assets.wallTray} style={styles.slotWallImg} resizeMode="contain" />
+                  ) : (
+                    <View style={styles.slotClassicWallWrap}>
+                      <View style={styles.slotClassicWallBarBlue} />
+                      <View style={styles.slotClassicWallBarRed} />
+                    </View>
+                  )}
+                </View>
+                <View style={styles.cosmeticSlotInfo}>
+                  <Text style={styles.slotCategory}>WALL SKIN</Text>
+                  <Text style={styles.slotName} numberOfLines={1}>
+                    {activeWall ? activeWall.name : 'Classic Duo'}
+                  </Text>
+                </View>
+                <OrbIcon name="chevron-right" size={16} color={THEME.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          </View>
 
           {/* Achievements — online only. Offline, `achievements`
               stays null and the section simply does not render: no error.
@@ -914,6 +1005,30 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         onAnalyze={(item) => resolveRecord(item, (rec) => onAnalyzeGame?.(rec))}
         onViewOpponentProfile={onOpenPlayerProfile}
       />
+
+      {/* Equipment & Style Customizer Sheet */}
+      <CosmeticsCustomizerModal
+        visible={cosmeticsCategory !== null}
+        category={cosmeticsCategory}
+        onClose={() => setCosmeticsCategory(null)}
+        onOpenPremium={() => {
+          setCosmeticsCategory(null);
+          setPremiumOpen(true);
+        }}
+        onEquipBall={handleEquipBall}
+        onEquipWall={handleEquipWall}
+      />
+
+      {/* Premium Upgrade Sheet */}
+      <PremiumSheet
+        visible={premiumOpen}
+        entry="profile_cosmetics"
+        onClose={() => setPremiumOpen(false)}
+        onDone={() => {
+          setPremiumOpen(false);
+          void refreshPremium();
+        }}
+      />
     </View>
   );
 };
@@ -1127,6 +1242,125 @@ const createStyles = () => StyleSheet.create({
   recentSection: {
     gap: 8,
   },
+  // Equipment & Style customization section styles
+  cosmeticsSection: {
+    gap: 8,
+    marginTop: 6,
+  },
+  cosmeticsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  customizeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: THEME.radius.full,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+  },
+  customizeBtnText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.colors.primary,
+  },
+  cosmeticsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: THEME.colors.backgroundCard,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    ...THEME.shadows.card,
+  },
+  cosmeticSlot: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cosmeticPreviewCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+  },
+  slotOrbImg: {
+    width: 36,
+    height: 36,
+  },
+  slotClassicOrb: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#2563EB',
+    borderWidth: 1.5,
+    borderColor: '#60A5FA',
+    borderBottomWidth: 2.5,
+    borderBottomColor: '#1D4ED8',
+  },
+  cosmeticPreviewRect: {
+    width: 44,
+    height: 24,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+  },
+  slotWallImg: {
+    width: 46,
+    height: 16,
+  },
+  slotClassicWallWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  slotClassicWallBarBlue: {
+    width: 17,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#2563EB',
+  },
+  slotClassicWallBarRed: {
+    width: 17,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#DC2626',
+  },
+  cosmeticSlotInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  slotCategory: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.colors.textMuted,
+    letterSpacing: 0.8,
+  },
+  slotName: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.textPrimary,
+  },
+  cosmeticSlotDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: THEME.colors.surfaceHairline,
+    marginHorizontal: 10,
+  },
   // Spacing for the guest link lock between the stats and the sections below.
   gateWrap: {
     marginTop: 12,
@@ -1185,7 +1419,7 @@ const createStyles = () => StyleSheet.create({
   },
   detailOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: THEME.colors.modalBackdrop,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -1382,27 +1616,28 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'center',
   },
   badgeWin: {
-    backgroundColor: THEME.colors.tertiaryLight,
+    backgroundColor: THEME.colors.win,
   },
   badgeLoss: {
-    backgroundColor: THEME.colors.secondaryContainer,
+    backgroundColor: THEME.colors.loss,
   },
   badgeNeutral: {
-    backgroundColor: THEME.colors.surfaceMuted,
+    backgroundColor: THEME.colors.draw,
   },
   miniOutcomeText: {
     fontFamily: THEME.fonts.extraBold,
     fontSize: 14,
     fontWeight: '800',
+    color: '#FFFFFF',
   },
   textWin: {
-    color: THEME.colors.tertiary,
+    color: '#FFFFFF',
   },
   textLoss: {
-    color: THEME.colors.secondary,
+    color: '#FFFFFF',
   },
   textNeutral: {
-    color: THEME.colors.textMuted,
+    color: '#FFFFFF',
   },
   matchRowMeta: {
     gap: 2,

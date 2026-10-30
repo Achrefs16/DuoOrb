@@ -39,7 +39,7 @@ describe('AnalysisService', () => {
     expect(review.totalMoves).toBe(4);
     expect(review.moveAnalyses.length).toBe(4);
     expect(review.summary).toBeDefined();
-    expect(review.engineVersion).toBe('duoorb-rust-mcts-3.2');
+    expect(review.engineVersion).toBe('duoorb-rust-hybrid-4.0');
     expect(review.analysisVersion).toBe('analysis-3.3');
   });
 
@@ -98,8 +98,23 @@ describe('AnalysisService', () => {
     const review = await service.reviewGame(undefined, []);
     expect(review).toBeDefined();
     expect(review.totalMoves).toBe(0);
-    expect(review.engineVersion).toBe('duoorb-rust-mcts-3.2');
+    expect(review.engineVersion).toBe('duoorb-rust-hybrid-4.0');
     expect(review.analysisVersion).toBe('analysis-3.3');
+  });
+
+  it('rejects non-2p modes with Classic 2P Only summary', async () => {
+    const mockPrisma: any = {
+      isConnected: false,
+      gameAnalysis: {
+        findUnique: vi.fn(),
+        upsert: vi.fn(),
+      },
+    };
+    const service = new AnalysisService(mockPrisma);
+    const review = await service.reviewGame(createInitialState({ mode: '4p' }), []);
+    expect(review.mode).toBe('4p');
+    expect(review.totalMoves).toBe(0);
+    expect(review.summary.keyLesson.title).toBe('Classic 2P Only');
   });
 
   it('invalidates stale cache entries and replaces them', async () => {

@@ -2,33 +2,24 @@ import { useSyncExternalStore } from 'react';
 import { isPremiumActive, usePremium } from '../monetization/premium';
 
 /**
- * Board skin system (premium boards).
+ * Board skin system.
  *
- * Free: `classic` — the current surface, light in light mode and Midnight
- * in dark mode. Dark Mode board is free for everyone.
- *
- * Premium: `walnut` (wood). All skins stay 2D
- * Views — depth is faked with layered borders, bevel edge colors and drop
- * ellipses, so there is no native/GPU cost and Expo Go renders them
- * identically.
+ * All board designs (Classic, Tactile 3D, Warm Stone) are free
+ * for all players.
  *
  * Identity rule (strategy readability): skins restyle the FINISH of orbs
  * and walls (rim, highlight, shadow, capsule vs chunk) but never their HUE
  * family — playerColor stays the source of truth on every skin, in every
  * player count (2p/4p), in both app appearances. Geometry (boardMetrics,
  * wallRect, gaps) is shared, so skins only ever paint.
- *
- * Gating: premium skins render only for premium members. Anything else —
- * free tier, lapsed subscription, unknown stored id — falls back to
- * `classic` with no error and no blank surface.
  */
 
-export type BoardSkinId = 'classic' | 'walnut' | 'tactile' | 'stone';
+export type BoardSkinId = 'classic' | 'tactile' | 'tactileDark' | 'stone';
 
 export const BOARD_SKIN_IDS: readonly BoardSkinId[] = [
   'classic',
-  'walnut',
   'tactile',
+  'tactileDark',
   'stone',
 ];
 
@@ -59,16 +50,16 @@ export interface BoardSkin extends BoardPalette {
    */
   pageBackground?: string;
   pageTexture?: 'walnutTable';
-  /** Oak grain woven through the board surface behind the cells (walnut). */
+  /** Wood grain pattern behind the cells. */
   boardGrain?: 'oak';
   /** Frame silhouette. */
   frameRadius: number;
   frameBorderWidth: number;
-  /** Inner bevel/stitch line inside the frame (walnut stitch). */
+  /** Inner bevel/stitch line inside the frame. */
   frameInnerBorder?: string;
   /** Translucent light strip across the top frame edge. */
   frameSheen?: boolean;
-  /** Glacier goal lips: red top edge, blue bottom edge. */
+  /** Goal lips: red top edge, blue bottom edge. */
   goalEdgeTop?: string;
   goalEdgeBottom?: string;
   /** Cell silhouette + checker second tone. */
@@ -79,22 +70,21 @@ export interface BoardSkin extends BoardPalette {
   /** Painted tile bevel: lighter top/left edge, darker bottom/right edge. */
   cellBevelLight?: string;
   cellBevelDark?: string;
-  /** Glacier edge coordinates (a–i, 1–9) inside the rim squares. */
+  /** Edge coordinates (a–i, 1–9) inside the rim squares. */
   showCoordinates?: boolean;
   coordinateColor?: string;
   /** Wall silhouette: px radius or full capsule. */
   wallRadius: number | 'capsule';
-  /** Wall finish: glow (shadow in owner hue), flat matte, or neutral wood. */
+  /** Wall finish: glow (shadow in owner hue), flat matte, or neutral finish. */
   wallStyle: 'glow' | 'flat' | 'neutral';
-  /** Neutral fence colors (walnut stained wood, same for every player). */
+  /** Neutral fence colors (same for every player). */
   neutralWall?: string;
   neutralWallEdge?: string;
   /** Light strip along the top of placed walls (bevel highlight). */
   wallTopLight?: string;
   /**
-   * Orb finish: gloss 3D sphere (classic) or flat dama-style disc (walnut —
-   * matte, groove ring, no glow). Hue family still comes from playerColor
-   * on every skin.
+   * Orb finish: gloss 3D sphere (classic) or flat disc.
+   * Hue family still comes from playerColor on every skin.
    */
   orbStyle: 'gloss' | 'flatDisc';
   /** Groove-ring color on flat discs (defaults to a darkened orb hue). */
@@ -173,48 +163,6 @@ export const CLASSIC_MIDNIGHT_SKIN: BoardSkin = {
 };
 
 /**
- * Walnut — a real wooden table. Dark walnut page, oak playing field with
- * grain, inlaid cells in dark grooves, FLAT turned-wood discs (dama style,
- * no gloss, no glow) and NEUTRAL stained fences like the physical game.
- */
-export const WALNUT_SKIN: BoardSkin = {
-  id: 'walnut',
-  premiumOnly: true,
-  pageBackground: '#2E1D12',
-  pageTexture: 'walnutTable',
-  boardGrain: 'oak',
-  boardBackground: '#D0A166',
-  boardBorder: '#3A2415',
-  cell: '#F2CD8D',
-  cellAlt: '#E9BE7C',
-  cellBorder: '#4A2E18',
-  wallSlot: 'rgba(46, 26, 14, 0.85)',
-  wallSlotSize: 5,
-  trayCard: '#D0A166',
-  trayHairline: '#8A5A30',
-  trayPill: '#3A2415',
-  trayCount: '#F0D9AE',
-  frameRadius: 14,
-  frameBorderWidth: 10,
-  frameInnerBorder: '#8A5A30',
-  cellRadius: 2,
-  wallRadius: 0,
-  wallStyle: 'neutral',
-  neutralWall: '#38200F',
-  neutralWallEdge: '#8A5A30',
-  orbStyle: 'flatDisc',
-  orbGroove: 'rgba(46, 26, 14, 0.55)',
-  orbRimWidth: 2,
-  trayRadius: 12,
-  traySlotRadius: 6,
-  hudCard: '#E9C88F',
-  hudBorder: '#8A5A30',
-  hudInk: '#3A2415',
-  hudSubInk: '#6B4423',
-  hudChip: '#F5E6C8',
-};
-
-/**
  * Tactile 3D — Rounded squircle porcelain tiles on warm stone gutters,
  * neutral capsule clay walls, 3D glossy spheres, NO intersection dots.
  */
@@ -263,7 +211,52 @@ export const TACTILE_SKIN: BoardSkin = {
 };
 
 /**
- * Warm Stone Chess — Soft inset checkerboard in warm ivory & stone.
+ * Tactile 3D Dark — the same porcelain squircle tiles, clay capsule walls and
+ * glossy orbs on a warm charcoal table. This is an explicit variant: it stays
+ * dark in light app mode, just as light Tactile stays light in dark app mode.
+ */
+export const TACTILE_DARK_BOARD: BoardPalette = {
+  boardBackground: '#1F1D1B',
+  boardBorder: '#3A3734',
+  cell: '#312E2B',
+  cellBorder: '#45423E',
+  wallSlot: 'transparent',
+  trayCard: '#312E2B',
+  trayHairline: '#45423E',
+  trayPill: '#3B3834',
+  trayCount: '#F1F0EB',
+};
+
+export const TACTILE_DARK_SKIN: BoardSkin = {
+  ...TACTILE_DARK_BOARD,
+  id: 'tactileDark',
+  premiumOnly: false,
+  cellBevelLight: '#45423E',
+  cellBevelDark: '#1B1917',
+  cellRadius: 9,
+  frameRadius: 14,
+  frameBorderWidth: 4,
+  frameInnerBorder: '#3A3734',
+  frameSheen: false,
+  wallRadius: 'capsule',
+  wallStyle: 'flat',
+  wallSlot: 'transparent',
+  wallSlotSize: 0,
+  orbStyle: 'gloss',
+  orbShadow: true,
+  orbHighlightOpacity: 0.55,
+  orbRimWidth: 0,
+  trayRadius: 10,
+  traySlotRadius: 6,
+  hudCard: '#312E2B',
+  hudBorder: '#45423E',
+  hudInk: '#FFFFFF',
+  hudSubInk: '#C3C2C0',
+  hudChip: '#3B3834',
+};
+
+/**
+ * Warm Stone — Natural inset stone surface in warm ivory & stone tones.
  * Light cells #F7F6F2, dark cells #EDEBE5, stone groove #E8E6DF.
  * Reduced corner radius (2px), tight gaps (3px), no glass effect, no dots.
  */
@@ -315,14 +308,14 @@ export const STONE_SKIN: BoardSkin = {
 
 export const BOARD_SKINS: Record<BoardSkinId, BoardSkin> = {
   classic: CLASSIC_LIGHT_SKIN,
-  walnut: WALNUT_SKIN,
   tactile: TACTILE_SKIN,
+  tactileDark: TACTILE_DARK_SKIN,
   stone: STONE_SKIN,
 };
 
 export function parseBoardSkinId(raw: unknown): BoardSkinId {
-  if (raw === 'walnut') return 'walnut';
   if (raw === 'tactile') return 'tactile';
+  if (raw === 'tactileDark') return 'tactileDark';
   if (raw === 'stone' || raw === 'chess') return 'stone';
   return 'classic';
 }
@@ -381,8 +374,7 @@ export function useBoardSkinId(): BoardSkinId {
 
 /**
  * Pure gate (unit-tested). Classic follows the app appearance (Midnight is
- * free for everyone); premium skins need an active membership, otherwise
- * they fall back to classic with no error and no blank surface.
+ * free for everyone); all board designs are free for all players.
  */
 export function resolveBoardSkin(
   id: BoardSkinId,

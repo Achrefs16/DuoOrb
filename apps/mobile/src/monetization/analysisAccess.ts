@@ -20,8 +20,8 @@ export type AnalysisEntry = 'premium' | 'unlocked' | 'daily' | 'locked';
 const UNLOCK_PREFIX = '@duoorb:rewarded-analysis:v1:';
 const UNLOCK_TTL_MS = 30 * 24 * 3600 * 1000;
 
-/** Analysis is free and unlimited for all players. */
-export const FREE_ANALYSES_PER_DAY = Infinity;
+/** Free full analyses per calendar day for non-premium players. */
+export const FREE_ANALYSES_PER_DAY = 1;
 const FREE_DAY_PREFIX = '@duoorb:free-analysis-day:v1:';
 
 export function unlockKey(gameId: string, historyLength: number): string {
@@ -36,41 +36,100 @@ export function freeDayKey(date: Date = new Date()): string {
   return `${FREE_DAY_PREFIX}${y}-${m}-${d}`;
 }
 
-/** Pure decision table: Analysis is free for all; premium players retain 'premium' status. */
-export function resolveAccess(premiumActive: boolean, _unlocked: boolean = true): AnalysisAccess {
+/** Pure decision table: premium > unlocked per-game > locked. */
+export function resolveAccess(premiumActive: boolean, unlocked: boolean = false): AnalysisAccess {
   if (premiumActive) return 'premium';
-  return 'unlocked';
+  if (unlocked) return 'unlocked';
+  return 'locked';
 }
 
 export async function getFreeAnalysesUsedToday(): Promise<number> {
-  return 0;
+  try {
+    const raw = await AsyncStorage.getItem(freeDayKey());
+    if (!raw) return 0;
+    const used = (JSON.parse(raw) as { used?: number }).used;
+    return typeof used === 'number' && used > 0 ? Math.floor(used) : 0;
+  } catch {
+    return 0;
+  }
 }
 
 /**
- * Consumes one free analysis. Free analysis is unlimited, so this always succeeds.
+ * Spends one free daily analysis. Returns false when today's quota is
+ * spent — the caller falls through to the ad gate. Fail-closed: a store
+ * error reads as "none left" (the ad path still works).
  */
 export async function consumeFreeAnalysis(): Promise<boolean> {
-  return true;
+  try {
+    const key = freeDayKey();
+    const raw = await AsyncStorage.getItem(key);
+    const used =
+      raw != null ? (JSON.parse(raw) as { used?: number }).used ?? 0 : 0;
+    if (used >= FREE_ANALYSES_PER_DAY) return false;
+    await AsyncStorage.setItem(key, JSON.stringify({ used: used + 1 }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Press-handler serializer: peek-then-consume must not interleave across
+// rapid taps, or two games could each spend the same last daily.
+let entryChain: Promise<void> = Promise.resolve();
+
+async function entryInner(
+  premiumActive: boolean,
+  gameId: string,
+  historyLength: number
+): Promise<AnalysisEntry> {
+  if (premiumActive) return 'premium';
+  const unlocked = await isAnalysisUnlocked(gameId, historyLength);
+  if (unlocked) return 'unlocked';
+  const claimedDaily = await consumeFreeAnalysis();
+  if (claimedDaily) return 'daily';
+  return 'locked';
 }
 
 /**
  * One entry point for every Analyze tap (game-over modal, bare-replay
- * upgrade, history/profile direct analyse). Analysis is free for all players.
+ * upgrade, history/profile direct analyse). Premium and already-unlocked
+ * games pass through; otherwise the free daily is spent when available and
+ * 'locked' means "show the ad gate".
  */
-export async function requestAnalysisEntry(
+export function requestAnalysisEntry(
   premiumActive: boolean,
-  _gameId?: string,
-  _historyLength?: number
+  gameId?: string,
+  historyLength?: number
 ): Promise<AnalysisEntry> {
-  if (premiumActive) return 'premium';
-  return 'unlocked';
+  const gId = gameId ?? 'unknown-game';
+  const hLen = historyLength ?? 0;
+  const run = entryChain.then(() => entryInner(premiumActive, gId, hLen));
+  entryChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
 }
 
 export async function isAnalysisUnlocked(
-  _gameId?: string,
-  _historyLength?: number
+  gameId?: string,
+  historyLength?: number
 ): Promise<boolean> {
-  return true;
+  if (!gameId) return false;
+  try {
+    const key = unlockKey(gameId, historyLength ?? 0);
+    const raw = await AsyncStorage.getItem(key);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { u?: number; t?: number };
+    if (parsed.u !== 1) return false;
+    if (typeof parsed.t === 'number' && Date.now() - parsed.t > UNLOCK_TTL_MS) {
+      void AsyncStorage.removeItem(key).catch(() => {});
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function markAnalysisUnlocked(
@@ -83,7 +142,7 @@ export async function markAnalysisUnlocked(
       JSON.stringify({ u: 1, t: Date.now() })
     );
   } catch {
-    // Non-fatal since analysis is free
+    // Non-fatal
   }
 }
 
@@ -114,28 +173,35 @@ export async function pruneAnalysisUnlocks(): Promise<void> {
 }
 
 /**
- * Live access for one finished game. Free for all players.
+ * Live access for one finished game.
  */
 export function useAnalysisAccess(
-  _gameId: string | null,
-  _historyLength: number
+  gameId: string | null,
+  historyLength: number
 ): { access: AnalysisAccessState; recheck: () => Promise<void> } {
   const premium = usePremium();
-  const [access, setAccess] = useState<AnalysisAccessState>(() =>
-    isPremiumActive(premium) ? 'premium' : 'unlocked'
-  );
+  const [access, setAccess] = useState<AnalysisAccessState>('checking');
 
   const compute = useCallback(async (): Promise<AnalysisAccess> => {
-    return isPremiumActive(premium) ? 'premium' : 'unlocked';
-  }, [premium]);
+    if (isPremiumActive(premium)) return 'premium';
+    if (!gameId) return 'locked';
+    const unlocked = await isAnalysisUnlocked(gameId, historyLength);
+    return resolveAccess(false, unlocked);
+  }, [premium, gameId, historyLength]);
 
   const recheck = useCallback(async () => {
     setAccess(await compute());
   }, [compute]);
 
   useEffect(() => {
-    setAccess(isPremiumActive(premium) ? 'premium' : 'unlocked');
-  }, [premium]);
+    let cancelled = false;
+    void compute().then((res) => {
+      if (!cancelled) setAccess(res);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [compute]);
 
   return { access, recheck };
 }

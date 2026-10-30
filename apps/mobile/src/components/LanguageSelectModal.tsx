@@ -171,7 +171,7 @@ const createStyles = () =>
   StyleSheet.create({
     scrim: {
       flex: 1,
-      backgroundColor: 'rgba(15, 23, 42, 0.55)',
+      backgroundColor: THEME.colors.modalBackdrop,
       justifyContent: 'flex-end',
     },
     backdrop: {

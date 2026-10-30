@@ -1,3 +1,6 @@
+/**
+ * @deprecated Deprecated in favor of @duoorb/analyzer-rust and duoorb-ai-native pure-Rust AlphaZero ONNX engine.
+ */
 import type { CellCoord, GameAction, GameState, WallCoord } from '../types.js';
 import type { AIProfile, AiTactical, ScoredCandidate, WallInsight } from './types.js';
 import {
@@ -403,7 +406,6 @@ export function buildRootCandidates(
     }
 
     const delay = before === Infinity ? 0 : Math.max(0, after - before);
-    if (delay <= 0) continue;
     const ownAfter = routeOf(next, nextBoard, me);
     const selfCost =
       own.hasGoalAccess && ownAfter.hasGoalAccess
@@ -423,6 +425,17 @@ export function buildRootCandidates(
     const turnsChain = board.field.turnExtensions.has(key);
     const shapesSelf = (ideas[i].reason & SLOT_SELF_ROUTE) !== 0;
     const contested = (ideas[i].reason & SLOT_CONTESTED) !== 0;
+    const planSlot = (ideas[i].reason & SLOT_RIVAL_PLAN) !== 0;
+
+    // Hard bots may need a setup wall that does not delay the rival yet but
+    // narrows a corridor, extends a chain, or blocks a rival plan. Keep a
+    // small number of those instead of pruning every zero-delay wall at the
+    // root. Lower difficulties stay on the old, tighter candidate set.
+    const isSetup = delay <= 0;
+    if (isSetup) {
+      const usefulSetup = narrowAdv > 0 || extendsChain || turnsChain || planSlot || contested;
+      if (profile.difficulty !== 'hard' || !usefulSetup) continue;
+    }
 
     const structure =
       (narrowAdv * perStep * 0.5 +
@@ -438,9 +451,9 @@ export function buildRootCandidates(
       action: { type: 'PLACE_WALL', wall: slot },
       onPath: false,
       wall: { slot, delay, selfCost, narrowAdv, forkDeny, extendsChain, turnsChain, bridgesChains, shapesSelf, contested, structure, planSuppression: 0 },
-      rank: delay * perStep + structure - selfCost * perStep,
+      rank: delay * perStep + structure - selfCost * perStep - (isSetup ? perStep * 0.75 : 0),
       order: wallOrder(slot),
-      planSlot: (ideas[i].reason & SLOT_RIVAL_PLAN) !== 0,
+      planSlot,
       attackSlot: false,
       sealbreak: false,
     });

@@ -3,6 +3,7 @@ import { WallDragGhost } from './WallDragGhost';
 import { BoardGrain } from './SkinBackdrop';
 import {
   Animated,
+  Image,
   LayoutChangeEvent,
   Platform,
   StyleSheet,
@@ -26,6 +27,7 @@ import { AssessmentIcon } from './AnalysisBadge';
 import { THEME, playerColor, useTheme, wallColorForPlayer, wallPreviewColor } from '../theme';
 import { BoardSkin, useBoardSkin } from '../theme/boardTheme';
 import { useOrbPaletteId } from '../theme/orbTheme';
+import { COSMETIC_SKINS, useEquippedBallSkin, useEquippedWallSkin } from '../theme/cosmeticsCatalog';
 
 interface GameBoardProps {
   state: GameState;
@@ -82,6 +84,10 @@ interface GameBoardProps {
   size?: number;
   /** Explicit frame corner radius (default 0 for sharp square corners matching Chess.com). */
   borderRadius?: number;
+  /** Seat index of the local human player (defaults to 0). */
+  localPlayerIndex?: number;
+  /** Online cosmetics mapping (playerId -> { ballSkinId, wallSkinId }). */
+  playerCosmetics?: Record<string, { ballSkinId?: string; wallSkinId?: string }>;
 }
 
 /** Inner padding between the rim and the cell grid. */
@@ -89,9 +95,8 @@ export const BOARD_PAD = 8;
 
 /**
  * Rim allowance: thick skin frames eat into the board box, so the grid must
- * shrink by the frame width or the last row/column clips under the rim
- * (the walnut drift). Classic's 1px hairline counts as zero, so classic
- * geometry stays byte-identical.
+ * shrink by the frame width or the last row/column clips under the rim.
+ * Classic's 1px hairline counts as zero, so classic geometry stays byte-identical.
  */
 export function boardRim(frameBorderWidth: number): number {
   return Math.max(0, frameBorderWidth - 1);
@@ -284,6 +289,8 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   onMetricsChange,
   size,
   borderRadius = 0,
+  localPlayerIndex = 0,
+  playerCosmetics,
 }) => {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [measuredWidth, setMeasuredWidth] = useState(0);
@@ -292,6 +299,8 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   const theme = useTheme();
   const skin: BoardSkin = useBoardSkin();
   const orbPaletteId = useOrbPaletteId();
+  const customBall = useEquippedBallSkin();
+  const customWall = useEquippedWallSkin();
   const styles = useMemo(() => getBoardStyles(), [skin, theme, orbPaletteId]);
 
   const isTabletScreen = windowWidth >= 600 && (windowWidth <= 1100 || windowHeight >= windowWidth);
@@ -307,7 +316,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   const rim = boardRim(skin.frameBorderWidth);
   const { cell: CELL, gap: GAP } = boardMetrics(boardSize, rim, skin.cellGap);
   // Fence corner radius in px: capsule fills the wall thickness, a number
-  // draws sharp rectangles (walnut 0). One helper so placed, preview,
+  // draws sharp rectangles. One helper so placed, preview,
   // queued and analysis walls always match.
   const wallRadiusFor = (w: number, h: number): number =>
     skin.wallRadius === 'capsule' ? Math.min(w, h) / 2 : skin.wallRadius;
@@ -546,7 +555,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                 isCenterGoalMode(state.mode) && r === BOARD_CENTER.row && c === BOARD_CENTER.col;
               const top = BOARD_PAD + r * (CELL + GAP);
               const left = BOARD_PAD + c * (CELL + GAP);
-              // Skin checker: alternate tone on odd squares (walnut/arena).
+              // Skin checker: alternate tone on odd squares.
               const cellBase =
                 skin.cellAlt && (r + c) % 2 === 1 ? skin.cellAlt : skin.cell;
               const bevelLight = skin.cellBevelLight ?? skin.cellBorder;
@@ -644,9 +653,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
           </React.Fragment>
         ))}
 
-        {/* Placed walls. Walnut fences are NEUTRAL stained wood like the
-            physical game (no owner hue, no glow); glacier is flat matte;
-            arena lacquered with glow. Finish only — geometry shared. */}
+        {/* Placed walls. Finish respects skin and cosmetic settings — geometry shared. */}
         {state.walls.map((wall) => {
           const rect = wallRect(wall, CELL, GAP);
           const owner = state.players.find((p) => p.id === wall.placedByPlayerId);
@@ -657,6 +664,53 @@ const GameBoardView: React.FC<GameBoardProps> = ({
             ? (skin.neutralWall ?? ball)
             : playerWallBg(owner?.index ?? 0, owner?.color);
           const wallEdge = neutral ? skin.neutralWallEdge : skin.wallTopLight;
+
+          const isLocalOwner = (owner?.index ?? 0) === localPlayerIndex;
+          const onlineWallSkinId = owner?.id ? playerCosmetics?.[owner.id]?.wallSkinId : undefined;
+          const resolvedWallSkinId = onlineWallSkinId ?? (isLocalOwner ? customWall?.id : undefined);
+          const activeWallSkin =
+            resolvedWallSkinId && resolvedWallSkinId !== 'classic'
+              ? COSMETIC_SKINS[resolvedWallSkinId]
+              : null;
+
+          // Thicker tactile barrier (centered on the gap) so textures and bevels have substance
+          const thicknessExtra = Math.max(3, Math.round(GAP * 0.45));
+          const wallTop = isH ? rect.top - thicknessExtra / 2 : rect.top;
+          const wallLeft = isH ? rect.left : rect.left - thicknessExtra / 2;
+          const wallW = isH ? rect.width : rect.width + thicknessExtra;
+          const wallH = isH ? rect.height + thicknessExtra : rect.height;
+
+          if (activeWallSkin) {
+            const isGuestOwner = (owner?.index ?? 0) > 0;
+            return (
+              <View
+                key={`placed-${wall.row}-${wall.col}-${wall.orientation}-${wall.sequence}`}
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  top: wallTop,
+                  left: wallLeft,
+                  width: wallW,
+                  height: wallH,
+                  borderRadius: wallRadiusFor(wallW, wallH),
+                  overflow: 'hidden',
+                  ...(isGuestOwner
+                    ? {
+                        borderWidth: 1.5,
+                        borderColor: activeWallSkin.contrast.guestRim,
+                      }
+                    : {}),
+                }}
+              >
+                <Image
+                  source={isH ? activeWallSkin.assets.wallH : activeWallSkin.assets.wallV}
+                  style={{ width: wallW, height: wallH }}
+                  resizeMode="stretch"
+                />
+              </View>
+            );
+          }
+
           return (
             <View
               key={`placed-${wall.row}-${wall.col}-${wall.orientation}-${wall.sequence}`}
@@ -664,14 +718,14 @@ const GameBoardView: React.FC<GameBoardProps> = ({
               style={[
                 styles.placedWall,
                 {
-                  top: rect.top,
-                  left: rect.left,
-                  width: rect.width,
-                  height: rect.height,
+                  top: wallTop,
+                  left: wallLeft,
+                  width: wallW,
+                  height: wallH,
                   backgroundColor: wallFill,
                   shadowOpacity: 0,
                   elevation: 0,
-                  borderRadius: wallRadiusFor(rect.width, rect.height),
+                  borderRadius: wallRadiusFor(wallW, wallH),
                 },
               ]}
             >
@@ -746,6 +800,15 @@ const GameBoardView: React.FC<GameBoardProps> = ({
             selectedCell.row === p.position.row &&
             selectedCell.col === p.position.col;
           if (!anim) return null;
+
+          const isLocalPlayer = p.index === localPlayerIndex;
+          const onlineBallId = p.id ? playerCosmetics?.[p.id]?.ballSkinId : undefined;
+          const resolvedBallId = onlineBallId ?? (isLocalPlayer ? customBall?.id : undefined);
+          const activeBallSkin =
+            resolvedBallId && resolvedBallId !== 'classic'
+              ? COSMETIC_SKINS[resolvedBallId]
+              : null;
+
           return (
             <Animated.View
               key={`orb-${p.id}`}
@@ -779,7 +842,49 @@ const GameBoardView: React.FC<GameBoardProps> = ({
               {/* Flat dama-style disc: matte, groove ring, no gloss, no glow.
                   Gloss sphere otherwise (classic). Hue always the player's —
                   only the finish changes. */}
-              {skin.orbStyle === 'flatDisc' ? (
+              {/* Custom Cosmetic Ball Token */}
+              {activeBallSkin ? (
+                <Animated.View
+                  style={{
+                    width: orbDiameter,
+                    height: orbDiameter,
+                    borderRadius: orbDiameter / 2,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    transform: [
+                      { scale: isSelected ? 1.08 : 1 },
+                      { scale: anim.scale },
+                      { scale: isActive ? turnPulse : 1 },
+                    ],
+                  }}
+                >
+                  <Image
+                    source={activeBallSkin.assets.orb}
+                    style={{
+                      width: orbDiameter,
+                      height: orbDiameter,
+                      borderRadius: orbDiameter / 2,
+                    }}
+                    resizeMode="contain"
+                  />
+                  {/* Dynamic Mirror-Match Distinction: Player 2+ receives contrast rim */}
+                  {p.index > 0 && (
+                    <View
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        borderRadius: orbDiameter / 2,
+                        borderWidth: 2,
+                        borderColor: activeBallSkin.contrast.guestRim,
+                      }}
+                    />
+                  )}
+                </Animated.View>
+              ) : skin.orbStyle === 'flatDisc' ? (
                 (() => {
                   // Integer geometry: the groove ring + pin center by flex,
                   // so sub-pixel percentage insets can never drift them.
@@ -817,20 +922,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                           justifyContent: 'center',
                           alignItems: 'center',
                         }}
-                      >
-                        {skin.id === 'walnut' && (
-                          <View
-                            pointerEvents="none"
-                            style={{
-                              width: 5,
-                              height: 5,
-                              borderRadius: 3,
-                              backgroundColor:
-                                skin.orbGroove ?? 'rgba(0, 0, 0, 0.30)',
-                            }}
-                          />
-                        )}
-                      </View>
+                      />
                     </Animated.View>
                   );
                 })()

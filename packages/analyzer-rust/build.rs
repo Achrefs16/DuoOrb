@@ -1,5 +1,5 @@
-extern crate napi_build;
-
 fn main() {
-    napi_build::setup();
+    if std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default() != "wasm32" {
+        napi_build::setup();
+    }
 }

@@ -10,6 +10,8 @@ import {
 import { GameBoard } from '../components/GameBoard';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
+import { PremiumBadge } from '../components/PremiumBadge';
+import { usePremium, isPremiumActive } from '../monetization/premium';
 
 interface ReplayScreenProps {
   initialState: GameState;
@@ -31,6 +33,7 @@ export const ReplayScreen: React.FC<ReplayScreenProps> = ({
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const premium = usePremium();
   const [session, setSession] = useState(() =>
     createReplaySession(initialState, history)
   );
@@ -88,10 +91,13 @@ export const ReplayScreen: React.FC<ReplayScreenProps> = ({
       </View>
 
       <View style={styles.seatRow}>
-        <Text style={styles.seatName} numberOfLines={1}>
-          {bottomPlayer?.displayName ?? ''}
-          {isViewerSeated && bottomPlayer ? ` ${t('gameover.you')}` : ''}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <Text style={styles.seatName} numberOfLines={1}>
+            {bottomPlayer?.displayName ?? ''}
+            {isViewerSeated && bottomPlayer ? ` ${t('gameover.you')}` : ''}
+          </Text>
+          {isViewerSeated && isPremiumActive(premium) && <PremiumBadge size="xs" />}
+        </View>
       </View>
 
       <View style={styles.controlsRow}>

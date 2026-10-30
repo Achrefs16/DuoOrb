@@ -1,11 +1,17 @@
+#[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 use std::collections::HashMap;
 
+use crate::adapter::adapt_prediction;
 use crate::board::Board;
 use crate::classifier::classify_mcts_move;
-use crate::mcts::{position_seed, run_mcts_analysis, DEFAULT_SIMS_PER_PLY};
+use crate::hints::action_notation;
+use crate::hybrid::get_global_evaluator;
+use crate::mcts::position_seed;
+use crate::neural::map_index_to_action;
 use crate::pathfinding::shortest_distance;
-use crate::rules::{apply_action, get_legal_moves};
+use crate::rules::{apply_action, get_legal_moves, is_legal_action};
+use crate::solver::solve_tactical_position;
 use crate::types::{
     GameAction, GameReview, GameState, KeyLesson, MoveAnalysis, MoveAssessment, RecordedAction,
     ReviewSummary,
@@ -38,8 +44,190 @@ fn race_snapshot(state: &GameState, board: &Board, mover_idx: usize) -> (i32, i3
     (mine, opp)
 }
 
+fn find_naive_pawn_step(state: &GameState, board: &Board) -> Option<GameAction> {
+    let mover_idx = state.current_player_index;
+    let mover = state.players.get(mover_idx)?;
+    let legal = get_legal_moves(state, &mover.id, board);
+    if legal.is_empty() {
+        return None;
+    }
+    let current_dist = shortest_distance(mover.position, mover.goal_direction, board, &state.mode);
+    let mut best_step = None;
+    let mut min_dist = current_dist;
+    for cell in legal {
+        let d = shortest_distance(cell, mover.goal_direction, board, &state.mode);
+        if d >= 0 && (best_step.is_none() || d < min_dist) {
+            min_dist = d;
+            best_step = Some(GameAction::Move { to: cell });
+        }
+    }
+    best_step
+}
+
+fn evaluate_ply_hybrid(
+    state_before: &GameState,
+    board_before: &Board,
+    state_after: &GameState,
+    rec_action: &GameAction,
+    _seed: u64,
+) -> (GameAction, f64, f64, f64, f64, bool) {
+    // 1. TACTICAL SOLVER: Check for forced win or emergency conversion
+    if let Some(solver_action) = solve_tactical_position(state_before, 8) {
+        if is_legal_action(state_before, &solver_action) {
+            let is_engine_best = solver_action == *rec_action;
+            let played_q = if is_engine_best {
+                0.99
+            } else {
+                let mut scratch = *board_before;
+                if let Some(next_state) = apply_action(state_before, rec_action, &mut scratch) {
+                    let mover_idx = state_before.current_player_index;
+                    let (my_d, opp_d) = race_snapshot(&next_state, &scratch, mover_idx);
+                    let opp_has_win = solve_tactical_position(&next_state, 8).is_some();
+                    if opp_has_win {
+                        0.05
+                    } else if my_d <= 3 && opp_d >= my_d + 2 {
+                        0.95
+                    } else if my_d < opp_d {
+                        0.85
+                    } else {
+                        0.35
+                    }
+                } else {
+                    0.15
+                }
+            };
+            return (solver_action, 0.99, played_q, 0.25, 0.25, is_engine_best);
+        }
+    }
+
+    // 2. NEURAL EVALUATOR + MODE ADAPTER (Ultra-fast ~0.15ms per pass)
+    if let Some(evaluator) = get_global_evaluator() {
+        if let Ok(pred_before) = evaluator.evaluate(state_before) {
+            let adapted_before = adapt_prediction(state_before, &pred_before);
+            let mover_idx = state_before.current_player_index;
+            let is_p2 = mover_idx == 1;
+
+            let mut candidates: Vec<(GameAction, f32)> = Vec::with_capacity(32);
+            for (action_idx, &prob) in adapted_before.policy_probs.iter().enumerate() {
+                if prob > 0.0001 {
+                    if let Some(action) = map_index_to_action(state_before, action_idx, is_p2) {
+                        if is_legal_action(state_before, &action) {
+                            candidates.push((action, prob));
+                        }
+                    }
+                }
+            }
+            candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            let best_action = if let Some(first) = candidates.first() {
+                first.0.clone()
+            } else {
+                rec_action.clone()
+            };
+            let is_engine_best = *rec_action == best_action;
+
+            let num_players = state_before.players.len().max(2);
+            let num_opps = (num_players - 1) as f64;
+
+            // Compute played_q from state_after
+            let played_q = if state_after.status == "FINISHED" {
+                if let Some(m) = state_after.players.get(mover_idx) {
+                    if m.status != "FINISHED" { 0.99 } else { 0.01 }
+                } else {
+                    0.50
+                }
+            } else if matches!(rec_action, GameAction::Resign | GameAction::Timeout) {
+                0.01
+            } else if let Ok(pred_after) = evaluator.evaluate(state_after) {
+                let adapted_after = adapt_prediction(state_after, &pred_after);
+                let opp_v = adapted_after.value.clamp(-1.0, 1.0) as f64;
+                let opp_q = (opp_v + 1.0) * 0.5;
+                (1.0 - (opp_q / num_opps)).clamp(0.02, 0.98)
+            } else {
+                0.50
+            };
+
+            // Compute best_q
+            let best_q = if is_engine_best {
+                played_q
+            } else {
+                let mut scratch_board = *board_before;
+                if let Some(best_state_after) = apply_action(state_before, &best_action, &mut scratch_board) {
+                    if best_state_after.status == "FINISHED" {
+                        0.99
+                    } else if let Ok(pred_best) = evaluator.evaluate(&best_state_after) {
+                        let adapted_best = adapt_prediction(&best_state_after, &pred_best);
+                        let opp_v = adapted_best.value.clamp(-1.0, 1.0) as f64;
+                        let opp_q = (opp_v + 1.0) * 0.5;
+                        (1.0 - (opp_q / num_opps)).clamp(0.02, 0.98).max(played_q)
+                    } else {
+                        played_q.max(0.55)
+                    }
+                } else {
+                    played_q.max(0.55)
+                }
+            };
+
+            let p1 = candidates.first().map(|c| c.1).unwrap_or(0.5);
+            let p2 = candidates.get(1).map(|c| c.1).unwrap_or(p1 * 0.5);
+            let ratio_2 = (p2 / p1.max(0.001)).clamp(0.0, 1.0) as f64;
+            let q_second_best = (best_q - (1.0 - ratio_2) * 0.12).max(0.01).min(best_q);
+
+            let naive_move = find_naive_pawn_step(state_before, board_before);
+            let p_naive = candidates
+                .iter()
+                .find(|c| Some(&c.0) == naive_move.as_ref())
+                .map(|c| c.1)
+                .unwrap_or(p1 * 0.6);
+            let ratio_naive = (p_naive / p1.max(0.001)).clamp(0.0, 1.0) as f64;
+            let q_naive_pawn_step = (best_q - (1.0 - ratio_naive) * 0.18).max(0.01).min(best_q);
+
+            return (
+                best_action,
+                best_q,
+                played_q,
+                q_second_best,
+                q_naive_pawn_step,
+                is_engine_best,
+            );
+        }
+    }
+
+    // 3. FAST DETERMINISTIC HEURISTIC FALLBACK (Zero MCTS Playouts, <0.1ms)
+    let naive_step = find_naive_pawn_step(state_before, board_before).unwrap_or_else(|| rec_action.clone());
+    let is_engine_best = *rec_action == naive_step;
+    let (my_d, opp_d) = race_snapshot(state_before, board_before, state_before.current_player_index);
+    let lead = (opp_d - my_d) as f64;
+    let played_q = (0.50 + lead * 0.08).clamp(0.05, 0.95);
+    let best_q = if is_engine_best { played_q } else { (played_q + 0.12).min(0.95) };
+    let q_second_best = (best_q - 0.06).max(0.05);
+    let q_naive = (best_q - 0.08).max(0.05);
+    (naive_step, best_q, played_q, q_second_best, q_naive, is_engine_best)
+}
 
 pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedAction>) -> GameReview {
+    // Game Review is exclusively supported for Classic 2-Player duels
+    if initial_state.mode != "2p" {
+        return GameReview {
+            game_id: initial_state.game_id,
+            mode: initial_state.mode,
+            total_moves: history.len(),
+            accuracies: HashMap::new(),
+            move_analyses: Vec::new(),
+            critical_moments: Vec::new(),
+            summary: ReviewSummary {
+                key_lesson: KeyLesson {
+                    title: "Classic 2P Only".to_string(),
+                    detail: "Game Review with accuracy scores and move assessments is available exclusively for Classic 2-Player matches.".to_string(),
+                    move_number: None,
+                },
+                confidence: "high".to_string(),
+            },
+            engine_version: "duoorb-rust-hybrid-4.0".to_string(),
+            analysis_version: "analysis-3.3".to_string(),
+        };
+    }
+
     let mut states_before = Vec::with_capacity(history.len() + 1);
     let mut current_state = initial_state.clone();
     let mut current_board = Board::from_walls(&initial_state.walls);
@@ -109,11 +297,17 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
         .filter(|(idx, _)| *idx < states_before.len() - 1)
         .collect();
 
-    // Parallel deep MCTS analysis across plies using Rayon
-    let analyses_with_acc: Vec<(MoveAnalysis, f64)> = plies_to_analyze
-        .par_iter()
+    // Deep neural / hybrid analysis across plies
+    #[cfg(not(target_arch = "wasm32"))]
+    let analyses_iter = plies_to_analyze.par_iter();
+
+    #[cfg(target_arch = "wasm32")]
+    let analyses_iter = plies_to_analyze.iter();
+
+    let analyses_with_acc: Vec<(MoveAnalysis, f64)> = analyses_iter
         .map(|(step, rec)| {
             let (state_before, board_before) = &states_before[*step];
+            let (state_after, _) = &states_before[*step + 1];
             let mover_idx = state_before.current_player_index;
             let mover = &state_before.players[mover_idx];
             let mover_id = &mover.id;
@@ -123,12 +317,14 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
             let forced = non_board_action || (legal_moves.len() <= 1 && mover.walls_remaining == 0);
 
             let seed = position_seed(state_before, *step as i32);
-            // Deep MCTS search (35,000 simulations per ply, 16-18 plies depth)
-            let mcts = run_mcts_analysis(state_before, board_before, &rec.action, DEFAULT_SIMS_PER_PLY, seed);
-
-            let best_q = mcts.best_q;
-            let played_q = mcts.played_q.unwrap_or(best_q);
-            let is_engine_best = rec.action == mcts.best_action;
+            let (
+                best_action,
+                best_q,
+                played_q,
+                q_second_best,
+                q_naive_pawn_step,
+                is_engine_best,
+            ) = evaluate_ply_hybrid(state_before, board_before, state_after, &rec.action, seed);
 
             let (my_before, opp_before) = race_snapshot(state_before, board_before, mover_idx);
             let mut after_board = *board_before;
@@ -152,8 +348,8 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
             let (assessment, evaluation_loss, move_acc) = classify_mcts_move(
                 best_q,
                 played_q,
-                mcts.q_second_best,
-                mcts.q_naive_pawn_step,
+                q_second_best,
+                q_naive_pawn_step,
                 is_engine_best,
                 opp_detour,
                 my_lead_before,
@@ -167,6 +363,40 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
             let eval_after = (played_q - 0.5) * 40.0;
             let win_chance_delta = played_q - best_q;
 
+            let notation = action_notation(&rec.action);
+            let explanation = match assessment {
+                MoveAssessment::Brilliant => {
+                    Some(format!("Brilliant! {} creates a decisive advantage and shifts the game.", notation))
+                }
+                MoveAssessment::Great => {
+                    Some(format!("Great tactical move! {} maintains sharp positional pressure.", notation))
+                }
+                MoveAssessment::Best => {
+                    Some(format!("Best move. {} is the optimal engine choice.", notation))
+                }
+                MoveAssessment::Excellent => {
+                    Some(format!("Strong move. {} keeps solid control.", notation))
+                }
+                MoveAssessment::Good => {
+                    Some(format!("Solid move. {} is completely playable.", notation))
+                }
+                MoveAssessment::Inaccuracy => {
+                    let best_not = action_notation(&best_action);
+                    Some(format!("Suboptimal. {} was stronger, maintaining better tempo.", best_not))
+                }
+                MoveAssessment::Mistake => {
+                    let best_not = action_notation(&best_action);
+                    Some(format!("Mistake. {} lost momentum. Better was {}.", notation, best_not))
+                }
+                MoveAssessment::Blunder => {
+                    let best_not = action_notation(&best_action);
+                    Some(format!("Blunder. {} gave away significant equity. {} was required.", notation, best_not))
+                }
+                MoveAssessment::Forced => {
+                    Some("Forced move. Only legal option available.".to_string())
+                }
+            };
+
             let best_opt = if matches!(
                 assessment,
                 MoveAssessment::Brilliant
@@ -176,7 +406,7 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
             ) {
                 None
             } else {
-                Some(mcts.best_action)
+                Some(best_action)
             };
 
             (
@@ -192,7 +422,7 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
                     win_chance_delta,
                     forced,
                     best_action: best_opt,
-                    explanation: None,
+                    explanation,
                 },
                 move_acc,
             )
@@ -279,7 +509,29 @@ pub fn analyze_game_internal(initial_state: GameState, history: Vec<RecordedActi
             key_lesson,
             confidence: "high".to_string(),
         },
-        engine_version: "duoorb-rust-mcts-3.2".to_string(),
+        engine_version: "duoorb-rust-hybrid-4.0".to_string(),
         analysis_version: "analysis-3.3".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_2p_mode_returns_clean_unsupported_summary() {
+        let state = GameState {
+            game_id: "test-4p".to_string(),
+            mode: "4p".to_string(),
+            current_player_index: 0,
+            players: vec![],
+            walls: vec![],
+            move_number: 1,
+            status: "IN_PROGRESS".to_string(),
+        };
+        let review = analyze_game_internal(state, vec![]);
+        assert_eq!(review.mode, "4p");
+        assert_eq!(review.move_analyses.len(), 0);
+        assert_eq!(review.summary.key_lesson.title, "Classic 2P Only");
     }
 }

@@ -24,6 +24,7 @@ import { classifyAuthEvent } from './sessionEvents';
 import { socketManager } from './socket';
 import { api, ApiError, setTokenProvider, createGuestSession, refreshGuestSession } from './apiClient';
 import { isRetryable, kindOf, loadMessage, type ErrorKind } from './errors';
+import { ingestServerBotStars } from '../storage/gameStorage';
 import {
   createGuestIdentity,
   loadCanonicalProfile,
@@ -127,6 +128,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     // Premium sync rides the same response: boot, sign-in and refresh all
     // update entitlement with zero extra requests (ingestMe never throws).
     ingestMe(me);
+    if (me.botStars) {
+      void ingestServerBotStars(me.botStars);
+    }
     return { username: me.username, displayName: me.displayName };
   }, []);
 

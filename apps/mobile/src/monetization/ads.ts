@@ -20,7 +20,7 @@ export interface RewardedResult {
   error?: string;
 }
 
-export type RewardedPlacement = 'analysis' | 'undo';
+export type RewardedPlacement = 'analysis' | 'undo' | 'assist' | 'bot';
 
 export interface AdProvider {
   showRewarded(placement: RewardedPlacement): Promise<RewardedResult>;
@@ -40,7 +40,7 @@ export interface AdProvider {
  */
 export const ADS_CONFIG = {
   /** Rewarded placements currently offered. */
-  rewardedPlacements: ['analysis', 'undo'] as const,
+  rewardedPlacements: ['analysis', 'undo', 'assist', 'bot'] as const,
   interstitialEnabled: true,
   /** Eligible after the 1st completed win. */
   interstitialMinGames: 1,

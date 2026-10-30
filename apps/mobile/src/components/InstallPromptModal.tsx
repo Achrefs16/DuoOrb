@@ -282,7 +282,7 @@ const createStyles = () =>
   StyleSheet.create({
     overlay: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      backgroundColor: THEME.colors.modalBackdrop,
       justifyContent: 'center',
       alignItems: 'center',
       padding: 18,

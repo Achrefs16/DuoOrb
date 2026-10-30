@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { AppState } from 'react-native';
 import { GameAction, GameError, GameState, RecordedAction, applyAction } from '@duoorb/game-core';
-import { ClockStateDto, GameEndedDto, GameSyncDto } from '@duoorb/protocol';
+import { ClockStateDto, GameEndedDto, GameSyncDto, PlayerCosmeticsDto } from '@duoorb/protocol';
 import { socketManager, useVerified, ConnectionStatus } from './socket';
 import { getIdentity, useIdentity } from './auth';
 import { refreshSessionOnce } from './apiClient';
@@ -185,6 +185,9 @@ export function useOnlineGame({ gameId, initialSync, onGameEnded, onError }: Use
   const [playerUserIds, setPlayerUserIds] = useState<Record<string, string>>(
     () => initialSync?.playerUserIds ?? {}
   );
+  const [playerCosmetics, setPlayerCosmetics] = useState<Record<string, PlayerCosmeticsDto>>(
+    () => initialSync?.playerCosmetics ?? {}
+  );
   /**
    * UserIds holding effective premium at game creation (P5.2 seat/GameOver
    * badges). Frozen for the match — a present list (even empty) replaces the
@@ -192,6 +195,9 @@ export function useOnlineGame({ gameId, initialSync, onGameEnded, onError }: Use
    */
   const [premiumUserIds, setPremiumUserIds] = useState<string[]>(
     () => initialSync?.premiumUserIds ?? []
+  );
+  const [isRanked, setIsRanked] = useState<boolean>(
+    () => initialSync?.isRanked ?? false
   );
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('connecting');
   // OS link verdict, for honest copy ("You're offline" vs "Reconnecting…").
@@ -926,9 +932,11 @@ setOpponentGrace({});
       // opponent's chips need a userId to open a profile, and this is the
       // only place it exists (a board seat id is not a user id).
       if (sync.playerUserIds) setPlayerUserIds(sync.playerUserIds);
+      if (sync.playerCosmetics) setPlayerCosmetics(sync.playerCosmetics);
       // Premium seat flags ride the same syncs (P5.2). Same absent-tolerant
       // rule: present replaces, absent (old server) keeps prior state.
       if (sync.premiumUserIds !== undefined) setPremiumUserIds(sync.premiumUserIds);
+      if (sync.isRanked !== undefined) setIsRanked(sync.isRanked);
 
       // Current turn's inactivity deadline, when one applies: a client that
       // attaches (or re-attaches) mid-turn missed the one-shot warning, so
@@ -1018,6 +1026,7 @@ setOpponentGrace({});
 
     const handleEnded = (ended: GameEndedDto) => {
       setGameEndedResult(ended);
+      if (ended.isRanked !== undefined) setIsRanked(ended.isRanked);
       // The table is decided: no seat is away or idle any more, so their
       // indicators must not outlive the game onto the result screen.
       setOpponentGrace({});
@@ -1350,6 +1359,8 @@ return {
     myPlayerId,
     myPlayerIndex,
     playerUserIds,
+    playerCosmetics,
+    isRanked,
     /** UserIds premium at creation (P5.2 seat/GameOver badges, frozen). */
     premiumUserIds,
 connStatus,

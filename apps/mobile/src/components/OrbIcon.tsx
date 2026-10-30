@@ -23,7 +23,11 @@ google-play`.split(/\s+/);
 const MATERIAL = ['block', 'keyboard-arrow-down', 'more-vert'];
 
 /** Semantic names that map onto a differently named library glyph. */
-const ALIASES: Record<string, string> = { 'person-add': 'user-plus', orb: 'circle' };
+const ALIASES: Record<string, string> = {
+  'person-add': 'user-plus',
+  orb: 'circle',
+  close: 'x',
+};
 
 export type OrbIconName = string;
 

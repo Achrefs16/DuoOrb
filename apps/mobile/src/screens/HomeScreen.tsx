@@ -246,19 +246,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </View>
         </TouchableOpacity>
 
-        {/* Row 3: Play a Friend */}
+        {/* Row 3: Rooms */}
         <TouchableOpacity
           style={styles.featureRow}
           activeOpacity={0.7}
           onPress={guarded(() =>
-            runWhenOnline(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'rooms'))
+            runWhenOnline(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'public'))
           )}
         >
           <MiniBoardPreview preset="friendsRoom" size={rs(114)} />
           <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Play a Friend</Text>
+            <Text style={styles.rowTitle}>Rooms</Text>
             <Text style={styles.rowSubtitle} numberOfLines={1}>
-              Create or join a private room
+              Public tables & play with friends
             </Text>
           </View>
         </TouchableOpacity>

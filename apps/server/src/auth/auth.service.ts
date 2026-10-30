@@ -3,6 +3,11 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { PrismaService } from '../database/prisma.service.js';
 import { GuestTokenService } from './guest-token.service.js';
 import { validateUsername } from '../users/username.js';
+import {
+  DEFAULT_INITIAL_RATING,
+  DEFAULT_INITIAL_RD,
+  DEFAULT_INITIAL_VOL,
+} from '../rating/glicko2.service.js';
 
 export interface AuthenticatedUser {
   id: string;
@@ -201,9 +206,9 @@ export class AuthService {
         where: { userId },
         create: {
           userId,
-          rating: 1500.0,
-          rd: 350.0,
-          vol: 0.06,
+          rating: DEFAULT_INITIAL_RATING,
+          rd: DEFAULT_INITIAL_RD,
+          vol: DEFAULT_INITIAL_VOL,
         },
         update: {},
       });

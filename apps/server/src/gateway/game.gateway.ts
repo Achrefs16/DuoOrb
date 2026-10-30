@@ -26,7 +26,13 @@ import { ChallengeService } from '../challenge/challenge.service.js';
 import { AuthService } from '../auth/auth.service.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { Logger } from '@nestjs/common';
-import { ClockStateDto, GameEndedDto, RoomDto } from '@duoorb/protocol';
+import { ClockStateDto, GameEndedDto, PublicRoomSummaryDto, RoomDto } from '@duoorb/protocol';
+import {
+  DEFAULT_INITIAL_RATING,
+  DEFAULT_INITIAL_RD,
+  DEFAULT_INITIAL_VOL,
+  type GlickoPlayer,
+} from '../rating/glicko2.service.js';
 
 interface SocketUserInfo {
   userId: string;
@@ -139,6 +145,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * not mistaken for a genuine leave.
    */
   private pendingHandshakes = new Map<string, PendingHandshake>();
+  private publicRoomsBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Short debounce before telling opponents about a disconnect. A Socket.IO
    * transport reconnect closes the old socket and opens a new one; the
@@ -157,6 +164,8 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   private userRatingCache = new Map<string, number>();
   /** Last reaction timestamp per socket, for the tap-flood throttle. */
   private reactionLastAt = new Map<string, number>();
+  /** Equipped cosmetic skins per user: ballSkinId & wallSkinId. */
+  private userCosmeticsMap = new Map<string, { ballSkinId?: string; wallSkinId?: string }>();
 
   constructor(
     private readonly authService: AuthService,
@@ -173,6 +182,10 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     if (this.sweepInterval) {
       clearInterval(this.sweepInterval);
       this.sweepInterval = undefined;
+    }
+    if (this.publicRoomsBroadcastTimer) {
+      clearTimeout(this.publicRoomsBroadcastTimer);
+      this.publicRoomsBroadcastTimer = null;
     }
     for (const pending of this.pendingHandshakes.values()) {
       clearTimeout(pending.timer);
@@ -359,6 +372,11 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       this.socketEpochs.set(client.id, epoch);
       const userInfo: SocketUserInfo = { userId: effectiveId, displayName, rating, verified, isPremium };
       this.socketUserMap.set(client.id, userInfo);
+      const ballSkinId = (client.handshake.auth?.ballSkinId ?? client.handshake.query?.ballSkinId) as string | undefined;
+      const wallSkinId = (client.handshake.auth?.wallSkinId ?? client.handshake.query?.wallSkinId) as string | undefined;
+      if (ballSkinId || wallSkinId) {
+        this.userCosmeticsMap.set(effectiveId, { ballSkinId, wallSkinId });
+      }
       this.userSocketMap.delete(earlyId);
       // Single controlling session: if a different LIVE socket already spoke
       // for this user, it is now stale — tell it to stand down instead of
@@ -678,10 +696,14 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // their invites): without this a blipped lobby seat — crown included —
     // stayed occupied forever. IN_GAME rooms are untouched: grace covers a
     // mid-match absence and the room is still theirs on return.
-    for (const left of this.roomService.leaveAllWaitingRooms(userId)) {
+    const leftRooms = this.roomService.leaveAllWaitingRooms(userId);
+    for (const left of leftRooms) {
       if (!left.disbanded && left.room) {
         this.server.to(left.roomId).emit('room:state', this.enrichRoom(left.room));
       }
+    }
+    if (leftRooms.length > 0) {
+      this.broadcastPublicRooms();
     }
 
     // Check if user is in an active game
@@ -882,7 +904,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   handleCreateRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number }
+    payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; isPublic?: boolean }
   ) {
     const user = this.getUser(client);
     const denied = this.requireVerified(user);
@@ -893,9 +915,11 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       payload.mode,
       payload.timeControlMinutes,
       payload.incrementSeconds ?? 0,
-      payload.wallsEach ?? 10
+      payload.wallsEach ?? 10,
+      payload.isPublic ?? false
     );
     client.join(room.id);
+    if (room.isPublic) this.broadcastPublicRooms();
     return { success: true, room: this.enrichRoom(room) };
   }
 
@@ -912,6 +936,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     if (result.success) {
       client.join(result.room.id);
       this.server.to(result.room.id).emit('room:state', this.enrichRoom(result.room));
+      if (result.room.isPublic) this.broadcastPublicRooms();
     }
 
     return result.success
@@ -996,6 +1021,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       timeControlMinutes?: number;
       incrementSeconds?: number;
       wallsEach?: number;
+      isPublic?: boolean;
     }
   ) {
     const user = this.getUser(client);
@@ -1006,11 +1032,13 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       timeControlMinutes: payload.timeControlMinutes,
       incrementSeconds: payload.incrementSeconds,
       wallsEach: payload.wallsEach,
+      isPublic: payload.isPublic,
     });
     if (!result.success) return result;
     // Every member's lobby re-renders from this broadcast, so the table sees
     // the new setup (and the disarmed ready flags) immediately.
     this.server.to(result.room.id).emit('room:state', this.enrichRoom(result.room));
+    this.broadcastPublicRooms();
     return result;
   }
 
@@ -1026,6 +1054,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     if (room) {
       this.server.to(room.id).emit('room:state', this.enrichRoom(room));
     }
+    this.broadcastPublicRooms();
     return { success: true };
   }
 
@@ -1050,6 +1079,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       kickedSocket?.emit('room:kicked', { roomId: payload.roomId });
     }
     this.server.to(result.room.id).emit('room:state', this.enrichRoom(result.room));
+    this.broadcastPublicRooms();
     return { success: true };
   }
 
@@ -1102,7 +1132,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // host crown is untouched — only table positions shuffle.
     const shuffledIds = shuffleSeats(result.players.map((p) => p.userId));
 
-    // ALL online human games are rated (server-decided — no client flag).
+    // Custom and public rooms are ALWAYS unranked (casual/practice only).
     const created = await this.createGameChecked({
       gameId,
       mode: result.room.mode,
@@ -1110,7 +1140,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       timeControlMinutes: result.room.timeControlMinutes,
       incrementSeconds: result.room.incrementSeconds,
       wallsEach: result.room.wallsEach,
-      isRanked: true,
+      isRanked: false,
     });
     if (!created.success) {
       client.emit('game:error', { code: 'START_FAILED', message: created.error });
@@ -1125,6 +1155,9 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // no client keeps showing a stale "ready" lobby.
     this.server.to(payload.roomId).emit('room:state', this.enrichRoom(result.room));
     this.server.to(payload.roomId).emit('room:started', { roomId: payload.roomId, gameId });
+    if (result.room.isPublic) {
+      this.broadcastPublicRooms();
+    }
   }
 
   /**
@@ -1172,14 +1205,86 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     return { success: true };
   }
 
+  @SubscribeMessage('room:listPublic')
+  handleListPublic() {
+    return { success: true, rooms: this.getPublicRoomSummaries() };
+  }
+
+  @SubscribeMessage('room:subscribePublic')
+  handleSubscribePublic(@ConnectedSocket() client: Socket) {
+    client.join('public_rooms_lobby');
+    client.emit('room:publicRoomsUpdated', this.getPublicRoomSummaries());
+    return { success: true };
+  }
+
+  @SubscribeMessage('room:unsubscribePublic')
+  handleUnsubscribePublic(@ConnectedSocket() client: Socket) {
+    client.leave('public_rooms_lobby');
+    return { success: true };
+  }
+
+  public getPublicRoomSummaries(): PublicRoomSummaryDto[] {
+    const publicRooms = this.roomService.getPublicRooms();
+    return publicRooms.map((room) => {
+      const hostSlot = room.slots.find((s) => s.isHost) ?? room.slots[0];
+      const hostSocketId = hostSlot?.userId ? this.userSocketMap.get(hostSlot.userId) : undefined;
+      const hostInfo = hostSocketId ? this.socketUserMap.get(hostSocketId) : undefined;
+      const hostRating = hostSlot?.userId
+        ? hostInfo?.rating ?? this.userRatingCache.get(hostSlot.userId) ?? 1500
+        : 1500;
+      const hostIsPremium = hostInfo?.isPremium ?? false;
+
+      return {
+        id: room.id,
+        code: room.code,
+        mode: room.mode,
+        hostId: room.hostId,
+        hostDisplayName: hostSlot?.displayName ?? 'Host',
+        hostRating,
+        hostIsPremium,
+        totalSlots: room.slots.length,
+        occupiedSlots: room.slots.filter((s) => s.userId !== null).length,
+        timeControlMinutes: room.timeControlMinutes,
+        incrementSeconds: room.incrementSeconds,
+        wallsEach: room.wallsEach,
+        createdAt: room.createdAt,
+      };
+    });
+  }
+
+  public broadcastPublicRooms(): void {
+    if (!this.server) return;
+    if (this.publicRoomsBroadcastTimer) return;
+    this.publicRoomsBroadcastTimer = setTimeout(() => {
+      this.publicRoomsBroadcastTimer = null;
+      if (!this.server) return;
+      const summaries = this.getPublicRoomSummaries();
+      this.server.to('public_rooms_lobby').emit('room:publicRoomsUpdated', summaries);
+    }, 100);
+  }
+
   // -------------------------------------------------------------
   // MATCHMAKING HANDLERS
   // -------------------------------------------------------------
 
+  @SubscribeMessage('cosmetics:equip')
+  handleEquipCosmetics(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { ballSkinId?: string; wallSkinId?: string }
+  ) {
+    const user = this.getUser(client);
+    if (user?.userId) {
+      this.userCosmeticsMap.set(user.userId, {
+        ballSkinId: payload.ballSkinId,
+        wallSkinId: payload.wallSkinId,
+      });
+    }
+  }
+
   @SubscribeMessage('matchmaking:find')
   handleFindMatch(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number },
+    @MessageBody() payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; ballSkinId?: string; wallSkinId?: string },
     @Ack() ack?: (result: {
       success: boolean;
       queued?: boolean;
@@ -1194,6 +1299,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       client.emit('game:error', { code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
       ack?.({ success: false, code: 'UNAUTHENTICATED' });
       return;
+    }
+    if (payload.ballSkinId || payload.wallSkinId) {
+      this.userCosmeticsMap.set(user.userId, {
+        ballSkinId: payload.ballSkinId,
+        wallSkinId: payload.wallSkinId,
+      });
     }
     const busyGameId = this.activeGameUserMap.get(user.userId);
     const busyGame = busyGameId ? this.gameService.getGame(busyGameId) : undefined;
@@ -1380,6 +1491,8 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // seat already in another game) dies like a decline instead of creating
     // a ghost game nobody can join (C2). Names/ratings are re-read live
     // inside — never the frozen send-time snapshot (M17).
+    // Only 1v1 classical matches (mode '2p', 2 seats) are rated.
+    const isRanked = challenge.mode === '2p' && seatIds.length === 2;
     const created = await this.createGameChecked({
       gameId,
       mode: challenge.mode,
@@ -1387,7 +1500,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       timeControlMinutes: challenge.timeControlMinutes,
       incrementSeconds: challenge.incrementSeconds,
       wallsEach: challenge.wallsEach,
-      isRanked: true,
+      isRanked,
     });
     if (!created.success) {
       const senderId = this.userSocketMap.get(challenge.fromUserId);
@@ -1512,6 +1625,8 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       // the sweep re-runs every 2s, so this is a delay, not a dead end.
       // NOTE: re-queue re-pushes the snapshot (joinedAt not preserved) —
       // fairness pass (F3) fixes preservation.
+      // Only classical 1v1 online matches (mode '2p', exactly 2 seats) are rated. All +2 player modes are unranked.
+      const isRanked = match.mode === '2p' && orderedPlayers.length === 2;
       const created = await this.createGameChecked({
         gameId,
         mode: match.mode,
@@ -1519,7 +1634,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         timeControlMinutes: match.timeControlMinutes,
         incrementSeconds: match.incrementSeconds,
         wallsEach: match.wallsEach,
-        isRanked: true,
+        isRanked,
       });
       if (!created.success) {
         // Live seats keep searching with fresh routing + preserved wait
@@ -1969,7 +2084,9 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
           timeControlMinutes: params.timeControlMinutes,
           incrementSeconds: params.incrementSeconds,
           wallsEach: (params as { wallsEach?: number }).wallsEach,
-          isRanked: params.isRanked ?? true,
+          isRanked: Boolean(
+            params.isRanked && params.mode === '2p' && params.users?.length === 2
+          ),
         });
         if (!created.success) {
           client.emit('game:error', { code: 'REMATCH_FAILED', message: created.error });
@@ -2100,6 +2217,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     const room = this.roomService.returnToLobby(roomId);
     if (room) {
       this.server.to(room.id).emit('room:state', this.enrichRoom(room));
+      if (room.isPublic) this.broadcastPublicRooms();
     }
   }
 
@@ -2164,16 +2282,28 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     for (const id of args.seatUserIds) this.matchmakingService.removeFromQueue(id);
     // 4. Live names + live ratings, never frozen snapshots (M17).
     const users = await Promise.all(
-      args.seatUserIds.map(async (userId) => ({
-        userId,
-        displayName: nameOf(userId),
-        rating: await this.fullRating(userId),
-      }))
+      args.seatUserIds.map(async (userId) => {
+        const cosmetics = this.userCosmeticsMap.get(userId);
+        return {
+          userId,
+          displayName: nameOf(userId),
+          rating: await this.fullRating(userId),
+          ballSkinId: cosmetics?.ballSkinId,
+          wallSkinId: cosmetics?.wallSkinId,
+        };
+      })
     );
     // 5. All four hooks, asserted in this one place — a creation site can no
     // longer silently drop AFK/forfeit handling (C7). Plus the quorum hook:
     // seats that never join are put on standard grace, and the waiting seats
     // get the same countdown broadcast as a mid-game disconnect.
+    // Strict ranking rule:
+    // ONLY classical 1v1 online matches (mode '2p', exactly 2 seats) can be rated.
+    // Public/custom rooms, 3-player, 4-player, and any non-1v1 modes are strictly unranked.
+    const effectiveIsRanked = Boolean(
+      args.isRanked && args.mode === '2p' && args.seatUserIds.length === 2
+    );
+
     this.gameService.createGame({
       gameId: args.gameId,
       mode: args.mode,
@@ -2182,7 +2312,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       timeControlMinutes: args.timeControlMinutes,
       incrementSeconds: args.incrementSeconds,
       wallsEach: args.wallsEach,
-      isRanked: args.isRanked,
+      isRanked: effectiveIsRanked,
       onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       onAfkWarning: (gId, payload) => this.server.to(gId).emit('game:afkWarning', payload),
       onForfeit: (gId, ended, finished, move) =>
@@ -2218,18 +2348,22 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
    * Seeding games with the real rd/vol (instead of 350/0.06 every time)
    * is what keeps rating moves sane.
    */
-  private async fullRating(userId: string): Promise<{ rating: number; rd: number; vol: number }> {
+  private async fullRating(userId: string): Promise<GlickoPlayer> {
     try {
       if (this.prisma.isConnected) {
         const rec = await this.prisma.rating.findUnique({
           where: { userId },
         });
-        if (rec) return { rating: rec.rating, rd: rec.rd, vol: rec.vol };
+        if (rec) {
+          // If an unplayed account had legacy 350 RD, modernize it to 180 for first matches
+          const rd = (rec.gamesPlayed === 0 && rec.rd === 350) ? DEFAULT_INITIAL_RD : rec.rd;
+          return { rating: rec.rating, rd, vol: rec.vol, gamesPlayed: rec.gamesPlayed };
+        }
       }
     } catch {
       // fall through to defaults
     }
-    return { rating: 1500, rd: 350, vol: 0.06 };
+    return { rating: DEFAULT_INITIAL_RATING, rd: DEFAULT_INITIAL_RD, vol: DEFAULT_INITIAL_VOL, gamesPlayed: 0 };
   }
 
   /**

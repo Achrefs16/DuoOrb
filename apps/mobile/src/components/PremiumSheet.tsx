@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Platform,
   StyleSheet,
@@ -36,11 +37,13 @@ import { track } from '../monetization/analytics';
  * plans render with a "coming soon" buy state: no dead buttons, no fake sales.
  */
 
+const DIAMOND_IMG = require('../../assets/dimand.png');
+
 const BULLETS = [
   'No ads, anywhere',
   'Unlimited game analysis',
-  'Walnut board design',
-  'Premium crown on your name',
+  'Exclusive cosmetics & styles',
+  'Exclusive diamond badge on your name',
 ];
 
 /** Dev-only unavailability explainer (never rendered in production). */
@@ -90,6 +93,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
 
   const bullets = [
     t('premium.bulletAds'),
+    t('premium.bulletAnalysis'),
     t('premium.bulletMidnight'),
     t('premium.bulletCrown'),
   ];
@@ -198,7 +202,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
           >
             <View style={styles.heroHandle} />
             <View style={styles.heroCrownTile}>
-              <OrbIcon name="crown" size={26} color={PREMIUM_GOLD} />
+              <Image source={DIAMOND_IMG} style={{ width: 32, height: 32 }} resizeMode="contain" />
             </View>
             <Text style={styles.heroTitle}>{t('premium.title')}</Text>
           </LinearGradient>
@@ -217,7 +221,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
           {Platform.OS === 'web' ? (
             <View style={styles.webContainer}>
               <Text style={styles.webNotice}>
-                DuoOrb Premium is managed through Google Play on Android. If you already have an active subscription, sign in with your Google account to enjoy ad-free play, Walnut theme, and unlimited analysis across all devices.
+                DuoOrb Premium is managed through Google Play on Android. If you already have an active subscription, sign in with your Google account to enjoy ad-free play, exclusive styles, and unlimited analysis across all devices.
               </Text>
               {!linked && (
                 <TouchableOpacity
@@ -372,7 +376,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
 const createStyles = () => StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: THEME.colors.modalBackdrop,
     justifyContent: 'flex-end',
   },
   card: {

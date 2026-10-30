@@ -17,6 +17,7 @@ import { useSession } from '../network/session';
 import { useConnectivity } from '../network/useConnectivity';
 import { GuestGate } from '../components/GuestGate';
 import { PremiumBadge } from '../components/PremiumBadge';
+import { usePremium, isPremiumActive } from '../monetization/premium';
 import { AdBanner } from '../components/AdBanner';
 import { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 import { NoConnectionSection } from '../components/NoConnection';
@@ -43,8 +44,9 @@ const PodiumSpot: React.FC<{
   avatarSize: number;
   barHeight: number;
   isMe: boolean;
+  isMePremium?: boolean;
   onPress: () => void;
-}> = ({ entry, avatarSize, barHeight, isMe, onPress }) => {
+}> = ({ entry, avatarSize, barHeight, isMe, isMePremium = false, onPress }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
   const medal = MEDALS[entry.rank] ?? null;
@@ -81,7 +83,7 @@ const PodiumSpot: React.FC<{
         <Text style={styles.spotName} numberOfLines={1}>
           {name}
         </Text>
-        {entry.isPremium && <PremiumBadge size="xs" />}
+        {(entry.isPremium || (isMe && isMePremium)) && <PremiumBadge size="xs" />}
       </View>
       {isMe && (
         <View style={styles.youPill}>
@@ -136,6 +138,8 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
   const { identity } = useSession();
   const isGuest = identity?.isGuest === true;
   const myUserId = identity?.userId ?? null;
+  const premium = usePremium();
+  const isMePremium = isPremiumActive(premium);
   const { isConnected } = useConnectivity();
 
   const fetchLeaderboard = useCallback(async (silent = false) => {
@@ -252,6 +256,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
             avatarSize={68}
             barHeight={76}
             isMe={second.userId === myUserId}
+            isMePremium={isMePremium}
             onPress={openPlayer(second)}
           />
           <PodiumSpot
@@ -259,6 +264,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
             avatarSize={86}
             barHeight={116}
             isMe={first.userId === myUserId}
+            isMePremium={isMePremium}
             onPress={openPlayer(first)}
           />
           <PodiumSpot
@@ -266,6 +272,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
             avatarSize={68}
             barHeight={58}
             isMe={third.userId === myUserId}
+            isMePremium={isMePremium}
             onPress={openPlayer(third)}
           />
         </View>
@@ -306,12 +313,10 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
           <View style={styles.rowNameLine}>
             <Text style={styles.rowName} numberOfLines={1}>
               {name}
-              {item.isPremium === true && (
-                <Text>
-                  {' '}<PremiumBadge />
-                </Text>
-              )}
             </Text>
+            {(item.isPremium === true || (isMe && isMePremium)) && (
+              <PremiumBadge size="xs" />
+            )}
             {isMe && (
               <View style={styles.youPill}>
                 <Text style={styles.youPillText}>{t('leaderboard.you')}</Text>
@@ -799,7 +804,7 @@ const createStyles = () => StyleSheet.create({
   // language as the resign/result modals. The board underneath never moves.
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: THEME.colors.modalBackdrop,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,

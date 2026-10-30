@@ -329,12 +329,8 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
             <View style={styles.nameRow}>
               <Text style={[styles.friendName, !isOnline && styles.friendNameCompact]} numberOfLines={1}>
                 {resolveName(friend)}
-                {friend.isPremium === true && (
-                  <Text>
-                    {' '}<PremiumBadge />
-                  </Text>
-                )}
               </Text>
+              {friend.isPremium === true && <PremiumBadge size="xs" />}
               <Text style={[styles.friendRating, !isOnline && styles.friendRatingCompact]}>{friend.rating}</Text>
             </View>
             <Text style={styles.friendHandle} numberOfLines={1}>
@@ -1100,7 +1096,7 @@ const createStyles = () => StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: THEME.colors.modalBackdrop,
     justifyContent: 'center',
     padding: 20,
   },
@@ -1129,7 +1125,7 @@ const createStyles = () => StyleSheet.create({
   },
   sheetOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    backgroundColor: THEME.colors.modalBackdropSubtle,
     justifyContent: 'flex-end',
   },
   sheetCard: {

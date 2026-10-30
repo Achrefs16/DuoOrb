@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
+  Image,
   StyleSheet,
   Text,
   View,
@@ -39,6 +40,7 @@ import {
 } from '../audio/sounds';
 import { THEME, playerColor, wallPreviewColor, useStyles } from '../theme';
 import { useBoardSkin } from '../theme/boardTheme';
+import { useEquippedWallSkin } from '../theme/cosmeticsCatalog';
 
 interface TutorialScreenProps {
   onFinish: () => void;
@@ -54,6 +56,7 @@ interface WallDragState {
 export const TutorialScreen: React.FC<TutorialScreenProps> = ({ onFinish, onSkip }) => {
   const styles = useStyles(createStyles);
   const skin = useBoardSkin();
+  const customWall = useEquippedWallSkin();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   const [scenarioIndex, setScenarioIndex] = useState(0);
@@ -198,8 +201,8 @@ export const TutorialScreen: React.FC<TutorialScreenProps> = ({ onFinish, onSkip
     if (!wallDrag || !rootRectRef.current) return null;
     const trayScale = Math.max(0.72, Math.min(1, windowWidth / 390));
     const isH = wallDrag.orientation === 'H';
-    const w = (isH ? 56 : 12) * trayScale;
-    const h = (isH ? 12 : 56) * trayScale;
+    const w = (isH ? 60 : 16) * trayScale;
+    const h = (isH ? 16 : 60) * trayScale;
     return {
       left: wallDrag.pageX - rootRectRef.current.x - w / 2,
       top: wallDrag.pageY - rootRectRef.current.y - h / 2,
@@ -572,19 +575,36 @@ export const TutorialScreen: React.FC<TutorialScreenProps> = ({ onFinish, onSkip
                 top: chipStyle.top,
                 width: chipStyle.width,
                 height: chipStyle.height,
+                overflow: 'hidden',
                 borderRadius:
                   skin.wallRadius === 'capsule'
                     ? Math.min(chipStyle.width, chipStyle.height) / 2
                     : typeof skin.wallRadius === 'number'
                     ? skin.wallRadius
                     : Math.min(chipStyle.width, chipStyle.height) / 2,
-                backgroundColor:
-                  skin.wallStyle === 'neutral' && skin.neutralWall
-                    ? skin.neutralWall
-                    : trayColor,
+                backgroundColor: customWall
+                  ? 'transparent'
+                  : skin.wallStyle === 'neutral' && skin.neutralWall
+                  ? skin.neutralWall
+                  : trayColor,
               },
             ]}
-          />
+          >
+            {customWall && (
+              <Image
+                source={
+                  chipStyle.width > chipStyle.height
+                    ? (customWall.assets.wallTray || customWall.assets.wallH)
+                    : customWall.assets.wallV
+                }
+                style={{
+                  width: chipStyle.width,
+                  height: chipStyle.height,
+                }}
+                resizeMode="stretch"
+              />
+            )}
+          </View>
         )}
 
         {/* Pointing Hand Guide overlay */}

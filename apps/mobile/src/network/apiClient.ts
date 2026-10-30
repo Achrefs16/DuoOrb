@@ -8,6 +8,7 @@ import {
 import { socketManager } from './socket';
 import { ApiError, NetworkError } from './errors';
 import type { GameReview, GameState, RecordedAction } from '@duoorb/game-core';
+import type { BotStarMap } from '../storage/gameStorage';
 
 // ApiError lives in ./errors (single taxonomy); re-exported here so existing
 // `import { ApiError } from '../network/apiClient'` call sites keep working.
@@ -35,6 +36,7 @@ export interface UserMeDto {
   /** Premium entitlement (server truth; absent on old servers = free tier). */
   isPremium?: boolean;
   premiumExpiresAt?: string | null;
+  botStars?: BotStarMap;
 }
 
 export interface PublicProfileDto {
@@ -184,7 +186,15 @@ export interface HistoryResponseDto {
 /** Metal ladder, bronze → diamond. Drives medallion colors. */
 export type BadgeTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
 /** Badge grouping for the achievements section. */
-export type BadgeCategory = 'streak' | 'rank' | 'milestone' | 'mastery';
+export type BadgeCategory =
+  | 'bot'
+  | 'battle'
+  | 'tactics'
+  | 'social'
+  | 'streak'
+  | 'milestone'
+  | 'rank'
+  | 'mastery';
 
 /** Locked-badge progress toward its target (absent when not tracked). */
 export interface BadgeProgress {
@@ -736,11 +746,32 @@ export const api = {
     });
   },
 
+  /** Claims an achievement code. */
+  async claimAchievement(code: string): Promise<{ success: boolean; newlyEarned: BadgeDto | null }> {
+    return request<{ success: boolean; newlyEarned: BadgeDto | null }>('/achievements/claim', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  },
+
   async linkGuest(guestId: string, accessToken?: string): Promise<{ success: boolean }> {
     void accessToken;
     return request<{ success: boolean }>('/link', {
       method: 'POST',
       body: JSON.stringify({ guestId }),
+    });
+  },
+
+  /** Fetches cloud-synced bot mastery stars. */
+  async getBotStars(): Promise<{ botStars: BotStarMap }> {
+    return request<{ botStars: BotStarMap }>('/me/bot-stars');
+  },
+
+  /** Synchronizes local bot stars with the cloud monotonically. */
+  async syncBotStars(botStars: BotStarMap): Promise<{ botStars: BotStarMap }> {
+    return request<{ botStars: BotStarMap }>('/me/bot-stars', {
+      method: 'POST',
+      body: JSON.stringify({ botStars }),
     });
   },
 

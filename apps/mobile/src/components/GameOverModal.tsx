@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { OrbIcon } from './OrbIcon';
-import { GameState, BotPersonality, type MoveAssessment } from '@duoorb/game-core';
+import { copyTextToClipboard } from '../lib/clipboard';
+import { GameState, BotPersonality, serializeGameRecord, type MoveAssessment } from '@duoorb/game-core';
 import type { GameEndedDto } from '@duoorb/protocol';
 import { THEME, playerColor, useStyles } from '../theme';
 import { useTranslation, type TranslationKey } from '../i18n';
@@ -22,11 +23,11 @@ import { nameInitial } from '../displayName';
 import { usePremium, isPremiumActive } from '../monetization/premium';
 import {
   emptyMoveQualityCounts,
-  getQuickReviewCounts,
   selectGameOverBadges,
   type GameOverBadgeSelection,
   type MoveQualityCounts,
 } from '../analysis/quickReview';
+import { fetchOrComputeReview } from '../analysis/reviewLoader';
 
 export interface GameOverModalProps {
   visible: boolean;
@@ -210,16 +211,40 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     }
   }, [visible, pop]);
 
-  // Quick, on-device badge counts. No network request is made here: the
-  // authoritative server review starts only when the user opens Game Review.
+  // On-device badge counts. Only computed for Classic 2P.
+  const isClassic2P = state.mode === '2p';
   const fallbackPlayerId = state.players[0]?.id ?? null;
   const [quickCounts, setQuickCounts] = useState<MoveQualityCounts | null>(null);
   const [badgeSelection, setBadgeSelection] =
     useState<GameOverBadgeSelection | null>(null);
   const [shimmer] = useState(() => new Animated.Value(1));
+  const [copiedMoves, setCopiedMoves] = useState(false);
+
+  const handleCopyMoves = async () => {
+    if (!state.history || state.history.length === 0) return;
+    try {
+      const customNames: Record<string, string> = {};
+      if (opponentName) {
+        customNames['p2'] = opponentName;
+        customNames['1'] = opponentName;
+      }
+      if (botPersonality) {
+        customNames['p2'] = botPersonality.name;
+        customNames['1'] = botPersonality.name;
+      }
+      const text = serializeGameRecord(state, customNames);
+      const ok = await copyTextToClipboard(text);
+      if (ok) {
+        setCopiedMoves(true);
+        setTimeout(() => setCopiedMoves(false), 2500);
+      }
+    } catch (e) {
+      console.warn('Failed to copy game record to clipboard', e);
+    }
+  };
 
   useEffect(() => {
-    if (!visible) {
+    if (!visible || !isClassic2P) {
       setQuickCounts(null);
       setBadgeSelection(null);
       return;
@@ -231,19 +256,27 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     let revealTimer: ReturnType<typeof setTimeout> | undefined;
     const startedAt = Date.now();
 
-    // Let the result card paint first. The scan only covers the viewer's
-    // moves and normally finishes long before the user reads the result.
-    const timer = setTimeout(() => {
+    // Fast local analysis using native/WASM neural+solver review (or quick review fallback)
+    const timer = setTimeout(async () => {
       if (cancelled) return;
       const targetPlayerId = myPlayerId ?? fallbackPlayerId;
       let counts = emptyMoveQualityCounts();
       if (initialState && targetPlayerId && state.history.length > 0) {
         try {
-          counts = getQuickReviewCounts(
+          const review = await fetchOrComputeReview(
             initialState,
             state.history,
-            targetPlayerId
+            state.gameId || `game-${Date.now()}`,
+            { isCancelled: () => cancelled }
           );
+
+          if (review && Array.isArray(review.moveAnalyses) && review.moveAnalyses.length > 0) {
+            for (const m of review.moveAnalyses) {
+              if (m.playerId === targetPlayerId && counts[m.assessment] !== undefined) {
+                counts[m.assessment] = (counts[m.assessment] ?? 0) + 1;
+              }
+            }
+          }
         } catch {
           // A malformed old local game must not break the finish modal.
           counts = emptyMoveQualityCounts();
@@ -270,8 +303,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     };
   }, [
     visible,
+    isClassic2P,
     initialState,
     state.history,
+    state.gameId,
     myPlayerId,
     fallbackPlayerId,
   ]);
@@ -387,31 +422,45 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             },
           ]}
         >
-          {/* Close Button on top right */}
-          <TouchableOpacity
-            style={styles.closeBtn}
-            onPress={onClose}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityLabel={t('gameover.closeResultA11y')}
-          >
-            <OrbIcon name="x" size={18} color={THEME.colors.textMuted} />
-          </TouchableOpacity>
+          {/* Top Right Action Buttons: Copy Moves & Close */}
+          <View style={styles.topRightActions}>
+            {state.history && state.history.length > 0 && (
+              <TouchableOpacity
+                style={styles.topActionBtn}
+                onPress={handleCopyMoves}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel={t('gameover.copyMoves')}
+              >
+                <OrbIcon
+                  name={copiedMoves ? 'check' : 'copy'}
+                  size={15}
+                  color={copiedMoves ? '#69B342' : THEME.colors.textMuted}
+                />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.topActionBtn}
+              onPress={onClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel={t('gameover.closeResultA11y')}
+            >
+              <OrbIcon name="x" size={17} color={THEME.colors.textMuted} />
+            </TouchableOpacity>
+          </View>
 
           {/* Header Title & Subtitle */}
           <View style={styles.headerBlock}>
             <Text style={styles.outcomeTitle}>{outcomeTitle}</Text>
             {subtitle && (
-              <Text style={styles.outcomeSubtitle}>
-                {subtitle}
-                {!isMultiplayer && opponentIsPremium && (
-                  <Text> <PremiumBadge /></Text>
-                )}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 4 }}>
+                <Text style={styles.outcomeSubtitle}>{subtitle}</Text>
+                {!isMultiplayer && opponentIsPremium && <PremiumBadge size="xs" />}
+              </View>
             )}
           </View>
 
-          {/* Bot Mastery Stars (Vs Bot) */}
-          {botPersonality && (
+          {/* Bot Mastery Stars (Vs Bot) - Only for Classic 2P */}
+          {botPersonality && isClassic2P && (
             <View style={styles.masterySection}>
               <View style={styles.masteryStarsRow}>
                 {[1, 2, 3].map((n) => (
@@ -474,13 +523,15 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                           {nameInitial(p.displayName)}
                         </Text>
                       </View>
-                      <Text style={styles.rowName} numberOfLines={1}>
-                        {p.displayName}
-                        {isMe ? ` ${t('gameover.you')}` : ''}
-                        {seatPremium?.[p.id] === true && (
-                          <Text> <PremiumBadge /></Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 }}>
+                        <Text style={styles.rowName} numberOfLines={1}>
+                          {p.displayName}
+                          {isMe ? ` ${t('gameover.you')}` : ''}
+                        </Text>
+                        {(seatPremium?.[p.id] === true || (isMe && hasPremium)) && (
+                          <PremiumBadge size="xs" />
                         )}
-                      </Text>
+                      </View>
                     </View>
                     {(p.place ?? 99) === 1 && (
                       <OrbIcon name="award" size={16} color={THEME.colors.assessmentInaccuracy} />
@@ -491,41 +542,55 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </View>
           )}
 
-          {/* Move Quality Counters — Best stays centered; the outer slots
-              surface the strongest positive/negative result for this game. */}
-          <View style={styles.badgesContainer}>
-            <MoveBadge
-              assessment={leftBadge}
-              count={quickCounts ? quickCounts[leftBadge] : null}
-              loading={!quickCounts}
-              cycle={LEFT_BADGE_CYCLE}
-              shimmer={shimmer}
-            />
-            <MoveBadge
-              assessment="BEST"
-              count={quickCounts ? quickCounts.BEST : null}
-              loading={!quickCounts}
-              shimmer={shimmer}
-            />
-            <MoveBadge
-              assessment={rightBadge}
-              count={quickCounts ? quickCounts[rightBadge] : null}
-              loading={!quickCounts}
-              cycle={RIGHT_BADGE_CYCLE}
-              offset={1}
-              shimmer={shimmer}
-            />
-          </View>
+          {/* Move Quality Counters — Only for Classic 2P */}
+          {isClassic2P && (
+            <View style={styles.badgesContainer}>
+              <MoveBadge
+                assessment={leftBadge}
+                count={quickCounts ? quickCounts[leftBadge] : null}
+                loading={!quickCounts}
+                cycle={LEFT_BADGE_CYCLE}
+                shimmer={shimmer}
+              />
+              <MoveBadge
+                assessment="BEST"
+                count={quickCounts ? quickCounts.BEST : null}
+                loading={!quickCounts}
+                shimmer={shimmer}
+              />
+              <MoveBadge
+                assessment={rightBadge}
+                count={quickCounts ? quickCounts[rightBadge] : null}
+                loading={!quickCounts}
+                cycle={RIGHT_BADGE_CYCLE}
+                offset={1}
+                shimmer={shimmer}
+              />
+            </View>
+          )}
 
-          {/* Hero 3D Green Primary Button: Game Review */}
-          <TouchableOpacity
-            style={styles.gameReviewBtn}
-            activeOpacity={0.88}
-            onPress={onAnalyze}
-          >
-            <SmoothStar size={17} color="#FFFFFF" />
-            <Text style={styles.gameReviewText}>Game Review</Text>
-          </TouchableOpacity>
+          {/* Hero 3D Green Primary Button: Game Review for 2P, Play Again for non-2P */}
+          {isClassic2P ? (
+            <TouchableOpacity
+              style={styles.gameReviewBtn}
+              activeOpacity={0.88}
+              onPress={onAnalyze}
+            >
+              <SmoothStar size={17} color="#FFFFFF" />
+              <Text style={styles.gameReviewText}>Game Review</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.gameReviewBtn}
+              activeOpacity={0.88}
+              onPress={type === 'online' ? onClose : (onRematch ?? onNewGame)}
+            >
+              <OrbIcon name={type === 'online' ? 'arrow-left' : 'rotate-ccw'} size={17} color="#FFFFFF" />
+              <Text style={styles.gameReviewText}>
+                {type === 'online' ? 'Return to Room' : 'Play Again'}
+              </Text>
+            </TouchableOpacity>
+          )}
 
           {/* 2-Column Secondary Tactile Buttons */}
           <View style={styles.secondaryRow}>
@@ -551,23 +616,36 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               </>
             ) : type === 'online' ? (
               <>
-                <TouchableOpacity
-                  style={styles.secondaryBtn}
-                  activeOpacity={0.75}
-                  onPress={onRematch}
-                >
-                  <OrbIcon name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
-                  <Text style={styles.secondaryBtnText}>Rematch</Text>
-                </TouchableOpacity>
+                {isClassic2P ? (
+                  <>
+                    <TouchableOpacity
+                      style={styles.secondaryBtn}
+                      activeOpacity={0.75}
+                      onPress={onRematch}
+                    >
+                      <OrbIcon name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
+                      <Text style={styles.secondaryBtnText}>Rematch</Text>
+                    </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.secondaryBtn}
-                  activeOpacity={0.75}
-                  onPress={onNewGame}
-                >
-                  <OrbIcon name="play" size={15} color={THEME.colors.textPrimary} />
-                  <Text style={styles.secondaryBtnText}>New Game</Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.secondaryBtn}
+                      activeOpacity={0.75}
+                      onPress={onNewGame}
+                    >
+                      <OrbIcon name="play" size={15} color={THEME.colors.textPrimary} />
+                      <Text style={styles.secondaryBtnText}>New Game</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.secondaryBtn, { flex: 1 }]}
+                    activeOpacity={0.75}
+                    onPress={onClose}
+                  >
+                    <OrbIcon name="log-out" size={15} color={THEME.colors.textPrimary} />
+                    <Text style={styles.secondaryBtnText}>Leave Room</Text>
+                  </TouchableOpacity>
+                )}
               </>
             ) : (
               <>
@@ -591,6 +669,32 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               </>
             )}
           </View>
+
+          {/* Copy Match Moves / Notation Button */}
+          {state.history && state.history.length > 0 && (
+            <TouchableOpacity
+              style={[
+                styles.copyMovesBtn,
+                copiedMoves && styles.copyMovesBtnCopied,
+              ]}
+              activeOpacity={0.75}
+              onPress={handleCopyMoves}
+            >
+              <OrbIcon
+                name={copiedMoves ? 'check' : 'copy'}
+                size={14}
+                color={copiedMoves ? '#69B342' : THEME.colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.copyMovesText,
+                  copiedMoves && styles.copyMovesTextCopied,
+                ]}
+              >
+                {copiedMoves ? t('gameover.movesCopied') : t('gameover.copyMoves')}
+              </Text>
+            </TouchableOpacity>
+          )}
 
           {/* Opponent Profile Link */}
           {onViewOpponentProfile && opponentUserId && (
@@ -630,7 +734,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 const createStyles = () => StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    backgroundColor: THEME.colors.modalBackdrop,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
@@ -649,6 +753,23 @@ const createStyles = () => StyleSheet.create({
     // Strictly zero shadows
     elevation: 0,
   },
+  topRightActions: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    zIndex: 10,
+  },
+  topActionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.surfaceContainerLow,
+  },
   closeBtn: {
     position: 'absolute',
     top: 12,
@@ -660,6 +781,34 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: THEME.colors.surfaceContainerLow,
     zIndex: 10,
+  },
+  copyMovesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    marginTop: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: THEME.colors.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+    width: '100%',
+  },
+  copyMovesBtnCopied: {
+    backgroundColor: 'rgba(105, 179, 66, 0.12)',
+    borderColor: '#69B342',
+  },
+  copyMovesText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.textSecondary,
+    letterSpacing: 0.2,
+  },
+  copyMovesTextCopied: {
+    color: '#69B342',
+    fontWeight: '700',
   },
   headerBlock: {
     width: '100%',

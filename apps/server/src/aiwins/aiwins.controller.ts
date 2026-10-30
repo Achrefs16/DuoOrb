@@ -69,4 +69,14 @@ export class AiwinsController {
   ) {
     return this.aiwinsService.setBadges(user.id, body?.slots ?? []);
   }
+
+  /** Claims an achievement code. */
+  @Post('achievements/claim')
+  @UseGuards(JwtAuthGuard)
+  async claimAchievement(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { code?: string }
+  ) {
+    return this.aiwinsService.claimAchievement(user.id, body?.code ?? '');
+  }
 }

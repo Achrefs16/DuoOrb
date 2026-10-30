@@ -6,7 +6,7 @@ import {
   CLASSIC_MIDNIGHT_SKIN,
   LIGHT_BOARD,
   MIDNIGHT_BOARD,
-  WALNUT_SKIN,
+  TACTILE_DARK_SKIN,
   parseBoardSkinId,
   parseBoardThemeName,
   resolveBoardPalette,
@@ -28,10 +28,9 @@ vi.mock('../network/apiClient', () => ({
 }));
 
 /**
- * Board skin system: Midnight is free for everyone; walnut needs an active
- * premium membership (dev builds preview unlocked) and falls back to classic
- * otherwise. Unknown stored values parse to classic/light (E23); every skin
- * carries the full palette surface so no board can ever go blank.
+ * Board skin system: Midnight is free for everyone; unknown stored values
+ * parse to classic/light (E23); every skin carries the full palette surface
+ * so no board can ever go blank.
  */
 describe('board theme', () => {
   beforeEach(() => {
@@ -63,8 +62,9 @@ describe('board theme', () => {
   });
 
   it('parses unknown skin ids to classic (E23)', () => {
-    expect(parseBoardSkinId('walnut')).toBe('walnut');
+    expect(parseBoardSkinId('walnut')).toBe('classic');
     expect(parseBoardSkinId('tactile')).toBe('tactile');
+    expect(parseBoardSkinId('tactileDark')).toBe('tactileDark');
     expect(parseBoardSkinId('stone')).toBe('stone');
     expect(parseBoardSkinId('chess')).toBe('stone');
     expect(parseBoardSkinId('classic')).toBe('classic');
@@ -84,15 +84,13 @@ describe('board theme', () => {
     expect(resolveBoardSkin('classic', true, 'midnight')).toBe(CLASSIC_MIDNIGHT_SKIN);
   });
 
-  it('gates the premium skin to active membership with classic fallback', () => {
-    expect(resolveBoardSkin('walnut', true, 'light')).toBe(WALNUT_SKIN);
-    expect(resolveBoardSkin('walnut', true, 'midnight')).toBe(WALNUT_SKIN);
-    // Free / lapsed: fall back to classic in the current appearance.
-    expect(resolveBoardSkin('walnut', false, 'light')).toBe(CLASSIC_LIGHT_SKIN);
-    expect(resolveBoardSkin('walnut', false, 'midnight')).toBe(CLASSIC_MIDNIGHT_SKIN);
+  it('all board skins are free and resolve directly', () => {
     // Tactile is unlocked for everyone (premiumOnly: false)
     expect(resolveBoardSkin('tactile', false, 'light')).toBe(BOARD_SKINS.tactile);
     expect(resolveBoardSkin('tactile', false, 'midnight')).toBe(BOARD_SKINS.tactile);
+    // Dark Tactile is an explicit variant, not tied to app appearance.
+    expect(resolveBoardSkin('tactileDark', false, 'light')).toBe(TACTILE_DARK_SKIN);
+    expect(resolveBoardSkin('tactileDark', false, 'midnight')).toBe(TACTILE_DARK_SKIN);
     // Stone is unlocked for everyone (premiumOnly: false)
     expect(resolveBoardSkin('stone', false, 'light')).toBe(BOARD_SKINS.stone);
     expect(resolveBoardSkin('stone', false, 'midnight')).toBe(BOARD_SKINS.stone);
@@ -100,14 +98,31 @@ describe('board theme', () => {
 
   it('every skin carries the full palette surface', () => {
     const paletteKeys = Object.keys(LIGHT_BOARD).sort();
-    for (const skin of [WALNUT_SKIN, BOARD_SKINS.tactile, BOARD_SKINS.stone, CLASSIC_MIDNIGHT_SKIN]) {
+    for (const skin of [BOARD_SKINS.tactile, TACTILE_DARK_SKIN, BOARD_SKINS.stone, CLASSIC_MIDNIGHT_SKIN]) {
       for (const key of paletteKeys) {
         const value = (skin as unknown as Record<string, unknown>)[key];
         expect(typeof value).toBe('string');
         expect((value as string).length).toBeGreaterThan(0);
       }
     }
-    expect(Object.keys(BOARD_SKINS).sort()).toEqual(['classic', 'stone', 'tactile', 'walnut']);
+    expect(Object.keys(BOARD_SKINS).sort()).toEqual([
+      'classic',
+      'stone',
+      'tactile',
+      'tactileDark',
+    ]);
+  });
+
+  it('dark tactile keeps the tactile finish on a warm charcoal surface', () => {
+    expect(TACTILE_DARK_SKIN.boardBackground).toBe('#1F1D1B');
+    expect(TACTILE_DARK_SKIN.cell).toBe('#312E2B');
+    expect(TACTILE_DARK_SKIN.premiumOnly).toBe(false);
+    expect(TACTILE_DARK_SKIN.orbStyle).toBe('gloss');
+    expect(TACTILE_DARK_SKIN.wallRadius).toBe('capsule');
+    expect(TACTILE_DARK_SKIN.cellRadius).toBe(9);
+    expect(TACTILE_DARK_SKIN.hudCard).toBe('#312E2B');
+    expect(TACTILE_DARK_SKIN.hudInk).toBe('#FFFFFF');
+    expect(TACTILE_DARK_SKIN.boardBackground).not.toBe(BOARD_SKINS.tactile.boardBackground);
   });
 
   it('stone skin has light/dark checker cells, tight gaps, and no glass effect', () => {
@@ -122,28 +137,5 @@ describe('board theme', () => {
     expect(stone.wallSlot).toBe('transparent');
     expect(stone.wallSlotSize).toBe(0);
     expect(stone.premiumOnly).toBe(false);
-  });
-
-  it('walnut takes over the whole page with a physical-game finish', () => {
-    expect(['gloss', 'flatDisc']).toContain(WALNUT_SKIN.orbStyle);
-    expect(['glow', 'flat', 'neutral']).toContain(WALNUT_SKIN.wallStyle);
-    expect(WALNUT_SKIN.premiumOnly).toBe(true);
-    expect(typeof WALNUT_SKIN.pageBackground).toBe('string');
-    expect(WALNUT_SKIN.pageTexture).toBe('walnutTable');
-    expect(CLASSIC_LIGHT_SKIN.pageBackground).toBeUndefined();
-    expect(CLASSIC_LIGHT_SKIN.pageTexture).toBeUndefined();
-    // Walnut plays like the physical game: flat discs + neutral fences.
-    expect(WALNUT_SKIN.orbStyle).toBe('flatDisc');
-    expect(WALNUT_SKIN.wallStyle).toBe('neutral');
-    expect(typeof WALNUT_SKIN.neutralWall).toBe('string');
-  });
-
-  it('walnut carries a complete HUD takeover set (or none at all)', () => {
-    expect(typeof WALNUT_SKIN.hudCard).toBe('string');
-    expect(typeof WALNUT_SKIN.hudBorder).toBe('string');
-    expect(typeof WALNUT_SKIN.hudInk).toBe('string');
-    expect(typeof WALNUT_SKIN.hudSubInk).toBe('string');
-    expect(typeof WALNUT_SKIN.hudChip).toBe('string');
-    expect(CLASSIC_LIGHT_SKIN.hudCard).toBeUndefined();
   });
 });

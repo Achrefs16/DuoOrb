@@ -6,6 +6,7 @@ import { useSyncExternalStore } from 'react';
 import { SERVER_URL } from './config';
 import { getIdentity, subscribeIdentity } from './auth';
 import { isTokenFresh } from './tokenFreshness';
+import { getBallSkinId, getWallSkinId } from '../theme/cosmeticsCatalog';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
 
@@ -559,9 +560,11 @@ class SocketManager {
     // `displayName` here is ADVISORY ONLY. The server resolves the real name
     // from Postgres for any verified credential and ignores this field; it
     // survives purely as a label for a socket that has not authenticated yet.
+    const ballSkinId = getBallSkinId();
+    const wallSkinId = getWallSkinId();
     const s: RawSocket = io(SERVER_URL, {
-      auth: { token },
-      query: { userId, displayName },
+      auth: { token, ballSkinId, wallSkinId },
+      query: { userId, displayName, ballSkinId, wallSkinId },
       autoConnect: false,
       reconnection: true,
       reconnectionAttempts: 15,

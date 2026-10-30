@@ -1,3 +1,6 @@
+/**
+ * @deprecated Deprecated in favor of @duoorb/analyzer-rust and duoorb-ai-native pure-Rust AlphaZero ONNX engine.
+ */
 import type { CellCoord, GameAction, GameState, WallCoord } from './types.js';
 import { getLegalMoves } from './movement.js';
 import {
@@ -656,8 +659,8 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
       const isNormal = simulations >= 300 || opts.difficulty === 'normal';
       const deltaQ = opts.varietyWindow !== undefined
         ? Number(opts.varietyWindow)
-        : (isHard ? 0.025 : (isNormal ? 0.065 : 0.18));
-      const minVisitRatio = isHard ? 0.35 : (isNormal ? 0.20 : 0.08);
+        : (isHard ? 0.025 : (isNormal ? 0.065 : 0.25));
+      const minVisitRatio = isHard ? 0.35 : (isNormal ? 0.20 : 0.02);
       const exponent = isHard ? 1.8 : (isNormal ? 1.3 : 0.9);
       const maxChoices = isHard ? 3 : (isNormal ? 3 : 4);
 
@@ -667,7 +670,7 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
         const m = c.move;
         return m && m.type === 'MOVE' && getShortestDistance(m.to, rootMover.goalDirection, state.walls, state.mode) < myDist;
       });
-      const candidatePool = hasForwardMove
+      const candidatePool = hasForwardMove && !isEasy
         ? sorted.filter((c) => {
             const m = c.move;
             if (m && m.type === 'MOVE') {

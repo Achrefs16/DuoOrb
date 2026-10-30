@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { GameMode } from '@duoorb/game-core';
-import { RoomDto } from '@duoorb/protocol';
+import { PublicRoomSummaryDto, RoomDto } from '@duoorb/protocol';
 import { TimeControl } from '../timeControls';
 import { socketManager } from './socket';
 import { useIdentity } from './auth';
@@ -46,7 +46,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
   );
 
   const createRoom = useCallback(
-    (mode: GameMode, clock: TimeControl, wallsEach = 10): Promise<RoomDto | null> => {
+    (mode: GameMode, clock: TimeControl, wallsEach = 10, isPublic = false): Promise<RoomDto | null> => {
       setLoading(true);
       setError(null);
       const socket = socketManager.getSocket();
@@ -60,6 +60,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
               timeControlMinutes: clock.minutes,
               incrementSeconds: clock.incrementSeconds ?? 0,
               wallsEach,
+              isPublic,
             },
             (res) => {
               setLoading(false);
@@ -189,15 +190,15 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
     socket.emit('room:start', { roomId: activeRoom.id });
   }, [activeRoom]);
 
-  const kickPlayer = useCallback(    (userId: string) => {
-      if (!activeRoom) return;
-      const socket = socketManager.getSocket();
-      socket.emit('room:kick', { roomId: activeRoom.id, userId }, (res) => {
-        if (res && !res.success) {
-          setError(res.error || 'Could not remove that player.');
-        }
-      });
-    },
+  const kickPlayer = useCallback((userId: string) => {
+    if (!activeRoom) return;
+    const socket = socketManager.getSocket();
+    socket.emit('room:kick', { roomId: activeRoom.id, userId }, (res) => {
+      if (res && !res.success) {
+        setError(res.error || 'Could not remove that player.');
+      }
+    });
+  },
     [activeRoom]
   );
 
@@ -265,10 +266,10 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
   // snapshot claims.
   const canStart = Boolean(
     isHost &&
-      activeRoom &&
-      activeRoom.status === 'WAITING' &&
-      activeRoom.slots.every((s) => (s.userId ? s.isReady : false)) &&
-      activeRoom.slots.filter((s) => s.userId !== null).length >= 2
+    activeRoom &&
+    activeRoom.status === 'WAITING' &&
+    activeRoom.slots.every((s) => (s.userId ? s.isReady : false)) &&
+    activeRoom.slots.filter((s) => s.userId !== null).length >= 2
   );
 
   return {
@@ -289,5 +290,44 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
     kickPlayer,
     leaveRoom,
     syncRoom,
+  };
+}
+
+export function usePublicRooms() {
+  const [publicRooms, setPublicRooms] = useState<PublicRoomSummaryDto[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchRooms = useCallback(() => {
+    setLoading(true);
+    const socket = socketManager.getSocket();
+    socket.emit('room:listPublic', (res) => {
+      setLoading(false);
+      if (res && res.success && res.rooms) {
+        setPublicRooms(res.rooms);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    const socket = socketManager.getSocket();
+    fetchRooms();
+    socket.emit('room:subscribePublic');
+
+    const handleUpdate = (rooms: PublicRoomSummaryDto[]) => {
+      setPublicRooms(rooms);
+    };
+
+    socket.on('room:publicRoomsUpdated', handleUpdate);
+
+    return () => {
+      socket.emit('room:unsubscribePublic');
+      socket.off('room:publicRoomsUpdated', handleUpdate);
+    };
+  }, [fetchRooms]);
+
+  return {
+    publicRooms,
+    loading,
+    refreshPublicRooms: fetchRooms,
   };
 }

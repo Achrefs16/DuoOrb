@@ -28,7 +28,7 @@ describe('match setup drafts', () => {
         mode: 'blitz',
         playerCount: 5,
         difficulty: 'grandmaster',
-        side: 'green',
+        side: 'purple',
         wallsEach: 7,
         clockId: '',
       })

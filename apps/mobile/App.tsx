@@ -48,6 +48,7 @@ import { useRoomInvites } from './src/network/useRoomInvites';
 import { useChallenge } from './src/network/useChallenge';
 import { socketManager } from './src/network/socket';
 import { setBoardSkinId, setBoardThemeName } from './src/theme/boardTheme';
+import { setBallSkinId, setWallSkinId } from './src/theme/cosmeticsCatalog';
 import { installRealAds } from './src/monetization/adsNative';
 import { ensureSessionRecorded } from './src/monetization/realAds';
 import {
@@ -379,23 +380,18 @@ export default function App() {
     dismissTo('BOTS', null);
   }, []);
 
-  // Close Review: post-match reviews (win/lose modal path) must NEVER pop
-  // back to GAME — the finished screen unmounted when the review opened,
-  // so remounting GameScreen with the same config boots a brand-new match
-  // instead of the finished board. Dismiss to the match's origin surface
-  // (same map as closing the match itself). Bare history/profile replays
-  // keep normal stack-back — their parent screen is still underneath.
+  // Close Review: navigating back from review restores the previous screen
+  // (the finished GAME match if review was launched from a game, or
+  // History/Profile if opened from archives).
   const handleCloseReview = useCallback(() => {
-    if (reviewOrigin === 'match' && !reviewBare) {
+    if (stackRef.current.length > 0) {
+      goBack();
+    } else if (reviewOrigin === 'match' && !reviewBare) {
       dismissMatchToOrigin();
       if (Platform.OS === 'web') {
         setInstallForceShow(false);
         setInstallModalOpen(true);
       }
-      return;
-    }
-    if (stackRef.current.length > 0) {
-      goBack();
     } else {
       dismissTo(currentTab, null);
     }
@@ -408,22 +404,11 @@ export default function App() {
         BackHandler.exitApp();
         return true;
       }
-      // Post-match review takes the origin-dismissal path (same as its
-      // header back button) — the raw stack pop would remount the finished
-      // GAME screen and boot a brand-new match.
-      if (
-        (subScreen === 'REVIEW' || subScreen === 'REVIEW_SUMMARY') &&
-        reviewOrigin === 'match' &&
-        !reviewBare
-      ) {
-        handleCloseReview();
-        return true;
-      }
       goBack();
       return true;
     });
     return () => sub.remove();
-  }, [exitAsk, goBack, subScreen, reviewBare, reviewOrigin, handleCloseReview]);
+  }, [exitAsk, goBack]);
 
   // Initial web browser history state
   useEffect(() => {
@@ -439,11 +424,7 @@ export default function App() {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       const handlePop = (e: PopStateEvent) => {
         if (subScreen !== null) {
-          if (subScreen === 'REVIEW' && reviewOrigin === 'match' && !reviewBare) {
-            handleCloseReview();
-          } else {
-            goBack();
-          }
+          goBack();
           return;
         }
 
@@ -461,7 +442,7 @@ export default function App() {
       window.addEventListener('popstate', handlePop);
       return () => window.removeEventListener('popstate', handlePop);
     }
-  }, [subScreen, currentTab, goBack, reviewOrigin, reviewBare, handleCloseReview]);
+  }, [subScreen, currentTab, goBack]);
 
   // Room invite deep-link listener (?room=ABCD or ?join=ABCD)
   useEffect(() => {
@@ -611,6 +592,8 @@ export default function App() {
       // the render gate keeps those premium-only.
       setBoardThemeName(s.darkMode ? 'midnight' : 'light');
       setBoardSkinId(s.boardSkinId);
+      setBallSkinId(s.ballSkinId);
+      setWallSkinId(s.wallSkinId);
       void hydrateLanguage();
     });
     // Ads runtime (P6): installs the real rewarded provider when the native
@@ -626,6 +609,8 @@ export default function App() {
     if (patch.soundEnabled !== undefined) setSoundsMuted(!patch.soundEnabled);
     if (patch.themeName !== undefined) setBoardThemeName(patch.themeName);
     if (patch.boardSkinId !== undefined) setBoardSkinId(patch.boardSkinId);
+    if (patch.ballSkinId !== undefined) setBallSkinId(patch.ballSkinId);
+    if (patch.wallSkinId !== undefined) setWallSkinId(patch.wallSkinId);
     if (patch.language !== undefined) void setLanguage(patch.language);
     // Instant: live styles + subscribers pick the new theme up on this
     // render pass — no reload. One toggle drives both: dark mode carries
@@ -676,7 +661,7 @@ export default function App() {
       // Capture where the challenge was accepted: the review/game closers
       // return here (profile, friends list, ...). Accepted mid-match or
       // mid-review has no valid return surface — fall back to friends.
-      const midGame = subScreen === 'GAME' || subScreen === 'REVIEW';
+      const midGame = subScreen === 'GAME' || subScreen === 'REVIEW' || subScreen === 'REVIEW_SUMMARY';
       handleStartGame({
         mode,
         type: 'online',
@@ -1012,7 +997,7 @@ export default function App() {
                 <HomeScreen
                   onOpenOnline={(clock, view) => handleOpenOnline(clock, view)}
                   onOpenSetup={handleOpenSetup}
-                  onOpenCustomOnline={() => handleOpenSetup('online')}
+                  onOpenCustomOnline={() => handleOpenOnline(DEFAULT_TIME_CONTROL, 'quick')}
                   onOpenSettings={() => navigate(currentTab, 'SETTINGS')}
                   onOpenInstallPrompt={() => {
                     setInstallForceShow(true);
@@ -1069,35 +1054,46 @@ export default function App() {
           )}
 
           {/* Subscreens */}
-          {subScreen === 'GAME' && (
-            <GameScreen
-              key={
-                gameConfig.type === 'online'
-                  ? `online-session-${matchSession}`
-                  : `local-${gameConfig.mode}-${gameConfig.type}-${gameConfig.aiDifficulty ?? 'none'}-${gameConfig.botIds?.join('-') ?? gameConfig.botId ?? 'generic'}-${gameConfig.sideChoice ?? 'blue'}`
-              }
-              mode={gameConfig.mode}
-              type={gameConfig.type}
-              onlineGameId={gameConfig.onlineGameId}
-              onlineSource={gameConfig.onlineSource}
-              initialOnlineSnapshot={gameConfig.initialSync ?? null}
-              aiDifficulty={gameConfig.aiDifficulty}
-              botId={gameConfig.botId ?? null}
-              botIds={gameConfig.botIds ?? (gameConfig.botId ? [gameConfig.botId] : null)}
-              timeControl={gameConfig.timeControl}
-              sideChoice={gameConfig.sideChoice}
-              wallsEach={gameConfig.wallsEach}
-              incrementEnabled={settings.incrementEnabled}
-              premoveEnabled={settings.premoveEnabled}
-              extendedQueue={settings.extendedQueue}
-              testThink={settings.testThink}
-              onHome={handleCloseMatch}
-              onNewGame={handleNewGameAfter}
-              onRematchAccepted={handleFreshOnlineGame}
-              onAnalyze={handleOpenReview}
-              onOpenPlayerProfile={handleOpenPlayerProfile}
-              onSelectBots={handleSelectBots}
-            />
+          {(subScreen === 'GAME' ||
+            ((subScreen === 'REVIEW' || subScreen === 'REVIEW_SUMMARY') &&
+              reviewOrigin === 'match' &&
+              !reviewBare)) && (
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                subScreen !== 'GAME' && { display: 'none' },
+              ]}
+              pointerEvents={subScreen === 'GAME' ? 'auto' : 'none'}
+            >
+              <GameScreen
+                key={
+                  gameConfig.type === 'online'
+                    ? `online-session-${matchSession}`
+                    : `local-${gameConfig.mode}-${gameConfig.type}-${gameConfig.aiDifficulty ?? 'none'}-${gameConfig.botIds?.join('-') ?? gameConfig.botId ?? 'generic'}-${gameConfig.sideChoice ?? 'blue'}`
+                }
+                mode={gameConfig.mode}
+                type={gameConfig.type}
+                onlineGameId={gameConfig.onlineGameId}
+                onlineSource={gameConfig.onlineSource}
+                initialOnlineSnapshot={gameConfig.initialSync ?? null}
+                aiDifficulty={gameConfig.aiDifficulty}
+                botId={gameConfig.botId ?? null}
+                botIds={gameConfig.botIds ?? (gameConfig.botId ? [gameConfig.botId] : null)}
+                timeControl={gameConfig.timeControl}
+                sideChoice={gameConfig.sideChoice}
+                wallsEach={gameConfig.wallsEach}
+                incrementEnabled={settings.incrementEnabled}
+                premoveEnabled={settings.premoveEnabled}
+                extendedQueue={settings.extendedQueue}
+                testThink={settings.testThink}
+                onHome={handleCloseMatch}
+                onNewGame={handleNewGameAfter}
+                onRematchAccepted={handleFreshOnlineGame}
+                onAnalyze={handleOpenReview}
+                onOpenPlayerProfile={handleOpenPlayerProfile}
+                onSelectBots={handleSelectBots}
+              />
+            </View>
           )}
 
           {subScreen === 'SETUP' && (
@@ -1246,7 +1242,7 @@ export default function App() {
               initialState={replayData.initialState}
               history={replayData.history}
               perspectiveIdx={replayData.perspectiveIdx}
-              onBack={handleCloseReview}
+              onBack={goBack}
               onStartReview={() => navigate(currentTab, 'REVIEW')}
               botPersonality={replayData.botPersonality}
             />

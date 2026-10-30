@@ -2,7 +2,7 @@
 // Lightweight network-first service worker satisfying PWA installability criteria
 // without caching API calls or dynamic multiplayer websocket traffic.
 
-const CACHE_NAME = 'duoorb-shell-v1';
+const CACHE_NAME = 'duoorb-shell-v2';
 const PRECACHE_URLS = [
   '/',
   '/manifest.json',
@@ -10,6 +10,8 @@ const PRECACHE_URLS = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/css/style.css',
+  '/duoorb_analyzer.wasm',
+  '/models/quoridor_9x9.onnx',
 ];
 
 self.addEventListener('install', (event) => {

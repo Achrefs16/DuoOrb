@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Modal,
   ScrollView,
@@ -29,6 +29,20 @@ import {
 import { MatchOptionsPicker } from '../components/MatchOptionsPicker';
 import { resolveMode } from '../matchModes';
 import { useTranslation } from '../i18n';
+import { RewardSheet } from '../components/RewardSheet';
+import { PremiumSheet } from '../components/PremiumSheet';
+import { PremiumBadge } from '../components/PremiumBadge';
+import { isPremiumActive, refreshPremium, usePremium } from '../monetization/premium';
+import { preloadRewarded, showRewarded } from '../monetization/ads';
+import {
+  anyBotLocked,
+  getBotAccessType,
+  getCachedAdUnlockedBots,
+  isBotLocked,
+  loadAdUnlockedBots,
+  markBotPermanentlyUnlocked,
+  subscribeToAdUnlockedBots,
+} from '../monetization/botAccess';
 import {
   isSideAvailable,
   isSideChoice,
@@ -40,6 +54,7 @@ import {
 import {
   getMatchSetupDraft,
   loadBotStars,
+  syncBotStarsWithBackend,
   saveMatchSetupDraft,
   type BotStarMap,
 } from '../storage/gameStorage';
@@ -130,6 +145,42 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
 
   const [botStars, setBotStars] = useState<BotStarMap>({});
 
+  const premiumState = usePremium();
+  const isPremium = isPremiumActive(premiumState);
+
+  // Ad-unlocked permanent bots state
+  const [adUnlockedBots, setAdUnlockedBots] = useState<Set<string>>(() =>
+    getCachedAdUnlockedBots()
+  );
+
+  useEffect(() => {
+    void loadAdUnlockedBots().then((unlocked) => {
+      setAdUnlockedBots(new Set(unlocked));
+    });
+    const unsub = subscribeToAdUnlockedBots(() => {
+      setAdUnlockedBots(new Set(getCachedAdUnlockedBots()));
+    });
+    return unsub;
+  }, []);
+
+  // Rewarded Bot Unlock / Paywall state
+  const [botRewardOpen, setBotRewardOpen] = useState(false);
+  const [botRewardBusy, setBotRewardBusy] = useState(false);
+  const [botRewardError, setBotRewardError] = useState<string | null>(null);
+  const [premiumSheetOpen, setPremiumSheetOpen] = useState(false);
+  const pendingConfigRef = useRef<BotMatchConfig | null>(null);
+  const targetBotToUnlockRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    preloadRewarded('bot');
+  }, []);
+
+  const isLocked = useCallback(
+    (bot: BotPersonality | null | undefined): boolean =>
+      isBotLocked(bot, isPremium, adUnlockedBots),
+    [isPremium, adUnlockedBots]
+  );
+
   const [focusedBotId, setFocusedBotId] = useState<string>(() => {
     return draft.botId && botById(draft.botId) ? draft.botId : 'martin';
   });
@@ -166,6 +217,9 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
     let live = true;
     void loadBotStars().then((stars) => {
       if (live) setBotStars(stars);
+      void syncBotStarsWithBackend().then((merged) => {
+        if (live && merged) setBotStars(merged);
+      });
     });
     return () => {
       live = false;
@@ -223,15 +277,53 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
       const toAdd = remaining.slice(0, neededBots - finalBotIds.length).map((b) => b.id);
       finalBotIds = [...finalBotIds, ...toAdd].slice(0, neededBots);
     }
-    onStartGame?.({
+    const config: BotMatchConfig = {
       botId: finalBotIds[0],
       botIds: finalBotIds,
       side: isSideAvailable(side, effectivePlayerCount) ? side : 'random',
       clock,
       mode: resolvedMode,
       wallsEach: walls,
-    });
+    };
+
+    const lockedBot = finalBotIds.map(botById).find((b) => isLocked(b));
+    if (lockedBot) {
+      const accessType = getBotAccessType(lockedBot.id);
+      if (accessType === 'premium_only') {
+        setPremiumSheetOpen(true);
+        return;
+      }
+      targetBotToUnlockRef.current = lockedBot.id;
+      pendingConfigRef.current = config;
+      setBotRewardError(null);
+      setBotRewardOpen(true);
+      return;
+    }
+
+    onStartGame?.(config);
   };
+
+  const handleWatchBotAd = useCallback(async () => {
+    setBotRewardBusy(true);
+    setBotRewardError(null);
+    const res = await showRewarded('bot');
+    if (res.earned) {
+      const botIdToUnlock = targetBotToUnlockRef.current;
+      if (botIdToUnlock) {
+        await markBotPermanentlyUnlocked(botIdToUnlock);
+      }
+      setBotRewardOpen(false);
+      setBotRewardBusy(false);
+      const cfg = pendingConfigRef.current;
+      if (cfg) {
+        pendingConfigRef.current = null;
+        onStartGame?.(cfg);
+      }
+    } else {
+      setBotRewardError(res.error ?? 'dismissed');
+      setBotRewardBusy(false);
+    }
+  }, [onStartGame]);
 
   if (optionsOpen) {
     return (
@@ -359,9 +451,11 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
       >
         {BOT_TIERS.map(({ key, title, bots }) => (
           <View key={key} style={styles.tierSection}>
-            <Text style={styles.categoryTitle}>
-              {title} <Text style={styles.categoryCount}>{bots.length}</Text>
-            </Text>
+            <View style={styles.categoryTitleRow}>
+              <Text style={styles.categoryTitle}>
+                {title} <Text style={styles.categoryCount}>{bots.length}</Text>
+              </Text>
+            </View>
             <View style={styles.avatarGrid}>
               {bots.map((bot) => {
                 const isSelected = neededBots === 1
@@ -369,6 +463,8 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
                   : selectedBotIds.includes(bot.id);
                 const selIndex = selectedBotIds.indexOf(bot.id);
                 const stars = botStars[bot.id]?.stars ?? 0;
+                const locked = isLocked(bot);
+                const accessType = getBotAccessType(bot.id);
                 return (
                   <TouchableOpacity
                     key={bot.id}
@@ -381,6 +477,22 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
                       size={58}
                       selected={isSelected}
                     />
+                    {locked && (
+                      <View
+                        style={
+                          accessType === 'premium_only'
+                            ? styles.tileCustomBadge
+                            : styles.tileLockBadge
+                        }
+                        pointerEvents="none"
+                      >
+                        {accessType === 'premium_only' ? (
+                          <PremiumBadge size={13} />
+                        ) : (
+                          <OrbIcon name="lock" size={9} color="#FFFFFF" />
+                        )}
+                      </View>
+                    )}
                     {neededBots > 1 && isSelected && (
                       <View style={styles.gridSlotBadge} pointerEvents="none">
                         <Text style={styles.gridSlotBadgeText}>
@@ -477,7 +589,13 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
           activeOpacity={0.88}
           onPress={handleLaunch}
         >
-          <Text style={styles.stickyPlayButtonText}>Play</Text>
+          <Text style={styles.stickyPlayButtonText}>
+            {isLocked(displayBot)
+              ? getBotAccessType(displayBot.id) === 'premium_only'
+                ? 'Unlock with Premium'
+                : 'Unlock Bot'
+              : 'Play'}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -575,6 +693,33 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* Bot Gating Rewarded 1-Match Pass Sheet */}
+      <RewardSheet
+        visible={botRewardOpen}
+        busy={botRewardBusy}
+        error={botRewardError}
+        variant="bot"
+        onWatch={handleWatchBotAd}
+        onPremium={() => {
+          setBotRewardOpen(false);
+          setPremiumSheetOpen(true);
+        }}
+        onClose={() => {
+          if (!botRewardBusy) setBotRewardOpen(false);
+        }}
+      />
+
+      {/* DuoOrb Premium Subscription Sheet */}
+      <PremiumSheet
+        visible={premiumSheetOpen}
+        entry="bot_master"
+        onClose={() => setPremiumSheetOpen(false)}
+        onDone={() => {
+          setPremiumSheetOpen(false);
+          void refreshPremium();
+        }}
+      />
     </View>
   );
 };
@@ -731,12 +876,17 @@ const createStyles = () =>
       alignSelf: 'center',
       gap: 12,
     },
+    categoryTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 8,
+    },
     categoryTitle: {
       fontFamily: THEME.fonts.extraBold,
       fontSize: 15,
       fontWeight: '800',
       color: THEME.colors.textPrimary,
-      marginTop: 8,
     },
     categoryCount: {
       fontFamily: THEME.fonts.medium,
@@ -757,6 +907,44 @@ const createStyles = () =>
     avatarTile: {
       borderRadius: 10,
       position: 'relative',
+    },
+    tileCustomBadge: {
+      position: 'absolute',
+      top: -3,
+      right: -3,
+      width: 19,
+      height: 19,
+      borderRadius: 9.5,
+      backgroundColor: '#1E293B',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1.5,
+      borderColor: THEME.colors.surface,
+      zIndex: 15,
+      elevation: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.35,
+      shadowRadius: 1.5,
+    },
+    tileLockBadge: {
+      position: 'absolute',
+      top: -3,
+      right: -3,
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      backgroundColor: '#4B5563',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1.5,
+      borderColor: THEME.colors.surface,
+      zIndex: 15,
+      elevation: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.35,
+      shadowRadius: 1.5,
     },
     avatarStarsRow: {
       position: 'absolute',
@@ -859,7 +1047,7 @@ const createStyles = () =>
     },
     sideSheetBackdrop: {
       flex: 1,
-      backgroundColor: 'rgba(15, 23, 42, 0.55)',
+      backgroundColor: THEME.colors.modalBackdrop,
       justifyContent: 'flex-end',
     },
     sideSheet: {

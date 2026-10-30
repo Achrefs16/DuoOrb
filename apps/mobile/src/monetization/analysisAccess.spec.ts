@@ -44,31 +44,39 @@ describe('analysis access', () => {
     store.clear();
   });
 
-  it('is always unlocked for all games and history lengths', async () => {
-    expect(await isAnalysisUnlocked('g1', 40)).toBe(true);
-    expect(await isAnalysisUnlocked('g2', 10)).toBe(true);
+  it('reports unlocked only after game is marked unlocked', async () => {
+    expect(await isAnalysisUnlocked('g1', 40)).toBe(false);
     await markAnalysisUnlocked('g1', 40);
     expect(await isAnalysisUnlocked('g1', 40)).toBe(true);
+    expect(await isAnalysisUnlocked('g2', 10)).toBe(false);
   });
 
-  it('resolves access to unlocked for free users and premium for subscribers', () => {
+  it('resolves access correctly based on premium and unlocked states', () => {
     expect(resolveAccess(true, false)).toBe('premium');
     expect(resolveAccess(true, true)).toBe('premium');
     expect(resolveAccess(false, true)).toBe('unlocked');
-    expect(resolveAccess(false, false)).toBe('unlocked');
+    expect(resolveAccess(false, false)).toBe('locked');
   });
 
-  it('grants free analysis without spending quotas or locking behind ads', async () => {
-    expect(FREE_ANALYSES_PER_DAY).toBe(Infinity);
-    expect(await getFreeAnalysesUsedToday()).toBe(0);
-    expect(await requestAnalysisEntry(false, 'g1', 40)).toBe('unlocked');
-    expect(await requestAnalysisEntry(false, 'g2', 10)).toBe('unlocked');
-    expect(await requestAnalysisEntry(false, 'g3', 50)).toBe('unlocked');
-    expect(await consumeFreeAnalysis()).toBe(true);
+  it('enforces 1 free daily analysis, then locks subsequent games until rewarded unlock', async () => {
+    // 1st review claims the free daily
+    const first = await requestAnalysisEntry(false, 'g1', 40);
+    expect(first).toBe('daily');
+    expect(await getFreeAnalysesUsedToday()).toBe(1);
+
+    // 2nd review today without ad is locked
+    const second = await requestAnalysisEntry(false, 'g2', 10);
+    expect(second).toBe('locked');
+
+    // After watching rewarded ad for g2, g2 is unlocked
+    await markAnalysisUnlocked('g2', 10);
+    const retrySecond = await requestAnalysisEntry(false, 'g2', 10);
+    expect(retrySecond).toBe('unlocked');
   });
 
-  it('grants premium status for premium subscribers', async () => {
+  it('grants premium status for premium subscribers without using daily allowance', async () => {
     expect(await requestAnalysisEntry(true, 'g9', 10)).toBe('premium');
+    expect(await getFreeAnalysesUsedToday()).toBe(0);
   });
 
   it('day keys roll over by local calendar date', () => {

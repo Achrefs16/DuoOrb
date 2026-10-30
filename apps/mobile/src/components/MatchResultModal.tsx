@@ -138,7 +138,7 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
 const createStyles = () => StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: THEME.colors.modalBackdrop,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,

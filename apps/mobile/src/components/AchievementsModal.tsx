@@ -108,10 +108,14 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
 
   const categoryTitle = (cat: string) => {
     switch (cat) {
-      case 'prowess': return t('achievements.prowess');
-      case 'grind': return t('achievements.grind');
+      case 'bot': return t('achievements.bot');
+      case 'battle': return t('achievements.battle');
       case 'tactics': return t('achievements.tactics');
-      case 'community': return t('achievements.community');
+      case 'social': return t('achievements.social');
+      case 'streak': return t('achievements.streak');
+      case 'milestone': return t('achievements.milestone');
+      case 'rank': return t('achievements.rank');
+      case 'mastery': return t('achievements.mastery');
       default: return cat;
     }
   };
@@ -121,6 +125,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
       case 'bronze': return t('achievements.bronze');
       case 'silver': return t('achievements.silver');
       case 'gold': return t('achievements.gold');
+      case 'platinum': return t('achievements.platinum');
       case 'diamond': return t('achievements.diamond');
       default: return tier;
     }
@@ -290,7 +295,7 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
 const createStyles = () => StyleSheet.create({
   sheetOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    backgroundColor: THEME.colors.modalBackdropSubtle,
     justifyContent: 'flex-end',
   },
   sheetCard: {

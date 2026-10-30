@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, BackHandler, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 
+import { ActivityIndicator, Animated, BackHandler, Image, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 
 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -42,6 +42,10 @@ import { sideIndexForChoice, type SideChoice } from '../lib/sideChoice';
 import { WallTray } from '../components/WallTray';
 import { playGoalSound, playOwnMoveSound, playOpponentMoveSound, playJumpSound, playWallSound, playGameStartSound, playGameEndSound, playIllegalMoveSound, playNotifySound, playThirtySecondsSound, preloadSounds } from '../audio/sounds';
 import { toast } from '../components/AppToast';
+import { AchievementMedal } from '../components/AchievementMedal';
+import { formatGame } from '@duoorb/game-core';
+import { flushAiWinQueue, reportHardAiWin } from '../aiwins/aiWins';
+import { api, type AiWinReward, type SubmitAiWinBody } from '../network/apiClient';
 import { SavedGameRecord, loadOnlineGameSnapshot, recordBotVictoryStars, saveGameToHistory, saveOnlineGameSnapshot } from '../storage/gameStorage';
 import { THEME, hexToRgba, playerColor, useStyles, useTheme, wallPreviewColor } from '../theme';
 import { CLOCK_ENABLED, DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement, isUntimedTimeControl } from '../timeControls';
@@ -51,10 +55,12 @@ import type { ReactionKind } from '../network/useQuickReactions';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
 import { SkinBackdrop } from '../components/SkinBackdrop';
 import { useBoardSkin } from '../theme/boardTheme';
+import { useEquippedWallSkin } from '../theme/cosmeticsCatalog';
 import { useIdentity } from '../network/auth';
 import { socketManager } from '../network/socket';
 import { RewardSheet } from '../components/RewardSheet';
 import { PremiumSheet } from '../components/PremiumSheet';
+import { PremiumBadge } from '../components/PremiumBadge';
 import { useBotDialogue } from '../ai/useBotDialogue';
 import { cancelAiSearch, getAiMove } from '../ai/aiWorkerClient';
 import { BotSpeechBubble } from '../components/BotSpeechBubble';
@@ -65,9 +71,20 @@ import { recordGameFinished, showInterstitialIfDue } from '../monetization/inter
 import { preloadInterstitial } from '../monetization/adsNative';
 import { ensureSessionRecorded } from '../monetization/realAds';
 import { canUndoAiTurn, findUndoTargetStep } from '../lib/undo';
+import {
+  createMatchAssists,
+  consumeAssist,
+  canUseAssist,
+  canRefillAssists,
+  refillAssists,
+  willForfeitThreeStars,
+  type MatchAssistsState,
+} from '../monetization/matchAssists';
+import { computeBotStars } from '../lib/botStars';
 import { useTranslation } from '../i18n';
 import { BotAvatar } from '../components/BotAvatar';
 import { SmoothStar } from '../components/SmoothStar';
+import { FallingStarsFeedback } from '../components/FallingStarsFeedback';
 import { setSfxMuted } from '../audio/sfx';
 
 const BOTTOM_DOCK_HEIGHT = 52;
@@ -459,6 +476,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
   const [showGameOver, setShowGameOver] = useState<boolean>(false);
   const [botStarsEarned, setBotStarsEarned] = useState<1 | 2 | 3 | null>(null);
+  const [aiReward, setAiReward] = useState<AiWinReward | null>(null);
 
   // Full server review is intentionally NOT started here. The finish modal
   // uses a shallow local preview; the authoritative request begins only when
@@ -470,6 +488,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // Premium board skin: takes over the whole match page (backdrop + page
   // background) behind the HUD, board and tray. Classic leaves both unset.
   const skin = useBoardSkin();
+  const customWall = useEquippedWallSkin();
   // Player cards wear the skin too (bg + border + matching ink, always as a
   // set so contrast holds). Undefined = app theme owns the cards.
   const hudSurface =
@@ -478,7 +497,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     skin.hudInk &&
     skin.hudSubInk &&
     skin.hudChip &&
-    !(THEME.mode === 'dark' && skin.id !== 'walnut')
+    (skin.id === 'tactileDark' || THEME.mode !== 'dark')
       ? {
           card: skin.hudCard,
           border: skin.hudBorder,
@@ -490,14 +509,21 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [rewardOpen, setRewardOpen] = useState(false);
   const [rewardBusy, setRewardBusy] = useState(false);
   const [rewardError, setRewardError] = useState<string | null>(null);
-  // Offline AI undo economy: one free undo for Premium, otherwise a rewarded
-  // video grants three credits. `undosUsedRef` belongs to the 3-star mastery
-  // rating (Phase 3) and resets per match.
-  const [undoCredits, setUndoCredits] = useState(0);
-  const [undoSheetOpen, setUndoSheetOpen] = useState(false);
-  const [undoBusy, setUndoBusy] = useState(false);
-  const [undoError, setUndoError] = useState<string | null>(null);
-  const undosUsedRef = useRef(0);
+  // Match Assists Economy (Hints & Undos "Lives" system):
+  // Free: 1 assist per match + rewarded ad refill (+3, max 2 ads per match)
+  // Premium: 9 assists per match + instant refill
+  // `assistsUsedRef` drives 3-star bot mastery (0 assists = 3 stars).
+  const [assistsState, setAssistsState] = useState<MatchAssistsState>(() =>
+    createMatchAssists(isPremiumActive(premiumState))
+  );
+  const currentBotStars = type === 'ai' ? computeBotStars(assistsState.used) : 3;
+  const [lostStarIndex, setLostStarIndex] = useState<2 | 1 | null>(null);
+  const [starFeedbackTrigger, setStarFeedbackTrigger] = useState(0);
+  const [assistSheetOpen, setAssistSheetOpen] = useState(false);
+  const [assistBusy, setAssistBusy] = useState(false);
+  const [assistError, setAssistError] = useState<string | null>(null);
+  const [pendingAssistAction, setPendingAssistAction] = useState<'hint' | 'undo' | null>(null);
+  const assistsUsedRef = useRef(0);
   // One interstitial decision per finished match, never per button press.
   const interstitialFiredRef = useRef(false);
   const resultRecordedRef = useRef<string | null>(null);
@@ -555,19 +581,22 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setBotStarsEarned(null);
     interstitialFiredRef.current = false;
     resultRecordedRef.current = null;
-    undosUsedRef.current = 0;
+    assistsUsedRef.current = 0;
+    setAssistsState(createMatchAssists(isPremiumActive(premiumState)));
+    setPendingAssistAction(null);
+    setLostStarIndex(null);
     // Fresh clocks, fresh warnings: the 30s crossing refs belong to the old
     // game — without this a rematch (same mount) never warns (I4).
     warned30Ref.current = false;
     lastMySecsRef.current = null;
-  }, [type, onlineGameId]);
+  }, [type, onlineGameId, premiumState]);
 
   // Warm the video units while the player is still on the board. The
-  // interstitial must be ready before the result modal appears; undo is only
+  // interstitial must be ready before the result modal appears; assist is
   // relevant in AI games.
   useEffect(() => {
     void preloadInterstitial();
-    if (type === 'ai') preloadRewarded('undo');
+    if (type === 'ai') preloadRewarded('assist');
   }, [type, state.gameId]);
 
   const isUntimed = isUntimedTimeControl(timeControl);
@@ -957,7 +986,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (type === 'online' || isUntimed) return;
     const activeId = state.players[state.currentPlayerIndex]?.id ?? null;
     const previousId = activeClockIdRef.current;
-    if (undoSheetOpen || undoBusy) {
+    if (assistSheetOpen || assistBusy) {
       // The reward sheet/ad freezes both sides. Sync the turn pointer without
       // charging the player who was on move when the sheet opened.
       if (activeId !== previousId) {
@@ -983,7 +1012,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       activeClockIdRef.current = activeId;
       lastClockTickAtRef.current = Date.now();
     }
-  }, [state.currentPlayerIndex, state.moveNumber, state.status, state.players, type, undoSheetOpen, undoBusy, isUntimed]);
+  }, [state.currentPlayerIndex, state.moveNumber, state.status, state.players, type, assistSheetOpen, assistBusy, isUntimed]);
 
   // Clock countdown (offline only; online clocks are server-synchronized).
   // TESTING: CLOCK_ENABLED=false disables the countdown entirely, so no match
@@ -992,9 +1021,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (type === 'online') return;
     if (!CLOCK_ENABLED || isUntimed) return;
     if (state.status !== 'IN_PROGRESS') return;
-    // The undo reward sheet/ad is a system pause: never let a player lose on
+    // The assist reward sheet/ad is a system pause: never let a player lose on
     // time while they are watching a video they chose to watch.
-    if (undoSheetOpen || undoBusy) {
+    if (assistSheetOpen || assistBusy) {
       lastClockTickAtRef.current = Date.now();
       return;
     }
@@ -1028,7 +1057,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       }
     }, 200);
     return () => clearInterval(interval);
-  }, [state.status, type, undoSheetOpen, undoBusy, isUntimed]);
+  }, [state.status, type, assistSheetOpen, assistBusy, isUntimed]);
 
   // AI turn — logic untouched, presentation only.
   // NOTE: isAiThinking is intentionally NOT used as a scheduling guard here:
@@ -1064,6 +1093,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           const aiAction = await getAiMove(live, profile, undefined, {
             shouldCancel: () => cancelled,
             budget: isBlitzMatch ? { timeMs: 250, maxDepth: 4 } : undefined,
+            botId: seatBot?.id ?? personality?.id,
           });
           if (cancelled) return;
           const fresh = stateRef.current;
@@ -1182,10 +1212,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           ? true
           : Boolean(state.winnerId && humanSeatId && state.winnerId === humanSeatId);
 
-      // 3-star mastery: a clean win (no Undo) and a healthy lead outrank a
-      // grind. The bot keeps the best rating ever earned; losses never lower it.
-      if (type === 'ai' && effectiveWon && humanSeatId) {
-        const me = state.players.find((p) => p.id === humanSeatId);
+      // 3-star mastery: clean win = 3, one assist = 2, two or more = 1.
+      // Hints and undos both count. The bot keeps the best rating ever earned;
+      // losses never lower it.
+      if (type === 'ai' && effectiveWon && humanSeatId && state.mode === '2p') {
         const foes = state.players.filter((p) => p.id !== humanSeatId);
         const oppDist = foes.length
           ? Math.min(
@@ -1194,11 +1224,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               )
             )
           : 0;
-        const myWalls = me?.wallsRemaining ?? 0;
-        const undos = undosUsedRef.current;
-        let stars: 1 | 2 | 3 = 1;
-        if (undos === 0 && (oppDist >= 2 || myWalls >= 2)) stars = 2;
-        if (undos === 0 && (oppDist >= 3 || (oppDist >= 2 && myWalls >= 3))) stars = 3;
+        const stars = computeBotStars(assistsUsedRef.current);
         setBotStarsEarned(stars);
         void recordBotVictoryStars(
           personality?.id ?? `difficulty:${aiDifficulty}`,
@@ -1255,6 +1281,82 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         history: state.history,
       };
       saveGameToHistory(record);
+
+      // Achievements evaluation & AI win reporting
+      setAiReward(null);
+      const isWinner =
+        state.winnerId
+          ? type === 'online'
+            ? state.winnerId === online.myPlayerId
+            : state.winnerId === state.players[humanIdx]?.id
+          : false;
+
+      if (isWinner) {
+        if (['center2', 'center3', '4p'].includes(state.mode)) {
+          void api.claimAchievement('mode-center-first').then((res) => {
+            if (res.newlyEarned) {
+              void playNotifySound();
+              toast.show(`New Achievement — ${res.newlyEarned.name}`, undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
+            }
+          }).catch(() => {});
+        }
+        if (state.mode.startsWith('race')) {
+          void api.claimAchievement('mode-race-first').then((res) => {
+            if (res.newlyEarned) {
+              void playNotifySound();
+              toast.show(`New Achievement — ${res.newlyEarned.name}`, undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
+            }
+          }).catch(() => {});
+        }
+        if (wallsEach === 99) {
+          void api.claimAchievement('mode-walls-99').then((res) => {
+            if (res.newlyEarned) {
+              void playNotifySound();
+              toast.show(`New Achievement — ${res.newlyEarned.name}`, undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
+            }
+          }).catch(() => {});
+        }
+        if (state.players.length >= 4) {
+          void api.claimAchievement('mode-multi-podium').then((res) => {
+            if (res.newlyEarned) {
+              void playNotifySound();
+              toast.show(`New Achievement — ${res.newlyEarned.name}`, undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
+            }
+          }).catch(() => {});
+        }
+        if (onlineSource === 'room') {
+          void api.claimAchievement('social-friend-duel').then((res) => {
+            if (res.newlyEarned) {
+              void playNotifySound();
+              toast.show(`New Achievement — ${res.newlyEarned.name}`, undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
+            }
+          }).catch(() => {});
+        }
+      }
+
+      if (type === 'ai' && aiDifficulty === 'hard' && !personality && state.winnerId === state.players[humanIdx]?.id) {
+        const payload: SubmitAiWinBody = {
+          clientWinId: `aiwin:${state.gameId}`,
+          mode: state.mode,
+          aiDifficulty: 'hard',
+          playerSeat: humanIdx,
+          movesNotation: formatGame(state),
+          totalPlies: state.history.length,
+          durationSeconds: Math.floor((Date.now() - state.startedAt) / 1000),
+          playedAt: Date.now(),
+        };
+        void (async () => {
+          const live = await reportHardAiWin(payload);
+          const flushed = await flushAiWinQueue();
+          const show =
+            live && live.newAchievements.length > 0
+              ? live
+              : flushed.find((r) => r.newAchievements.length > 0) ?? null;
+          if (show) setAiReward(show);
+        })();
+      } else {
+        void flushAiWinQueue();
+      }
 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1364,9 +1466,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       // and keeps a predicted goal from reading as a finished game. A refusal
       // here means our move is still in flight — the tap is simply dropped
       // rather than queued, because queueing it would replay a stale turn.
+      setHintAction(null);
       onlineSendAction(action);
       return;
     }
+    setHintAction(null);
     const result = applyAction(state, action);
     if (result.success) {
       setState(result.state);
@@ -1482,9 +1586,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       // Same optimistic contract as the move path: the hook refuses a second
       // action while one is unconfirmed, so a fast wall-then-move cannot slip
       // two actions past the server's one-in-flight assumption.
+      setHintAction(null);
       online.sendAction(action);
       return;
     }
+    setHintAction(null);
     const result = applyAction(state, action);
     if (result.success) {
       setState(result.state);
@@ -1541,7 +1647,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setPremoveSel(null);
     interstitialFiredRef.current = false;
     resultRecordedRef.current = null;
-    undosUsedRef.current = 0;
+    assistsUsedRef.current = 0;
+    setAssistsState(createMatchAssists(isPremiumActive(premiumState)));
+    setPendingAssistAction(null);
+    setLostStarIndex(null);
     const fresh = createInitialState({
       mode,
       playerNames: playerNamesFor(mode, type, aiDifficulty, humanIdx, identity?.displayName ?? 'You', personality?.name ?? null),
@@ -1576,19 +1685,25 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // games, the first player otherwise. Nobody's clock ever swaps sides.
   const seatIdx = type === 'online' ? activeHumanIdx : type === 'ai' ? humanIdx : 0;
 
-  // Premium badges, keyed by seat (P5.2): the sync's frozen premium list mapped
-  // through the same seat→account inversion. AI/local tables have no accounts
-  // behind seats — no badges, by construction.
+  // Premium badges, keyed by seat (P5.2): online players sync their premium
+  // status, while the local authenticated player is always marked premium if active.
+  const userIsPremium = isPremiumActive(premiumState);
   const seatPremium = useMemo<Record<string, boolean>>(() => {
-    if (type !== 'online') return {};
-    const premium = new Set(online.premiumUserIds ?? []);
-    if (premium.size === 0) return {};
     const map: Record<string, boolean> = {};
-    for (const [seatId, userId] of Object.entries(online.playerUserIds ?? {})) {
-      if (premium.has(userId)) map[seatId] = true;
+    if (type === 'online') {
+      const premium = new Set(online.premiumUserIds ?? []);
+      for (const [seatId, userId] of Object.entries(online.playerUserIds ?? {})) {
+        if (premium.has(userId)) map[seatId] = true;
+      }
+    }
+    if (userIsPremium) {
+      const mySeat = state.players[seatIdx];
+      if (mySeat?.id) {
+        map[mySeat.id] = true;
+      }
     }
     return map;
-  }, [type, online.playerUserIds, online.premiumUserIds]);
+  }, [type, online.playerUserIds, online.premiumUserIds, userIsPremium, state.players, seatIdx]);
 
   // Rewarded-analysis gate (MONETIZATION.md P3.2): the access key identifies
   // THIS finished game — state.gameId is fresh per mount and per rematch, so
@@ -1732,7 +1847,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       stateRef.current = next;
       setPremoveQueue([]);
       setPremoveSel(null);
-      undosUsedRef.current += 1;
       return true;
     } catch {
       return false;
@@ -1741,24 +1855,30 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const handleUndoPress = useCallback(() => {
     if (!undoAvailable) return;
-    executeUndoMove();
-  }, [undoAvailable, executeUndoMove]);
-
-  const handleUndoWatch = useCallback(async () => {
-    setUndoBusy(true);
-    setUndoError(null);
-    const res = await showRewarded('undo');
-    if (res.earned) {
-      // Grant three credits, then spend one only if the undo actually ran
-      // (the match could have ended while the video was playing).
-      const ok = executeUndoMove();
-      setUndoCredits((c) => c + (ok ? 2 : 3));
-      setUndoSheetOpen(false);
-    } else {
-      setUndoError(res.error ?? 'dismissed');
+    if (type === 'ai') {
+      if (assistsState.remaining <= 0) {
+        if (isPremiumActive(premiumState)) {
+          setAssistsState((prev) => refillAssists(prev));
+          toast.show('👑 Premium: Assists refilled (9/9)');
+          executeUndoMove();
+          return;
+        }
+        setPendingAssistAction('undo');
+        setAssistSheetOpen(true);
+        return;
+      }
+      if (assistsState.used === 0) {
+        setLostStarIndex(2);
+        setStarFeedbackTrigger((k) => k + 1);
+      } else if (assistsState.used === 1) {
+        setLostStarIndex(1);
+        setStarFeedbackTrigger((k) => k + 1);
+      }
+      setAssistsState((prev) => consumeAssist(prev).next);
+      assistsUsedRef.current += 1;
     }
-    setUndoBusy(false);
-  }, [executeUndoMove]);
+    executeUndoMove();
+  }, [undoAvailable, type, assistsState, premiumState, executeUndoMove]);
 
   // Quick reactions: the dock is visible in live online matches AND in 2p
   // AI games; the sending tray is online-only. In AI games the USER sends
@@ -1779,6 +1899,22 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     gameId: onlineGameId ?? '',
     myUserId: identity?.userId ?? null,
   });
+
+  const lastRewardToastKey = useRef<string | null>(null);
+  useEffect(() => {
+    const first = aiReward?.newAchievements?.[0];
+    if (!first || !aiReward) return;
+    const key = `${aiReward.win.id}:${first.code}`;
+    if (lastRewardToastKey.current === key) return;
+    if (showGameOver) return;
+    lastRewardToastKey.current = key;
+    void playNotifySound();
+    toast.show(
+      `New Achievement — ${first.name}`,
+      undefined,
+      <AchievementMedal icon={first.icon} tier={first.tier} size={30} />
+    );
+  }, [aiReward, showGameOver]);
 
   // AI banter (2p AI games only): laugh the first time the engine's race lead
   // reaches a ~70% position, applaud the first time the human's reaches ~80%.
@@ -1904,7 +2040,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // move of ours appears immediately rather than a frame later.
   const displayState = replayState ?? boardState;
 
-  const handleHintPress = useCallback(async () => {
+  const executeHint = useCallback(async () => {
     if (!humanTurn || !currentPlayer || state.status !== 'IN_PROGRESS' || hintLoading) {
       return;
     }
@@ -1946,20 +2082,23 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         void playNotifySound();
       }
     } catch {
-      // Fallback: shortest-path step
-      const moves = getLegalMoves(displayState, currentPlayer.id);
-      if (moves && moves.length > 0) {
-        let bestMove = moves[0];
-        let bestDist = Number.POSITIVE_INFINITY;
-        for (const m of moves) {
-          const d = getShortestDistance(m, currentPlayer.goalDirection, displayState.walls, displayState.mode);
-          if (d < bestDist) {
-            bestDist = d;
-            bestMove = m;
+      // Fallback: shortest-path step. A stale request (the board moved on)
+      // must not show a hint or count as an assist.
+      if (hintReqIdRef.current === currentReqId) {
+        const moves = getLegalMoves(displayState, currentPlayer.id);
+        if (moves && moves.length > 0) {
+          let bestMove = moves[0];
+          let bestDist = Number.POSITIVE_INFINITY;
+          for (const m of moves) {
+            const d = getShortestDistance(m, currentPlayer.goalDirection, displayState.walls, displayState.mode);
+            if (d < bestDist) {
+              bestDist = d;
+              bestMove = m;
+            }
           }
+          setHintAction({ type: 'MOVE', to: bestMove });
+          void playNotifySound();
         }
-        setHintAction({ type: 'MOVE', to: bestMove });
-        void playNotifySound();
       }
     } finally {
       if (hintReqIdRef.current === currentReqId) {
@@ -1968,6 +2107,60 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
   }, [humanTurn, currentPlayer, state.status, displayState, hintLoading]);
 
+  const handleHintPress = useCallback(async () => {
+    if (!humanTurn || !currentPlayer || state.status !== 'IN_PROGRESS' || hintLoading) {
+      return;
+    }
+    if (type === 'ai') {
+      if (assistsState.remaining <= 0) {
+        if (isPremiumActive(premiumState)) {
+          setAssistsState((prev) => refillAssists(prev));
+          toast.show('👑 Premium: Assists refilled (9/9)');
+          void executeHint();
+          return;
+        }
+        setPendingAssistAction('hint');
+        setAssistSheetOpen(true);
+        return;
+      }
+      if (assistsState.used === 0) {
+        setLostStarIndex(2);
+        setStarFeedbackTrigger((k) => k + 1);
+      } else if (assistsState.used === 1) {
+        setLostStarIndex(1);
+        setStarFeedbackTrigger((k) => k + 1);
+      }
+      setAssistsState((prev) => consumeAssist(prev).next);
+      assistsUsedRef.current += 1;
+    }
+    void executeHint();
+  }, [humanTurn, currentPlayer, state.status, hintLoading, type, assistsState, premiumState, executeHint]);
+
+  const handleAssistWatch = useCallback(async () => {
+    setAssistBusy(true);
+    setAssistError(null);
+    const res = await showRewarded('assist');
+    if (res.earned) {
+      setAssistsState((prev) => refillAssists(prev));
+      setAssistSheetOpen(false);
+      setAssistBusy(false);
+      const pending = pendingAssistAction;
+      setPendingAssistAction(null);
+      if (pending === 'hint') {
+        setTimeout(() => {
+          void executeHint();
+        }, 150);
+      } else if (pending === 'undo') {
+        setTimeout(() => {
+          executeUndoMove();
+        }, 150);
+      }
+    } else {
+      setAssistError(res.error ?? 'dismissed');
+      setAssistBusy(false);
+    }
+  }, [pendingAssistAction, executeHint, executeUndoMove]);
+
   useEffect(() => {
     hintReqIdRef.current++;
     setHintAction(null);
@@ -1975,7 +2168,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   }, [state.history.length]);
 
   const hintMark = useMemo(() => {
-    if (!hintAction) return null;
+    if (!humanTurn || !hintAction) return null;
     if (hintAction.type === 'MOVE') {
       return {
         from: currentPlayer?.position,
@@ -1992,7 +2185,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       };
     }
     return null;
-  }, [hintAction, currentPlayer?.position]);
+  }, [humanTurn, hintAction, currentPlayer?.position]);
 
   const enterReplay = () => {
     setShowGameOver(false);
@@ -2361,8 +2554,8 @@ useEffect(() => {
   if (wallDrag && rootRectRef.current) {
     const trayScale = Math.max(0.72, Math.min(1, windowWidth / 390));
     const isH = (wallDrag.orientation === 'H') !== swapWallVisuals;
-    const w = (isH ? 56 : 12) * trayScale;
-    const h = (isH ? 12 : 56) * trayScale;
+    const w = (isH ? 60 : 16) * trayScale;
+    const h = (isH ? 16 : 60) * trayScale;
     chipStyle = {
       left: wallDrag.pageX - rootRectRef.current.x - w / 2,
       top: wallDrag.pageY - rootRectRef.current.y - h / 2,
@@ -2393,17 +2586,17 @@ useEffect(() => {
       {skin.pageTexture && <SkinBackdrop texture={skin.pageTexture} />}
       {/* Status strip follows the skin page so no theme bar cuts the table. */}
       <StatusBar
-        barStyle={
-          skin.pageBackground
-            ? skin.id === 'walnut'
-              ? 'light-content'
-              : 'dark-content'
-            : THEME.mode === 'dark'
-              ? 'light-content'
-              : 'dark-content'
-        }
-        backgroundColor={skin.pageBackground ?? THEME.colors.backgroundCard}
+        barStyle={THEME.mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={THEME.colors.backgroundCard}
       />
+
+      {/* Floating Star Loss Feedback (AI bot matches only) */}
+      {type === 'ai' && (
+        <FallingStarsFeedback
+          lostStarIndex={lostStarIndex}
+          triggerKey={starFeedbackTrigger}
+        />
+      )}
 
       {/* Measured top chrome (header + opponent cards) for board sizing.
           Back in the bar: it resigns an active match, frees a finished seat,
@@ -2633,6 +2826,8 @@ useEffect(() => {
           <WallDragGhostProvider value={dragGhostValue}>
             <GameBoard
             state={displayState}
+            localPlayerIndex={activeHumanIdx}
+            playerCosmetics={type === 'online' ? online.playerCosmetics : undefined}
             legalMoves={viewingStep !== null ? EMPTY_CELL_LIST : legalMoves}
             previewWall={null}
             selectedCell={viewingStep !== null ? null : selectedCellMemo}
@@ -2686,6 +2881,7 @@ useEffect(() => {
                     <Text style={styles.humanPlayerName} numberOfLines={1}>
                       {humanPlayer.displayName || 'You'}
                     </Text>
+                    {isPremiumActive(premiumState) && <PremiumBadge size="xs" />}
                     {isHumanActive && <View style={[styles.botTurnDot, { backgroundColor: humanBall }]} />}
                   </View>
 
@@ -2866,7 +3062,7 @@ useEffect(() => {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.dockItem, (!humanTurn || hintLoading) && { opacity: 0.6 }]}
+              style={[styles.dockItem, (!humanTurn || hintLoading) && assistsState.remaining > 0 && { opacity: 0.6 }]}
               disabled={!humanTurn || hintLoading}
               onPress={handleHintPress}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -2874,11 +3070,23 @@ useEffect(() => {
               {hintLoading ? (
                 <ActivityIndicator size="small" color="#10B981" style={{ height: 21 }} />
               ) : (
-                <OrbIcon
-                  name={hintAction ? 'lightbulb-on' : 'lightbulb-on-outline'}
-                  size={21}
-                  color={hintAction ? '#10B981' : dockIconColor}
-                />
+                <View style={styles.dockIconBadgeWrap}>
+                  <OrbIcon
+                    name={hintAction ? 'lightbulb-on' : 'lightbulb-on-outline'}
+                    size={21}
+                    color={hintAction ? '#10B981' : dockIconColor}
+                  />
+                  <View
+                    style={[
+                      styles.dockAssistBadge,
+                      assistsState.remaining === 0 && styles.dockAssistBadgeEmpty,
+                    ]}
+                  >
+                    <Text style={styles.dockAssistBadgeText}>
+                      {assistsState.remaining > 0 ? assistsState.remaining : '+'}
+                    </Text>
+                  </View>
+                </View>
               )}
               <Text style={[styles.dockLabel, { color: hintAction ? '#10B981' : dockLabelColor }]}>
                 {hintLoading ? 'Thinking' : 'Hint'}
@@ -2886,12 +3094,28 @@ useEffect(() => {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.dockItem}
-              disabled={!undoAvailable}
+              style={[styles.dockItem, !undoAvailable && assistsState.remaining > 0 && { opacity: 0.5 }]}
+              disabled={!undoAvailable && assistsState.remaining > 0}
               onPress={handleUndoPress}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <OrbIcon name="undo-variant" size={21} color={undoAvailable ? dockIconColor : dockDisabledColor} />
+              <View style={styles.dockIconBadgeWrap}>
+                <OrbIcon
+                  name="undo-variant"
+                  size={21}
+                  color={undoAvailable ? dockIconColor : dockDisabledColor}
+                />
+                <View
+                  style={[
+                    styles.dockAssistBadge,
+                    assistsState.remaining === 0 && styles.dockAssistBadgeEmpty,
+                  ]}
+                >
+                  <Text style={styles.dockAssistBadgeText}>
+                    {assistsState.remaining > 0 ? assistsState.remaining : '+'}
+                  </Text>
+                </View>
+              </View>
               <Text style={[styles.dockLabel, { color: undoAvailable ? dockLabelColor : dockDisabledColor }]}>
                 Undo
               </Text>
@@ -3263,7 +3487,7 @@ useEffect(() => {
       </Modal>
 
       {/* Held wall follows the finger — wears the skin like tray/ghost:
-          sharp rectangle on walnut, capsule elsewhere. */}
+          sharp rectangle on stone, capsule elsewhere. */}
       {wallDrag && chipStyle && (
         <View
           pointerEvents="none"
@@ -3274,19 +3498,36 @@ useEffect(() => {
               top: chipStyle.top,
               width: chipStyle.width,
               height: chipStyle.height,
+              overflow: 'hidden',
               borderRadius:
                 skin.wallRadius === 'capsule'
                   ? Math.min(chipStyle.width, chipStyle.height) / 2
                   : typeof skin.wallRadius === 'number'
                   ? skin.wallRadius
                   : Math.min(chipStyle.width, chipStyle.height) / 2,
-              backgroundColor:
-                skin.wallStyle === 'neutral' && skin.neutralWall
-                  ? skin.neutralWall
-                  : trayColor,
+              backgroundColor: customWall
+                ? 'transparent'
+                : skin.wallStyle === 'neutral' && skin.neutralWall
+                ? skin.neutralWall
+                : trayColor,
             },
           ]}
-        />
+        >
+          {customWall && (
+            <Image
+              source={
+                chipStyle.width > chipStyle.height
+                  ? (customWall.assets.wallTray || customWall.assets.wallH)
+                  : customWall.assets.wallV
+              }
+              style={{
+                width: chipStyle.width,
+                height: chipStyle.height,
+              }}
+              resizeMode="stretch"
+            />
+          )}
+        </View>
       )}
 
       <Modal visible={finishModal !== null} transparent animationType="fade">
@@ -3353,7 +3594,7 @@ useEffect(() => {
           setPremiumOpen(true);
         }}
         endReason={type === 'online' ? online.gameEndedResult?.reason ?? null : null}
-        isRanked={type === 'online'}
+        isRanked={type === 'online' && Boolean(online.isRanked)}
         botPersonality={personality}
         ratingDelta={type === 'online' && identity ? online.gameEndedResult?.ratingChanges?.[identity.userId]?.delta : undefined}
         ratingAfter={type === 'online' && identity ? online.gameEndedResult?.ratingChanges?.[identity.userId]?.after : undefined}
@@ -3413,27 +3654,35 @@ useEffect(() => {
           setRewardOpen(false);
           setRewardError(null);
           setPremiumSource('analysis');
-          setPremiumOpen(true);
+          setTimeout(() => {
+            setPremiumOpen(true);
+          }, 120);
         }}
         onClose={() => {
           if (!rewardBusy) setRewardOpen(false);
         }}
       />
       <RewardSheet
-        visible={undoSheetOpen}
-        busy={undoBusy}
-        error={undoError}
-        variant="undo"
-        onWatch={handleUndoWatch}
+        visible={assistSheetOpen}
+        busy={assistBusy}
+        error={assistError}
+        variant="assist"
+        watchLimitReached={!canRefillAssists(assistsState)}
+        onWatch={handleAssistWatch}
         onPremium={() => {
-          if (undoBusy) return;
-          setUndoSheetOpen(false);
-          setUndoError(null);
-          setPremiumSource('undo');
-          setPremiumOpen(true);
+          if (assistBusy) return;
+          setAssistSheetOpen(false);
+          setAssistError(null);
+          setPremiumSource('assist');
+          setTimeout(() => {
+            setPremiumOpen(true);
+          }, 120);
         }}
         onClose={() => {
-          if (!undoBusy) setUndoSheetOpen(false);
+          if (!assistBusy) {
+            setAssistSheetOpen(false);
+            setPendingAssistAction(null);
+          }
         }}
       />
       <PremiumSheet
@@ -3723,6 +3972,33 @@ const createStyles = () => StyleSheet.create({
     minWidth: 54,
     gap: 2,
   },
+  dockIconBadgeWrap: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dockAssistBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -10,
+    backgroundColor: THEME.colors.primary,
+    borderRadius: 8,
+    minWidth: 15,
+    height: 15,
+    paddingHorizontal: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dockAssistBadgeEmpty: {
+    backgroundColor: '#F59E0B',
+  },
+  dockAssistBadgeText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    lineHeight: 11,
+  },
   dockItemDisabled: {
     opacity: 0.35,
   },
@@ -3750,7 +4026,7 @@ const createStyles = () => StyleSheet.create({
   },
   optionsOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: THEME.colors.modalBackdrop,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -3889,7 +4165,7 @@ const createStyles = () => StyleSheet.create({
   },
   resignOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: THEME.colors.modalBackdrop,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,

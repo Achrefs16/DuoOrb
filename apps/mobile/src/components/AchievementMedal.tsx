@@ -83,13 +83,26 @@ export const CATEGORY_META: Record<
   BadgeCategory,
   { title: string; icon: OrbIconName }
 > = {
+  bot: { title: 'BOT MASTERY', icon: 'award' },
+  battle: { title: 'BATTLE MODES', icon: 'grid' },
+  tactics: { title: 'TACTICAL PLAY', icon: 'crosshair' },
+  social: { title: 'SOCIAL & STYLE', icon: 'users' },
   streak: { title: 'WIN STREAKS', icon: 'zap' },
-  rank: { title: 'BOARD RANKS', icon: 'chevrons-up' },
   milestone: { title: 'MILESTONES', icon: 'flag' },
+  rank: { title: 'BOARD RANKS', icon: 'chevrons-up' },
   mastery: { title: 'AI MASTERY', icon: 'cpu' },
 };
 
-export const CATEGORY_ORDER: BadgeCategory[] = ['streak', 'rank', 'milestone', 'mastery'];
+export const CATEGORY_ORDER: BadgeCategory[] = [
+  'bot',
+  'battle',
+  'tactics',
+  'social',
+  'streak',
+  'milestone',
+  'rank',
+  'mastery',
+];
 
 export const categoryOf = (category?: BadgeCategory): BadgeCategory =>
   category && CATEGORY_META[category] ? category : 'mastery';

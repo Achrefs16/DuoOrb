@@ -14,6 +14,11 @@ import {
   RANK_MILESTONES,
   RATING_MILESTONES,
   STREAK_MILESTONES,
+  BOT_STAR_MILESTONES,
+  BEGINNER_BOT_IDS,
+  INTERMEDIATE_BOT_IDS,
+  MASTER_BOT_IDS,
+  GRANDMASTER_BOT_IDS,
   achievementByCode,
   isAwardable,
   swiftPliesFor,
@@ -356,6 +361,23 @@ export class AiwinsService {
         owners: {} as Record<string, number>,
       };
     }
+    // Auto-evaluate bot stars and friend count so profile accurately reflects progress
+    const profile = await this.prisma.profile.findUnique({
+      where: { userId },
+      select: { botStars: true },
+    });
+    if (profile?.botStars) {
+      await this.evaluateBotStars(userId, profile.botStars as any);
+    }
+    const friendCount = await this.prisma.friendship.count({
+      where: { OR: [{ user1Id: userId }, { user2Id: userId }] },
+    });
+    if (friendCount >= 1) {
+      try {
+        await this.prisma.achievement.create({ data: { userId, code: 'social-first-friend' } });
+      } catch {}
+    }
+
     const [earned, equipped, stats, ownerGroups] = await Promise.all([
       this.prisma.achievement.findMany({ where: { userId }, orderBy: { earnedAt: 'asc' } }),
       this.prisma.equippedBadge.findMany({ where: { userId }, orderBy: { slot: 'asc' } }),
@@ -436,9 +458,113 @@ export class AiwinsService {
         .map((code, slot) => (code === null ? null : { userId, code, slot }))
         .filter((r): r is { userId: string; code: string; slot: number } => r !== null);
       if (rows.length > 0) await tx.equippedBadge.createMany({ data: rows });
+      if (rows.length === BADGE_SLOTS) {
+        try {
+          await tx.achievement.create({ data: { userId, code: 'showcase-full' } });
+        } catch {}
+      }
     });
 
     return this.getMyAchievements(userId);
+  }
+
+  /**
+   * Allows claiming client-reported feats (game review milestones, custom cosmetics, etc.).
+   */
+  async claimAchievement(
+    userId: string,
+    code: string
+  ): Promise<{ success: boolean; newlyEarned: EarnedBadgeDto | null }> {
+    if (!this.prisma.isConnected) return { success: false, newlyEarned: null };
+    const def = achievementByCode(code);
+    if (!def || !isAwardable(code)) {
+      throw new BadRequestException(`Invalid or unavailable achievement code: ${code}`);
+    }
+    const existing = await this.prisma.achievement.findUnique({
+      where: { userId_code: { userId, code } },
+    });
+    if (existing) {
+      return { success: true, newlyEarned: null };
+    }
+    try {
+      await this.prisma.achievement.create({ data: { userId, code } });
+      return {
+        success: true,
+        newlyEarned: {
+          code: def.code,
+          name: def.name,
+          description: def.description,
+          requirement: def.requirement,
+          icon: def.icon,
+          category: def.category,
+          tier: def.tier,
+        },
+      };
+    } catch {
+      return { success: true, newlyEarned: null };
+    }
+  }
+
+  /**
+   * Evaluates Bot Mastery achievements from the player's synced botStars ledger.
+   */
+  async evaluateBotStars(userId: string, botStars: Record<string, any>): Promise<string[]> {
+    if (!this.prisma.isConnected || !botStars || typeof botStars !== 'object') return [];
+    const existing = await this.prisma.achievement.findMany({ where: { userId } });
+    const owned = new Set(existing.map((e) => e.code));
+    const earn: string[] = [];
+
+    let totalStars = 0;
+    let botWinsCount = 0;
+    for (const [, inc] of Object.entries(botStars)) {
+      if (!inc || typeof inc !== 'object') continue;
+      const stars = typeof inc.stars === 'number' ? inc.stars : 0;
+      const wins = typeof inc.wins === 'number' ? inc.wins : 0;
+      totalStars += stars;
+      if (stars > 0 || wins > 0) botWinsCount++;
+    }
+
+    if (botWinsCount >= 1 && !owned.has('bot-first-win')) {
+      earn.push('bot-first-win');
+    }
+    for (const m of BOT_STAR_MILESTONES) {
+      if (totalStars >= m.at && !owned.has(m.code)) earn.push(m.code);
+    }
+
+    const hasWonBot = (id: string) => {
+      const b = botStars[id];
+      return b && ((b.stars && b.stars > 0) || (b.wins && b.wins > 0));
+    };
+
+    if (BEGINNER_BOT_IDS.every(hasWonBot) && !owned.has('bot-tier-beginner')) {
+      earn.push('bot-tier-beginner');
+    }
+    if (INTERMEDIATE_BOT_IDS.every(hasWonBot) && !owned.has('bot-tier-inter')) {
+      earn.push('bot-tier-inter');
+    }
+    if (MASTER_BOT_IDS.every(hasWonBot) && !owned.has('bot-tier-master')) {
+      earn.push('bot-tier-master');
+    }
+    if (GRANDMASTER_BOT_IDS.every(hasWonBot) && !owned.has('bot-tier-gm')) {
+      earn.push('bot-tier-gm');
+    }
+
+    if (botStars['achref']?.stars === 3 && !owned.has('bot-flawless-achref')) {
+      earn.push('bot-flawless-achref');
+    }
+    if (botStars['milo']?.stars === 3 && !owned.has('bot-flawless-milo')) {
+      earn.push('bot-flawless-milo');
+    }
+
+    for (const code of earn) {
+      if (!isAwardable(code)) continue;
+      try {
+        await this.prisma.achievement.create({ data: { userId, code } });
+      } catch {
+        // Already earned
+      }
+    }
+    return earn.filter((c) => isAwardable(c) && achievementByCode(c) !== undefined);
   }
 
   /**
@@ -548,6 +674,23 @@ export class AiwinsService {
       }
     }
 
+    // Mode milestones (Center Rush, Race, 4P podium)
+    const wonPlayerRows = await this.prisma.gamePlayer.findMany({
+      where: { userId, isWinner: true, game: { status: 'COMPLETED' } },
+      select: { game: { select: { mode: true, wallsEach: true } } },
+    });
+    const centerWins = wonPlayerRows.filter((r) => ['center2', 'center3', '4p'].includes(r.game.mode)).length;
+    const raceWins = wonPlayerRows.filter((r) => r.game.mode.startsWith('race')).length;
+    const walls99Win = wonPlayerRows.some((r) => r.game.wallsEach === 99);
+    const multi4pWin = wonPlayerRows.some((r) => r.game.mode === '4p' || r.game.mode === 'race4');
+
+    if (centerWins >= 1 && !owned.has('mode-center-first')) earn.push('mode-center-first');
+    if (centerWins >= 10 && !owned.has('mode-center-10')) earn.push('mode-center-10');
+    if (raceWins >= 1 && !owned.has('mode-race-first')) earn.push('mode-race-first');
+    if (raceWins >= 10 && !owned.has('mode-race-10')) earn.push('mode-race-10');
+    if (multi4pWin && !owned.has('mode-multi-podium')) earn.push('mode-multi-podium');
+    if (walls99Win && !owned.has('mode-walls-99')) earn.push('mode-walls-99');
+
     for (const code of earn) {
       try {
         await this.prisma.achievement.create({ data: { userId, code } });
@@ -564,16 +707,25 @@ export class AiwinsService {
    * badges simply show no progress for guests).
    */
   private async statSnapshot(userId: string): Promise<Record<AchievementStat, number | null>> {
-    const [rating, streak, hardWins] = await Promise.all([
+    const [rating, streak, hardWins, profile] = await Promise.all([
       this.prisma.rating.findUnique({ where: { userId } }),
       this.currentStreak(userId),
       this.prisma.aiWin.count({ where: { userId } }),
+      this.prisma.profile.findUnique({ where: { userId }, select: { botStars: true } }),
     ]);
     const rankLive = RANK_MILESTONES.some((m) => isAwardable(m.code));
     const rank =
       rankLive && rating && rating.gamesPlayed > 0
         ? await this.currentRank(userId, rating.rating, rating.gamesPlayed)
         : null;
+
+    let totalBotStars = 0;
+    if (profile?.botStars && typeof profile.botStars === 'object') {
+      for (const entry of Object.values(profile.botStars as Record<string, any>)) {
+        if (entry && typeof entry.stars === 'number') totalBotStars += entry.stars;
+      }
+    }
+
     return {
       streak,
       bestRank: rank,
@@ -581,6 +733,7 @@ export class AiwinsService {
       rankedWins: rating?.wins ?? 0,
       rating: rating ? Math.round(rating.rating) : 0,
       hardWins,
+      botStars: totalBotStars,
     };
   }
 

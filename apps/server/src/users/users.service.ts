@@ -14,6 +14,58 @@ import {
   assertValidUsername,
 } from './username.js';
 import { achievementByCode } from '../aiwins/achievements.catalog.js';
+import { DEFAULT_INITIAL_RATING, DEFAULT_INITIAL_RD } from '../rating/glicko2.service.js';
+import { AiwinsService } from '../aiwins/aiwins.service.js';
+
+export type BotStarCount = 1 | 2 | 3;
+
+export interface BotStarRecord {
+  botKey: string;
+  stars: BotStarCount;
+  wins: number;
+  bestMarginSteps: number;
+  updatedAt: string;
+}
+
+export type BotStarMap = Record<string, BotStarRecord>;
+
+export function mergeBotStars(
+  existing: BotStarMap | null | undefined,
+  incoming: BotStarMap | null | undefined
+): BotStarMap {
+  const merged: BotStarMap = { ...(existing ?? {}) };
+  if (!incoming) return merged;
+
+  for (const [key, inc] of Object.entries(incoming)) {
+    if (!inc || typeof inc !== 'object') continue;
+    const prev = merged[key];
+    const stars = Math.max(prev?.stars ?? 0, inc.stars ?? 0);
+    if (stars < 1 || stars > 3) continue;
+
+    merged[key] = {
+      botKey: typeof inc.botKey === 'string' ? inc.botKey : key,
+      stars: stars as BotStarCount,
+      wins: Math.max(
+        prev?.wins ?? 0,
+        typeof inc.wins === 'number' && Number.isFinite(inc.wins)
+          ? Math.max(0, Math.floor(inc.wins))
+          : 0
+      ),
+      bestMarginSteps: Math.max(
+        prev?.bestMarginSteps ?? 0,
+        typeof inc.bestMarginSteps === 'number' && Number.isFinite(inc.bestMarginSteps)
+          ? Math.max(0, Math.floor(inc.bestMarginSteps))
+          : 0
+      ),
+      updatedAt:
+        typeof inc.updatedAt === 'string' && inc.updatedAt.length > 0
+          ? inc.updatedAt
+          : prev?.updatedAt ?? new Date().toISOString(),
+    };
+  }
+
+  return merged;
+}
 
 /** Prisma's unique-constraint violation code. */
 function isUniqueViolation(e: unknown): boolean {
@@ -30,7 +82,8 @@ export class UsersService {
   // Optional so the service can be constructed bare in unit tests.
   constructor(
     private readonly prisma: PrismaService,
-    private readonly guestService?: GuestService
+    private readonly guestService?: GuestService,
+    private readonly aiwins?: AiwinsService
   ) {}
 
   async getMe(userId: string) {
@@ -47,6 +100,7 @@ export class UsersService {
         draws: 0,
         isPremium: false,
         premiumExpiresAt: null,
+        botStars: {},
       };
     }
 
@@ -68,8 +122,8 @@ export class UsersService {
     const rating = user.ratings[0];
 
     const shape = (r?: { rating: number; rd: number; gamesPlayed: number; wins: number; losses: number }) => ({
-      rating: r?.rating ?? 1500,
-      rd: r?.rd ?? 350,
+      rating: r?.rating ?? DEFAULT_INITIAL_RATING,
+      rd: r?.rd ?? DEFAULT_INITIAL_RD,
       gamesPlayed: r?.gamesPlayed ?? 0,
       wins: r?.wins ?? 0,
       losses: r?.losses ?? 0,
@@ -129,7 +183,50 @@ export class UsersService {
         FOUR_PLAYER: shape(rating),
       },
       badges,
+      botStars: (user.profile?.botStars as unknown as BotStarMap) ?? {},
     };
+  }
+
+  /**
+   * Fetches the user's cloud-synced bot mastery stars.
+   */
+  async getBotStars(userId: string): Promise<BotStarMap> {
+    if (!this.prisma.isConnected) return {};
+    const profile = await this.prisma.profile.findUnique({
+      where: { userId },
+      select: { botStars: true },
+    });
+    return (profile?.botStars as unknown as BotStarMap) ?? {};
+  }
+
+  /**
+   * Synchronizes bot stars monotonically:
+   * Higher star count, highest win count, best margin steps, newest timestamps win.
+   * Progress is never overwritten with lower stars.
+   */
+  async syncBotStars(userId: string, incoming: BotStarMap): Promise<BotStarMap> {
+    if (!this.prisma.isConnected) return incoming ?? {};
+    const profile = await this.prisma.profile.findUnique({
+      where: { userId },
+      select: { botStars: true },
+    });
+    if (!profile) {
+      throw new NotFoundException('User profile not found.');
+    }
+    const current = (profile.botStars as unknown as BotStarMap) ?? {};
+    const merged = mergeBotStars(current, incoming);
+    await this.prisma.profile.update({
+      where: { userId },
+      data: { botStars: merged as any },
+    });
+    if (this.aiwins) {
+      try {
+        await this.aiwins.evaluateBotStars(userId, merged);
+      } catch (e) {
+        this.logger.warn(`Failed evaluating bot achievements for ${userId}: ${(e as Error)?.message ?? e}`);
+      }
+    }
+    return merged;
   }
 
   /**
@@ -256,8 +353,8 @@ export class UsersService {
     const badges = await this.profileBadges(profile.userId);
 
     const shape = (r?: { rating: number; rd: number; gamesPlayed: number; wins: number; losses: number }) => ({
-      rating: r?.rating ?? 1500,
-      rd: r?.rd ?? 350,
+      rating: r?.rating ?? DEFAULT_INITIAL_RATING,
+      rd: r?.rd ?? DEFAULT_INITIAL_RD,
       gamesPlayed: r?.gamesPlayed ?? 0,
       wins: r?.wins ?? 0,
       losses: r?.losses ?? 0,
@@ -290,6 +387,7 @@ export class UsersService {
         FOUR_PLAYER: shape(rating),
       },
       badges,
+      botStars: (profile.botStars as unknown as BotStarMap) ?? {},
     };
   }
 

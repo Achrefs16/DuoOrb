@@ -127,6 +127,44 @@ export function formatGameInline(state: GameState): string {
   return `DuoOrb ${state.mode} ${moves}`;
 }
 
+/**
+ * Serializes a full game record into a rich, human-readable format combined with
+ * machine-reconstructible JSON history for debugging, sharing, and solver verification.
+ */
+export function serializeGameRecord(
+  state: GameState,
+  customPlayerNames?: Record<string, string>
+): string {
+  let safeState = state;
+  if (customPlayerNames) {
+    safeState = {
+      ...state,
+      players: state.players.map((p) => ({
+        ...p,
+        displayName: customPlayerNames[p.id] ?? customPlayerNames[String(p.index)] ?? p.displayName,
+      })),
+    };
+  }
+
+  const notation = formatGame(safeState);
+  const inline = formatGameInline(safeState);
+  const compactHistory = safeState.history.map((h, i) => ({
+    ply: i,
+    player: h.playerId,
+    action: h.action,
+  }));
+
+  return [
+    notation,
+    '',
+    '# Inline Move List:',
+    `# ${inline}`,
+    '',
+    '# Moves JSON:',
+    JSON.stringify(compactHistory, null, 2),
+  ].join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Reading notation back
 // ---------------------------------------------------------------------------
@@ -198,8 +236,11 @@ export function parseGame(text: string): ParsedMove[] {
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
+    if (/^[#/]/.test(line)) continue;
+    if (/^\[/.test(line)) continue;
     if (/^DuoOrb\b/.test(line)) continue;
     if (/^places\b/.test(line)) continue;
+    if (/^\{/.test(line) || /^"/.test(line) || /^\}/.test(line) || /^\]/.test(line)) continue;
     // "0. Bd5 (p1)" -> "Bd5". The number is optional and ignored: the ply
     // order in the text is what matters, not the label on it.
     const match = line.match(/^(?:\d+\.)?\s*([A-Za-z][a-i][1-9])\b/);

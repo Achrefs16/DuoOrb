@@ -198,6 +198,52 @@ impl EdgeMasks {
         }
         (-1, 0)
     }
+
+    /// Computes shortest distance from EVERY cell to goal_row (0 for TopRow, 8 for BottomRow)
+    /// in a single reverse bitwise BFS pass.
+    #[inline]
+    pub fn all_cell_distances_to_row(&self, goal_row: u8) -> [f32; 81] {
+        let mut dists = [80.0f32; 81];
+        let start_mask: u128 = if goal_row == 0 {
+            0x1FFu128 // Row 0
+        } else {
+            0x1FFu128 << 72 // Row 8
+        };
+
+        let mut visited = start_mask;
+        let mut frontier = start_mask;
+
+        let mut temp = start_mask;
+        while temp != 0 {
+            let idx = temp.trailing_zeros() as usize;
+            temp &= temp - 1;
+            if idx < 81 {
+                dists[idx] = 0.0;
+            }
+        }
+
+        let mut d = 0;
+        while frontier != 0 && d < 80 {
+            d += 1;
+            let next_n = (frontier & self.can_north) >> 9;
+            let next_s = (frontier & self.can_south) << 9;
+            let next_w = (frontier & self.can_west) >> 1;
+            let next_e = (frontier & self.can_east) << 1;
+
+            frontier = (next_n | next_s | next_w | next_e) & !visited;
+            let mut layer = frontier;
+            while layer != 0 {
+                let idx = layer.trailing_zeros() as usize;
+                layer &= layer - 1;
+                if idx < 81 {
+                    dists[idx] = d as f32;
+                }
+            }
+            visited |= frontier;
+        }
+
+        dists
+    }
 }
 
 #[inline(always)]
@@ -284,4 +330,67 @@ pub fn shortest_path(
 
 pub fn has_path_to_goal(from: CellCoord, goal: GoalDirection, board: &Board, mode: &str) -> bool {
     shortest_distance(from, goal, board, mode) >= 0
+}
+
+/// Bitwise representation of all graph edges traversed by a player's shortest path.
+/// Used for zero-BFS fast-rejection of candidate wall placements.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct PlayerPathEdges {
+    pub v_edges: u128, // Bit (r*9 + c) for vertical step between (r, c) and (r+1, c)
+    pub h_edges: u128, // Bit (r*8 + c) for horizontal step between (r, c) and (r, c+1)
+}
+
+impl PlayerPathEdges {
+    #[inline(always)]
+    pub fn intersects_h_wall(&self, r: u8, c: u8) -> bool {
+        if r >= 8 || c >= 8 {
+            return true;
+        }
+        let mask = (1u128 << (r as usize * 9 + c as usize))
+            | (1u128 << (r as usize * 9 + c as usize + 1));
+        (self.v_edges & mask) != 0
+    }
+
+    #[inline(always)]
+    pub fn intersects_v_wall(&self, r: u8, c: u8) -> bool {
+        if r >= 8 || c >= 8 {
+            return true;
+        }
+        let mask = (1u128 << (r as usize * 8 + c as usize))
+            | (1u128 << ((r as usize + 1) * 8 + c as usize));
+        (self.h_edges & mask) != 0
+    }
+}
+
+pub fn compute_player_path_edges(
+    from: CellCoord,
+    goal: GoalDirection,
+    board: &Board,
+    mode: &str,
+) -> PlayerPathEdges {
+    let mut edges = PlayerPathEdges::default();
+    if let Some(path) = shortest_path(from, goal, board, mode) {
+        let mut prev = from;
+        for curr in path {
+            if curr.row == prev.row + 1 && curr.col == prev.col {
+                if prev.row >= 0 && prev.row < 8 && prev.col >= 0 && prev.col < 9 {
+                    edges.v_edges |= 1u128 << (prev.row as usize * 9 + prev.col as usize);
+                }
+            } else if curr.row == prev.row - 1 && curr.col == prev.col {
+                if curr.row >= 0 && curr.row < 8 && curr.col >= 0 && curr.col < 9 {
+                    edges.v_edges |= 1u128 << (curr.row as usize * 9 + curr.col as usize);
+                }
+            } else if curr.col == prev.col + 1 && curr.row == prev.row {
+                if prev.row >= 0 && prev.row < 9 && prev.col >= 0 && prev.col < 8 {
+                    edges.h_edges |= 1u128 << (prev.row as usize * 8 + prev.col as usize);
+                }
+            } else if curr.col == prev.col - 1 && curr.row == prev.row {
+                if curr.row >= 0 && curr.row < 9 && curr.col >= 0 && curr.col < 8 {
+                    edges.h_edges |= 1u128 << (curr.row as usize * 8 + curr.col as usize);
+                }
+            }
+            prev = curr;
+        }
+    }
+    edges
 }

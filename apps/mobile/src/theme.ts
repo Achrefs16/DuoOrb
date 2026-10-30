@@ -356,6 +356,10 @@ export function buildTheme(
       /** Green avatar tint. */
       successTint: dark ? '#243C16' : '#E8F5DF',
       shadowBlack: '#000',
+
+      // 16. Modal and sheet backdrop scrims (neutral black, avoiding cold slate-900 tint)
+      modalBackdrop: dark ? 'rgba(0, 0, 0, 0.70)' : 'rgba(0, 0, 0, 0.50)',
+      modalBackdropSubtle: dark ? 'rgba(0, 0, 0, 0.55)' : 'rgba(0, 0, 0, 0.40)',
     },
     radius: {
       xs: 2,
@@ -407,7 +411,7 @@ export function buildTheme(
         elevation: 0,
       },
       modal: {
-        shadowColor: '#0F172A',
+        shadowColor: '#000000',
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.14,
         shadowRadius: 18,

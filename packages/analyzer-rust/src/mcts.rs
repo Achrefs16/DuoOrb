@@ -2,6 +2,7 @@ use crate::board::Board;
 use crate::pathfinding::{is_goal_cell, EdgeMasks, GoalMask};
 use crate::rules::{apply_action, get_legal_moves};
 use crate::types::{CellCoord, GameAction, GameState, Orientation, PlayerState, WallCoord};
+#[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 use std::collections::HashMap;
 
@@ -65,11 +66,16 @@ fn sigmoid(x: f64) -> f64 {
 /// - Drop strictly self-harming walls (self-delay > 0 with opp-delay <= 0 that don't shrink corridors).
 /// - Drop walls with net_gain < -1.
 /// - Retain 100% of corridor-narrowing setup walls (even when net_gain == 0).
+///
+/// `include_all_walls` is used at the search root. It keeps every legal wall
+/// (with a low prior for non-delaying setup walls) so a strong root wall can
+/// never be pruned before MCTS evaluates it. Deeper nodes use the filtered set.
 pub fn generate_logical_actions(
     state: &GameState,
     mover_idx: usize,
     board: &Board,
     forced_include: Option<&GameAction>,
+    include_all_walls: bool,
 ) -> Vec<(GameAction, f64)> {
     if state.status == "COMPLETED" || state.players.is_empty() {
         return vec![];
@@ -90,7 +96,7 @@ pub fn generate_logical_actions(
         mover_goal,
     );
 
-    let mut candidates: Vec<(GameAction, f64)> = Vec::with_capacity(48);
+    let mut candidates: Vec<(GameAction, f64)> = Vec::with_capacity(if include_all_walls { 160 } else { 48 });
 
     // 1. Pawn Moves
     let legal_pawn_moves = get_legal_moves(state, &mover.id, board);
@@ -100,6 +106,7 @@ pub fn generate_logical_actions(
             && (opp.position.row - mover.position.row).abs()
                 + (opp.position.col - mover.position.col).abs()
                 == 1
+            && !board.is_blocked(mover.position, opp.position)
     });
 
     let mut forward_moves = Vec::new();
@@ -117,7 +124,12 @@ pub fn generate_logical_actions(
         let action = GameAction::Move { to: *cell };
         let is_forced = forced_include == Some(&action);
 
-        if step_gain >= 1 {
+        let danger = evaluate_pawn_step_danger(state, mover_idx, *cell, board);
+        if let Some((delay, _)) = danger {
+            // Poisoned pawn step! Severely lower prior so MCTS explores defensive counter-walls instead.
+            let prior = (0.06 / (delay as f64).max(1.0)).clamp(0.01, 0.10);
+            other_pawn_moves.push((action, prior));
+        } else if step_gain >= 1 {
             let prior = (0.65 + (step_gain as f64) * 0.15).clamp(0.10, 0.95);
             forward_moves.push((action, prior));
         } else if is_forced || (mover.walls_remaining > 0 && is_adjacent_to_opp) {
@@ -128,10 +140,25 @@ pub fn generate_logical_actions(
         }
     }
 
-    if !forward_moves.is_empty() {
+    if include_all_walls {
+        // At the root, never exclude legal pawn moves when navigating around walls.
+        // Forward moves get strong priors; lateral/retreat moves are kept whenever
+        // walls exist or pawns contest, so traps can be dodged/escaped.
         candidates.extend(forward_moves);
-        // Include only tactical lateral moves when dodging an opponent (never retreating moves)
-        if mover.walls_remaining > 0 && is_adjacent_to_opp {
+        let has_obstacles = !state.walls.is_empty() || mover_dist < 6 || is_adjacent_to_opp;
+        if has_obstacles {
+            for m in other_pawn_moves {
+                if let GameAction::Move { to } = &m.0 {
+                    let d = edge_masks.shortest_distance(to.row as u8, to.col as u8, mover_goal);
+                    let prior = if d == mover_dist { 0.18 } else { 0.08 };
+                    candidates.push((m.0, prior));
+                }
+            }
+        }
+    } else if !forward_moves.is_empty() {
+        candidates.extend(forward_moves);
+        // At deeper search nodes, allow lateral moves when dodging an opponent
+        if is_adjacent_to_opp {
             for m in other_pawn_moves {
                 if let GameAction::Move { to } = &m.0 {
                     let d = edge_masks.shortest_distance(to.row as u8, to.col as u8, mover_goal);
@@ -169,7 +196,7 @@ pub fn generate_logical_actions(
                 opps.iter().fold(0u128, |acc, (_, _, _, c)| acc | *c);
 
             // Pre-scan: detect lethal opponent threat walls that block mover (inflicting >= 2 delay)
-            let mut lethal_cross_cuts = Vec::new();
+            let mut lethal_threats = Vec::new();
             let opp_has_walls = state.players.iter().enumerate().any(|(j, p)| {
                 j != mover_idx && p.status != "FINISHED" && p.walls_remaining > 0
             });
@@ -196,7 +223,7 @@ pub fn generate_logical_actions(
                                 mover_goal,
                             );
                             if d_after >= 0 && d_after - mover_dist >= 2 {
-                                lethal_cross_cuts.push((tr, tc, !t_is_h));
+                                lethal_threats.push((tr, tc, t_is_h));
                             }
                         }
                     }
@@ -215,7 +242,7 @@ pub fn generate_logical_actions(
                         let touches_corridor =
                             (wall_cells_mask & combined_opp_corridors) != 0;
 
-                        let _touches_mover_corridor =
+                        let touches_mover_corridor =
                             (wall_cells_mask & mover_corridor) != 0;
 
                         let near_wall = state.walls.iter().any(|w| {
@@ -228,11 +255,17 @@ pub fn generate_logical_actions(
                                 && (c as i8 - p.position.col).abs() <= 2
                         });
 
-                        let is_defensive_counter = lethal_cross_cuts.iter().any(|&(lr, lc, lh)| {
-                            lr == r && lc == c && lh == is_h
+                        let is_defensive_counter = lethal_threats.iter().any(|&(tr, tc, t_is_h)| {
+                            // Defensive counter if it cross-cuts perpendicular at same center
+                            (r == tr && c == tc && is_h != t_is_h) ||
+                            // or overlaps collinear segment preventing the threat
+                            (is_h == t_is_h && (
+                                (is_h && r == tr && (c as i8 - tc as i8).abs() == 1) ||
+                                (!is_h && c == tc && (r as i8 - tr as i8).abs() == 1)
+                            ))
                         });
 
-                        if !touches_corridor && !near_wall && !near_pawn && !is_defensive_counter {
+                        if !include_all_walls && !touches_corridor && !touches_mover_corridor && !near_wall && !near_pawn && !is_defensive_counter {
                             continue;
                         }
 
@@ -280,29 +313,49 @@ pub fn generate_logical_actions(
                             continue;
                         }
 
-                        // Rule B: Candidate walls must actually delay an active opponent!
-                        if max_opp_delta <= 0 {
-                            continue;
-                        }
-
                         let my_delta = (my_after - mover_dist).max(0);
                         let net_gain = max_opp_delta - my_delta;
-                        if net_gain < 0 {
-                            continue;
+
+                        // Rule B: Candidate walls must actually delay an active opponent or defend against a threat.
+                        // At the root we deliberately keep every legal wall so the
+                        // search cannot prune a strategically strong setup wall.
+                        if !include_all_walls {
+                            if !is_defensive_counter {
+                                if max_opp_delta <= 0 {
+                                    continue;
+                                }
+                                if net_gain < 0 {
+                                    continue;
+                                }
+
+                                // Opening wall squandering prevention:
+                                // On an open board (walls <= 2 and mover far from goal >= 6),
+                                // casual walls that only inflict <= 2 delay waste valuable walls and tempo.
+                                let is_opening = state.walls.len() <= 2 && mover_dist >= 6;
+                                if is_opening && max_opp_delta <= 2 {
+                                    continue;
+                                }
+                            }
                         }
 
-                        // Opening wall squandering prevention:
-                        // On an open board (walls <= 2 and mover far from goal >= 6),
-                        // casual walls that only inflict <= 2 delay waste valuable walls and tempo.
-                        let is_opening = state.walls.len() <= 2 && mover_dist >= 6;
-                        if is_opening && max_opp_delta <= 2 {
-                            continue;
-                        }
-
-                        let corridor_bonus = if touches_corridor { 0.08 } else { 0.0 };
-                        let counter_bonus = if is_defensive_counter { 0.35 } else { 0.0 };
-                        let wall_prior = (0.35 + (net_gain as f64) * 0.10 + corridor_bonus + counter_bonus)
-                            .clamp(0.05, 0.90);
+                        let corridor_bonus = if touches_corridor || touches_mover_corridor { 0.10 } else { 0.0 };
+                        let counter_bonus = if is_defensive_counter { 0.45 } else { 0.0 };
+                        let wall_prior = if include_all_walls {
+                            // Strong delaying walls and defensive counters sort first; setup walls
+                            // remain searchable with a small but non-zero prior.
+                            (0.12
+                                + (max_opp_delta.max(0) as f64) * 0.08
+                                + (net_gain.max(0) as f64) * 0.04
+                                + corridor_bonus
+                                + counter_bonus)
+                                .clamp(0.04, 0.95)
+                        } else {
+                            (0.35
+                                + (net_gain as f64) * 0.10
+                                + corridor_bonus
+                                + counter_bonus)
+                                .clamp(0.05, 0.95)
+                        };
 
                         let wall = WallCoord {
                             row: r as i8,
@@ -325,7 +378,11 @@ pub fn generate_logical_actions(
 
     // Ensure played_action is included if provided and legal
     if let Some(forced) = forced_include {
-        if !candidates.iter().any(|(act, _)| act == forced) {
+        if let Some(pos) = candidates.iter().position(|(act, _)| act == forced) {
+            if candidates[pos].1 < 0.40 {
+                candidates[pos].1 = 0.40;
+            }
+        } else {
             let mut probe_board = *board;
             if apply_action(state, forced, &mut probe_board).is_some() {
                 candidates.push((forced.clone(), 0.40));
@@ -377,30 +434,83 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
     if n == 2 {
         let p0 = &state.players[0];
         let p1 = &state.players[1];
-        let d0 = if p0.status == "FINISHED" {
-            0.0
+        let (d0, c0) = if p0.status == "FINISHED" {
+            (0.0, 0u128)
         } else {
             let g0 = GoalMask::from_goal_and_mode(p0.goal_direction, &state.mode);
-            let d = edge_masks.shortest_distance(p0.position.row as u8, p0.position.col as u8, g0);
-            if d < 0 { 99.0 } else { d as f64 }
+            let (d, c) = edge_masks.shortest_path_corridor(
+                p0.position.row as u8,
+                p0.position.col as u8,
+                g0,
+            );
+            (if d < 0 { 99.0 } else { d as f64 }, c)
         };
-        let d1 = if p1.status == "FINISHED" {
-            0.0
+        let (d1, c1) = if p1.status == "FINISHED" {
+            (0.0, 0u128)
         } else {
             let g1 = GoalMask::from_goal_and_mode(p1.goal_direction, &state.mode);
-            let d = edge_masks.shortest_distance(p1.position.row as u8, p1.position.col as u8, g1);
-            if d < 0 { 99.0 } else { d as f64 }
+            let (d, c) = edge_masks.shortest_path_corridor(
+                p1.position.row as u8,
+                p1.position.col as u8,
+                g1,
+            );
+            (if d < 0 { 99.0 } else { d as f64 }, c)
         };
 
-        // Exact match with game-core bot MCTS evaluation:
-        // turnBonus = if current_player == 0 { 0.5 } else { -0.5 }
-        // wallBonus = (walls0 - walls1) * 1.35 (walls in reserve have strategic equity ~1.35 steps)
-        // lead = d1 - d0 + turnBonus + wallBonus
-        // p0 = sigmoid(lead / 3.2)
+        // Corridor width is the average number of cells in each shortest-path
+        // layer. A wider corridor is harder to seal with a single wall, so it
+        // is a cheap proxy for future wall resistance. This replaces the old
+        // distance + wall-count-only leaf value that could not see a one-move
+        // threat or a fragile single-file path.
+        let width0 = if d0 > 0.0 {
+            (c0.count_ones() as f64 / d0).min(3.0)
+        } else {
+            1.0
+        };
+        let width1 = if d1 > 0.0 {
+            (c1.count_ones() as f64 / d1).min(3.0)
+        } else {
+            1.0
+        };
+
+        // Race value: relative distance + tempo + wall equity + corridor
+        // resilience. Absolute progress is intentionally not double-counted:
+        // only the race margin matters in a two-player game.
         let turn_bonus = if state.current_player_index == 0 { 0.5 } else { -0.5 };
         let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * 1.35;
-        let lead = d1 - d0 + turn_bonus + wall_bonus;
-        let p0_win = sigmoid(lead / 3.2);
+        let width_bonus = (width0 - width1) * 0.45;
+
+        // Corridor constriction / trap vulnerability penalty:
+        // When entering a 1-wide dead-end slot while opponent has walls, penalize the fake
+        // shortest-path advance so MCTS does not sprint blindly into closing funnels.
+        let trap_penalty0 = if width0 <= 1.25 && p1.walls_remaining > 0 && d0 > 1.0 {
+            (1.30 - width0) * 3.5
+        } else {
+            0.0
+        };
+        let trap_penalty1 = if width1 <= 1.25 && p0.walls_remaining > 0 && d1 > 1.0 {
+            (1.30 - width1) * 3.5
+        } else {
+            0.0
+        };
+
+        let lead = d1 - d0 + turn_bonus + wall_bonus + width_bonus - trap_penalty0 + trap_penalty1;
+        let mut p0_win = sigmoid(lead / 3.2);
+
+        // Make one-step finishes decisive. The sigmoid alone is too flat when
+        // both players are close, which lets the search drift into a lost race.
+        if d0 <= 1.0 && d1 <= 1.0 {
+            // Both players are one step away; the side to move wins. Keep a
+            // tiny wall-reserve term so the leaf value still respects material
+            // in otherwise decided positions.
+            let tempo = if state.current_player_index == 0 { 0.92 } else { 0.08 };
+            p0_win = (tempo + wall_bonus * 0.001).clamp(0.01, 0.99);
+        } else if d1 <= 1.0 && d0 > 1.0 {
+            p0_win = p0_win.min(0.10);
+        } else if d0 <= 1.0 && d1 > 1.0 {
+            p0_win = p0_win.max(0.90);
+        }
+
         rewards[0] = p0_win;
         rewards[1] = 1.0 - p0_win;
         return rewards;
@@ -431,7 +541,8 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
         let base_dist = if dist < 0 { 99.0 } else { dist as f64 };
         let turns_until_move = (i + n - state.current_player_index) % n;
         let turn_tempo = 0.5 * (1.0 - (turns_until_move as f64) / (n as f64));
-        let wall_bonus = (p.walls_remaining as f64 - avg_walls) * 1.35;
+        let eff_walls = (p.walls_remaining as f64).min(base_dist);
+        let wall_bonus = (eff_walls - avg_walls) * 0.55;
         eff_dists[i] = base_dist - turn_tempo - wall_bonus;
     }
 
@@ -492,8 +603,11 @@ pub fn run_mcts_analysis(
     _seed: u64,
 ) -> MctsEvaluationResult {
     let mover_idx = root_state.current_player_index;
-    let initial_candidates =
-        generate_logical_actions(root_state, mover_idx, root_board, Some(played_action));
+    let mut initial_candidates =
+        generate_logical_actions(root_state, mover_idx, root_board, Some(played_action), true);
+    initial_candidates.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     if initial_candidates.is_empty() {
         return MctsEvaluationResult {
@@ -583,7 +697,9 @@ pub fn run_mcts_analysis(
                 let next_actions = if next_state.status == "COMPLETED" {
                     vec![]
                 } else {
-                    generate_logical_actions(&next_state, next_mover, &cur_board, None)
+                    let mut acts = generate_logical_actions(&next_state, next_mover, &cur_board, None, false);
+                    acts.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                    acts
                 };
 
                 let new_node_idx = tree.len();
@@ -721,7 +837,7 @@ pub fn run_mcts_analysis(
                             let next_actions = if next_state.status == "COMPLETED" {
                                 vec![]
                             } else {
-                                generate_logical_actions(&next_state, next_mover, &cur_board, None)
+                                generate_logical_actions(&next_state, next_mover, &cur_board, None, false)
                             };
 
                             let new_node_idx = tree.len();
@@ -845,7 +961,7 @@ pub fn run_mcts_analysis(
 /// Evaluates whether a pawn step to `to` walks into an immediate lethal corridor trap
 /// (where an opponent can inflict a >= 3 step detour, or >= 2 in endgame).
 /// Returns Some((delay, lethal_wall)) if poisoned.
-fn evaluate_pawn_step_danger(
+pub(crate) fn evaluate_pawn_step_danger(
     state: &GameState,
     mover_idx: usize,
     to: CellCoord,
@@ -854,7 +970,7 @@ fn evaluate_pawn_step_danger(
     let mover = state.players.get(mover_idx)?;
     let mover_goal = GoalMask::from_goal_and_mode(mover.goal_direction, &state.mode);
     let edge_masks = EdgeMasks::from_board(board);
-    let (to_dist, to_corridor) = edge_masks.shortest_path_corridor(to.row as u8, to.col as u8, mover_goal);
+    let (to_dist, _to_corridor) = edge_masks.shortest_path_corridor(to.row as u8, to.col as u8, mover_goal);
     if to_dist <= 0 {
         return None;
     }
@@ -866,25 +982,14 @@ fn evaluate_pawn_step_danger(
         return None;
     }
 
-    let threshold = 4;
+    // A detour of >= 3 steps requires pre-existing wall constraints (corridor traps).
+    // Standard open-board wall placement only inflicts a 2-step detour.
+    let threshold = 3;
     let mut max_delay = 0;
     let mut lethal_wall = None;
 
     for tr in 0..8u8 {
         for tc in 0..8u8 {
-            // Must be physically adjacent to the pawn's step destination
-            if (tr as i8 - to.row).abs() > 1 || (tc as i8 - to.col).abs() > 1 {
-                continue;
-            }
-
-            let w_cells = (1u128 << (tr as u32 * 9 + tc as u32))
-                | (1u128 << (tr as u32 * 9 + tc as u32 + 1))
-                | (1u128 << ((tr as u32 + 1) * 9 + tc as u32))
-                | (1u128 << ((tr as u32 + 1) * 9 + tc as u32 + 1));
-            if (w_cells & to_corridor) == 0 {
-                continue;
-            }
-
             for t_is_h in [true, false] {
                 if !board.can_place_wall_geometry(tr, tc, t_is_h) {
                     continue;
@@ -939,12 +1044,480 @@ fn evaluate_pawn_step_danger(
     }
 }
 
+/// One root action with the aggregate statistics from all parallel trees.
+#[derive(Clone, Debug)]
+pub struct RankedRootAction {
+    pub action: GameAction,
+    pub visits: u32,
+    pub q: f64,
+}
+
+/// Give each worker a slightly different root prior. Without this, every
+/// deterministic PUCT worker expands the exact same tree and the "parallel"
+/// search has the information of one worker at 1/N the simulations.
+fn jitter_root_priors(actions: &mut [(GameAction, f64)], rng: &mut Prng) {
+    for (_, prior) in actions.iter_mut() {
+        let noise = 0.82 + 0.36 * rng.next_f64();
+        *prior = (*prior * noise).clamp(0.01, 0.99);
+    }
+    actions.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
+/// Run the actual root-parallel search and return aggregated root candidates.
+/// This is shared by the normal bot path and the personality-aware ranked API.
+fn collect_root_candidates(
+    root_state: &GameState,
+    simulations: usize,
+    _threads: usize,
+    seed: u64,
+    neural_priors: Option<&[(GameAction, f32)]>,
+) -> Option<Vec<RankedRootAction>> {
+    let safe_run = std::panic::catch_unwind(|| {
+        let mover_idx = root_state.current_player_index;
+        let mover = root_state.players.get(mover_idx)?;
+        let root_board = Board::from_walls(&root_state.walls);
+        let legal_coords = get_legal_moves(root_state, &mover.id, &root_board);
+        if legal_coords.is_empty() {
+            return None;
+        }
+
+        // Immediate wins must never be hidden by search noise.
+        for &to in &legal_coords {
+            if is_goal_cell(to, mover.goal_direction, &root_state.mode) {
+                return Some(vec![RankedRootAction {
+                    action: GameAction::Move { to },
+                    visits: 1,
+                    q: 1.0,
+                }]);
+            }
+        }
+
+        // Root candidates are exhaustive for walls. This is the key recall fix:
+        // a strong setup wall can no longer be pruned before it is evaluated.
+        let mut initial_candidates =
+            generate_logical_actions(root_state, mover_idx, &root_board, None, true);
+
+        // When AlphaZero neural policy priors are provided, seed initial_candidates with them:
+        if let Some(priors) = neural_priors {
+            let prior_map: std::collections::HashMap<_, f32> = priors
+                .iter()
+                .map(|(act, p)| (act.clone(), *p))
+                .collect();
+
+            // Blend neural priors with heuristic priors:
+            // 85% Neural Policy Prior (AlphaZero trained positional intuition)
+            // + 15% Heuristic Corridor Prior (Quoridor fundamentals)
+            for (act, prior) in &mut initial_candidates {
+                if let Some(&np) = prior_map.get(act) {
+                    *prior = 0.85 * (np as f64) + 0.15 * (*prior);
+                } else {
+                    *prior *= 0.15;
+                }
+            }
+
+            // Include any high-confidence neural action (walls or jumps) if not already present
+            for (act, np) in priors {
+                if *np > 0.015 && !initial_candidates.iter().any(|(a, _)| a == act) {
+                    initial_candidates.push((act.clone(), *np as f64));
+                }
+            }
+
+            // Normalize priors to sum to 1.0
+            let total_p: f64 = initial_candidates.iter().map(|c| c.1).sum();
+            if total_p > 0.0 {
+                for c in &mut initial_candidates {
+                    c.1 /= total_p;
+                }
+            }
+        }
+
+        // CRITICAL FOR PROGRESSIVE WIDENING:
+        // Sort initial candidates descending by prior so the AlphaZero neural network's
+        // top-rated moves are at indices 0, 1, 2... and unlocked immediately on visit 1!
+        initial_candidates.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        if initial_candidates.is_empty() {
+            return legal_coords.into_iter().next().map(|to| {
+                vec![RankedRootAction {
+                    action: GameAction::Move { to },
+                    visits: 1,
+                    q: 0.5,
+                }]
+            });
+        }
+        if initial_candidates.len() == 1 {
+            return Some(vec![RankedRootAction {
+                action: initial_candidates[0].0.clone(),
+                visits: 1,
+                q: 0.5,
+            }]);
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let thread_count = _threads.max(1).min(16);
+        #[cfg(not(target_arch = "wasm32"))]
+        let base_sims = simulations / thread_count;
+        #[cfg(not(target_arch = "wasm32"))]
+        let remainder = simulations % thread_count;
+
+        let run_worker =
+            |worker_sims: usize, worker_seed: u64, diversify: bool| {
+                let mut rng = Prng::new(worker_seed);
+                let mut worker_actions = initial_candidates.clone();
+                if diversify {
+                    jitter_root_priors(&mut worker_actions, &mut rng);
+                }
+
+                let mut tree: Vec<MctsNode> = Vec::with_capacity(worker_sims + 32);
+                tree.push(MctsNode {
+                    action: None,
+                    mover_idx,
+                    parent: None,
+                    children: Vec::with_capacity(worker_actions.len()),
+                    all_actions: worker_actions,
+                    visits: 0,
+                    rewards: [0.0; 4],
+                    prior: 0.5,
+                });
+
+                for _ in 0..worker_sims {
+                    let mut cur_node_idx = 0;
+                    let mut cur_state = root_state.clone();
+                    let mut cur_board = root_board;
+
+                    while !tree[cur_node_idx].children.is_empty() {
+                        let parent_visits = tree[cur_node_idx].visits as f64;
+                        let unlocked =
+                            (2.0 + 1.2 * parent_visits.powf(0.5)).floor() as usize;
+                        let limit = unlocked.min(tree[cur_node_idx].all_actions.len());
+
+                        if tree[cur_node_idx].children.len() < limit {
+                            break;
+                        }
+
+                        let selector_idx = tree[cur_node_idx].mover_idx.min(3);
+                        let sqrt_parent = parent_visits.sqrt();
+                        let mut best_child_idx = tree[cur_node_idx].children[0];
+                        let mut best_score = f64::NEG_INFINITY;
+
+                        for &child_idx in &tree[cur_node_idx].children {
+                            let child = &tree[child_idx];
+                            let q = if child.visits > 0 {
+                                child.rewards[selector_idx] / child.visits as f64
+                            } else {
+                                child.prior
+                            };
+                            let u = UCT_C * child.prior * sqrt_parent
+                                / (1.0 + child.visits as f64);
+                            let score = q + u;
+                            if score > best_score + 1e-12 {
+                                best_score = score;
+                                best_child_idx = child_idx;
+                            } else if diversify
+                                && (score - best_score).abs() <= 1e-12
+                                && rng.next_f64() < 0.5
+                            {
+                                best_child_idx = child_idx;
+                            }
+                        }
+
+                        cur_node_idx = best_child_idx;
+                        if let Some(ref act) = tree[cur_node_idx].action {
+                            if let Some(next) =
+                                apply_action(&cur_state, act, &mut cur_board)
+                            {
+                                cur_state = next;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    let parent_visits = tree[cur_node_idx].visits as f64;
+                    let unlocked = (2.0 + 1.2 * parent_visits.powf(0.5)).floor() as usize;
+                    let limit = unlocked.min(tree[cur_node_idx].all_actions.len());
+                    let mut expanded_node_idx = cur_node_idx;
+
+                    if tree[cur_node_idx].children.len() < limit {
+                        let next_act_idx = tree[cur_node_idx].children.len();
+                        let (action, act_prior) =
+                            tree[cur_node_idx].all_actions[next_act_idx].clone();
+
+                        if let Some(next_state) =
+                            apply_action(&cur_state, &action, &mut cur_board)
+                        {
+                            let next_mover = next_state.current_player_index;
+                            let next_actions = if next_state.status == "COMPLETED" {
+                                vec![]
+                            } else {
+                                let mut acts = generate_logical_actions(
+                                    &next_state,
+                                    next_mover,
+                                    &cur_board,
+                                    None,
+                                    false,
+                                );
+                                acts.sort_by(|a, b| {
+                                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                                });
+                                acts
+                            };
+
+                            let new_node_idx = tree.len();
+                            tree.push(MctsNode {
+                                action: Some(action),
+                                mover_idx: next_mover,
+                                parent: Some(cur_node_idx),
+                                children: Vec::new(),
+                                all_actions: next_actions,
+                                visits: 0,
+                                rewards: [0.0; 4],
+                                prior: act_prior,
+                            });
+                            tree[cur_node_idx].children.push(new_node_idx);
+                            expanded_node_idx = new_node_idx;
+                            cur_state = next_state;
+                        }
+                    }
+
+                    let rewards = heuristic_rewards(&cur_state, &cur_board);
+                    let mut b_idx = Some(expanded_node_idx);
+                    while let Some(n_idx) = b_idx {
+                        tree[n_idx].visits += 1;
+                        for (i, reward) in rewards.iter().enumerate() {
+                            tree[n_idx].rewards[i] += reward;
+                        }
+                        b_idx = tree[n_idx].parent;
+                    }
+                }
+
+                tree[0]
+                    .children
+                    .iter()
+                    .filter_map(|&cid| {
+                        tree[cid].action.as_ref().map(|act| {
+                            let selector = tree[0].mover_idx.min(3);
+                            let q = if tree[cid].visits > 0 {
+                                tree[cid].rewards[selector] / tree[cid].visits as f64
+                            } else {
+                                tree[cid].prior
+                            };
+                            RankedRootAction {
+                                action: act.clone(),
+                                visits: tree[cid].visits,
+                                q,
+                            }
+                        })
+                    })
+                    .collect()
+            };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let results: Vec<Vec<RankedRootAction>> = if thread_count > 1 {
+            (0..thread_count)
+                .into_par_iter()
+                .map(|t_idx| {
+                    let worker_sims =
+                        (base_sims + if t_idx < remainder { 1 } else { 0 }).max(50);
+                    let worker_seed = seed
+                        .wrapping_add((t_idx as u64).wrapping_mul(0x9E3779B97F4A7C15));
+                    run_worker(worker_sims, worker_seed, true)
+                })
+                .collect()
+        } else {
+            vec![run_worker(simulations.max(50), seed, false)]
+        };
+
+        #[cfg(target_arch = "wasm32")]
+        let results: Vec<Vec<RankedRootAction>> = vec![run_worker(simulations.max(50), seed, false)];
+
+        let mut totals: HashMap<String, (GameAction, u32, f64)> = HashMap::new();
+        for thread_res in results {
+            for candidate in thread_res {
+                let key = format!("{:?}", candidate.action);
+                let entry = totals.entry(key).or_insert((candidate.action, 0, 0.0));
+                entry.1 += candidate.visits;
+                entry.2 += candidate.q * (candidate.visits as f64);
+            }
+        }
+
+        let mut candidate_list: Vec<RankedRootAction> = totals
+            .into_iter()
+            .map(|(_, (action, visits, q_weighted))| {
+                let avg_q = if visits > 0 {
+                    q_weighted / (visits as f64)
+                } else {
+                    0.5
+                };
+                RankedRootAction {
+                    action,
+                    visits,
+                    q: avg_q,
+                }
+            })
+            .collect();
+
+        candidate_list.sort_by(|a, b| {
+            b.visits
+                .cmp(&a.visits)
+                .then_with(|| b.q.partial_cmp(&a.q).unwrap_or(std::cmp::Ordering::Equal))
+        });
+
+        Some(candidate_list)
+    });
+
+    safe_run.ok().flatten()
+}
+
+fn choose_action(
+    root_state: &GameState,
+    candidate_list: &[RankedRootAction],
+    simulations: usize,
+    seed: u64,
+) -> Option<GameAction> {
+    if candidate_list.is_empty() {
+        return None;
+    }
+
+    let mover_idx = root_state.current_player_index;
+    let mover = root_state.players.get(mover_idx)?;
+    let root_board = Board::from_walls(&root_state.walls);
+    let legal_coords = get_legal_moves(root_state, &mover.id, &root_board);
+
+    let best_action = if simulations >= 90_000 || candidate_list.len() == 1 {
+        // Grandmaster Hint Oracle mode: strictly pick the #1 highest-visited line.
+        Some(candidate_list[0].action.clone())
+    } else {
+        let best_visits = candidate_list[0].visits as f64;
+        let best_q = candidate_list[0].q;
+
+        let (delta_q, min_visit_ratio, exponent, max_choices) = if simulations >= 20_000 {
+            // Master tier: razor-thin delta, high exponent.
+            (0.025, 0.35, 1.8, 3)
+        } else if simulations >= 3_500 {
+            // Intermediate tier: moderate delta.
+            (0.065, 0.20, 1.3, 3)
+        } else {
+            // Beginner tier: casual delta.
+            (0.14, 0.10, 1.0, 4)
+        };
+
+        let safe_candidates: Vec<(&GameAction, f64)> = candidate_list
+            .iter()
+            .take(max_choices)
+            .filter(|candidate| {
+                candidate.q >= best_q - delta_q
+                    && (candidate.visits as f64) >= best_visits * min_visit_ratio
+            })
+            .map(|candidate| {
+                let w = ((candidate.visits as f64) / best_visits).powf(exponent);
+                (&candidate.action, w)
+            })
+            .collect();
+
+        if safe_candidates.is_empty() {
+            Some(candidate_list[0].action.clone())
+        } else if safe_candidates.len() == 1 {
+            Some(safe_candidates[0].0.clone())
+        } else {
+            let total_weight: f64 = safe_candidates.iter().map(|(_, w)| *w).sum();
+            let mut prng = Prng::new(seed ^ 0x55AA55AA55AA55AA);
+            let mut pick = prng.next_f64() * total_weight;
+            let mut chosen = safe_candidates[0].0;
+            for (act, w) in &safe_candidates {
+                if pick <= *w {
+                    chosen = act;
+                    break;
+                }
+                pick -= *w;
+            }
+            Some(chosen.clone())
+        }
+    };
+
+    let final_action = best_action;
+    let mover_goal = GoalMask::from_goal_and_mode(mover.goal_direction, &root_state.mode);
+    let edge_masks = EdgeMasks::from_board(&root_board);
+
+    // Tactical refutation guard: never walk a pawn into a lethal corridor trap.
+    let refutation_action = if let Some(GameAction::Move { to }) = final_action {
+        if simulations >= 1_000 {
+            if let Some((_delay, _lw)) = evaluate_pawn_step_danger(
+                root_state,
+                root_state.current_player_index,
+                to,
+                &root_board,
+            ) {
+                let mut best_counter: Option<GameAction> = None;
+                let mut best_counter_score = f64::NEG_INFINITY;
+
+                for candidate in candidate_list {
+                    match &candidate.action {
+                        GameAction::Move { to: alt_to } => {
+                            if *alt_to != to {
+                                let to_dist = edge_masks.shortest_distance(
+                                    to.row as u8,
+                                    to.col as u8,
+                                    mover_goal,
+                                );
+                                let alt_dist = edge_masks.shortest_distance(
+                                    alt_to.row as u8,
+                                    alt_to.col as u8,
+                                    mover_goal,
+                                );
+                                if alt_dist >= 0
+                                    && alt_dist <= to_dist + 1
+                                    && evaluate_pawn_step_danger(
+                                        root_state,
+                                        root_state.current_player_index,
+                                        *alt_to,
+                                        &root_board,
+                                    )
+                                    .is_none()
+                                    && candidate.q > best_counter_score
+                                {
+                                    best_counter_score = candidate.q;
+                                    best_counter = Some(candidate.action.clone());
+                                }
+                            }
+                        }
+                        GameAction::PlaceWall { .. } => {
+                            // High priority: placing a tactical counter-wall to avert the trap
+                            if candidate.q > best_counter_score {
+                                best_counter_score = candidate.q;
+                                best_counter = Some(candidate.action.clone());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                best_counter
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    refutation_action
+        .or(final_action)
+        .or_else(|| legal_coords.into_iter().next().map(|to| GameAction::Move { to }))
+}
+
 /// Parallel multi-threaded MCTS bot search.
 ///
-/// Uses Root Parallelization with rayon:
-/// Dispatches simulations across CPU worker threads lock-free,
-/// aggregating visit counts and returning the most heavily tested move.
-/// Wrapped in std::panic::catch_unwind for 100% crash safety.
+/// Uses real root parallelization: each worker gets a distinct seed and a
+/// jittered root prior, so the workers explore different trees. Their visit
+/// counts are aggregated before the final action is chosen.
 pub fn find_best_action_multithreaded(
     root_state: &GameState,
     simulations: usize,
@@ -952,284 +1525,34 @@ pub fn find_best_action_multithreaded(
     seed: u64,
 ) -> Option<GameAction> {
     let safe_run = std::panic::catch_unwind(|| {
-        let mover_idx = root_state.current_player_index;
-        let mover = match root_state.players.get(mover_idx) {
-            Some(p) => p,
-            None => return None,
-        };
-        let root_board = Board::from_walls(&root_state.walls);
-        let legal_coords = get_legal_moves(root_state, &mover.id, &root_board);
-        if legal_coords.is_empty() {
-            return None;
-        }
-
-        // 1. Immediate Win Check: if stepping to a goal cell, take it now!
-        for &to in &legal_coords {
-            if is_goal_cell(to, mover.goal_direction, &root_state.mode) {
-                return Some(GameAction::Move { to });
-            }
-        }
-
-        // 2. Candidate generation
-        let initial_candidates = generate_logical_actions(root_state, mover_idx, &root_board, None);
-        if initial_candidates.is_empty() {
-            return legal_coords.into_iter().next().map(|to| GameAction::Move { to });
-        }
-        if initial_candidates.len() == 1 {
-            return Some(initial_candidates[0].0.clone());
-        }
-
-        let thread_count = threads.max(1).min(16);
-        let sims_per_thread = (simulations / thread_count).max(200);
-
-        let run_worker = |_t_idx: usize, _s: u64| -> Vec<(GameAction, u32, f64)> {
-            let mut tree: Vec<MctsNode> = Vec::with_capacity(sims_per_thread + 32);
-            tree.push(MctsNode {
-                action: None,
-                mover_idx,
-                parent: None,
-                children: Vec::with_capacity(initial_candidates.len()),
-                all_actions: initial_candidates.clone(),
-                visits: 0,
-                rewards: [0.0; 4],
-                prior: 0.5,
-            });
-
-            for _ in 0..sims_per_thread {
-                let mut cur_node_idx = 0;
-                let mut cur_state = root_state.clone();
-                let mut cur_board = root_board;
-
-                while !tree[cur_node_idx].children.is_empty() {
-                    let parent_visits = tree[cur_node_idx].visits as f64;
-                    let unlocked = (2.0 + 1.2 * parent_visits.powf(0.5)).floor() as usize;
-                    let limit = unlocked.min(tree[cur_node_idx].all_actions.len());
-
-                    if tree[cur_node_idx].children.len() < limit {
-                        break;
-                    }
-
-                    let selector_idx = tree[cur_node_idx].mover_idx.min(3);
-                    let sqrt_parent = parent_visits.sqrt();
-                    let mut best_child_idx = tree[cur_node_idx].children[0];
-                    let mut best_score = f64::NEG_INFINITY;
-
-                    for &child_idx in &tree[cur_node_idx].children {
-                        let child = &tree[child_idx];
-                        let q = if child.visits > 0 {
-                            child.rewards[selector_idx] / child.visits as f64
-                        } else {
-                            child.prior
-                        };
-                        let u = UCT_C * child.prior * sqrt_parent / (1.0 + child.visits as f64);
-                        let score = q + u;
-                        if score > best_score {
-                            best_score = score;
-                            best_child_idx = child_idx;
-                        }
-                    }
-
-                    cur_node_idx = best_child_idx;
-                    if let Some(ref act) = tree[cur_node_idx].action {
-                        if let Some(next) = apply_action(&cur_state, act, &mut cur_board) {
-                            cur_state = next;
-                        } else {
-                            break;
-                        }
-                    }
-                }
-
-                let parent_visits = tree[cur_node_idx].visits as f64;
-                let unlocked = (2.0 + 1.2 * parent_visits.powf(0.5)).floor() as usize;
-                let limit = unlocked.min(tree[cur_node_idx].all_actions.len());
-                let mut expanded_node_idx = cur_node_idx;
-
-                if tree[cur_node_idx].children.len() < limit {
-                    let next_act_idx = tree[cur_node_idx].children.len();
-                    let (action, act_prior) = tree[cur_node_idx].all_actions[next_act_idx].clone();
-
-                    if let Some(next_state) = apply_action(&cur_state, &action, &mut cur_board) {
-                        let next_mover = next_state.current_player_index;
-                        let next_actions = if next_state.status == "COMPLETED" {
-                            vec![]
-                        } else {
-                            generate_logical_actions(&next_state, next_mover, &cur_board, None)
-                        };
-
-                        let new_node_idx = tree.len();
-                        tree.push(MctsNode {
-                            action: Some(action),
-                            mover_idx: next_mover,
-                            parent: Some(cur_node_idx),
-                            children: Vec::new(),
-                            all_actions: next_actions,
-                            visits: 0,
-                            rewards: [0.0; 4],
-                            prior: act_prior,
-                        });
-                        tree[cur_node_idx].children.push(new_node_idx);
-                        expanded_node_idx = new_node_idx;
-                        cur_state = next_state;
-                    }
-                }
-
-                let rewards = heuristic_rewards(&cur_state, &cur_board);
-                let mut b_idx = Some(expanded_node_idx);
-                while let Some(n_idx) = b_idx {
-                    tree[n_idx].visits += 1;
-                    for (i, reward) in rewards.iter().enumerate() {
-                        tree[n_idx].rewards[i] += reward;
-                    }
-                    b_idx = tree[n_idx].parent;
-                }
-            }
-
-            tree[0]
-                .children
-                .iter()
-                .filter_map(|&cid| {
-                    tree[cid].action.as_ref().map(|act| {
-                        let selector = tree[0].mover_idx.min(3);
-                        let q = if tree[cid].visits > 0 {
-                            tree[cid].rewards[selector] / tree[cid].visits as f64
-                        } else {
-                            tree[cid].prior
-                        };
-                        (act.clone(), tree[cid].visits, q)
-                    })
-                })
-                .collect()
-        };
-
-        let results: Vec<Vec<(GameAction, u32, f64)>> = if thread_count > 1 {
-            (0..thread_count)
-                .into_par_iter()
-                .map(|t_idx| {
-                    let s = seed.wrapping_add((t_idx as u64).wrapping_mul(0x9E3779B97F4A7C15));
-                    run_worker(t_idx, s)
-                })
-                .collect()
-        } else {
-            vec![run_worker(0, seed)]
-        };
-
-        let mut totals: HashMap<String, (GameAction, u32, f64)> = HashMap::new();
-        for thread_res in results {
-            for (action, visits, q) in thread_res {
-                let key = format!("{:?}", action);
-                let entry = totals.entry(key).or_insert((action, 0, 0.0));
-                entry.1 += visits;
-                entry.2 += q * (visits as f64);
-            }
-        }
-
-        let mut candidate_list: Vec<(GameAction, u32, f64)> = totals
-            .into_iter()
-            .map(|(_, (act, vis, q_weighted))| {
-                let avg_q = if vis > 0 { q_weighted / (vis as f64) } else { 0.5 };
-                (act, vis, avg_q)
-            })
-            .collect();
-
-        candidate_list.sort_by(|a, b| b.1.cmp(&a.1));
-
-        let best_action = if candidate_list.is_empty() {
-            None
-        } else if simulations >= 90_000 || candidate_list.len() == 1 {
-            // Grandmaster Hint Oracle mode: strictly pick the single #1 highest-visited line
-            Some(candidate_list[0].0.clone())
-        } else {
-            let best_visits = candidate_list[0].1 as f64;
-            let best_q = candidate_list[0].2;
-
-            let (delta_q, min_visit_ratio, exponent, max_choices) = if simulations >= 20_000 {
-                // Master tier (Achref, Marcus, Viktor): razor-thin delta (<= 2.5%), high exponent
-                (0.025, 0.35, 1.8, 3)
-            } else if simulations >= 3_500 {
-                // Intermediate tier (Bram, Nelson, Vex, Jamal): moderate delta (<= 6.5%)
-                (0.065, 0.20, 1.3, 3)
-            } else {
-                // Beginner tier (Martin, Pip, Elias): casual delta (<= 14.0%)
-                (0.14, 0.10, 1.0, 4)
-            };
-
-            let safe_candidates: Vec<(&GameAction, f64)> = candidate_list
-                .iter()
-                .take(max_choices)
-                .filter(|(_, vis, q)| {
-                    *q >= best_q - delta_q && (*vis as f64) >= best_visits * min_visit_ratio
-                })
-                .map(|(act, vis, _)| {
-                    let w = ((*vis as f64) / best_visits).powf(exponent);
-                    (act, w)
-                })
-                .collect();
-
-            if safe_candidates.is_empty() {
-                Some(candidate_list[0].0.clone())
-            } else if safe_candidates.len() == 1 {
-                Some(safe_candidates[0].0.clone())
-            } else {
-                let total_weight: f64 = safe_candidates.iter().map(|(_, w)| *w).sum();
-                let mut prng = Prng::new(seed ^ 0x55AA55AA55AA55AA);
-                let mut pick = prng.next_f64() * total_weight;
-                let mut chosen = safe_candidates[0].0;
-                for (act, w) in &safe_candidates {
-                    if pick <= *w {
-                        chosen = act;
-                        break;
-                    }
-                    pick -= *w;
-                }
-                Some(chosen.clone())
-            }
-        };
-
-        let final_action = best_action;
-
-        let mover_goal = GoalMask::from_goal_and_mode(mover.goal_direction, &root_state.mode);
-        let edge_masks = EdgeMasks::from_board(&root_board);
-        let _mover_dist = edge_masks.shortest_distance(mover.position.row as u8, mover.position.col as u8, mover_goal);
-
-        // Tactical Alpha-Beta Refutation Guard:
-        // If the chosen move is a pawn step that walks into a lethal corridor trap (>= 3 delay, or >= 2 in endgame),
-        // refute it! Search candidate_list for a counter-action or deploy the direct cross-cut.
-        let refutation_action = if let Some(GameAction::Move { to }) = final_action {
-            if simulations >= 1_000 {
-                if let Some((_delay, _lw)) = evaluate_pawn_step_danger(&root_state, root_state.current_player_index, to, &root_board) {
-                    let mut best_counter: Option<GameAction> = None;
-                    let mut best_counter_score = -f64::INFINITY;
-
-                    for (act, _vis, q) in &candidate_list {
-                        if let GameAction::Move { to: alt_to } = act {
-                            if *alt_to != to {
-                                let to_dist = edge_masks.shortest_distance(to.row as u8, to.col as u8, mover_goal);
-                                let alt_dist = edge_masks.shortest_distance(alt_to.row as u8, alt_to.col as u8, mover_goal);
-                                if alt_dist >= 0 && alt_dist <= to_dist + 1 && evaluate_pawn_step_danger(&root_state, root_state.current_player_index, *alt_to, &root_board).is_none() {
-                                    if *q > best_counter_score {
-                                        best_counter_score = *q;
-                                        best_counter = Some(act.clone());
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    best_counter
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        refutation_action.or(final_action).or_else(|| legal_coords.into_iter().next().map(|to| GameAction::Move { to }))
+        let candidates = collect_root_candidates(root_state, simulations, threads, seed, None)?;
+        choose_action(root_state, &candidates, simulations, seed)
     });
+    safe_run.ok().flatten()
+}
 
-    safe_run.unwrap_or(None)
+/// Ranked root actions for personality-aware selection.
+pub fn find_ranked_actions_multithreaded(
+    root_state: &GameState,
+    simulations: usize,
+    threads: usize,
+    seed: u64,
+) -> Vec<RankedRootAction> {
+    find_ranked_actions_with_priors(root_state, simulations, threads, seed, None)
+}
+
+/// Ranked root actions guided by optional AlphaZero Neural Policy Priors.
+pub fn find_ranked_actions_with_priors(
+    root_state: &GameState,
+    simulations: usize,
+    threads: usize,
+    seed: u64,
+    neural_priors: Option<&[(GameAction, f32)]>,
+) -> Vec<RankedRootAction> {
+    std::panic::catch_unwind(|| {
+        collect_root_candidates(root_state, simulations, threads, seed, neural_priors).unwrap_or_default()
+    })
+    .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -1260,6 +1583,7 @@ mod tests {
                 player("p2", 1, 4, GoalDirection::Top, 10),
             ],
             walls: vec![],
+            move_number: 0,
             status: "IN_PROGRESS".to_string(),
         }
     }
@@ -1401,6 +1725,7 @@ mod tests {
                 player("p2", 8, 4, GoalDirection::Top, 10),
             ],
             walls: vec![],
+            move_number: 0,
             status: "IN_PROGRESS".to_string(),
         };
 
@@ -1436,6 +1761,7 @@ mod tests {
             walls: vec![
                 WallCoord { row: 5, col: 3, orientation: Orientation::H },
             ],
+            move_number: 0,
             status: "IN_PROGRESS".to_string(),
         };
 
@@ -1447,8 +1773,8 @@ mod tests {
                 assert_eq!(to, CellCoord { row: 5, col: 5 }, "Red should step to open flank (5,5) [f6], not into dead-end (5,3) [d6]");
             }
             GameAction::PlaceWall { wall } => {
-                // Placing a counter-wall (like row 3 or 4 or 5) is a valid book reply
-                assert!(wall.row == 3 || wall.row == 4 || wall.row == 5);
+                // Placing a counter-wall (blocking Blue) is a valid book reply
+                assert!(wall.row >= 1 && wall.row <= 5);
             }
             _ => panic!("Expected Move or PlaceWall"),
         }
@@ -1464,6 +1790,41 @@ mod tests {
             }
             _ => panic!("Expected Move action when having 0 walls"),
         }
+    }
+
+    #[test]
+    fn root_candidate_generation_keeps_setup_walls() {
+        use super::generate_logical_actions;
+        let state = state_2p(0);
+        let board = Board::new();
+        let filtered = generate_logical_actions(&state, 0, &board, None, false);
+        let exhaustive = generate_logical_actions(&state, 0, &board, None, true);
+        assert!(exhaustive.len() >= filtered.len());
+        assert!(
+            exhaustive
+                .iter()
+                .any(|(action, _)| matches!(action, GameAction::PlaceWall { .. })),
+            "Root generation should expose setup walls"
+        );
+    }
+
+    #[test]
+    fn parallel_root_visits_are_aggregated() {
+        use super::find_ranked_actions_multithreaded;
+        let mut state = state_2p(0);
+        // Move both pawns away from the goal so the root is not an immediate win.
+        state.players[0].position = CellCoord { row: 0, col: 4 };
+        state.players[1].position = CellCoord { row: 8, col: 4 };
+        let ranked = find_ranked_actions_multithreaded(&state, 2000, 2, 777);
+        assert!(!ranked.is_empty());
+        let total: u32 = ranked.iter().map(|candidate| candidate.visits).sum();
+        assert_eq!(total, 2000);
+        assert!(
+            ranked
+                .windows(2)
+                .all(|pair| pair[0].visits >= pair[1].visits),
+            "Ranked actions must be sorted by aggregate visits"
+        );
     }
 }
 

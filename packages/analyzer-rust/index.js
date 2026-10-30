@@ -68,13 +68,73 @@ async function getBestActionAsync(state, simulations = 50000, threads = 4, seed 
   return JSON.parse(jsonResult);
 }
 
+/**
+ * Return the top root actions with aggregate visits and Q values.
+ */
+function getRankedActions(state, simulations = 50000, threads = 4, seed = null, topK = 12) {
+  const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+  const jsonResult = nativeBinding.getRankedActionsSync(stateStr, simulations, threads, seed, topK);
+  return JSON.parse(jsonResult);
+}
+
+async function getRankedActionsAsync(state, simulations = 50000, threads = 4, seed = null, topK = 12) {
+  const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+  const jsonResult = await nativeBinding.getRankedActionsAsync(stateStr, simulations, threads, seed, topK);
+  return JSON.parse(jsonResult);
+}
+
+/**
+ * Get an action for a specific bot personality (Martin, Viktor, Achref, etc.)
+ * utilizing the calibrated temperature, blunder simulation, and style matrix.
+ */
+function getBotAction(state, botId = 'achref', profile = null, seed = null) {
+  const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+  const profileStr = profile ? (typeof profile === 'string' ? profile : JSON.stringify(profile)) : null;
+  const jsonResult = nativeBinding.getBotActionSync(stateStr, botId, profileStr, seed);
+  return JSON.parse(jsonResult);
+}
+
+async function getBotActionAsync(state, botId = 'achref', profile = null, seed = null) {
+  const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+  const profileStr = profile ? (typeof profile === 'string' ? profile : JSON.stringify(profile)) : null;
+  const jsonResult = await nativeBinding.getBotActionAsync(stateStr, botId, profileStr, seed);
+  return JSON.parse(jsonResult);
+}
+
+/**
+ * Get Grandmaster Oracle in-game hint: optimal move + win probability + tactical explanation + top-3 alternatives.
+ */
+function getHint(state) {
+  const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+  const jsonResult = nativeBinding.getHintSync(stateStr);
+  return JSON.parse(jsonResult);
+}
+
+async function getHintAsync(state) {
+  const stateStr = typeof state === 'string' ? state : JSON.stringify(state);
+  const jsonResult = await nativeBinding.getHintAsync(stateStr);
+  return JSON.parse(jsonResult);
+}
+
 module.exports = {
   analyzeGame,
   analyzeGameAsync,
   getBestAction,
   getBestActionAsync,
+  getRankedActions,
+  getRankedActionsAsync,
+  getBotAction,
+  getBotActionAsync,
+  getHint,
+  getHintAsync,
   analyzeGameSyncRaw: nativeBinding.analyzeGameSync,
   analyzeGameAsyncRaw: nativeBinding.analyzeGameAsync,
   getBestActionSyncRaw: nativeBinding.getBestActionSync,
-  getBestActionAsyncRaw: nativeBinding.getBestActionAsync
+  getBestActionAsyncRaw: nativeBinding.getBestActionAsync,
+  getRankedActionsSyncRaw: nativeBinding.getRankedActionsSync,
+  getRankedActionsAsyncRaw: nativeBinding.getRankedActionsAsync,
+  getBotActionSyncRaw: nativeBinding.getBotActionSync,
+  getBotActionAsyncRaw: nativeBinding.getBotActionAsync,
+  getHintSyncRaw: nativeBinding.getHintSync,
+  getHintAsyncRaw: nativeBinding.getHintAsync
 };

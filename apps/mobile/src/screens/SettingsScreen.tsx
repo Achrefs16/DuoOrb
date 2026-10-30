@@ -6,6 +6,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -19,10 +20,10 @@ import { runWhenOnline } from '../components/NoConnection';
 import { BlockedUsers } from '../components/BlockedUsers';
 import { UserSettings } from '../storage/gameStorage';
 import { useSession } from '../network/session';
-import { isPremiumActive, refreshPremium, usePremium } from '../monetization/premium';
-import { PREMIUM_GOLD } from '../components/PremiumBadge';
+import { isPremiumActive, refreshPremium, setDevPremiumOverride, usePremium } from '../monetization/premium';
+import { PremiumBadge, PREMIUM_GOLD } from '../components/PremiumBadge';
 import { PremiumSheet } from '../components/PremiumSheet';
-import { BOARD_SKINS, skinsUnlocked, type BoardSkinId } from '../theme/boardTheme';
+import { BOARD_SKINS, type BoardSkinId } from '../theme/boardTheme';
 import { api, ApiError } from '../network/apiClient';
 import { NetworkError } from '../network/errors';
 import { useTranslation } from '../i18n';
@@ -69,15 +70,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const { t, currentLanguage } = useTranslation();
   const insets = useSafeAreaInsets();
   const [languageOpen, setLanguageOpen] = useState(false);
-
-  const gameplayRows: ToggleRow[] = [
-    {
-      key: 'extendedQueue',
-      icon: 'grid',
-      title: t('settings.wallPredrops'),
-      desc: t('settings.wallPredropsDesc'),
-    },
-  ];
 
   const feedbackRows: ToggleRow[] = [
     {
@@ -391,9 +383,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </Text>
             </View>
             <View style={styles.settingText}>
-              <Text style={styles.settingTitle} numberOfLines={1}>
-                {currentDisplayName}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.settingTitle} numberOfLines={1}>
+                  {currentDisplayName}
+                </Text>
+                {isPremiumMember && <PremiumBadge size="xs" />}
+              </View>
               <Text style={[styles.settingDesc, isGuest && styles.guestWarning]} numberOfLines={1}>
                 {sessionLoading
                   ? t('settings.checkingSession')
@@ -460,7 +455,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             {isPremiumMember ? (
               <View style={styles.settingRow}>
                 <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                  <OrbIcon name="crown" size={15} color={PREMIUM_GOLD} />
+                  <PremiumBadge size="xs" />
                 </View>
                 <View style={styles.settingText}>
                   <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.premiumActive')}</Text>
@@ -480,7 +475,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 accessibilityLabel={t('settings.getPremium')}
               >
                 <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                  <OrbIcon name="crown" size={15} color={PREMIUM_GOLD} />
+                  <PremiumBadge size="xs" />
                 </View>
                 <View style={styles.settingText}>
                   <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.getPremium')}</Text>
@@ -513,6 +508,26 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 </TouchableOpacity>
               </>
             )}
+            <View style={[styles.divider, styles.premiumDivider]} />
+            <View style={styles.settingRow}>
+              <View style={[styles.settingIconBox, styles.premiumIconBox]}>
+                <OrbIcon name="sliders" size={15} color={PREMIUM_GOLD} />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={[styles.settingTitle, styles.premiumTitle]}>Developer: Diamond Active</Text>
+                <Text style={[styles.settingDesc, styles.premiumDesc]}>
+                  Toggle to preview diamond badge & perks
+                </Text>
+              </View>
+              <Switch
+                value={isPremiumMember}
+                onValueChange={(val) => {
+                  setDevPremiumOverride(val);
+                }}
+                trackColor={{ false: 'rgba(0,0,0,0.25)', true: THEME.colors.primary }}
+                thumbColor={isPremiumMember ? '#FFFFFF' : '#E0E0E0'}
+              />
+            </View>
           </LinearGradient>
         )}
 
@@ -679,21 +694,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           )}
         </View>
 
-        {/* Gameplay */}
-        <View style={styles.card}>
-          <Text style={styles.sectionLabel}>{t('settings.gameplay')}</Text>
-          {gameplayRows.map((row, i) => {
-            const disabled = row.key === 'extendedQueue' && !settings.premoveEnabled;
-            const resolved = disabled ? { ...row, disabled: true } : row;
-            return (
-              <View key={row.key as string}>
-                {i > 0 && <View style={styles.divider} />}
-                {renderToggleRow(resolved)}
-              </View>
-            );
-          })}
-        </View>
-
         {/* Privacy & safety — Blocked Users live here (and only here
             plus the Profile toggle), always reachable even when empty. */}
         {!isGuest && (
@@ -791,39 +791,27 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           })}
         </View>
 
-        {/* Board design: Classic free, Walnut/Glacier/Arena premium-gated.
-            Locked tap opens the paywall; the board falls back to Classic
-            for free/lapsed members, so selection never breaks rendering. */}
+        {/* Board design: All designs are free for everyone. */}
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>{t('settings.boardDesign')}</Text>
           {(
             [
               { id: 'classic', title: t('settings.boardClassic'), desc: t('settings.boardClassicDesc') },
-              { id: 'walnut', title: t('settings.boardWalnut'), desc: t('settings.boardWalnutDesc') },
               { id: 'tactile', title: t('settings.boardTactile'), desc: t('settings.boardTactileDesc') },
               { id: 'stone', title: t('settings.boardStone'), desc: t('settings.boardStoneDesc') },
             ] as Array<{ id: BoardSkinId; title: string; desc: string }>
           ).map((option, index) => {
             const skin = BOARD_SKINS[option.id];
             const selected = (settings.boardSkinId ?? 'classic') === option.id;
-            // Premium skins stay gated for everyone without a membership.
-            const locked = skin.premiumOnly && !skinsUnlocked(isPremiumMember);
             return (
               <View key={option.id}>
                 {index > 0 && <View style={styles.divider} />}
                 <TouchableOpacity
                   style={styles.settingRow}
-                  onPress={() => {
-                    if (locked) {
-                      setPremiumEntry('board-skin');
-                      setPremiumOpen(true);
-                      return;
-                    }
-                    onChange({ boardSkinId: option.id });
-                  }}
+                  onPress={() => onChange({ boardSkinId: option.id })}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`${option.title}${locked ? `, ${t('settings.boardPremiumTag')}` : ''}`}
+                  accessibilityLabel={option.title}
                 >
                   <View
                     style={[
@@ -842,15 +830,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     <Text style={styles.settingTitle}>{option.title}</Text>
                     <Text style={styles.settingDesc}>{option.desc}</Text>
                   </View>
-                  {locked ? (
-                    <View style={styles.skinLock}>
-                      <OrbIcon name="crown" size={13} color={PREMIUM_GOLD} />
-                      <Text style={styles.skinLockText}>{t('settings.boardPremiumTag')}</Text>
-                    </View>
-                  ) : (
-                    selected && (
-                      <OrbIcon name="check-circle" size={18} color={THEME.colors.primary} />
-                    )
+                  {selected && (
+                    <OrbIcon name="check-circle" size={18} color={THEME.colors.primary} />
                   )}
                 </TouchableOpacity>
               </View>

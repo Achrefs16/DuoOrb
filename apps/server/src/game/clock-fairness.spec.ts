@@ -303,11 +303,11 @@ describe('inactivity (AFK) is separate from disconnect', () => {
     return seen;
   }
 
-  it('forfeits a CONNECTED player who does not move in 45s', () => {
+  it('forfeits a CONNECTED player who does not move in 30s', () => {
     makeGame(svc);
     play(svc, 'uA'); // uB is on turn and connected
     // The watchdog is armed on the move; nothing has happened yet.
-    vi.advanceTimersByTime(44_000);
+    vi.advanceTimersByTime(29_000);
     expect(g(svc).state.status).toBe('IN_PROGRESS');
 
     vi.advanceTimersByTime(2_000);
@@ -321,12 +321,12 @@ describe('inactivity (AFK) is separate from disconnect', () => {
     // No moves at all: nothing surfaces for the first 15s of stillness.
     expect(seen).toHaveLength(0);
     vi.advanceTimersByTime(15_000);
-    // Then the warning lands with the true deadline (30s shown, 45s allowance).
+    // Then the warning lands with the true deadline (15s shown, 30s allowance).
     expect(seen).toHaveLength(1);
     expect(seen[0].playerId).toBe('p1');
-    expect(seen[0].afkEndsAt).toBe(Date.now() + 30_000);
+    expect(seen[0].afkEndsAt).toBe(Date.now() + 15_000);
 
-    vi.advanceTimersByTime(29_000);
+    vi.advanceTimersByTime(14_000);
     expect(g(svc).state.status).toBe('IN_PROGRESS');
     vi.advanceTimersByTime(2_000);
     expect(g(svc).state.status).toBe('COMPLETED');
@@ -338,7 +338,7 @@ describe('inactivity (AFK) is separate from disconnect', () => {
     expect(seen).toHaveLength(0);
     vi.advanceTimersByTime(15_000);
     expect(seen).toHaveLength(1);
-    expect(seen[0].afkEndsAt).toBe(Date.now() + 30_000);
+    expect(seen[0].afkEndsAt).toBe(Date.now() + 15_000);
 
     // The next turn warns again, for the new holder — never twice for one.
     // A move inside the delay warns nobody and leaves nothing stale behind.
@@ -347,7 +347,7 @@ describe('inactivity (AFK) is separate from disconnect', () => {
     vi.advanceTimersByTime(15_000);
     expect(seen).toHaveLength(2);
     expect(seen[1].playerId).toBe('p2');
-    expect(seen[1].afkEndsAt).toBe(Date.now() + 30_000);
+    expect(seen[1].afkEndsAt).toBe(Date.now() + 15_000);
   });
 
   it('a turn that ends inside the delay warns nobody', () => {
@@ -366,11 +366,11 @@ describe('inactivity (AFK) is separate from disconnect', () => {
     vi.advanceTimersByTime(10_000);
     // Early attachers see nothing — same rule as the broadcast.
     expect(svc.getSyncState('c1', 0, 'uA')!.afk).toBeNull();
-    vi.advanceTimersByTime(10_000); // t20: 25s remain
+    vi.advanceTimersByTime(6_000); // t16: 14s remain
     const sync = svc.getSyncState('c1', 0, 'uA')!;
     expect(sync.afk).toEqual({ playerId: 'p1', afkEndsAt: expect.any(Number) });
-    expect(sync.afk!.afkEndsAt).toBeLessThanOrEqual(Date.now() + 25_000);
-    expect(sync.afk!.afkEndsAt).toBeGreaterThan(Date.now() + 24_000);
+    expect(sync.afk!.afkEndsAt).toBeLessThanOrEqual(Date.now() + 15_000);
+    expect(sync.afk!.afkEndsAt).toBeGreaterThan(Date.now() + 13_000);
   });
 
   it('re-arms for a returnee back on turn — coming back does not disarm idling', () => {
@@ -378,9 +378,9 @@ describe('inactivity (AFK) is separate from disconnect', () => {
     play(svc, 'uA'); // uB on turn
     svc.handleDisconnect('c1', 'uB', () => {});
     svc.handleReconnect('c1', 'uB');
-    // The original 45s deadline died with the disconnect; the new one runs
+    // The original 30s deadline died with the disconnect; the new one runs
     // from the return. Past the old deadline, still live...
-    vi.advanceTimersByTime(44_000);
+    vi.advanceTimersByTime(29_000);
     expect(g(svc).state.status).toBe('IN_PROGRESS');
     // ...and past the new one, forfeited for idling, not absence.
     vi.advanceTimersByTime(2_000);
@@ -401,10 +401,10 @@ describe('inactivity (AFK) is separate from disconnect', () => {
   it('clears the watchdog when the player moves in time', () => {
     makeGame(svc);
     play(svc, 'uA');
-    vi.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(20_000);
     expect(play(svc, 'uB')).toBe(true);
-    // A fresh 45s runs from the move: the game is still live because uB moved.
-    vi.advanceTimersByTime(40_000);
+    // A fresh 30s runs from the move: the game is still live because uB moved.
+    vi.advanceTimersByTime(25_000);
     expect(g(svc).state.status).toBe('IN_PROGRESS');
   });
 });
@@ -503,7 +503,7 @@ describe('join quorum + flag hardening (F4)', () => {
     const game = svc.getGame('cQ')!;
     const missing: { userId: string; gracePeriodSeconds: number }[] = [];
     game.onQuorumExpired = (_gId, m) => missing.push(...m);
-    vi.advanceTimersByTime(91_000);
+    vi.advanceTimersByTime(21_000);
     // uB never joined: standard 45s grace armed, gateway notified.
     expect(game.disconnectedUsers['uB']).toBeTruthy();
     expect(game.disconnectedUsers['uA']).toBeUndefined();
@@ -557,15 +557,16 @@ describe('refund unity + AFK carry (F5)', () => {
     expect(game.state.winnerId).toBe('p2');
   });
 
-  it('a grace interruption banks the AFK remainder instead of resetting it', () => {    makeGame(svc); // quorum at t0, AFK armed for uA's turn
-    vi.advanceTimersByTime(40_000); // 5s of allowance left
+  it('a grace interruption banks the AFK remainder instead of resetting it', () => {
+    makeGame(svc); // quorum at t0, AFK armed for uA's turn
+    vi.advanceTimersByTime(25_000); // 5s of allowance left (out of 30s)
     svc.handleDisconnect('c1', 'uB', () => {}); // unrelated seat drops
     vi.advanceTimersByTime(2_000);
     expect(svc.cancelDisconnectGrace('c1', 'uB')).toBe(true); // uB back fast
-    // 3s of banked allowance left — NOT a fresh 45s: still live...
+    // 3s of banked allowance left — NOT a fresh 30s: still live...
     vi.advanceTimersByTime(2_000);
     expect(g(svc).state.status).toBe('IN_PROGRESS');
-    // ...then forfeited for idling past it (deadline was t47).
+    // ...then forfeited for idling past it (deadline was t27 + 5s = t32, we advance to t33).
     vi.advanceTimersByTime(4_000);
     expect(g(svc).state.status).toBe('COMPLETED');
     expect(g(svc).state.winnerId).toBe('p2');

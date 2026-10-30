@@ -43,7 +43,8 @@ export class RoomService {
     mode: GameMode,
     timeControlMinutes: number,
     incrementSeconds = 0,
-    wallsEach = 10
+    wallsEach = 10,
+    isPublic = false
   ): RoomDto {
     const id = `room-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const code = this.generateCode();
@@ -69,11 +70,26 @@ export class RoomService {
       wallsEach: Math.max(0, Math.min(99, Math.floor(wallsEach))),
       status: 'WAITING',
       createdAt: Date.now(),
+      isPublic: Boolean(isPublic),
     };
 
     this.rooms.set(id, room);
     this.codeToId.set(code, id);
     return room;
+  }
+
+  /**
+   * Retrieves active waiting rooms marked public that have at least one empty seat.
+   * Sorted newest first, capped at 50.
+   */
+  public getPublicRooms(): RoomDto[] {
+    const list: RoomDto[] = [];
+    for (const room of this.rooms.values()) {
+      if (room.isPublic && room.status === 'WAITING' && room.slots.some((s) => s.userId === null)) {
+        list.push(room);
+      }
+    }
+    return list.sort((a, b) => b.createdAt - a.createdAt).slice(0, 50);
   }
 
   public getRoomByCode(code: string): RoomDto | undefined {
@@ -157,7 +173,7 @@ export class RoomService {
     return [...touched];
   }
 
-  public createInvite(    roomId: string,
+  public createInvite(roomId: string,
     fromUserId: string,
     toUserId: string
   ): { success: true; invite: RoomInviteDto } | { success: false; error: string } {
@@ -265,7 +281,7 @@ export class RoomService {
   public configureRoom(
     roomId: string,
     hostUserId: string,
-    patch: { mode?: GameMode; timeControlMinutes?: number; incrementSeconds?: number; wallsEach?: number }
+    patch: { mode?: GameMode; timeControlMinutes?: number; incrementSeconds?: number; wallsEach?: number; isPublic?: boolean }
   ): { success: true; room: RoomDto } | { success: false; error: string } {
     const room = this.rooms.get(roomId);
     if (!room) return { success: false, error: 'Room not found.' };
@@ -332,6 +348,9 @@ export class RoomService {
       room.wallsEach = Math.max(0, Math.min(99, Math.floor(patch.wallsEach)));
       disarmed = true;
     }
+    if (patch.isPublic !== undefined && patch.isPublic !== room.isPublic) {
+      room.isPublic = Boolean(patch.isPublic);
+    }
 
     if (disarmed) {
       for (const slot of room.slots) {
@@ -373,7 +392,8 @@ export class RoomService {
     return room;
   }
 
-  public leaveRoom(roomId: string, userId: string): { room: RoomDto | null; disbanded: boolean } {    const room = this.rooms.get(roomId);
+  public leaveRoom(roomId: string, userId: string): { room: RoomDto | null; disbanded: boolean } {
+    const room = this.rooms.get(roomId);
     if (!room) return { room: null, disbanded: false };
 
     const slotIndex = room.slots.findIndex((s) => s.userId === userId);

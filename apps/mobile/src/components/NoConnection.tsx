@@ -194,7 +194,7 @@ const createStyles = () => StyleSheet.create({
   // Modal dialog for action buttons.
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: THEME.colors.modalBackdrop,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
