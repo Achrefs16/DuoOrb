@@ -528,6 +528,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     if (!cell) return null;
     return {
       cell,
+      wall: pa.type === 'PLACE_WALL' ? pa.wall : undefined,
       assessment: currentAnalysis.assessment,
       glyph: assessmentGlyph(currentAnalysis.assessment),
       color: assessmentBadgeColor(currentAnalysis.assessment),
@@ -1179,7 +1180,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                   </View>
                 </View>
                 {currentAnalysis.explanation ? (
-                  <Text style={styles.coachText}>
+                  <Text style={styles.coachText} numberOfLines={3}>
                     {currentAnalysis.explanation}
                   </Text>
                 ) : null}
@@ -1204,7 +1205,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                     <Text style={styles.evalPillText}>0.0</Text>
                   </View>
                 </View>
-                <Text style={styles.coachText}>
+                <Text style={styles.coachText} numberOfLines={3}>
                   {review.summary?.keyLesson?.detail ?? 'Initial board position. Tap Next to review the match.'}
                 </Text>
               </View>
@@ -1218,7 +1219,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 <View style={styles.bubblePointer} />
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <ActivityIndicator size="small" color={theme.colors.primary} />
-                  <Text style={styles.coachText}>{t('review.analyzing')}</Text>
+                  <Text style={styles.coachText} numberOfLines={2}>{t('review.analyzing')}</Text>
                 </View>
               </View>
             </View>
@@ -1857,12 +1858,15 @@ const createStyles = () => StyleSheet.create({
     borderRadius: 5,
   },
   // Coach card: bot avatar wrapper + speech bubble with left pointer.
+  // Fixed height reserves space for up to 3 lines of coach dialogue so the
+  // board below stays locked in place and never jumps up or down between moves.
   coachCard: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 8,
     paddingHorizontal: 2,
-    marginVertical: 4,
+    marginVertical: 2,
+    height: 92,
   },
   coachAvatarWrapper: {
     width: 64,
@@ -1870,15 +1874,17 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'flex-end',
     alignItems: 'center',
     backgroundColor: 'transparent',
-    marginTop: 2,
   },
   coachBubble: {
     flex: 1,
+    minWidth: 0,
+    height: 88,
+    justifyContent: 'center',
     backgroundColor: THEME.colors.surfaceContainerLowest,
     borderRadius: 14,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 4,
+    paddingVertical: 8,
+    gap: 3,
     position: 'relative',
     borderWidth: 1,
     borderColor: THEME.colors.surfaceContainer,
@@ -1891,7 +1897,7 @@ const createStyles = () => StyleSheet.create({
   bubblePointer: {
     position: 'absolute',
     left: -7,
-    top: 14,
+    top: 32,
     width: 0,
     height: 0,
     borderTopWidth: 6,
@@ -1903,9 +1909,9 @@ const createStyles = () => StyleSheet.create({
   },
   coachText: {
     fontFamily: THEME.fonts.regular,
-    fontSize: 12.5,
+    fontSize: 12,
     color: THEME.colors.textSecondary,
-    lineHeight: 17,
+    lineHeight: 16,
   },
   verdictRow: {
     flexDirection: 'row',

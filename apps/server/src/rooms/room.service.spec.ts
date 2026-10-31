@@ -144,6 +144,20 @@ describe('invite lifecycle + disconnect hygiene (F10)', () => {
     expect(out[0].room?.hostId).toBe('u2');
     expect(out[0].room?.status).toBe('WAITING');
   });
+
+  it('disbands the room completely when the host explicitly closes it even with guests seated', () => {
+    const svc = new RoomService();
+    const lobby = makeRoom(svc);
+    svc.joinRoom(lobby.code, 'u2', 'Two');
+    svc.createInvite(lobby.id, 'host1', 'u3');
+
+    const res = svc.leaveRoom(lobby.id, 'host1', true);
+    expect(res.disbanded).toBe(true);
+    expect(res.room).toBeNull();
+    expect(svc.getRoom(lobby.id)).toBeUndefined();
+    expect(svc.getRoomByCode(lobby.code)).toBeUndefined();
+    expect((svc as any).invites.size).toBe(0);
+  });
 });
 
 describe('Public Rooms', () => {

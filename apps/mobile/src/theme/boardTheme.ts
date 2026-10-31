@@ -111,30 +111,30 @@ export interface BoardSkin extends BoardPalette {
   hudChip?: string;
 }
 
-/** Pixel-identical to the current THEME.colors board/tray tokens. */
+/** Pixel-identical to the current THEME.colors warm alabaster/stone board/tray tokens. */
 export const LIGHT_BOARD: BoardPalette = {
   boardBackground: '#FFFFFF',
-  boardBorder: '#CBD5E1',
-  cell: '#F1F5F9',
-  cellBorder: '#E2E8F0',
-  wallSlot: 'rgba(100, 116, 139, 0.30)',
+  boardBorder: '#DFDDD5',
+  cell: '#F1F0EB',
+  cellBorder: '#E5E3DC',
+  wallSlot: 'rgba(125, 122, 117, 0.28)',
   trayCard: '#FFFFFF',
-  trayHairline: '#E2E8F0',
-  trayPill: '#F1F5F9',
-  trayCount: '#0F172A',
+  trayHairline: '#DFDDD5',
+  trayPill: '#F1F0EB',
+  trayCount: '#262421',
 };
 
-/** Deep-navy surface, slate chrome, gold-friendly (crown marker pops). */
+/** Warm charcoal surface matching dark THEME.colors tokens (no cold navy/blue). */
 export const MIDNIGHT_BOARD: BoardPalette = {
-  boardBackground: '#0F172A',
-  boardBorder: '#334155',
-  cell: '#1E293B',
-  cellBorder: '#334155',
-  wallSlot: 'rgba(148, 163, 184, 0.35)',
-  trayCard: '#131B2E',
-  trayHairline: '#334155',
-  trayPill: '#1E293B',
-  trayCount: '#F1F5F9',
+  boardBackground: '#262421',
+  boardBorder: '#45423E',
+  cell: '#312E2B',
+  cellBorder: '#3B3834',
+  wallSlot: 'rgba(152, 151, 149, 0.32)',
+  trayCard: '#312E2B',
+  trayHairline: '#45423E',
+  trayPill: '#3B3834',
+  trayCount: '#F5F4F0',
 };
 
 const CLASSIC_EXTRAS = {
@@ -175,7 +175,7 @@ export const TACTILE_BOARD: BoardPalette = {
   trayCard: '#FFFFFF',
   trayHairline: '#E2DED6',
   trayPill: '#F6F4EE',
-  trayCount: '#1E293B',
+  trayCount: '#262421',
 };
 
 export const TACTILE_SKIN: BoardSkin = {
@@ -205,8 +205,8 @@ export const TACTILE_SKIN: BoardSkin = {
   traySlotRadius: 6,
   hudCard: '#FFFFFF',
   hudBorder: '#E2DED6',
-  hudInk: '#1E293B',
-  hudSubInk: '#64748B',
+  hudInk: '#262421',
+  hudSubInk: '#7D7A75',
   hudChip: '#F6F4EE',
 };
 
@@ -269,7 +269,7 @@ export const STONE_BOARD: BoardPalette = {
   trayCard: '#FFFFFF',
   trayHairline: '#E2DED6',
   trayPill: '#F7F6F2',
-  trayCount: '#1E293B',
+  trayCount: '#262421',
 };
 
 export const STONE_SKIN: BoardSkin = {
@@ -301,8 +301,8 @@ export const STONE_SKIN: BoardSkin = {
   traySlotRadius: 4,
   hudCard: '#FFFFFF',
   hudBorder: '#E2DED6',
-  hudInk: '#1E293B',
-  hudSubInk: '#64748B',
+  hudInk: '#262421',
+  hudSubInk: '#7D7A75',
   hudChip: '#F7F6F2',
 };
 

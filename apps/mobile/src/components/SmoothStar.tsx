@@ -33,9 +33,9 @@ export const SmoothStar: React.FC<SmoothStarProps> = ({
           strokeWidth={2}
           strokeLinejoin="round"
           strokeLinecap="round"
-          transform="translate(0, 0.9)"
+          transform="translate(0, 1.5)"
         />
-        {/* Main smooth star */}
+        {/* Main smooth star (optically centered at Y=12) */}
         <Path
           d={SMOOTH_STAR_PATH}
           fill={color}
@@ -43,6 +43,7 @@ export const SmoothStar: React.FC<SmoothStarProps> = ({
           strokeWidth={1.8}
           strokeLinejoin="round"
           strokeLinecap="round"
+          transform="translate(0, 0.7)"
         />
       </Svg>
     </View>

@@ -126,7 +126,8 @@ export async function getBotActionNative(
   if (!mod || typeof mod.getBotAction !== 'function') return null;
   try {
     const stateStr = JSON.stringify(state);
-    const resultJson = await mod.getBotAction(stateStr, botId, seed ?? 0);
+    const safeSeed = typeof seed === 'number' && Number.isFinite(seed) ? Math.trunc(seed) : 0;
+    const resultJson = await mod.getBotAction(stateStr, botId, safeSeed);
     if (!resultJson || resultJson === 'null') return null;
     return JSON.parse(resultJson) as GameAction;
   } catch (error) {

@@ -63,7 +63,13 @@ interface GameBoardProps {
    * Review classification badge (?? / ? / ?! / !) pinned on the move's
    * destination cell — the chess-style glyph that needs no legend.
    */
-  badgeMark?: { cell: CellCoord; glyph?: string; color?: string; assessment?: MoveAssessment } | null;
+  badgeMark?: {
+    cell: CellCoord;
+    wall?: WallCoord;
+    glyph?: string;
+    color?: string;
+    assessment?: MoveAssessment;
+  } | null;
   /**
    * Review best-move arrow: thick engine-colored arrow from the mover's
    * origin to the engine's preferred destination (piece moves only —
@@ -665,13 +671,33 @@ const GameBoardView: React.FC<GameBoardProps> = ({
             : playerWallBg(owner?.index ?? 0, owner?.color);
           const wallEdge = neutral ? skin.neutralWallEdge : skin.wallTopLight;
 
+          const resolveWallIdForPlayer = (pl?: typeof owner) => {
+            if (!pl) return null;
+            const isLocal = pl.index === localPlayerIndex;
+            const onlineId =
+              (pl.id ? playerCosmetics?.[pl.id]?.wallSkinId : undefined) ??
+              ((pl as any)?.userId ? playerCosmetics?.[(pl as any).userId]?.wallSkinId : undefined);
+            const id =
+              onlineId && onlineId !== 'classic'
+                ? onlineId
+                : isLocal && customWall?.id && customWall.id !== 'classic'
+                ? customWall.id
+                : onlineId ?? (isLocal ? customWall?.id : undefined);
+            return id && id !== 'classic' && COSMETIC_SKINS[id] ? id : null;
+          };
+
           const isLocalOwner = (owner?.index ?? 0) === localPlayerIndex;
-          const onlineWallSkinId = owner?.id ? playerCosmetics?.[owner.id]?.wallSkinId : undefined;
-          const resolvedWallSkinId = onlineWallSkinId ?? (isLocalOwner ? customWall?.id : undefined);
-          const activeWallSkin =
-            resolvedWallSkinId && resolvedWallSkinId !== 'classic'
-              ? COSMETIC_SKINS[resolvedWallSkinId]
-              : null;
+          const resolvedWallSkinId = resolveWallIdForPlayer(owner);
+          const activeWallSkin = resolvedWallSkinId ? COSMETIC_SKINS[resolvedWallSkinId] : null;
+          const hasWallSkinClash =
+            Boolean(activeWallSkin) &&
+            !isLocalOwner &&
+            state.players.some(
+              (other) =>
+                other.id !== owner?.id &&
+                (other.index === localPlayerIndex || other.index < (owner?.index ?? 0)) &&
+                resolveWallIdForPlayer(other) === resolvedWallSkinId
+            );
 
           // Thicker tactile barrier (centered on the gap) so textures and bevels have substance
           const thicknessExtra = Math.max(3, Math.round(GAP * 0.45));
@@ -681,7 +707,6 @@ const GameBoardView: React.FC<GameBoardProps> = ({
           const wallH = isH ? rect.height + thicknessExtra : rect.height;
 
           if (activeWallSkin) {
-            const isGuestOwner = (owner?.index ?? 0) > 0;
             return (
               <View
                 key={`placed-${wall.row}-${wall.col}-${wall.orientation}-${wall.sequence}`}
@@ -694,12 +719,6 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                   height: wallH,
                   borderRadius: wallRadiusFor(wallW, wallH),
                   overflow: 'hidden',
-                  ...(isGuestOwner
-                    ? {
-                        borderWidth: 1.5,
-                        borderColor: activeWallSkin.contrast.guestRim,
-                      }
-                    : {}),
                 }}
               >
                 <Image
@@ -707,6 +726,34 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                   style={{ width: wallW, height: wallH }}
                   resizeMode="stretch"
                 />
+                {hasWallSkinClash && (
+                  <View
+                    pointerEvents="none"
+                    style={
+                      isH
+                        ? {
+                            position: 'absolute',
+                            left: 6,
+                            right: 6,
+                            top: Math.max(1, Math.floor(wallH / 2) - 1),
+                            height: 2,
+                            borderRadius: 1,
+                            backgroundColor: ball,
+                            opacity: 0.9,
+                          }
+                        : {
+                            position: 'absolute',
+                            top: 6,
+                            bottom: 6,
+                            left: Math.max(1, Math.floor(wallW / 2) - 1),
+                            width: 2,
+                            borderRadius: 1,
+                            backgroundColor: ball,
+                            opacity: 0.9,
+                          }
+                    }
+                  />
+                )}
               </View>
             );
           }
@@ -801,13 +848,33 @@ const GameBoardView: React.FC<GameBoardProps> = ({
             selectedCell.col === p.position.col;
           if (!anim) return null;
 
+          const resolveBallIdForPlayer = (pl: typeof p) => {
+            const isLocal = pl.index === localPlayerIndex;
+            const onlineId =
+              (pl.id ? playerCosmetics?.[pl.id]?.ballSkinId : undefined) ??
+              ((pl as any)?.userId ? playerCosmetics?.[(pl as any).userId]?.ballSkinId : undefined);
+            const id =
+              onlineId && onlineId !== 'classic'
+                ? onlineId
+                : isLocal && customBall?.id && customBall.id !== 'classic'
+                ? customBall.id
+                : onlineId ?? (isLocal ? customBall?.id : undefined);
+            return id && id !== 'classic' && COSMETIC_SKINS[id] ? id : null;
+          };
+
           const isLocalPlayer = p.index === localPlayerIndex;
-          const onlineBallId = p.id ? playerCosmetics?.[p.id]?.ballSkinId : undefined;
-          const resolvedBallId = onlineBallId ?? (isLocalPlayer ? customBall?.id : undefined);
-          const activeBallSkin =
-            resolvedBallId && resolvedBallId !== 'classic'
-              ? COSMETIC_SKINS[resolvedBallId]
-              : null;
+          const resolvedBallId = resolveBallIdForPlayer(p);
+          const activeBallSkin = resolvedBallId ? COSMETIC_SKINS[resolvedBallId] : null;
+          const hasBallSkinClash =
+            Boolean(activeBallSkin) &&
+            !isLocalPlayer &&
+            state.players.some(
+              (other) =>
+                other.id !== p.id &&
+                other.status === 'ACTIVE' &&
+                (other.index === localPlayerIndex || other.index < p.index) &&
+                resolveBallIdForPlayer(other) === resolvedBallId
+            );
 
           return (
             <Animated.View
@@ -867,21 +934,36 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                     }}
                     resizeMode="contain"
                   />
-                  {/* Dynamic Mirror-Match Distinction: Player 2+ receives contrast rim */}
-                  {p.index > 0 && (
-                    <View
-                      pointerEvents="none"
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        borderRadius: orbDiameter / 2,
-                        borderWidth: 2,
-                        borderColor: activeBallSkin.contrast.guestRim,
-                      }}
-                    />
+                  {/* Dynamic Mirror-Match Distinction: ONLY shown when opponent has the exact same skin as another player */}
+                  {hasBallSkinClash && (
+                    <>
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          position: 'absolute',
+                          width: Math.round(orbDiameter * 0.88),
+                          height: Math.round(orbDiameter * 0.88),
+                          borderRadius: Math.round(orbDiameter * 0.44),
+                          backgroundColor: hexA(ball, 0.22),
+                          borderWidth: 1.5,
+                          borderColor: hexA(ball, 0.85),
+                        }}
+                      />
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          position: 'absolute',
+                          bottom: 0,
+                          right: 0,
+                          width: Math.max(7, Math.round(orbDiameter * 0.28)),
+                          height: Math.max(7, Math.round(orbDiameter * 0.28)),
+                          borderRadius: 99,
+                          backgroundColor: ball,
+                          borderWidth: 1.5,
+                          borderColor: '#FFFFFF',
+                        }}
+                      />
+                    </>
                   )}
                 </Animated.View>
               ) : skin.orbStyle === 'flatDisc' ? (
@@ -1111,46 +1193,57 @@ const GameBoardView: React.FC<GameBoardProps> = ({
         )}
 
         {/* Review: classification badge (?? / ? / ?! / !) on the destination */}
-        {badgeMark && (
-          <Animated.View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              zIndex: 40,
-              top: BOARD_PAD + badgeMark.cell.row * (CELL + GAP) - 8,
-              left:
-                BOARD_PAD + badgeMark.cell.col * (CELL + GAP) + CELL - 14,
-              transform: [{ rotate: orbCounterRotation }],
-            }}
-          >
-            {badgeMark.assessment ? (
-              <AssessmentIcon assessment={badgeMark.assessment} size={22} />
-            ) : (
-              <View
+        {badgeMark &&
+          (() => {
+            const wallPos = badgeMark.wall
+              ? wallRect(badgeMark.wall, CELL, GAP)
+              : null;
+            const topPos = wallPos
+              ? wallPos.top + wallPos.height / 2 - 11
+              : BOARD_PAD + badgeMark.cell.row * (CELL + GAP) - 8;
+            const leftPos = wallPos
+              ? wallPos.left + wallPos.width / 2 - 11
+              : BOARD_PAD + badgeMark.cell.col * (CELL + GAP) + CELL - 14;
+            return (
+              <Animated.View
+                pointerEvents="none"
                 style={{
-                  minWidth: 22,
-                  height: 22,
-                  paddingHorizontal: 4,
-                  borderRadius: 11,
-                  backgroundColor: badgeMark.color || '#69B342',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  position: 'absolute',
+                  zIndex: 40,
+                  top: topPos,
+                  left: leftPos,
+                  transform: [{ rotate: orbCounterRotation }],
                 }}
               >
-                <Text
-                  style={{
-                    color: '#FFFFFF',
-                    fontSize: 11,
-                    fontWeight: '800',
-                    fontFamily: THEME.fonts.bold,
-                  }}
-                >
-                  {badgeMark.glyph}
-                </Text>
-              </View>
-            )}
-          </Animated.View>
-        )}
+                {badgeMark.assessment ? (
+                  <AssessmentIcon assessment={badgeMark.assessment} size={22} />
+                ) : (
+                  <View
+                    style={{
+                      minWidth: 22,
+                      height: 22,
+                      paddingHorizontal: 4,
+                      borderRadius: 11,
+                      backgroundColor: badgeMark.color || '#69B342',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: '#FFFFFF',
+                        fontSize: 11,
+                        fontWeight: '800',
+                        fontFamily: THEME.fonts.bold,
+                      }}
+                    >
+                      {badgeMark.glyph}
+                    </Text>
+                  </View>
+                )}
+              </Animated.View>
+            );
+          })()}
 
         {/* Review: best-move arrow (piece moves; best walls use altMark) */}
         {bestArrow &&

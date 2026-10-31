@@ -57,6 +57,9 @@ export const OnlineJoinGate: React.FC<OnlineJoinGateProps> = ({
       // join in the game screen replays the tail if anything moved since.
       missingActions: [],
       playerUserIds: online.playerUserIds,
+      playerCosmetics: online.playerCosmetics,
+      premiumUserIds: online.premiumUserIds,
+      isRanked: online.isRanked,
       you: online.myPlayerId,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

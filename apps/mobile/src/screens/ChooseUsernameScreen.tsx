@@ -24,8 +24,6 @@ import { useTranslation } from '../i18n';
 
 type Availability = 'idle' | 'checking' | 'available' | 'taken' | 'error';
 
-/** Guest primary-button blue, matching the Welcome page. */
-const GUEST_BLUE = '#2563eb';
 
 // Web only: kill the black focus outline on text inputs (not in RN types).
 const NO_OUTLINE: any = Platform.OS === 'web' ? { outlineStyle: 'none' } : {};
@@ -405,8 +403,10 @@ const createStyles = () => StyleSheet.create({
   },
   primary: {
     height: 50,
-    borderRadius: THEME.radius.md,
-    backgroundColor: GUEST_BLUE,
+    borderRadius: 10,
+    backgroundColor: THEME.colors.primary,
+    borderBottomWidth: 3.5,
+    borderBottomColor: THEME.colors.primaryBevel,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -416,8 +416,9 @@ const createStyles = () => StyleSheet.create({
     gap: 8,
   },
   primaryText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 15,
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 16,
+    fontWeight: '800',
     color: '#FFFFFF',
   },
   secondary: {

@@ -34,7 +34,14 @@ interface GameReviewSummaryScreenProps {
 
 interface MoveRowConfig {
   assessment: MoveAssessment;
-  label: string;
+  labelKey:
+    | 'assessment.brilliant'
+    | 'assessment.great'
+    | 'assessment.best'
+    | 'assessment.excellent'
+    | 'assessment.inaccuracy'
+    | 'assessment.mistake'
+    | 'assessment.blunder';
   badgeBg: string;
   badgeColor: string;
   glyph: string;
@@ -44,21 +51,21 @@ interface MoveRowConfig {
 const MOVE_ROWS: MoveRowConfig[] = [
   {
     assessment: 'BRILLIANT',
-    label: 'Brilliant',
+    labelKey: 'assessment.brilliant',
     badgeBg: '#1BACA6',
     badgeColor: '#FFFFFF',
     glyph: '!!',
   },
   {
     assessment: 'GREAT',
-    label: 'Great',
+    labelKey: 'assessment.great',
     badgeBg: '#2563EB',
     badgeColor: '#FFFFFF',
     glyph: '!',
   },
   {
     assessment: 'BEST',
-    label: 'Best',
+    labelKey: 'assessment.best',
     badgeBg: '#69B342',
     badgeColor: '#FFFFFF',
     glyph: '★',
@@ -66,7 +73,7 @@ const MOVE_ROWS: MoveRowConfig[] = [
   },
   {
     assessment: 'EXCELLENT',
-    label: 'Excellent',
+    labelKey: 'assessment.excellent',
     badgeBg: '#78B833',
     badgeColor: '#FFFFFF',
     glyph: '👍',
@@ -74,21 +81,21 @@ const MOVE_ROWS: MoveRowConfig[] = [
   },
   {
     assessment: 'INACCURACY',
-    label: 'Inaccuracy',
+    labelKey: 'assessment.inaccuracy',
     badgeBg: '#EAB308',
     badgeColor: '#FFFFFF',
     glyph: '?!',
   },
   {
     assessment: 'MISTAKE',
-    label: 'Mistake',
+    labelKey: 'assessment.mistake',
     badgeBg: '#F97316',
     badgeColor: '#FFFFFF',
     glyph: '?',
   },
   {
     assessment: 'BLUNDER',
-    label: 'Blunder',
+    labelKey: 'assessment.blunder',
     badgeBg: '#DC2626',
     badgeColor: '#FFFFFF',
     glyph: '??',
@@ -176,31 +183,31 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
           >
             <OrbIcon name="arrow-left" size={22} color={THEME.colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Game Review</Text>
+          <Text style={styles.headerTitle}>{t('analysis.gameReview')}</Text>
           <View style={styles.headerSpacer} />
         </View>
 
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.colors.primary} />
-            <Text style={styles.loadingTitle}>Analyzing game...</Text>
-            <Text style={styles.loadingSubtitle}>Evaluating all moves with server engine</Text>
+            <Text style={styles.loadingTitle}>{t('review.analyzing')}…</Text>
+            <Text style={styles.loadingSubtitle}>{t('review.matchReview')}</Text>
           </View>
         ) : !review ? (
           <View style={styles.loadingContainer}>
             <OrbIcon name="alert-circle" size={44} color={theme.colors.danger} style={{ marginBottom: 14 }} />
-            <Text style={styles.loadingTitle}>Analysis Unavailable</Text>
+            <Text style={styles.loadingTitle}>{t('analysis.gameReview')}</Text>
             <Text style={[styles.loadingSubtitle, { marginBottom: 22, textAlign: 'center', paddingHorizontal: 20 }]}>
-              Could not connect to the server analysis engine. Please ensure the server is online.
+              {t('common.tryAgain')}
             </Text>
             <TouchableOpacity
               style={styles.retryBtn}
               onPress={loadReview}
               accessibilityRole="button"
-              accessibilityLabel="Retry Analysis"
+              accessibilityLabel={t('common.tryAgain')}
             >
               <OrbIcon name="refresh-cw" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={styles.retryBtnText}>Retry Analysis</Text>
+              <Text style={styles.retryBtnText}>{t('common.tryAgain')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -212,7 +219,7 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
             {/* Header Comparison: Players Section */}
             <View style={styles.playersSection}>
               <View style={styles.playersLabelCol}>
-                <Text style={styles.rowLabelText}>Players</Text>
+                <Text style={styles.rowLabelText}>{t('online.players')}</Text>
               </View>
 
               {/* User Player Column */}
@@ -247,7 +254,7 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
             {/* Accuracy Section */}
             <View style={styles.accuracySection}>
               <View style={styles.playersLabelCol}>
-                <Text style={styles.rowLabelText}>Accuracy</Text>
+                <Text style={styles.rowLabelText}>{t('analysis.accuracy')}</Text>
               </View>
 
               <View style={styles.accuracyCol}>
@@ -275,7 +282,7 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
                 return (
                   <View key={row.assessment} style={styles.tableRow}>
                     <View style={styles.categoryLabelCol}>
-                      <Text style={styles.categoryLabel}>{row.label}</Text>
+                      <Text style={styles.categoryLabel}>{t(row.labelKey)}</Text>
                     </View>
 
                     {/* Left Count (User) */}
@@ -312,9 +319,9 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
               activeOpacity={0.88}
               onPress={onStartReview}
               accessibilityRole="button"
-              accessibilityLabel="Start Review"
+              accessibilityLabel={t('gameover.analyzeMatch')}
             >
-              <Text style={styles.startReviewBtnText}>Start Review</Text>
+              <Text style={styles.startReviewBtnText}>{t('gameover.analyzeMatch')}</Text>
             </TouchableOpacity>
           </View>
         )}

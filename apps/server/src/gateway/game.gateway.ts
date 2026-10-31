@@ -374,8 +374,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       this.socketUserMap.set(client.id, userInfo);
       const ballSkinId = (client.handshake.auth?.ballSkinId ?? client.handshake.query?.ballSkinId) as string | undefined;
       const wallSkinId = (client.handshake.auth?.wallSkinId ?? client.handshake.query?.wallSkinId) as string | undefined;
+      const prevCosmetics = this.userCosmeticsMap.get(effectiveId);
       if (ballSkinId || wallSkinId) {
-        this.userCosmeticsMap.set(effectiveId, { ballSkinId, wallSkinId });
+        this.userCosmeticsMap.set(effectiveId, {
+          ballSkinId: (ballSkinId && ballSkinId !== 'classic') ? ballSkinId : (prevCosmetics?.ballSkinId ?? ballSkinId),
+          wallSkinId: (wallSkinId && wallSkinId !== 'classic') ? wallSkinId : (prevCosmetics?.wallSkinId ?? wallSkinId),
+        });
       }
       this.userSocketMap.delete(earlyId);
       // Single controlling session: if a different LIVE socket already spoke
@@ -904,11 +908,17 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   handleCreateRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; isPublic?: boolean }
+    payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; isPublic?: boolean; ballSkinId?: string; wallSkinId?: string }
   ) {
     const user = this.getUser(client);
     const denied = this.requireVerified(user);
     if (denied) return denied;
+    if (payload.ballSkinId || payload.wallSkinId) {
+      this.userCosmeticsMap.set(user.userId, {
+        ballSkinId: payload.ballSkinId,
+        wallSkinId: payload.wallSkinId,
+      });
+    }
     const room = this.roomService.createRoom(
       user.userId,
       user.displayName,
@@ -926,11 +936,17 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('room:join')
   handleJoinRoom(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { code: string }
+    @MessageBody() payload: { code: string; ballSkinId?: string; wallSkinId?: string }
   ) {
     const user = this.getUser(client);
     const denied = this.requireVerified(user);
     if (denied) return denied;
+    if (payload.ballSkinId || payload.wallSkinId) {
+      this.userCosmeticsMap.set(user.userId, {
+        ballSkinId: payload.ballSkinId,
+        wallSkinId: payload.wallSkinId,
+      });
+    }
     const result = this.roomService.joinRoom(payload.code, user.userId, user.displayName);
 
     if (result.success) {
@@ -998,12 +1014,18 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('room:ready')
   handleRoomReady(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { roomId: string; isReady: boolean }
+    @MessageBody() payload: { roomId: string; isReady: boolean; ballSkinId?: string; wallSkinId?: string }
   ) {
     const user = this.getUser(client);
     if (!user.verified) {
       client.emit('game:error', { code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
       return;
+    }
+    if (payload.ballSkinId || payload.wallSkinId) {
+      this.userCosmeticsMap.set(user.userId, {
+        ballSkinId: payload.ballSkinId,
+        wallSkinId: payload.wallSkinId,
+      });
     }
     const room = this.roomService.setReady(payload.roomId, user.userId, payload.isReady);
     if (room) {
@@ -1045,13 +1067,38 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('room:leave')
   handleRoomLeave(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { roomId: string }
+    @MessageBody() payload: { roomId: string; close?: boolean }
   ) {
     const user = this.getUser(client);
     if (!user.verified) return { success: false, error: 'Not authenticated. Reconnect and try again.' };
+    if (!payload?.roomId) return { success: false, error: 'Missing roomId.' };
     client.leave(payload.roomId);
-    const { room } = this.roomService.leaveRoom(payload.roomId, user.userId);
-    if (room) {
+    const existingRoom = this.roomService.getRoom(payload.roomId);
+    const otherMemberIds = existingRoom
+      ? existingRoom.slots
+          .map((s) => s.userId)
+          .filter((id): id is string => Boolean(id && id !== user.userId))
+      : [];
+    const { room, disbanded } = this.roomService.leaveRoom(
+      payload.roomId,
+      user.userId,
+      Boolean(payload.close)
+    );
+    if (disbanded) {
+      for (const memberId of otherMemberIds) {
+        const memberSocketId = this.userSocketMap.get(memberId);
+        if (memberSocketId) {
+          const memberSocket = this.server.sockets.sockets.get(memberSocketId);
+          memberSocket?.leave(payload.roomId);
+          memberSocket?.emit('room:kicked', { roomId: payload.roomId, reason: 'closed' });
+        }
+      }
+      for (const [gId, rId] of this.gameRoomMap.entries()) {
+        if (rId === payload.roomId) {
+          this.gameRoomMap.delete(gId);
+        }
+      }
+    } else if (room) {
       this.server.to(room.id).emit('room:state', this.enrichRoom(room));
     }
     this.broadcastPublicRooms();
@@ -1106,12 +1153,18 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('room:start')
   async handleRoomStart(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { roomId: string }
+    @MessageBody() payload: { roomId: string; ballSkinId?: string; wallSkinId?: string }
   ) {
     const user = this.getUser(client);
     if (!user.verified) {
       client.emit('game:error', { code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
       return;
+    }
+    if (payload.ballSkinId || payload.wallSkinId) {
+      this.userCosmeticsMap.set(user.userId, {
+        ballSkinId: payload.ballSkinId,
+        wallSkinId: payload.wallSkinId,
+      });
     }
 
     // A seat can only be readied from the lobby. If someone is still mid-match
@@ -1132,7 +1185,8 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // host crown is untouched — only table positions shuffle.
     const shuffledIds = shuffleSeats(result.players.map((p) => p.userId));
 
-    // Custom and public rooms are ALWAYS unranked (casual/practice only).
+    // Classic 1v1 ('2p') is ranked across all online modes (Quick Match,
+    // Challenges, and Rooms); 3P/4P modes are always casual/unranked.
     const created = await this.createGameChecked({
       gameId,
       mode: result.room.mode,
@@ -1140,7 +1194,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       timeControlMinutes: result.room.timeControlMinutes,
       incrementSeconds: result.room.incrementSeconds,
       wallsEach: result.room.wallsEach,
-      isRanked: false,
+      isRanked: result.room.mode === '2p' && shuffledIds.length === 2,
     });
     if (!created.success) {
       client.emit('game:error', { code: 'START_FAILED', message: created.error });
@@ -1375,11 +1429,17 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   async handleChallengeSend(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    payload: { toUserId: string; mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number }
+    payload: { toUserId: string; mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; ballSkinId?: string; wallSkinId?: string }
   ) {
     const user = this.getUser(client);
     const denied = this.requireVerified(user);
     if (denied) return denied;
+    if (payload.ballSkinId || payload.wallSkinId) {
+      this.userCosmeticsMap.set(user.userId, {
+        ballSkinId: payload.ballSkinId,
+        wallSkinId: payload.wallSkinId,
+      });
+    }
     if (payload.toUserId === user.userId) {
       return { success: false, error: 'You cannot challenge yourself.' };
     }
@@ -1447,11 +1507,17 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('challenge:respond')
   async handleChallengeRespond(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { challengeId: string; accept: boolean }
+    @MessageBody() payload: { challengeId: string; accept: boolean; ballSkinId?: string; wallSkinId?: string }
   ) {
     const user = this.getUser(client);
     const denied = this.requireVerified(user);
     if (denied) return denied;
+    if (payload.ballSkinId || payload.wallSkinId) {
+      this.userCosmeticsMap.set(user.userId, {
+        ballSkinId: payload.ballSkinId,
+        wallSkinId: payload.wallSkinId,
+      });
+    }
     const result = this.challengeService.resolve(payload.challengeId, user.userId, payload.accept);
     if (!result.success || !payload.accept) {
       if (result.success) {
@@ -1702,6 +1768,21 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       return;
     }
     client.leave(payload.gameId);
+    const associatedRoomId = this.gameRoomMap.get(payload.gameId);
+    if (associatedRoomId) {
+      client.leave(associatedRoomId);
+      const { room: updatedRoom, disbanded } = this.roomService.leaveRoom(
+        associatedRoomId,
+        user.userId,
+        false
+      );
+      if (disbanded) {
+        this.gameRoomMap.delete(payload.gameId);
+      } else if (updatedRoom) {
+        this.server.to(updatedRoom.id).emit('room:state', this.enrichRoom(updatedRoom));
+      }
+      this.broadcastPublicRooms();
+    }
     const game = this.gameService.getGame(payload.gameId);
     if (!game || game.state.status !== 'IN_PROGRESS') {
       ack?.({ ok: true });
@@ -2214,10 +2295,20 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     const roomId = this.gameRoomMap.get(gameId);
     if (!roomId) return;
     this.gameRoomMap.delete(gameId);
+    const existing = this.roomService.getRoom(roomId);
+    if (existing) {
+      for (const slot of [...existing.slots]) {
+        if (slot.userId && !this.userSocketMap.has(slot.userId)) {
+          this.roomService.leaveRoom(roomId, slot.userId, false);
+        }
+      }
+    }
     const room = this.roomService.returnToLobby(roomId);
     if (room) {
       this.server.to(room.id).emit('room:state', this.enrichRoom(room));
       if (room.isPublic) this.broadcastPublicRooms();
+    } else {
+      this.broadcastPublicRooms();
     }
   }
 

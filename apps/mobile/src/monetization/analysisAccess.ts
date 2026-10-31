@@ -86,7 +86,10 @@ async function entryInner(
   const unlocked = await isAnalysisUnlocked(gameId, historyLength);
   if (unlocked) return 'unlocked';
   const claimedDaily = await consumeFreeAnalysis();
-  if (claimedDaily) return 'daily';
+  if (claimedDaily) {
+    await markAnalysisUnlocked(gameId, historyLength);
+    return 'daily';
+  }
   return 'locked';
 }
 

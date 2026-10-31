@@ -266,15 +266,16 @@ export async function getAiMove(
       const isHint = Boolean(options.isHint);
       const isHard = profile.difficulty === 'hard';
 
-      // Feature 1: Unified Native Bots Engine (when botId is specified)
+      // Feature 1: Unified Native Bots Engine (calibrated Rust personality with AlphaZero ONNX)
       let getBot: unknown;
       try {
         getBot = (nativeAi as Record<string, unknown>).getBotActionNative;
       } catch {
         getBot = undefined;
       }
-      if (!isHint && options.botId && typeof getBot === 'function') {
-        const nativeAction = await (getBot as (s: GameState, b: string, seed: number) => Promise<GameAction | null>)(state, options.botId, liveSeed);
+      const botPreset = options.botId || (profile?.difficulty === 'easy' ? 'martin' : 'achref');
+      if (!isHint && typeof getBot === 'function') {
+        const nativeAction = await (getBot as (s: GameState, b: string, seed: number) => Promise<GameAction | null>)(state, botPreset, liveSeed);
         if (nativeAction) return nativeAction;
       }
 
@@ -337,13 +338,10 @@ export async function getAiMove(
     }
   }
 
+  // If native search was cancelled or aborted, return null
   if (options.shouldCancel?.()) return null;
 
-  // On Web, Classic 2P must NEVER execute the JavaScript engine
-  if (Platform.OS === 'web' && isClassic2P) {
-    return null;
-  }
-
+  // Emergency / dev fallback (e.g. Expo Go, test runners, or native crash recovery)
   const effectiveProfile =
     profile ??
     (options.botId ? botById(options.botId)?.profile : undefined) ??

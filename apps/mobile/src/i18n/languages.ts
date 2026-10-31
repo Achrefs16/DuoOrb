@@ -16,7 +16,7 @@ export const LANGUAGES = [
   { code: 'tr', flag: '🇹🇷', nativeName: 'Türkçe', englishName: 'Turkish', rtl: false },
   { code: 'pl', flag: '🇵🇱', nativeName: 'Polski', englishName: 'Polish', rtl: false },
   { code: 'id', flag: '🇮🇩', nativeName: 'Bahasa Indonesia', englishName: 'Indonesian', rtl: false },
-  { code: 'ar', flag: '🇸🇦', nativeName: 'العربية', englishName: 'Arabic', rtl: true },
+  { code: 'ar', flag: '🇸🇦', nativeName: 'العربية', englishName: 'Arabic', rtl: false },
 ] as const;
 
 export type Language = (typeof LANGUAGES)[number];

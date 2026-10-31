@@ -12,7 +12,7 @@ const FEATHER = `home user users user-plus cpu award star shield thumbs-up play 
 crosshair globe layers zap sun moon droplet activity trending-up bar-chart-2 clock calendar wifi wifi-off cloud-off
 alert-circle info check-circle check x slash chevron-down chevron-up chevron-left chevron-right chevrons-up
 chevrons-left chevrons-right arrow-left arrow-right arrow-up more-vertical search settings sliders filter grid lock
-log-out download external-link copy edit-2 trash-2 file-text list mail at-sign share share-2 plus-square smartphone
+log-out download external-link copy edit-2 trash-2 file-text list mail at-sign share share-2 plus plus-circle plus-square smartphone
 volume-2 rotate-ccw refresh-cw repeat shuffle`.split(/\s+/);
 
 const MATERIAL_COMMUNITY = `account-remove robot-outline robot trophy-outline trophy crown thumb-up sword-cross
@@ -27,6 +27,7 @@ const ALIASES: Record<string, string> = {
   'person-add': 'user-plus',
   orb: 'circle',
   close: 'x',
+  earth: 'globe',
 };
 
 export type OrbIconName = string;

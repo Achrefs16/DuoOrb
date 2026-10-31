@@ -59,14 +59,16 @@ describe('analysis access', () => {
   });
 
   it('enforces 1 free daily analysis, then locks subsequent games until rewarded unlock', async () => {
-    // 1st review claims the free daily
+    // 1st review claims the free daily and unlocks that game for full review
     const first = await requestAnalysisEntry(false, 'g1', 40);
     expect(first).toBe('daily');
     expect(await getFreeAnalysesUsedToday()).toBe(1);
+    expect(await isAnalysisUnlocked('g1', 40)).toBe(true);
 
     // 2nd review today without ad is locked
     const second = await requestAnalysisEntry(false, 'g2', 10);
     expect(second).toBe('locked');
+    expect(await isAnalysisUnlocked('g2', 10)).toBe(false);
 
     // After watching rewarded ad for g2, g2 is unlocked
     await markAnalysisUnlocked('g2', 10);

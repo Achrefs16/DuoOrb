@@ -1,0 +1,7 @@
+# Android build & CMake artifacts
+build/
+.cxx/
+.gradle/
+local.properties
+*.iml
+*.hprof

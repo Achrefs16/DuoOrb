@@ -7,6 +7,7 @@ import { WelcomeScreen } from './WelcomeScreen';
 import { LegalScreen } from './LegalScreen';
 import { LanguageSelectModal } from '../components/LanguageSelectModal';
 import { useTranslation } from '../i18n';
+import { THEME } from '../theme';
 
 /**
  * First-run flow: Welcome (account creation). The language picker opens
@@ -70,5 +71,5 @@ export const OnboardingFlow: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  fill: { flex: 1 },
+  fill: { flex: 1, backgroundColor: THEME.colors.background },
 });

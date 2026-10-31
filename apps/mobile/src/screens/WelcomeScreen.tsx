@@ -29,14 +29,12 @@ interface WelcomeScreenProps {
 
 /** Google's button blue (busy spinner). */
 const GOOGLE_BLUE = '#0B57D0';
-/** Guest button blue (Tailwind blue-600). */
-const GUEST_BLUE = '#2563eb';
 
 /**
  * First-launch welcome. Shown once per device, never on later launches.
  *
- * Plain white page. "Continue with Google" is the white button with the
- * full-colour G; "Continue as Guest" is the solid blue button underneath.
+ * "Continue with Google" is the white button with the
+ * full-colour G; "Continue as Guest" is the tactile green button underneath.
  */
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   onContinueAsGuest,
@@ -227,16 +225,19 @@ const createStyles = () =>
     },
     guestButton: {
       height: 50,
-      borderRadius: THEME.radius.md,
-      backgroundColor: GUEST_BLUE,
+      borderRadius: 10,
+      backgroundColor: THEME.colors.primary,
+      borderBottomWidth: 3.5,
+      borderBottomColor: THEME.colors.primaryBevel,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 8,
     },
     guestButtonText: {
-      fontFamily: THEME.fonts.semiBold,
-      fontSize: 15,
+      fontFamily: THEME.fonts.extraBold,
+      fontSize: 16,
+      fontWeight: '800',
       color: '#FFFFFF',
     },
     noticeText: {

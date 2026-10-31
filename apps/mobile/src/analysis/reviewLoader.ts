@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { GameReview, GameState, RecordedAction, createInitialState } from '@duoorb/game-core';
+import * as nativeAi from 'duoorb-ai-native';
 import { api } from '../network/apiClient';
 import { analyzeInWorker } from '../ai/aiWorkerClient';
 
@@ -51,11 +52,8 @@ export async function fetchOrComputeReview(
   // 1. Try on-device local native analysis first (< 60ms offline review on iOS/Android)
   if (Platform.OS !== 'web') {
     try {
-      let analyzeGameNativeFn: any = undefined;
-      try {
-        const nativeAi = require('duoorb-ai-native');
-        analyzeGameNativeFn = nativeAi?.analyzeGameNative;
-      } catch {}
+      const analyzeGameNativeFn =
+        typeof nativeAi?.analyzeGameNative === 'function' ? nativeAi.analyzeGameNative : undefined;
 
       if (typeof analyzeGameNativeFn === 'function') {
         const nativeReview = await analyzeGameNativeFn(safeInitial, history);

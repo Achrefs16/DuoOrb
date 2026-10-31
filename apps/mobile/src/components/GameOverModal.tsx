@@ -9,8 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { OrbIcon } from './OrbIcon';
-import { copyTextToClipboard } from '../lib/clipboard';
-import { GameState, BotPersonality, serializeGameRecord, type MoveAssessment } from '@duoorb/game-core';
+import { GameState, BotPersonality, type MoveAssessment } from '@duoorb/game-core';
 import type { GameEndedDto } from '@duoorb/protocol';
 import { THEME, playerColor, useStyles } from '../theme';
 import { useTranslation, type TranslationKey } from '../i18n';
@@ -57,6 +56,9 @@ export interface GameOverModalProps {
   onViewOpponentProfile?: () => void;
   myPlayerId?: string | null;
   seatPremium?: Record<string, boolean>;
+  isRoom?: boolean;
+  onReturnToRoom?: () => void;
+  onLeaveRoom?: () => void;
   onRematch: () => void;
   showNewGame?: boolean;
   onNewGame: () => void;
@@ -174,6 +176,9 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onViewOpponentProfile,
   myPlayerId,
   seatPremium,
+  isRoom = false,
+  onReturnToRoom,
+  onLeaveRoom,
   onRematch,
   showNewGame = false,
   onNewGame,
@@ -218,30 +223,6 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   const [badgeSelection, setBadgeSelection] =
     useState<GameOverBadgeSelection | null>(null);
   const [shimmer] = useState(() => new Animated.Value(1));
-  const [copiedMoves, setCopiedMoves] = useState(false);
-
-  const handleCopyMoves = async () => {
-    if (!state.history || state.history.length === 0) return;
-    try {
-      const customNames: Record<string, string> = {};
-      if (opponentName) {
-        customNames['p2'] = opponentName;
-        customNames['1'] = opponentName;
-      }
-      if (botPersonality) {
-        customNames['p2'] = botPersonality.name;
-        customNames['1'] = botPersonality.name;
-      }
-      const text = serializeGameRecord(state, customNames);
-      const ok = await copyTextToClipboard(text);
-      if (ok) {
-        setCopiedMoves(true);
-        setTimeout(() => setCopiedMoves(false), 2500);
-      }
-    } catch (e) {
-      console.warn('Failed to copy game record to clipboard', e);
-    }
-  };
 
   useEffect(() => {
     if (!visible || !isClassic2P) {
@@ -422,22 +403,8 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             },
           ]}
         >
-          {/* Top Right Action Buttons: Copy Moves & Close */}
+          {/* Top Right Action Button: Close */}
           <View style={styles.topRightActions}>
-            {state.history && state.history.length > 0 && (
-              <TouchableOpacity
-                style={styles.topActionBtn}
-                onPress={handleCopyMoves}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityLabel={t('gameover.copyMoves')}
-              >
-                <OrbIcon
-                  name={copiedMoves ? 'check' : 'copy'}
-                  size={15}
-                  color={copiedMoves ? '#69B342' : THEME.colors.textMuted}
-                />
-              </TouchableOpacity>
-            )}
             <TouchableOpacity
               style={styles.topActionBtn}
               onPress={onClose}
@@ -569,7 +536,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </View>
           )}
 
-          {/* Hero 3D Green Primary Button: Game Review for 2P, Play Again for non-2P */}
+          {/* Hero 3D Green Primary Button: Game Review for Classic 2P, Return to Room for Rooms, Play Again for offline */}
           {isClassic2P ? (
             <TouchableOpacity
               style={styles.gameReviewBtn}
@@ -579,16 +546,23 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               <SmoothStar size={17} color="#FFFFFF" />
               <Text style={styles.gameReviewText}>Game Review</Text>
             </TouchableOpacity>
+          ) : isRoom ? (
+            <TouchableOpacity
+              style={styles.gameReviewBtn}
+              activeOpacity={0.88}
+              onPress={onReturnToRoom ?? onHome}
+            >
+              <OrbIcon name="arrow-left" size={17} color="#FFFFFF" />
+              <Text style={styles.gameReviewText}>Return to Room</Text>
+            </TouchableOpacity>
           ) : (
             <TouchableOpacity
               style={styles.gameReviewBtn}
               activeOpacity={0.88}
-              onPress={type === 'online' ? onClose : (onRematch ?? onNewGame)}
+              onPress={type === 'ai' ? (onRematch ?? onNewGame) : onRematch}
             >
-              <OrbIcon name={type === 'online' ? 'arrow-left' : 'rotate-ccw'} size={17} color="#FFFFFF" />
-              <Text style={styles.gameReviewText}>
-                {type === 'online' ? 'Return to Room' : 'Play Again'}
-              </Text>
+              <OrbIcon name="rotate-ccw" size={17} color="#FFFFFF" />
+              <Text style={styles.gameReviewText}>Play Again</Text>
             </TouchableOpacity>
           )}
 
@@ -614,36 +588,65 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   <Text style={styles.secondaryBtnText}>Rematch</Text>
                 </TouchableOpacity>
               </>
-            ) : type === 'online' ? (
-              <>
-                {isClassic2P ? (
-                  <>
-                    <TouchableOpacity
-                      style={styles.secondaryBtn}
-                      activeOpacity={0.75}
-                      onPress={onRematch}
-                    >
-                      <OrbIcon name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
-                      <Text style={styles.secondaryBtnText}>Rematch</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.secondaryBtn}
-                      activeOpacity={0.75}
-                      onPress={onNewGame}
-                    >
-                      <OrbIcon name="play" size={15} color={THEME.colors.textPrimary} />
-                      <Text style={styles.secondaryBtnText}>New Game</Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
+            ) : isRoom ? (
+              isClassic2P ? (
+                <>
                   <TouchableOpacity
-                    style={[styles.secondaryBtn, { flex: 1 }]}
+                    style={styles.secondaryBtn}
                     activeOpacity={0.75}
-                    onPress={onClose}
+                    onPress={onReturnToRoom ?? onHome}
+                  >
+                    <OrbIcon name="arrow-left" size={15} color={THEME.colors.textPrimary} />
+                    <Text style={styles.secondaryBtnText}>Return to Room</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.secondaryBtn}
+                    activeOpacity={0.75}
+                    onPress={onLeaveRoom ?? onHome}
                   >
                     <OrbIcon name="log-out" size={15} color={THEME.colors.textPrimary} />
                     <Text style={styles.secondaryBtnText}>Leave Room</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.secondaryBtn, { flex: 1 }]}
+                  activeOpacity={0.75}
+                  onPress={onLeaveRoom ?? onHome}
+                >
+                  <OrbIcon name="log-out" size={15} color={THEME.colors.textPrimary} />
+                  <Text style={styles.secondaryBtnText}>Leave Room</Text>
+                </TouchableOpacity>
+              )
+            ) : type === 'online' ? (
+              <>
+                <TouchableOpacity
+                  style={styles.secondaryBtn}
+                  activeOpacity={0.75}
+                  onPress={onRematch}
+                >
+                  <OrbIcon name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
+                  <Text style={styles.secondaryBtnText}>Rematch</Text>
+                </TouchableOpacity>
+
+                {showNewGame ? (
+                  <TouchableOpacity
+                    style={styles.secondaryBtn}
+                    activeOpacity={0.75}
+                    onPress={onNewGame}
+                  >
+                    <OrbIcon name="play" size={15} color={THEME.colors.textPrimary} />
+                    <Text style={styles.secondaryBtnText}>New Game</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.secondaryBtn}
+                    activeOpacity={0.75}
+                    onPress={onHome}
+                  >
+                    <OrbIcon name="log-out" size={15} color={THEME.colors.textPrimary} />
+                    <Text style={styles.secondaryBtnText}>Exit Match</Text>
                   </TouchableOpacity>
                 )}
               </>
@@ -669,32 +672,6 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               </>
             )}
           </View>
-
-          {/* Copy Match Moves / Notation Button */}
-          {state.history && state.history.length > 0 && (
-            <TouchableOpacity
-              style={[
-                styles.copyMovesBtn,
-                copiedMoves && styles.copyMovesBtnCopied,
-              ]}
-              activeOpacity={0.75}
-              onPress={handleCopyMoves}
-            >
-              <OrbIcon
-                name={copiedMoves ? 'check' : 'copy'}
-                size={14}
-                color={copiedMoves ? '#69B342' : THEME.colors.textSecondary}
-              />
-              <Text
-                style={[
-                  styles.copyMovesText,
-                  copiedMoves && styles.copyMovesTextCopied,
-                ]}
-              >
-                {copiedMoves ? t('gameover.movesCopied') : t('gameover.copyMoves')}
-              </Text>
-            </TouchableOpacity>
-          )}
 
           {/* Opponent Profile Link */}
           {onViewOpponentProfile && opponentUserId && (
@@ -781,34 +758,6 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: THEME.colors.surfaceContainerLow,
     zIndex: 10,
-  },
-  copyMovesBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    marginTop: 10,
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    backgroundColor: THEME.colors.surfaceContainerLow,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceHairline,
-    width: '100%',
-  },
-  copyMovesBtnCopied: {
-    backgroundColor: 'rgba(105, 179, 66, 0.12)',
-    borderColor: '#69B342',
-  },
-  copyMovesText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: THEME.colors.textSecondary,
-    letterSpacing: 0.2,
-  },
-  copyMovesTextCopied: {
-    color: '#69B342',
-    fontWeight: '700',
   },
   headerBlock: {
     width: '100%',

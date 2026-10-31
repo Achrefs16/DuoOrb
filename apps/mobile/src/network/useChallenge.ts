@@ -4,6 +4,7 @@ import { ChallengeDto, GameSyncDto } from '@duoorb/protocol';
 import { TimeControl } from '../timeControls';
 import { socketManager } from './socket';
 import { playNotifySound } from '../audio/sounds';
+import { getBallSkinId, getWallSkinId } from '../theme/cosmeticsCatalog';
 
 export interface OutgoingChallenge {
   challenge: ChallengeDto;
@@ -92,6 +93,8 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
           timeControlMinutes: opts.clock.minutes,
           incrementSeconds: opts.clock.incrementSeconds ?? 0,
           wallsEach: opts.wallsEach,
+          ballSkinId: getBallSkinId(),
+          wallSkinId: getWallSkinId(),
         },
         (res) => {
           if (answered) return;
@@ -111,7 +114,12 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
   const respond = useCallback((accept: boolean) => {
     setIncoming((prev) => {
       if (prev) {
-        socketManager.getSocket().emit('challenge:respond', { challengeId: prev.id, accept });
+        socketManager.getSocket().emit('challenge:respond', {
+          challengeId: prev.id,
+          accept,
+          ballSkinId: getBallSkinId(),
+          wallSkinId: getWallSkinId(),
+        });
       }
       return null;
     });

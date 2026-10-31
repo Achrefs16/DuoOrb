@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { OrbIcon } from '../components/OrbIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { createInitialState } from '@duoorb/game-core';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
 import { useSession } from '../network/session';
@@ -20,7 +19,6 @@ import {
   AchievementsResponseDto,
   UserMeDto,
   RatingHistoryPointDto,
-  GameHistoryItemDto,
 } from '../network/apiClient';
 import { RatingChart } from '../components/RatingChart';
 import { AdBanner } from '../components/AdBanner';
@@ -34,7 +32,6 @@ import {
   tierOf,
 } from '../components/AchievementMedal';
 import { AchievementsModal } from '../components/AchievementsModal';
-import { MatchResultModal } from '../components/MatchResultModal';
 import { GuestGate } from '../components/GuestGate';
 import { PremiumBadge } from '../components/PremiumBadge';
 import { isPremiumActive, refreshPremium, usePremium } from '../monetization/premium';
@@ -42,7 +39,7 @@ import { toast } from '../components/AppToast';
 import { NoConnectionSection } from '../components/NoConnection';
 import { actionMessage, kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/errors';
 import { ProfileSkeleton } from '../components/Skeleton';
-import { SavedGameRecord, loadGameHistory, saveSettings } from '../storage/gameStorage';
+import { SavedGameRecord, saveSettings } from '../storage/gameStorage';
 import { CosmeticsCustomizerModal } from '../components/CosmeticsCustomizerModal';
 import { PremiumSheet } from '../components/PremiumSheet';
 import {
@@ -52,12 +49,6 @@ import {
   setBallSkinId,
   setWallSkinId,
 } from '../theme/cosmeticsCatalog';
-import {
-  deviceHistoryGames,
-  mapLocalGameToHistoryItem,
-  mergeHistoryItems,
-} from '../lib/historyMerge';
-import { modeDisplayName } from '../matchModes';
 
 interface ProfileScreenProps {
   onOpenSettings: () => void;
@@ -68,13 +59,9 @@ interface ProfileScreenProps {
   onOpenPlayerProfile?: (player: { userId: string; username: string }) => void;
 }
 
-type OutcomeFilter = 'ALL' | 'WINS' | 'LOSSES';
-
-const PAGE_SIZE = 10;
-
 /**
  * Last loaded bundle, keyed by account. Tab switches remount this screen,
- * so the previous profile and match history render on the first frame and
+ * so the previous profile and rating history render on the first frame and
  * refresh silently.
  */
 let profileCache: {
@@ -82,10 +69,6 @@ let profileCache: {
   profile: UserMeDto;
   ratingHistory: RatingHistoryPointDto[];
   achievements: AchievementsResponseDto | null;
-  games: GameHistoryItemDto[];
-  localGames: SavedGameRecord[];
-  serverLoaded: number;
-  serverTotal: number;
 } | null = null;
 
 function formatJoinedAt(value?: string | number): string | null {
@@ -142,25 +125,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     void saveSettings({ wallSkinId: id });
   }, []);
 
-  // Match History state
-  const [games, setGames] = useState<GameHistoryItemDto[]>([]);
-  const [localGames, setLocalGames] = useState<SavedGameRecord[]>([]);
-  const [filter, setFilter] = useState<OutcomeFilter>('ALL');
-  const [recentVisible, setRecentVisible] = useState(5);
-  const [selectedMatch, setSelectedMatch] = useState<GameHistoryItemDto | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  // Render mirrors of the refs above: refs drive async pagination, state
-  // drives the footer so it can update without reading refs during render.
-  const [serverLoaded, setServerLoaded] = useState(0);
-  const [serverTotal, setServerTotal] = useState(0);
-  const offsetRef = useRef(0);
-  const serverTotalRef = useRef(0);
-  const gamesRef = useRef<GameHistoryItemDto[]>([]);
-  // Synchronous guard: state alone lets a double-tap fire two pages at the
-  // same offset, which then skips a page of history.
-  const loadingMoreRef = useRef(false);
-  // Latest history request wins, so a slow silent refresh cannot overwrite a
-  // page the player just loaded.
   const historySeqRef = useRef(0);
 
   const formatJoined = (value?: string | number): string | null => {
@@ -191,114 +155,26 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       if (me) {
         setProfile(me);
         const prev = profileCache?.userId === me.id ? profileCache : null;
-        // Refresh the whole window already on screen, not just page 1: a
-        // silent remount must not throw away pages the player loaded.
-        const historyLimit = Math.max(PAGE_SIZE, prev?.serverLoaded ?? offsetRef.current);
-        const [rSettled, aSettled, localSaved, historySettled] = await Promise.allSettled([
+        const [rSettled, aSettled] = await Promise.allSettled([
           api.getRatingHistory(me.id, 'CLASSIC_1V1', 20),
           api.getMyAchievements(),
-          loadGameHistory(),
-          isGuest
-            ? Promise.resolve({ games: [], total: 0 })
-            : api.getMyHistory(historyLimit, 0),
         ]);
         if (seq !== historySeqRef.current) return;
+
+        const ratings = rSettled.status === 'fulfilled' ? rSettled.value : prev?.ratingHistory ?? [];
+        const achs = aSettled.status === 'fulfilled' ? aSettled.value : prev?.achievements ?? null;
 
         if (rSettled.status === 'fulfilled') setRatingHistory(rSettled.value);
         if (aSettled.status === 'fulfilled') setAchievements(aSettled.value);
 
-        const savedLocal = localSaved.status === 'fulfilled' ? localSaved.value : prev?.localGames ?? [];
-        setLocalGames(savedLocal);
-
-        const historyError = historySettled.status === 'rejected' ? historySettled.reason : null;
-        const serverRes = historySettled.status === 'fulfilled' ? historySettled.value : null;
-        const device = deviceHistoryGames(savedLocal);
-        const localItems = device.map(mapLocalGameToHistoryItem);
-
-        if (serverRes) {
-          const serverGames = serverRes.games;
-          const merged = mergeHistoryItems(serverGames, localItems);
-          setGames(merged);
-          gamesRef.current = merged;
-          offsetRef.current = serverGames.length;
-          serverTotalRef.current = serverRes.total;
-          setServerLoaded(serverGames.length);
-          setServerTotal(serverRes.total);
-
-          profileCache = {
-            userId: me.id,
-            profile: me,
-            ratingHistory: rSettled.status === 'fulfilled' ? rSettled.value : prev?.ratingHistory ?? [],
-            achievements: aSettled.status === 'fulfilled' ? aSettled.value : prev?.achievements ?? null,
-            games: merged,
-            localGames: savedLocal,
-            serverLoaded: serverGames.length,
-            serverTotal: serverRes.total,
-          };
-        } else {
-          // History request failed: keep every server row already loaded.
-          // Only the device games are refreshed; counters stay put.
-          const previousGames = prev?.games ?? gamesRef.current;
-          const merged = previousGames.length > 0
-            ? mergeHistoryItems(previousGames, localItems)
-            : localItems;
-          const keptLoaded = prev?.serverLoaded ?? offsetRef.current;
-          const keptTotal = prev?.serverTotal ?? serverTotalRef.current;
-
-          setGames(merged);
-          gamesRef.current = merged;
-          offsetRef.current = keptLoaded;
-          serverTotalRef.current = keptTotal;
-          setServerLoaded(keptLoaded);
-          setServerTotal(keptTotal);
-
-          if (prev) {
-            profileCache = {
-              ...prev,
-              profile: me,
-              localGames: savedLocal,
-              games: merged,
-            };
-          } else if (!silent && merged.length === 0 && !isGuest) {
-            setLoadError({
-              message: loadMessage(historyError),
-              kind: kindOf(historyError),
-            });
-          }
-        }
+        profileCache = {
+          userId: me.id,
+          profile: me,
+          ratingHistory: ratings,
+          achievements: achs,
+        };
       } else {
-        // Fallback for offline: load device matches, but never erase a list
-        // that is already on screen.
-        const prev =
-          userId && profileCache?.userId === userId ? profileCache : null;
-        try {
-          const savedLocal = await loadGameHistory();
-          setLocalGames(savedLocal);
-          const device = deviceHistoryGames(savedLocal);
-          const localItems = device.map(mapLocalGameToHistoryItem);
-          const previousGames = prev?.games ?? gamesRef.current;
-          const merged = previousGames.length > 0
-            ? mergeHistoryItems(previousGames, localItems)
-            : localItems;
-          const keptLoaded = prev?.serverLoaded ?? offsetRef.current;
-          const keptTotal = prev?.serverTotal ?? serverTotalRef.current;
-
-          setGames(merged);
-          gamesRef.current = merged;
-          offsetRef.current = keptLoaded;
-          serverTotalRef.current = keptTotal;
-          setServerLoaded(keptLoaded);
-          setServerTotal(keptTotal);
-
-          if (prev) {
-            profileCache = {
-              ...prev,
-              localGames: savedLocal,
-              games: merged,
-            };
-          }
-        } catch {}
-
+        const prev = userId && profileCache?.userId === userId ? profileCache : null;
         if (!silent && !prev) {
           setLoadError({ message: loadMessage(meError), kind: kindOf(meError) });
         }
@@ -310,13 +186,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     } finally {
       if (seq === historySeqRef.current) setLoading(false);
     }
-  }, [isGuest, userId]);
+  }, [userId]);
 
-  useEffect(() => {
-    gamesRef.current = games;
-  }, [games]);
-
-  // Invalidate any in-flight history request when this screen unmounts, so a
+  // Invalidate any in-flight request when this screen unmounts, so a
   // remounted screen's cache cannot be overwritten by the old instance.
   useEffect(() => () => {
     historySeqRef.current += 1;
@@ -328,120 +200,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       setProfile(mine.profile);
       setRatingHistory(mine.ratingHistory);
       setAchievements(mine.achievements);
-      setGames(mine.games);
-      setLocalGames(mine.localGames);
-      offsetRef.current = mine.serverLoaded;
-      serverTotalRef.current = mine.serverTotal;
-      setServerLoaded(mine.serverLoaded);
-      setServerTotal(mine.serverTotal);
       setLoading(false);
       fetchProfileData(true);
     } else {
       fetchProfileData();
     }
   }, [fetchProfileData, userId]);
-
-  const loadMore = useCallback(async () => {
-    if (loading || loadingMoreRef.current || isGuest) return;
-    if (offsetRef.current >= serverTotalRef.current) return;
-    loadingMoreRef.current = true;
-    const seq = ++historySeqRef.current;
-    setLoadingMore(true);
-    try {
-      const serverRes = await api.getMyHistory(PAGE_SIZE, offsetRef.current);
-      if (!serverRes || seq !== historySeqRef.current) return;
-
-      const merged = mergeHistoryItems(serverRes.games, gamesRef.current);
-      gamesRef.current = merged;
-      setGames(merged);
-      offsetRef.current += serverRes.games.length;
-      serverTotalRef.current = serverRes.total;
-      setServerLoaded(offsetRef.current);
-      setServerTotal(serverRes.total);
-      if (profileCache && profileCache.userId === userId) {
-        profileCache.serverLoaded = offsetRef.current;
-        profileCache.serverTotal = serverRes.total;
-        profileCache.games = merged;
-      }
-    } catch (e) {
-      toast.show(loadMessage(e) ?? t('history.loadFailed'));
-    } finally {
-      loadingMoreRef.current = false;
-      setLoadingMore(false);
-    }
-  }, [isGuest, loading, t, userId]);
-
-  const resolveRecord = (
-    gameItem: GameHistoryItemDto,
-    done: (record: SavedGameRecord) => void
-  ) => {
-    const localMatch = localGames.find((lg) => lg.id === gameItem.gameId);
-    if (localMatch) {
-      setSelectedMatch(null);
-      done(localMatch);
-      return;
-    }
-
-    api.getGameReplay(gameItem.gameId)
-      .then((replay) => {
-        if (replay) {
-          const initial = createInitialState({
-            gameId: replay.gameId,
-            mode: replay.mode,
-            playerNames: replay.players.map((p: any) => p.displayName),
-          });
-          const viewer = identity?.userId
-            ? replay.players.find((p: any) => p.userId === identity.userId)
-            : undefined;
-          const viewerSeatId = viewer ? `p${viewer.playerIndex + 1}` : null;
-          const record: SavedGameRecord = {
-            id: replay.gameId,
-            date: new Date(replay.endedAt).getTime(),
-            mode: replay.mode,
-            type: 'online',
-            winnerId: replay.winnerId,
-            winnerName: replay.players.find((p: any) => p.isWinner)?.displayName ?? 'Winner',
-            myPlayerId: viewerSeatId,
-            perspectivePlayerId: viewerSeatId ?? 'p1',
-            isViewerSeated: viewerSeatId != null,
-            endedReason: replay.endedReason ?? 'GOAL',
-            timeControlMinutes: replay.timeControlMinutes,
-            incrementSeconds: replay.incrementSeconds,
-            totalMoves: replay.moves.length,
-            durationSeconds: Math.floor(
-              (new Date(replay.endedAt).getTime() - new Date(replay.startedAt || replay.endedAt).getTime()) / 1000
-            ),
-            initialState: initial,
-            history: replay.moves.map((m: any) => ({
-              sequence: m.sequence,
-              playerId: `p${m.playerIndex + 1}`,
-              action: m.payload,
-              timestamp: m.serverTimestamp,
-            })),
-          };
-          setSelectedMatch(null);
-          done(record);
-        }
-      })
-      .catch(() => {
-        toast.show(t('history.replayFailed'));
-      });
-  };
-
-  const filteredGames = useMemo(() => {
-    return games.filter((g) => {
-      if (filter === 'WINS') return g.outcome === 'WIN';
-      if (filter === 'LOSSES') return g.outcome === 'LOSS';
-      return true;
-    });
-  }, [games, filter]);
-
-  // A filter can be empty while older pages still contain matching rows. Keep
-  // that state distinct from a brand-new account with no matches at all.
-  const filterHasNoLoadedMatches = games.length > 0 && filter !== 'ALL';
-
-  const winCount = useMemo(() => games.filter((g) => g.outcome === 'WIN').length, [games]);
-  const lossCount = useMemo(() => games.filter((g) => g.outcome === 'LOSS').length, [games]);
 
   const rating1v1 = profile?.ratings?.CLASSIC_1V1?.rating ?? 1500;
   const wins = profile?.ratings?.CLASSIC_1V1?.wins ?? 0;
@@ -727,168 +491,31 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <RatingChart data={ratingHistory} currentRating={rating1v1} />
           </View>
 
-          {/* Embedded Match History Section */}
-          <View style={styles.historySection}>
-            <View style={styles.historyHeaderRow}>
-              <View>
-                <Text style={styles.sectionHeading}>{t('history.title')}</Text>
-                <Text style={styles.historySub}>
-                  {t('profile.latestGames', { count: games.length })}
-                </Text>
+          {/* Match History Navigation Button */}
+          {onOpenHistory && (
+            <TouchableOpacity
+              style={styles.matchHistoryBtn}
+              activeOpacity={0.75}
+              onPress={onOpenHistory}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.matchHistory')}
+            >
+              <View style={styles.matchHistoryBtnLeft}>
+                <View style={styles.matchHistoryIconWrap}>
+                  <OrbIcon name="clock" size={20} color={THEME.colors.primary} />
+                </View>
+                <View style={styles.matchHistoryBtnInfo}>
+                  <Text style={styles.matchHistoryBtnTitle}>
+                    {t('profile.matchHistory')}
+                  </Text>
+                  <Text style={styles.matchHistoryBtnSub}>
+                    {t('profile.matchHistorySub')}
+                  </Text>
+                </View>
               </View>
-              {onOpenHistory && (
-                <TouchableOpacity
-                  style={styles.fullHistoryBtn}
-                  onPress={onOpenHistory}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.fullHistoryText}>Full History</Text>
-                  <OrbIcon name="chevron-right" size={14} color={THEME.colors.primary} />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {isGuest && (
-              <GuestGate
-                title={t('profile.keepEveryMatch')}
-                message={t('profile.keepEveryMatchDesc')}
-                mini
-              />
-            )}
-
-            {/* Filter Pills with counts */}
-            <View style={styles.filterPillsRow}>
-              {(['ALL', 'WINS', 'LOSSES'] as OutcomeFilter[]).map((f) => {
-                const count = f === 'ALL' ? games.length : f === 'WINS' ? winCount : lossCount;
-                const label = f === 'ALL' ? t('profile.all') : f === 'WINS' ? t('profile.wins') : t('profile.losses');
-                return (
-                  <TouchableOpacity
-                    key={f}
-                    style={[styles.filterPill, filter === f && styles.filterPillActive]}
-                    onPress={() => {
-                      setFilter(f);
-                      setRecentVisible(5);
-                    }}
-                  >
-                    <Text style={[styles.filterPillText, filter === f && styles.filterPillTextActive]}>
-                      {label} ({count})
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Match rows list */}
-            {filteredGames.length > 0 ? (
-              <View style={styles.matchesList}>
-                {filteredGames.slice(0, recentVisible).map((item, index) => {
-                  const isWin = item.outcome === 'WIN';
-                  const isNeutral = item.outcome === 'DRAW';
-                  const delta = item.myRating?.delta ?? 0;
-                  const opponentName = item.opponent?.displayName || item.opponent?.username || t('history.opponent');
-                  const opponentRating = item.opponent?.ratingBefore ?? item.opponent?.ratingAfter;
-                  const pts = item.isRanked
-                    ? ` · ${delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`} pts`
-                    : '';
-                  const isFirst = index === 0;
-                  const isLast = index === Math.min(filteredGames.length, recentVisible) - 1;
-
-                  return (
-                    <TouchableOpacity
-                      key={item.gameId}
-                      style={[
-                        styles.matchRow,
-                        isFirst && styles.matchRowFirst,
-                        isLast && styles.matchRowLast,
-                        !isLast && styles.matchRowDivider,
-                      ]}
-                      activeOpacity={0.75}
-                      onPress={() => setSelectedMatch(item)}
-                    >
-                      <View
-                        style={[
-                          styles.miniOutcomeBadge,
-                          isWin ? styles.badgeWin : isNeutral ? styles.badgeNeutral : styles.badgeLoss,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.miniOutcomeText,
-                            isWin ? styles.textWin : isNeutral ? styles.textNeutral : styles.textLoss,
-                          ]}
-                        >
-                          {isWin ? 'W' : isNeutral ? '–' : 'L'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.matchRowMeta}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Text style={styles.matchRowOpponent} numberOfLines={1}>
-                            {t('gameover.vs', { name: opponentName })}
-                            {opponentRating !== undefined && opponentRating !== null ? (
-                              <Text style={styles.matchRowOppRating}> ({Math.round(opponentRating)})</Text>
-                            ) : null}
-                          </Text>
-                          {item.opponent?.isPremium && <PremiumBadge size="xs" />}
-                        </View>
-                        <Text style={styles.matchRowMode}>
-                          {item.isRanked ? t('history.ranked') : t('history.practice')} · {modeDisplayName(item.mode)}
-                          {pts}
-                        </Text>
-                      </View>
-
-                      <OrbIcon name="chevron-right" size={20} color={THEME.colors.textSecondaryStrong} />
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ) : (
-              <View style={styles.emptyMatchesCard}>
-                <OrbIcon
-                  name={filterHasNoLoadedMatches ? 'filter' : 'clock'}
-                  size={28}
-                  color={THEME.colors.textMuted}
-                />
-                <Text style={styles.emptyMatchesTitle}>
-                  {filterHasNoLoadedMatches
-                    ? t('history.filteredEmpty')
-                    : t('history.noMatchesRecorded')}
-                </Text>
-                <Text style={styles.emptyMatchesSub}>
-                  {filterHasNoLoadedMatches
-                    ? t('history.filteredEmptySub')
-                    : t('history.noMatchesSub')}
-                </Text>
-              </View>
-            )}
-
-            {/* Pagination / Load more */}
-            {filteredGames.length > recentVisible ? (
-              <TouchableOpacity
-                style={styles.loadMoreMatchesBtn}
-                activeOpacity={0.8}
-                onPress={() => setRecentVisible((v) => v + 5)}
-              >
-                <Text style={styles.loadMoreMatchesText}>
-                  {t('profile.loadMore')} ({recentVisible}/{filteredGames.length})
-                </Text>
-              </TouchableOpacity>
-            ) : !isGuest && serverLoaded < serverTotal ? (
-              <TouchableOpacity
-                style={[styles.loadMoreMatchesBtn, loadingMore && styles.loadMoreMatchesBtnBusy]}
-                activeOpacity={0.8}
-                disabled={loadingMore}
-                onPress={() => void loadMore()}
-              >
-                <Text style={styles.loadMoreMatchesText}>
-                  {loadingMore
-                    ? t('history.loading')
-                    : `${t('history.loadMore')} (${serverLoaded}/${serverTotal})`}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
+              <OrbIcon name="chevron-right" size={20} color={THEME.colors.textMuted} />
+            </TouchableOpacity>
+          )}
 
           {/* Ad slot: bottom of the page, below all actions. */}
           <AdBanner placement="list" />
@@ -996,15 +623,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </View>
         </View>
       </Modal>
-
-      {/* Match detail modal */}
-      <MatchResultModal
-        match={selectedMatch}
-        onClose={() => setSelectedMatch(null)}
-        onReplay={(item) => resolveRecord(item, (rec) => onSelectGame?.(rec))}
-        onAnalyze={(item) => resolveRecord(item, (rec) => onAnalyzeGame?.(rec))}
-        onViewOpponentProfile={onOpenPlayerProfile}
-      />
 
       {/* Equipment & Style Customizer Sheet */}
       <CosmeticsCustomizerModal
@@ -1524,183 +1142,45 @@ const createStyles = () => StyleSheet.create({
     letterSpacing: 0.8,
     paddingHorizontal: 2,
   },
-  historySection: {
-    marginTop: 18,
-    gap: 12,
-  },
-  historyHeaderRow: {
+  matchHistoryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 2,
-  },
-  historySub: {
-    fontFamily: THEME.fonts.regular,
-    fontSize: 12,
-    color: THEME.colors.textMuted,
-    marginTop: 2,
-  },
-  fullHistoryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  fullHistoryText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 13,
-    color: THEME.colors.primary,
-  },
-  filterPillsRow: {
-    flexDirection: 'row',
-    gap: 4,
-    backgroundColor: THEME.colors.surfaceMuted,
-    borderRadius: 12,
-    padding: 4,
-    alignSelf: 'flex-start',
-  },
-  filterPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-  },
-  filterPillActive: {
-    backgroundColor: THEME.colors.inverseSurface,
-  },
-  filterPillText: {
-    fontFamily: THEME.fonts.medium,
-    fontSize: 12,
-    fontWeight: '500',
-    color: THEME.colors.textOnMuted,
-  },
-  filterPillTextActive: {
-    color: THEME.colors.inverseOnSurface,
-    fontWeight: '600',
-  },
-  matchesList: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    ...THEME.shadows.card,
-  },
-  matchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    backgroundColor: THEME.colors.backgroundCard,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: THEME.colors.surfaceMuted,
-  },
-  matchRowFirst: {
-    borderTopWidth: 1,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-  },
-  matchRowLast: {
-    borderBottomWidth: 1,
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
-  },
-  matchRowDivider: {
-    borderBottomWidth: 1,
-    borderBottomColor: THEME.colors.surfaceMuted,
-  },
-  miniOutcomeBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeWin: {
-    backgroundColor: THEME.colors.win,
-  },
-  badgeLoss: {
-    backgroundColor: THEME.colors.loss,
-  },
-  badgeNeutral: {
-    backgroundColor: THEME.colors.draw,
-  },
-  miniOutcomeText: {
-    fontFamily: THEME.fonts.extraBold,
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  textWin: {
-    color: '#FFFFFF',
-  },
-  textLoss: {
-    color: '#FFFFFF',
-  },
-  textNeutral: {
-    color: '#FFFFFF',
-  },
-  matchRowMeta: {
-    gap: 2,
-    flex: 1,
-  },
-  matchRowOpponent: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 14,
-    fontWeight: '600',
-    color: THEME.colors.textPrimary,
-  },
-  matchRowOppRating: {
-    fontFamily: THEME.fonts.regular,
-    fontSize: 13,
-    fontWeight: '400',
-    color: THEME.colors.textSecondary,
-  },
-  matchRowMode: {
-    fontFamily: THEME.fonts.regular,
-    fontSize: 12,
-    color: THEME.colors.textSecondary,
-  },
-  emptyMatchesCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 36,
-    paddingHorizontal: 20,
     backgroundColor: THEME.colors.backgroundCard,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: THEME.colors.surfaceMuted,
-    gap: 6,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    ...THEME.shadows.card,
   },
-  emptyMatchesTitle: {
+  matchHistoryBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  matchHistoryIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: THEME.colors.surfaceContainerLowest,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  matchHistoryBtnInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  matchHistoryBtnTitle: {
     fontFamily: THEME.fonts.bold,
     fontSize: 15,
     fontWeight: '700',
     color: THEME.colors.textPrimary,
-    marginTop: 6,
   },
-  emptyMatchesSub: {
+  matchHistoryBtnSub: {
     fontFamily: THEME.fonts.regular,
     fontSize: 12,
     color: THEME.colors.textMuted,
-    textAlign: 'center',
-  },
-  loadMoreMatchesBtn: {
-    paddingVertical: 11,
-    borderRadius: THEME.radius.md,
-    backgroundColor: THEME.colors.surfaceContainerLowest,
-    borderWidth: 1,
-    borderColor: THEME.colors.surfaceContainer,
-    alignItems: 'center',
-    ...THEME.shadows.card,
-  },
-  loadMoreMatchesBtnBusy: {
-    opacity: 0.6,
-  },
-  loadMoreMatchesText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 13,
-    fontWeight: '600',
-    color: THEME.colors.textPrimary,
-    fontVariant: ['tabular-nums'],
   },
 });

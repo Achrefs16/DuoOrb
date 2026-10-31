@@ -6,7 +6,7 @@ import { useSyncExternalStore } from 'react';
 import { SERVER_URL } from './config';
 import { getIdentity, subscribeIdentity } from './auth';
 import { isTokenFresh } from './tokenFreshness';
-import { getBallSkinId, getWallSkinId } from '../theme/cosmeticsCatalog';
+import { getBallSkinId, getWallSkinId, syncCosmeticsToServer } from '../theme/cosmeticsCatalog';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
 
@@ -598,6 +598,7 @@ class SocketManager {
       if (state?.verified === true) {
         this.clearAuthRetry();
         this.setVerified(true);
+        syncCosmeticsToServer();
         // The server has accepted this transport's credential and published
         // the user route. Only now is every queued gameplay intent safe to
         // send. Flushing on raw `connect` sent game:join before the async

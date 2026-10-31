@@ -31,9 +31,31 @@ function checkTool(tool) {
 }
 
 // 1. Android Build
-if (checkTool('cargo-ndk')) {
+if (checkTool('cargo ndk')) {
+  if (!process.env.ANDROID_NDK_HOME) {
+    const sdkBase =
+      process.env.ANDROID_HOME ||
+      process.env.ANDROID_SDK_ROOT ||
+      (process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Android', 'Sdk') : '');
+    const ndkRoot = sdkBase ? path.join(sdkBase, 'ndk') : '';
+    if (ndkRoot && fs.existsSync(ndkRoot)) {
+      const versions = fs.readdirSync(ndkRoot).sort();
+      if (versions.length > 0) {
+        process.env.ANDROID_NDK_HOME = path.join(ndkRoot, versions[versions.length - 1]);
+        console.log(`[duoorb-ai-mobile] Auto-detected ANDROID_NDK_HOME=${process.env.ANDROID_NDK_HOME}`);
+      }
+    }
+  }
+  let installedTargets = '';
+  try {
+    installedTargets = execSync('rustup target list --installed', { encoding: 'utf8' });
+  } catch {}
   console.log('[duoorb-ai-mobile] cargo-ndk detected. Compiling Android binaries...');
   for (const { target, abi } of ANDROID_TARGETS) {
+    if (installedTargets && !installedTargets.includes(target)) {
+      console.log(`[duoorb-ai-mobile] Skipping ${target} (rustup target not installed).`);
+      continue;
+    }
     try {
       console.log(`[duoorb-ai-mobile] Compiling target ${target} (${abi})...`);
       execSync(`cargo ndk --target ${target} --platform 24 build --release`, { cwd: ROOT_DIR, stdio: 'inherit' });

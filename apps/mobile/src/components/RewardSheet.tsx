@@ -33,8 +33,8 @@ interface RewardSheetProps {
   /** Paywall entry (P7): unlimited analysis with no ads. */
   onPremium: () => void;
   onClose: () => void;
-  /** Copy variant: analysis unlock (default), offline +3 Undo, unified assist, or locked bot pass. */
-  variant?: 'analysis' | 'undo' | 'assist' | 'bot';
+  /** Copy variant: analysis unlock (default), offline Undo, offline Hint, unified assist, or locked bot pass. */
+  variant?: 'analysis' | 'undo' | 'hint' | 'assist' | 'bot';
   /** Whether the user has reached the max rewarded ad limit for this match */
   watchLimitReached?: boolean;
 }
@@ -55,85 +55,83 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
   const slide = useSheetSlide(visible);
 
   const isUndo = variant === 'undo';
+  const isHint = variant === 'hint';
   const isAssist = variant === 'assist';
   const isBot = variant === 'bot';
 
-  const title = isAssist
-    ? 'Match Assists'
-    : isBot
-      ? 'Unlock Bot'
-      : isUndo
-        ? t('undoSheet.title')
-        : t('reward.title');
-
-  const headerIcon = isAssist
-    ? 'help-circle'
-    : isBot
-      ? 'cpu'
-      : isUndo
-        ? 'rotate-ccw'
-        : 'zap';
-
-  const features = isAssist
-    ? [
-        '9 Hints & Undos in bot matches (vs 1 free)',
-        '100% Ad-Free across the entire app',
-        'Unlimited Match Analysis & all bots unlocked',
-        'Exclusive Ball & Wall Cosmetics',
-      ]
-    : isBot
-      ? [
-        'Unlock all 39 Bots forever',
-        '9 Hints & Undos in bot matches (vs 1 free)',
-        '100% Ad-Free across the entire app',
-        'Unlimited Match Analysis & Exclusive Cosmetics',
-      ]
+  const title = isHint
+    ? t('hintSheet.title')
     : isUndo
+      ? t('undoSheet.title')
+      : isAssist
+        ? 'Match Assists'
+        : isBot
+          ? t('bots.unlockBotTitle')
+          : t('reward.title');
+
+  const headerIcon = isHint
+    ? 'help-circle'
+    : isUndo
+      ? 'rotate-ccw'
+      : isAssist
+        ? 'help-circle'
+        : isBot
+          ? 'cpu'
+          : 'zap';
+
+  const features = isHint || isUndo || isAssist
+    ? [
+        t('reward.featAssists'),
+        t('reward.featNoAds'),
+        t('reward.featAnalysisAndBots'),
+        t('reward.featCosmetics'),
+      ]
+    : isBot
       ? [
-        '9 Hints & Undos in bot matches (vs 1 free)',
-        '100% Ad-Free across the entire app',
-        'Unlimited Match Analysis & all bots unlocked',
-        'Exclusive Ball & Wall Cosmetics',
+        t('reward.featAllBots'),
+        t('reward.featAssists'),
+        t('reward.featNoAds'),
+        t('reward.featCosmetics'),
       ]
     : [
-        '100% Ad-Free across the entire app',
-        'Unlimited Match Analysis for every game',
-        'Unlock all Master Bots forever',
-        '9 Hints & Undos in bot matches (vs 1 free)',
-        'Exclusive Ball & Wall Cosmetics',
+        t('reward.featNoAds'),
+        t('reward.featAnalysisAndBots'),
+        t('reward.featAllBots'),
+        t('reward.featAssists'),
+        t('reward.featCosmetics'),
       ];
 
-  const premiumTitle = isAssist
-    ? 'Get 9 Assists with Premium'
+  const premiumTitle = isHint || isUndo || isAssist
+    ? t('reward.goPremiumAssists')
     : isBot
-      ? 'Unlock All Bots with Premium'
-      : isUndo
-        ? 'Unlimited Undos with Premium'
-        : t('reward.goPremium');
+      ? t('reward.goPremiumBots')
+      : t('reward.goPremium');
 
-  const premiumSubtitle = isAssist
-    ? 'No ads · 9 assists every match'
+  const premiumSubtitle = isHint || isUndo || isAssist
+    ? t('reward.subAssists')
     : isBot
-      ? 'No ads · All 39 bots unlocked'
-      : isUndo
-        ? 'No ads · 9 assists every match'
-        : 'No ads · All bots, cosmetics & 9 assists';
+      ? t('reward.subBots')
+      : t('reward.subAnalysis');
 
-  const watchTitle = isAssist
-    ? 'Watch Video (+3 Assists)'
-    : isBot
-      ? 'Watch Video to Unlock'
-      : isUndo
-        ? t('undoSheet.watch')
-        : 'Watch Video for 1 Review';
+  const watchTitle = isHint
+    ? t('hintSheet.watch')
+    : isUndo
+      ? t('undoSheet.watch')
+      : isAssist
+        ? t('hintSheet.watch')
+        : isBot
+          ? t('bots.watchToUnlock')
+          : t('reward.watchOneReview');
 
-  const watchSubtitle = isAssist
-    ? '3 free assists for this game'
-    : isBot
-      ? 'Permanently unlocks this bot'
-      : isUndo
-        ? '3 free undos for this game'
-        : 'Unlocks this match analysis only';
+  const watchSubtitle = isHint
+    ? t('hintSheet.watchSub')
+    : isUndo
+      ? t('undoSheet.watchSub')
+      : isAssist
+        ? t('hintSheet.watchSub')
+        : isBot
+          ? t('bots.watchToUnlockSub')
+          : t('reward.watchOneReviewSub');
 
   const getErrorCopy = (err: string): string => {
     switch (err) {
@@ -221,7 +219,7 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
                   </View>
                 </View>
                 <View style={styles.premiumCtaBox}>
-                  <Text style={styles.premiumCtaText}>Subscribe</Text>
+                  <Text style={styles.premiumCtaText}>{t('reward.subscribe')}</Text>
                   <OrbIcon name="chevron-right" size={14} color="#FFFFFF" />
                 </View>
               </View>
@@ -255,7 +253,7 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
                       </View>
                     </View>
                     <View style={styles.watchFreePill}>
-                      <Text style={styles.watchFreePillText}>FREE</Text>
+                      <Text style={styles.watchFreePillText}>{t('reward.free')}</Text>
                     </View>
                   </View>
                 )}

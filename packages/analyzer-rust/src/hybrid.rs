@@ -1,5 +1,4 @@
 use std::sync::OnceLock;
-use std::path::Path;
 
 use crate::adapter::adapt_prediction;
 use crate::neural::{map_index_to_action, NeuralEvaluator};
@@ -22,24 +21,42 @@ pub fn get_global_evaluator() -> Option<&'static NeuralEvaluator> {
     }
     GLOBAL_NEURAL_EVALUATOR
         .get_or_init(|| {
-            let possible_paths = [
-                "models/quoridor_9x9.onnx",
-                "packages/analyzer-rust/models/quoridor_9x9.onnx",
-                "../analyzer-rust/models/quoridor_9x9.onnx",
-                "../../packages/analyzer-rust/models/quoridor_9x9.onnx",
-            ];
+            #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
+            {
+                use std::path::Path;
+                let possible_paths = [
+                    "models/quoridor_9x9.onnx",
+                    "packages/analyzer-rust/models/quoridor_9x9.onnx",
+                    "../analyzer-rust/models/quoridor_9x9.onnx",
+                    "../../packages/analyzer-rust/models/quoridor_9x9.onnx",
+                ];
 
-            for path_str in possible_paths {
-                let path = Path::new(path_str);
-                if path.exists() {
-                    match NeuralEvaluator::load_from_path(path) {
-                        Ok(evaluator) => {
-                            eprintln!("[duoorb-ai] Loaded ONNX neural model from {}", path_str);
-                            return Some(evaluator);
+                for path_str in possible_paths {
+                    let path = Path::new(path_str);
+                    if path.exists() {
+                        match NeuralEvaluator::load_from_path(path) {
+                            Ok(evaluator) => {
+                                eprintln!("[duoorb-ai] Loaded ONNX neural model from {}", path_str);
+                                return Some(evaluator);
+                            }
+                            Err(err) => {
+                                eprintln!("[duoorb-ai] Failed to load ONNX model from {}: {}", path_str, err);
+                            }
                         }
-                        Err(err) => {
-                            eprintln!("[duoorb-ai] Failed to load ONNX model from {}: {}", path_str, err);
-                        }
+                    }
+                }
+            }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                const EMBEDDED_MODEL_BYTES: &[u8] = include_bytes!("../models/quoridor_9x9.onnx");
+                match NeuralEvaluator::load_from_bytes(EMBEDDED_MODEL_BYTES) {
+                    Ok(evaluator) => {
+                        eprintln!("[duoorb-ai] Loaded embedded ONNX neural model ({} bytes)", EMBEDDED_MODEL_BYTES.len());
+                        return Some(evaluator);
+                    }
+                    Err(err) => {
+                        eprintln!("[duoorb-ai] Failed to load embedded ONNX model: {}", err);
                     }
                 }
             }

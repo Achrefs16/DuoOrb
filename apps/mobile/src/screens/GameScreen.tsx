@@ -135,6 +135,8 @@ interface GameScreenProps {
   testThink?: boolean;
   sideChoice?: SideChoice;
   onHome: () => void;
+  onReturnToRoom?: () => void;
+  onLeaveRoom?: () => void;
   onNewGame: () => void;
   onRematchAccepted?: (newGameId: string) => void;
   onAnalyze: (
@@ -262,6 +264,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   sideChoice = 'blue',
   wallsEach,
   onHome,
+  onReturnToRoom,
+  onLeaveRoom,
   onNewGame,
   onRematchAccepted,
   onAnalyze,
@@ -1856,14 +1860,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const handleUndoPress = useCallback(() => {
     if (!undoAvailable) return;
     if (type === 'ai') {
-      if (assistsState.remaining <= 0) {
-        if (isPremiumActive(premiumState)) {
-          setAssistsState((prev) => refillAssists(prev));
-          toast.show('👑 Premium: Assists refilled (9/9)');
-          executeUndoMove();
+      if (assistsState.undosRemaining <= 0) {
+        if (!canRefillAssists(assistsState, 'undo')) {
           return;
         }
         setPendingAssistAction('undo');
+        setAssistError(null);
         setAssistSheetOpen(true);
         return;
       }
@@ -1874,11 +1876,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         setLostStarIndex(1);
         setStarFeedbackTrigger((k) => k + 1);
       }
-      setAssistsState((prev) => consumeAssist(prev).next);
+      setAssistsState((prev) => consumeAssist(prev, 'undo').next);
       assistsUsedRef.current += 1;
     }
     executeUndoMove();
-  }, [undoAvailable, type, assistsState, premiumState, executeUndoMove]);
+  }, [undoAvailable, type, assistsState, executeUndoMove]);
 
   // Quick reactions: the dock is visible in live online matches AND in 2p
   // AI games; the sending tray is online-only. In AI games the USER sends
@@ -1974,8 +1976,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         // offline — nothing to free server-side
       }
     }
+    if (type === 'online' && onlineSource === 'room' && onLeaveRoom) {
+      onLeaveRoom();
+      return;
+    }
     onHome();
-  }, [type, onlineGameId, onHome]);
+  }, [type, onlineGameId, onlineSource, onLeaveRoom, onHome]);
 
   const handleBackPress = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization
@@ -2107,22 +2113,21 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
   }, [humanTurn, currentPlayer, state.status, displayState, hintLoading]);
 
-  const handleHintPress = useCallback(async () => {
+  const handleHintPress = useCallback(() => {
     if (!humanTurn || !currentPlayer || state.status !== 'IN_PROGRESS' || hintLoading) {
       return;
     }
     if (type === 'ai') {
-      if (assistsState.remaining <= 0) {
-        if (isPremiumActive(premiumState)) {
-          setAssistsState((prev) => refillAssists(prev));
-          toast.show('👑 Premium: Assists refilled (9/9)');
-          void executeHint();
+      if (assistsState.hintsRemaining <= 0) {
+        if (!canRefillAssists(assistsState, 'hint')) {
           return;
         }
         setPendingAssistAction('hint');
+        setAssistError(null);
         setAssistSheetOpen(true);
         return;
       }
+      // Immediately trigger star loss animation directly on click
       if (assistsState.used === 0) {
         setLostStarIndex(2);
         setStarFeedbackTrigger((k) => k + 1);
@@ -2130,28 +2135,50 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         setLostStarIndex(1);
         setStarFeedbackTrigger((k) => k + 1);
       }
-      setAssistsState((prev) => consumeAssist(prev).next);
+      setAssistsState((prev) => consumeAssist(prev, 'hint').next);
       assistsUsedRef.current += 1;
     }
-    void executeHint();
-  }, [humanTurn, currentPlayer, state.status, hintLoading, type, assistsState, premiumState, executeHint]);
+    // Defer executeHint to next tick so star loss feedback renders immediately on click
+    setTimeout(() => {
+      void executeHint();
+    }, 16);
+  }, [humanTurn, currentPlayer, state.status, hintLoading, type, assistsState, executeHint]);
 
   const handleAssistWatch = useCallback(async () => {
+    const kind = pendingAssistAction ?? 'hint';
     setAssistBusy(true);
     setAssistError(null);
-    const res = await showRewarded('assist');
+    const res = await showRewarded(kind === 'undo' ? 'undo' : 'assist');
     if (res.earned) {
-      setAssistsState((prev) => refillAssists(prev));
+      setAssistsState((prev) => refillAssists(prev, kind));
       setAssistSheetOpen(false);
       setAssistBusy(false);
       const pending = pendingAssistAction;
       setPendingAssistAction(null);
       if (pending === 'hint') {
         setTimeout(() => {
+          if (assistsUsedRef.current === 0) {
+            setLostStarIndex(2);
+            setStarFeedbackTrigger((k) => k + 1);
+          } else if (assistsUsedRef.current === 1) {
+            setLostStarIndex(1);
+            setStarFeedbackTrigger((k) => k + 1);
+          }
+          setAssistsState((prev) => consumeAssist(prev, 'hint').next);
+          assistsUsedRef.current += 1;
           void executeHint();
         }, 150);
       } else if (pending === 'undo') {
         setTimeout(() => {
+          if (assistsUsedRef.current === 0) {
+            setLostStarIndex(2);
+            setStarFeedbackTrigger((k) => k + 1);
+          } else if (assistsUsedRef.current === 1) {
+            setLostStarIndex(1);
+            setStarFeedbackTrigger((k) => k + 1);
+          }
+          setAssistsState((prev) => consumeAssist(prev, 'undo').next);
+          assistsUsedRef.current += 1;
           executeUndoMove();
         }, 150);
       }
@@ -2724,16 +2751,18 @@ useEffect(() => {
 
               {/* Bot Speech Bubble in center */}
               {botDialogue.text ? (
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={botDialogue.dismiss}
-                  style={styles.botSpeechBubble}
-                >
-                  <View style={styles.bubbleTail} />
-                  <Text style={styles.botSpeechText} numberOfLines={2}>
-                    {botDialogue.text}
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.botSpeechBubbleWrap}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={botDialogue.dismiss}
+                    style={styles.botSpeechBubble}
+                  >
+                    <View style={styles.bubbleTail} />
+                    <Text style={styles.botSpeechText} numberOfLines={3}>
+                      {botDialogue.text}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
                 <View style={{ flex: 1 }} />
               )}
@@ -2750,7 +2779,7 @@ useEffect(() => {
             </View>
           );
         })()
-      ) : type === 'online' ? (
+      ) : (
         <View pointerEvents={wallDrag ? 'none' : 'auto'}>
           <OnlineOpponentRow
             players={topList}
@@ -2762,33 +2791,7 @@ useEffect(() => {
             seatPremium={seatPremium}
             reactionsBySeat={groupedReactions.bySeat}
             onReactionDone={reactions.dismiss}
-            onPressPlayer={handleOpponentPress}
-            surface={hudSurface}
-          />
-        </View>
-      ) : (
-        <View
-          pointerEvents={wallDrag ? 'none' : 'auto'}
-          style={[
-            styles.topStripWrap,
-            isMultiplayer ? { width: measuredBoardSize, alignSelf: 'center' } : null,
-          ]}
-        >
-          <PlayerStrip
-            state={topStripState}
-            timers={timers}
-            ratings={seatRatings}
-            countryFlags={seatCountryFlags}
-            compact
-            compactStats={compactMatchStats}
-            grid={splitActive}
-            bonus={lastBonus}
-            seatStatus={onlineSeatStatus}
-            seatPremium={seatPremium}
-            botAvatarKeyBySeat={botAvatarKeyBySeat}
-            reactionsBySeat={groupedReactions.bySeat}
-            onReactionDone={reactions.dismiss}
-            onPressPlayer={handleOpponentPress}
+            onPressPlayer={type === 'online' ? handleOpponentPress : undefined}
             surface={hudSurface}
           />
         </View>
@@ -2901,44 +2904,21 @@ useEffect(() => {
                 </View>
               );
             })()
-          ) : type === 'online' ? (
-            seatPlayer ? (
-              <View pointerEvents={wallDrag ? 'none' : 'auto'}>
-                <OnlineSelfBar
-                  player={seatPlayer}
-                  isActive={state.currentPlayerIndex === seatIdx}
-                  timeLeft={timers?.[seatPlayer.id]}
-                  status={onlineSeatStatus[seatPlayer.id] ?? null}
-                  isPremium={seatPremium[seatPlayer.id] === true}
-                  bonus={
-                    lastBonus?.playerId === seatPlayer.id
-                      ? lastBonus.amount
-                      : null
-                  }
-                  reactions={groupedReactions.bySeat[seatPlayer.id]}
-                  onReactionDone={reactions.dismiss}
-                  surface={hudSurface}
-                />
-              </View>
-            ) : null
-          ) : bottomStripState ? (
+          ) : seatPlayer ? (
             <View pointerEvents={wallDrag ? 'none' : 'auto'}>
-              <PlayerStrip
-                state={bottomStripState}
-                timers={timers}
-                ratings={seatRatings}
-                countryFlags={seatCountryFlags}
-                bonus={lastBonus}
-                compactStats={compactMatchStats}
-                hideWallsBadge={!splitActive}
-                grid={splitActive}
-                hideWallsForPlayerId={splitActive ? seatPlayer?.id : undefined}
-                seatStatus={onlineSeatStatus}
-                seatPremium={seatPremium}
-                botAvatarKeyBySeat={botAvatarKeyBySeat}
-                reactionsBySeat={groupedReactions.bySeat}
+              <OnlineSelfBar
+                player={seatPlayer}
+                isActive={state.currentPlayerIndex === seatIdx}
+                timeLeft={timers?.[seatPlayer.id]}
+                status={onlineSeatStatus[seatPlayer.id] ?? null}
+                isPremium={seatPremium[seatPlayer.id] === true}
+                bonus={
+                  lastBonus?.playerId === seatPlayer.id
+                    ? lastBonus.amount
+                    : null
+                }
+                reactions={groupedReactions.bySeat[seatPlayer.id]}
                 onReactionDone={reactions.dismiss}
-                onPressPlayer={splitActive ? handleBottomGridPress : undefined}
                 surface={hudSurface}
               />
             </View>
@@ -3005,17 +2985,20 @@ useEffect(() => {
               <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Summary</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.dockReviewBtn}
-              onPress={() => void handleAnalyzePress()}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityRole="button"
-              accessibilityLabel={t('analysis.gameReview')}
-            >
-              <View style={styles.dockReviewCircle}>
-                <SmoothStar size={13} color={THEME.colors.primary} />
-              </View>
-            </TouchableOpacity>
+            {state.mode === '2p' && (
+              <TouchableOpacity
+                style={styles.dockItem}
+                onPress={() => void handleAnalyzePress()}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={t('analysis.gameReview')}
+              >
+                <View style={styles.dockReviewCircle}>
+                  <SmoothStar size={12} color="#FFFFFF" />
+                </View>
+                <Text style={[styles.dockLabel, { color: THEME.colors.primary, fontWeight: '700' }]}>Review</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={[styles.dockItem, (viewingStep ?? totalSteps) <= 0 && styles.dockItemDisabled]}
@@ -3061,65 +3044,93 @@ useEffect(() => {
               <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.dockItem, (!humanTurn || hintLoading) && assistsState.remaining > 0 && { opacity: 0.6 }]}
-              disabled={!humanTurn || hintLoading}
-              onPress={handleHintPress}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              {hintLoading ? (
-                <ActivityIndicator size="small" color="#10B981" style={{ height: 21 }} />
-              ) : (
-                <View style={styles.dockIconBadgeWrap}>
-                  <OrbIcon
-                    name={hintAction ? 'lightbulb-on' : 'lightbulb-on-outline'}
-                    size={21}
-                    color={hintAction ? '#10B981' : dockIconColor}
-                  />
-                  <View
-                    style={[
-                      styles.dockAssistBadge,
-                      assistsState.remaining === 0 && styles.dockAssistBadgeEmpty,
-                    ]}
-                  >
-                    <Text style={styles.dockAssistBadgeText}>
-                      {assistsState.remaining > 0 ? assistsState.remaining : '+'}
-                    </Text>
-                  </View>
-                </View>
-              )}
-              <Text style={[styles.dockLabel, { color: hintAction ? '#10B981' : dockLabelColor }]}>
-                {hintLoading ? 'Thinking' : 'Hint'}
-              </Text>
-            </TouchableOpacity>
+            {/* Hint Button */}
+            {(() => {
+              const isAiMatch = type === 'ai';
+              const hasHints = !isAiMatch || assistsState.hintsRemaining > 0;
+              const canRefill = isAiMatch && canRefillAssists(assistsState, 'hint');
+              const isExhausted = isAiMatch && !hasHints && !canRefill;
+              const isDisabled = !humanTurn || hintLoading || isExhausted;
 
-            <TouchableOpacity
-              style={[styles.dockItem, !undoAvailable && assistsState.remaining > 0 && { opacity: 0.5 }]}
-              disabled={!undoAvailable && assistsState.remaining > 0}
-              onPress={handleUndoPress}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <View style={styles.dockIconBadgeWrap}>
-                <OrbIcon
-                  name="undo-variant"
-                  size={21}
-                  color={undoAvailable ? dockIconColor : dockDisabledColor}
-                />
-                <View
-                  style={[
-                    styles.dockAssistBadge,
-                    assistsState.remaining === 0 && styles.dockAssistBadgeEmpty,
-                  ]}
+              return (
+                <TouchableOpacity
+                  style={[styles.dockItem, isDisabled && { opacity: 0.4 }]}
+                  disabled={isDisabled}
+                  onPress={handleHintPress}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text style={styles.dockAssistBadgeText}>
-                    {assistsState.remaining > 0 ? assistsState.remaining : '+'}
+                  {hintLoading ? (
+                    <ActivityIndicator size="small" color="#10B981" style={{ height: 21 }} />
+                  ) : (
+                    <View style={styles.dockIconBadgeWrap}>
+                      <OrbIcon
+                        name={hintAction ? 'lightbulb-on' : 'lightbulb-on-outline'}
+                        size={21}
+                        color={isExhausted ? dockDisabledColor : hintAction ? '#10B981' : dockIconColor}
+                      />
+                      {isAiMatch && (
+                        <View
+                          style={[
+                            styles.dockAssistBadge,
+                            !hasHints && canRefill && styles.dockAssistBadgeEmpty,
+                            isExhausted && styles.dockAssistBadgeDisabled,
+                          ]}
+                        >
+                          <Text style={styles.dockAssistBadgeText}>
+                            {hasHints ? assistsState.hintsRemaining : canRefill ? '+' : '0'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                  <Text style={[styles.dockLabel, { color: isExhausted ? dockDisabledColor : hintAction ? '#10B981' : dockLabelColor }]}>
+                    {hintLoading ? 'Thinking' : 'Hint'}
                   </Text>
-                </View>
-              </View>
-              <Text style={[styles.dockLabel, { color: undoAvailable ? dockLabelColor : dockDisabledColor }]}>
-                Undo
-              </Text>
-            </TouchableOpacity>
+                </TouchableOpacity>
+              );
+            })()}
+
+            {/* Undo Button */}
+            {(() => {
+              const isAiMatch = type === 'ai';
+              const hasUndos = !isAiMatch || assistsState.undosRemaining > 0;
+              const canRefill = isAiMatch && canRefillAssists(assistsState, 'undo');
+              const isExhausted = isAiMatch && !hasUndos && !canRefill;
+              const isDisabled = !undoAvailable || isExhausted;
+
+              return (
+                <TouchableOpacity
+                  style={[styles.dockItem, isDisabled && { opacity: 0.4 }]}
+                  disabled={isDisabled}
+                  onPress={handleUndoPress}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <View style={styles.dockIconBadgeWrap}>
+                    <OrbIcon
+                      name="undo-variant"
+                      size={21}
+                      color={isDisabled ? dockDisabledColor : dockIconColor}
+                    />
+                    {isAiMatch && (
+                      <View
+                        style={[
+                          styles.dockAssistBadge,
+                          !hasUndos && canRefill && styles.dockAssistBadgeEmpty,
+                          isExhausted && styles.dockAssistBadgeDisabled,
+                        ]}
+                      >
+                        <Text style={styles.dockAssistBadgeText}>
+                          {hasUndos ? assistsState.undosRemaining : canRefill ? '+' : '0'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[styles.dockLabel, { color: isDisabled ? dockDisabledColor : dockLabelColor }]}>
+                    Undo
+                  </Text>
+                </TouchableOpacity>
+              );
+            })()}
 
             <TouchableOpacity
               style={[styles.dockItem, (viewingStep ?? totalSteps) <= 0 && styles.dockItemDisabled]}
@@ -3450,6 +3461,22 @@ useEffect(() => {
                     </>
                   )}
 
+                  {!isCompleted && type === 'local' && (
+                    <TouchableOpacity
+                      style={styles.optionRow}
+                      onPress={() => {
+                        setOptionsOpen(false);
+                        handleRematch();
+                      }}
+                    >
+                      <View style={styles.optionRowLeft}>
+                        <OrbIcon name="refresh-cw" size={20} color={THEME.colors.textPrimary} />
+                        <Text style={styles.optionRowText}>Restart Match</Text>
+                      </View>
+                      <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
+                    </TouchableOpacity>
+                  )}
+
                   {!isCompleted && canResign && (
                     <TouchableOpacity
                       style={styles.optionRow}
@@ -3615,6 +3642,23 @@ useEffect(() => {
             ? state.players[humanIdx]?.id ?? null
             : null
         }
+        isRoom={type === 'online' && onlineSource === 'room'}
+        onReturnToRoom={() => {
+          setShowGameOver(false);
+          if (onReturnToRoom) {
+            onReturnToRoom();
+          } else {
+            onHome();
+          }
+        }}
+        onLeaveRoom={() => {
+          setShowGameOver(false);
+          if (onLeaveRoom) {
+            onLeaveRoom();
+          } else {
+            leaveFinishedAndHome();
+          }
+        }}
         onRematch={handleRematch}
         showNewGame={(type === 'online' && onlineSource !== 'room') || type === 'ai'}
         onNewGame={() => {
@@ -3666,8 +3710,13 @@ useEffect(() => {
         visible={assistSheetOpen}
         busy={assistBusy}
         error={assistError}
-        variant="assist"
-        watchLimitReached={!canRefillAssists(assistsState)}
+        variant={pendingAssistAction === 'undo' ? 'undo' : 'hint'}
+        watchLimitReached={
+          !canRefillAssists(
+            assistsState,
+            pendingAssistAction === 'undo' ? 'undo' : 'hint'
+          )
+        }
         onWatch={handleAssistWatch}
         onPremium={() => {
           if (assistBusy) return;
@@ -3739,23 +3788,28 @@ useEffect(() => {
         </SafeAreaView>
       </Modal>
 
-      {/* Opponent profile as an overlay, NOT a navigation: this screen must
-          stay mounted or the walk-away cleanup forfeits the live game. In
-          inGame mode the profile hides Challenge and replay entries, so
-          nothing here can navigate away; hardware back closes it first. */}
-      {profilePlayer && (
-        <View style={styles.profileOverlay}>
-          <PlayerProfileScreen
-            userId={profilePlayer.userId}
-            initialUsername={profilePlayer.username}
-            onBack={() => setProfilePlayer(null)}
-            onChallenge={() => {}}
-            onSelectGame={() => {}}
-            onAnalyzeGame={() => {}}
-            inGame
-          />
-        </View>
-      )}
+      {/* Opponent profile as an overlay Modal: keeps live game mounted while
+          rendering on its own native platform window above all game HUD elements,
+          preventing the opponent HUD from bleeding through on Android phones. */}
+      <Modal
+        visible={profilePlayer !== null}
+        animationType="slide"
+        onRequestClose={() => setProfilePlayer(null)}
+      >
+        <SafeAreaView style={styles.profileOverlay} edges={['top', 'bottom']}>
+          {profilePlayer && (
+            <PlayerProfileScreen
+              userId={profilePlayer.userId}
+              initialUsername={profilePlayer.username}
+              onBack={() => setProfilePlayer(null)}
+              onChallenge={() => {}}
+              onSelectGame={() => {}}
+              onAnalyzeGame={() => {}}
+              inGame
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 };
@@ -3821,15 +3875,20 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  botSpeechBubble: {
+  botSpeechBubbleWrap: {
     flex: 1,
+    minWidth: 0,
+    marginHorizontal: 4,
+    justifyContent: 'center',
+  },
+  botSpeechBubble: {
+    width: '100%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.08)',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    marginHorizontal: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     position: 'relative',
     justifyContent: 'center',
   },
@@ -3848,11 +3907,11 @@ const createStyles = () => StyleSheet.create({
     borderRightColor: '#FFFFFF',
   },
   botSpeechText: {
-    fontFamily: THEME.fonts.semiBold,
-    fontSize: 11.5,
-    lineHeight: 15,
-    fontWeight: '600',
+    fontFamily: THEME.fonts.medium,
+    fontSize: 11,
+    lineHeight: 14.5,
     color: '#161512',
+    flexShrink: 1,
   },
   multiBotHeroRow: {
     flexDirection: 'row',
@@ -3992,6 +4051,9 @@ const createStyles = () => StyleSheet.create({
   dockAssistBadgeEmpty: {
     backgroundColor: '#F59E0B',
   },
+  dockAssistBadgeDisabled: {
+    backgroundColor: '#6B7280',
+  },
   dockAssistBadgeText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 9,
@@ -4008,21 +4070,13 @@ const createStyles = () => StyleSheet.create({
     fontWeight: '600',
     color: THEME.colors.textSecondary,
   },
-  dockReviewBtn: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: THEME.colors.primary,
-    borderRadius: 8,
-  },
   dockReviewCircle: {
     width: 22,
     height: 22,
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME.colors.primary,
   },
   optionsOverlay: {
     flex: 1,
@@ -4396,7 +4450,7 @@ const createStyles = () => StyleSheet.create({
     paddingBottom: 28,
   },
   profileOverlay: {
-    ...StyleSheet.absoluteFill,
+    flex: 1,
     backgroundColor: THEME.colors.background,
   },
   rematchToast: {

@@ -9,6 +9,13 @@ build/
 target/
 *.node
 *.tsbuildinfo
+.cxx/
+**/.cxx/
+.gradle/
+**/.gradle/
+*.ninja
+*.ninja_deps
+*.ninja_log
 
 # Scratch probe scripts (throwaway oracle/eval harnesses, never source)
 *.tmp.ts

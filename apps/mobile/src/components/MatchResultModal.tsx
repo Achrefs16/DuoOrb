@@ -117,15 +117,17 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
                 >
                   <Text style={styles.replayText}>{t('gameover.replay')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.analyzeBtn}
-                  onPress={() => onAnalyze(match)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Analyze this game"
-                >
-                  <OrbIcon name="activity" size={14} color={THEME.colors.onPrimary} />
-                  <Text style={styles.analyzeText}>{t('gameover.analyze')}</Text>
-                </TouchableOpacity>
+                {match.mode === '2p' && (
+                  <TouchableOpacity
+                    style={styles.analyzeBtn}
+                    onPress={() => onAnalyze(match)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Analyze this game"
+                  >
+                    <OrbIcon name="activity" size={14} color={THEME.colors.onPrimary} />
+                    <Text style={styles.analyzeText}>{t('gameover.analyze')}</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </>
           )}

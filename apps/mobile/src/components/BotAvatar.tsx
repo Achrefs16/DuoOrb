@@ -10,45 +10,45 @@ import Svg, {
   Stop,
 } from 'react-native-svg';
 import { THEME, useStyles } from '../theme';
-import martinPng from '../../assets/bots/martin.png';
-import pipPng from '../../assets/bots/pip.png';
-import eliasPng from '../../assets/bots/elias.png';
-import bramPng from '../../assets/bots/bram.png';
-import nelsonPng from '../../assets/bots/nelson.png';
-import vexPng from '../../assets/bots/vex.png';
-import jamalPng from '../../assets/bots/jamal.png';
-import marcusPng from '../../assets/bots/marcus.png';
-import viktorPng from '../../assets/bots/viktor.png';
-import achrefPng from '../../assets/bots/achref.png';
-import barnabyPng from '../../assets/bots/barnaby.png';
-import finnPng from '../../assets/bots/finn.png';
-import claraPng from '../../assets/bots/clara.png';
-import leoPng from '../../assets/bots/leo.png';
-import tariqPng from '../../assets/bots/tariq.png';
-import renPng from '../../assets/bots/ren.png';
-import mateoPng from '../../assets/bots/mateo.png';
-import zaraPng from '../../assets/bots/zara.png';
-import archimedesPng from '../../assets/bots/archimedes.png';
-import fionaPng from '../../assets/bots/fiona.png';
-import dmitriPng from '../../assets/bots/dmitri.png';
-import laylaPng from '../../assets/bots/layla.png';
-import dantePng from '../../assets/bots/dante.png';
-import meilingPng from '../../assets/bots/meiling.png';
-import amaraPng from '../../assets/bots/amara.png';
-import gideonPng from '../../assets/bots/gideon.png';
-import soraPng from '../../assets/bots/sora.png';
-import samiraPng from '../../assets/bots/samira.png';
-import torsteinPng from '../../assets/bots/torstein.png';
-import kofiPng from '../../assets/bots/kofi.png';
-import diegoPng from '../../assets/bots/diego.png';
-import hassanPng from '../../assets/bots/hassan.png';
-import jinPng from '../../assets/bots/jin.png';
-import sterlingPng from '../../assets/bots/sterling.png';
-import kenzoPng from '../../assets/bots/kenzo.png';
-import valeriaPng from '../../assets/bots/valeria.png';
-import nexus9Png from '../../assets/bots/nexus9.png';
-import bobaPng from '../../assets/bots/boba.png';
-import miloPng from '../../assets/bots/milo.png';
+import martinPng from '../../assets/bots/martin.webp';
+import pipPng from '../../assets/bots/pip.webp';
+import eliasPng from '../../assets/bots/elias.webp';
+import bramPng from '../../assets/bots/bram.webp';
+import nelsonPng from '../../assets/bots/nelson.webp';
+import vexPng from '../../assets/bots/vex.webp';
+import jamalPng from '../../assets/bots/jamal.webp';
+import marcusPng from '../../assets/bots/marcus.webp';
+import viktorPng from '../../assets/bots/viktor.webp';
+import achrefPng from '../../assets/bots/achref.webp';
+import barnabyPng from '../../assets/bots/barnaby.webp';
+import finnPng from '../../assets/bots/finn.webp';
+import claraPng from '../../assets/bots/clara.webp';
+import leoPng from '../../assets/bots/leo.webp';
+import tariqPng from '../../assets/bots/tariq.webp';
+import renPng from '../../assets/bots/ren.webp';
+import mateoPng from '../../assets/bots/mateo.webp';
+import zaraPng from '../../assets/bots/zara.webp';
+import archimedesPng from '../../assets/bots/archimedes.webp';
+import fionaPng from '../../assets/bots/fiona.webp';
+import dmitriPng from '../../assets/bots/dmitri.webp';
+import laylaPng from '../../assets/bots/layla.webp';
+import dantePng from '../../assets/bots/dante.webp';
+import meilingPng from '../../assets/bots/meiling.webp';
+import amaraPng from '../../assets/bots/amara.webp';
+import gideonPng from '../../assets/bots/gideon.webp';
+import soraPng from '../../assets/bots/sora.webp';
+import samiraPng from '../../assets/bots/samira.webp';
+import torsteinPng from '../../assets/bots/torstein.webp';
+import kofiPng from '../../assets/bots/kofi.webp';
+import diegoPng from '../../assets/bots/diego.webp';
+import hassanPng from '../../assets/bots/hassan.webp';
+import jinPng from '../../assets/bots/jin.webp';
+import sterlingPng from '../../assets/bots/sterling.webp';
+import kenzoPng from '../../assets/bots/kenzo.webp';
+import valeriaPng from '../../assets/bots/valeria.webp';
+import nexus9Png from '../../assets/bots/nexus9.webp';
+import bobaPng from '../../assets/bots/boba.webp';
+import miloPng from '../../assets/bots/milo.webp';
 
 export type BotAvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
@@ -640,7 +640,7 @@ const CANONICAL_BOT_KEY: Record<string, string> = {
 };
 
 /**
- * High-resolution 512x512 custom bot portraits from assets/bots/*.png.
+ * High-resolution 512x512 custom bot portraits from assets/bots/*.webp.
  * Any bot without an entry falls back to its styled SVG portrait.
  */
 const BOT_AVATAR_IMAGES: Partial<Record<string, ImageSourcePropType>> = {

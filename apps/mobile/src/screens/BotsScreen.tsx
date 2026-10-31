@@ -411,7 +411,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             <BotAvatar avatarKey={displayBot.avatarKey} size={76} noBg />
             <View style={styles.speechBubble}>
               <View style={styles.speechTail} />
-              <Text style={styles.speechText} numberOfLines={2}>
+              <Text style={styles.speechText} numberOfLines={3}>
                 {displayBot.quote ||
                   displayBot.dialogue?.greetings?.[0] ||
                   `Hi, I'm ${displayBot.name}! Let's play!`}
@@ -793,14 +793,15 @@ const createStyles = () =>
     // Comic speech bubble - Pure white with pointer tail
     speechBubble: {
       flex: 1,
+      minWidth: 0,
       backgroundColor: '#FFFFFF',
       borderRadius: 12,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
       borderWidth: 1,
       borderColor: '#E2E0D8',
       position: 'relative',
-      minHeight: 48,
+      minHeight: 46,
       justifyContent: 'center',
     },
     speechTail: {
@@ -816,11 +817,11 @@ const createStyles = () =>
       transform: [{ rotate: '45deg' }],
     },
     speechText: {
-      fontFamily: THEME.fonts.bold,
-      fontSize: 13.5,
-      fontWeight: '700',
+      fontFamily: THEME.fonts.semiBold,
+      fontSize: 12,
       color: '#262421',
-      lineHeight: 18,
+      lineHeight: 16,
+      flexShrink: 1,
     },
     heroMetaRow: {
       flexDirection: 'row',

@@ -31,11 +31,7 @@ describe('i18n System', () => {
       expect(lang.flag).toBeTruthy();
       expect(lang.nativeName).toBeTruthy();
       expect(lang.englishName).toBeTruthy();
-      if (lang.code === 'ar') {
-        expect(lang.rtl).toBe(true);
-      } else {
-        expect(lang.rtl).toBe(false);
-      }
+      expect(lang.rtl).toBe(false);
     }
   });
 
@@ -91,5 +87,15 @@ describe('i18n System', () => {
     expect(translate('username.available', { name: 'orbital' }, 'ar')).toBe('@orbital متاح');
     expect(translate('home.playersOnlineMany', { count: 42 }, 'en')).toBe('42 players online');
     expect(translate('home.playersOnlineMany', { count: 42 }, 'de')).toBe('42 Spieler online');
+  });
+
+  it('contains no encoding-corrupted question marks in any language', () => {
+    for (const [code, dict] of Object.entries(DICTIONARIES) as [LanguageCode, typeof en][]) {
+      for (const [key, value] of Object.entries(dict)) {
+        // Detect mid-word ? or ???? sequences from broken UTF-8 decoding
+        expect(value, `Corrupted text in ${code}.${key}: "${value}"`).not.toMatch(/\?\?+/);
+        expect(value, `Mid-word ? in ${code}.${key}: "${value}"`).not.toMatch(/[A-Za-zÀ-ÿ]\?[A-Za-zÀ-ÿ]/);
+      }
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { ImageSourcePropType } from 'react-native';
+import { isPremiumActive } from '../monetization/premium';
 
 export type CosmeticTier = 'free' | 'premium';
 export type CosmeticCollection = 'fantasy' | 'warriors' | 'mythic';
@@ -92,7 +93,7 @@ export const COSMETIC_SKINS: Record<string, CosmeticSkin> = {
     id: 'sakura',
     name: 'Sakura Blossom',
     collection: 'fantasy',
-    tier: 'free',
+    tier: 'premium',
     description: 'Delicate pastel pink cherry blossoms and spring floral geometry.',
     assets: {
       orb: require('../../assets/cosmetics/sakura/orb.png'),
@@ -362,11 +363,24 @@ export function getWallSkinId(): string {
 export function syncCosmeticsToServer(): void {
   try {
     const { socketManager } = require('../network/socket');
-    if (socketManager?.getSocket?.()?.connected) {
-      socketManager.emit('cosmetics:equip', {
-        ballSkinId: activeBallSkinId,
-        wallSkinId: activeWallSkinId,
-      });
+    const raw = socketManager?.getSocket?.();
+    if (raw) {
+      try {
+        const rawAuth = (raw as any).auth ?? {};
+        (raw as any).auth = {
+          ...rawAuth,
+          ballSkinId: activeBallSkinId,
+          wallSkinId: activeWallSkinId,
+        };
+      } catch {
+        // Non-fatal
+      }
+      if (raw.connected) {
+        socketManager.emit('cosmetics:equip', {
+          ballSkinId: activeBallSkinId,
+          wallSkinId: activeWallSkinId,
+        });
+      }
     }
   } catch {
     // Non-fatal
@@ -406,15 +420,17 @@ export function getCosmeticSkin(id?: string | null): CosmeticSkin | null {
   return COSMETIC_SKINS[id] ?? null;
 }
 
-/** Active custom ball skin for rendering (null = default classic orb) */
+/** Active custom ball skin for rendering (null = default classic orb; strictly locked to Premium) */
 export function useEquippedBallSkin(): CosmeticSkin | null {
   const id = useBallSkinId();
+  if (!isPremiumActive()) return null;
   return getCosmeticSkin(id);
 }
 
-/** Active custom wall skin for rendering (null = default classic/board wall) */
+/** Active custom wall skin for rendering (null = default classic/board wall; strictly locked to Premium) */
 export function useEquippedWallSkin(): CosmeticSkin | null {
   const id = useWallSkinId();
+  if (!isPremiumActive()) return null;
   return getCosmeticSkin(id);
 }
 

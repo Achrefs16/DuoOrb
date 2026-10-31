@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import {
   ActivityIndicator,
   Animated,
+  BackHandler,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -413,7 +414,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
   const handleShareInvite = async () => {
     if (!activeRoom) return;
-    const inviteUrl = `https://duoorb.com/?room=${activeRoom.code}`;
+    const inviteUrl = 'https://play.google.com/store/apps/details?id=com.asdigital.duoorb&hl=en_GB';
     const message = `Play DuoOrb with me! Room code: ${activeRoom.code}\n${inviteUrl}`;
     if (Platform.OS === 'web') {
       if (typeof navigator !== 'undefined' && navigator.share) {
@@ -482,9 +483,10 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
       kickPlayer(target.userId);
       return;
     }
+    const isClosing = confirmMode === 'close';
     const goHome = confirmMode === 'leave';
     setConfirmMode(null);
-    leaveRoom();
+    leaveRoom(isClosing);
     if (goHome) onBack();
   };
 
@@ -542,6 +544,27 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
     setShowRoomSetup(true);
   }, [activeRoom, isHost]);
 
+  useEffect(() => {
+    if (Platform.OS === 'web' || !activeRoom) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (showRoomSetup) {
+        setShowRoomSetup(false);
+        return true;
+      }
+      if (showQuickAdd) {
+        setShowQuickAdd(false);
+        return true;
+      }
+      if (confirmMode !== null) {
+        setConfirmMode(null);
+        return true;
+      }
+      setConfirmMode(isHost ? 'close' : 'leave');
+      return true;
+    });
+    return () => sub.remove();
+  }, [activeRoom, isHost, showRoomSetup, showQuickAdd, confirmMode]);
+
   const saveRoomSetup = useCallback(async () => {
     if (!activeRoom || setupSaving) return;
     setSetupSaving(true);
@@ -581,7 +604,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               ? 'Match Found'
               : matchPlayerCount === 2
                 ? 'Finding Opponent'
-                : `Filling ${matchPlayerCount}-Player Table`}
+                : `Filling ${matchPlayerCount}-Player Room`}
           </Text>
           <View style={{ width: 36 }} />
         </View>
@@ -608,7 +631,9 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
               <Text style={styles.mmConfigLabel}>{t('online.queue')}</Text>
               <View style={styles.mmRankedPill}>
                 <View style={styles.mmRankedDot} />
-                <Text style={styles.mmRankedText}>{t('online.ranked')}</Text>
+                <Text style={styles.mmRankedText}>
+                  {matchConfig.mode === '2p' ? t('online.ranked') : t('online.casual')}
+                </Text>
               </View>
             </View>
           </View>
@@ -843,8 +868,8 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
             {activeRoom
-              ? (activeRoom.isPublic ? 'Public Table' : t('online.privateRoom'))
-              : (roomTab === 'public' ? 'Public Tables' : t('online.privateRooms'))}
+              ? (activeRoom.isPublic ? 'Public Room' : t('online.privateRoom'))
+              : 'Rooms'}
           </Text>
         </View>
         {activeRoom ? (
@@ -901,7 +926,28 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   />
                 </View>
                 <View style={styles.lobbySummaryText}>
-                  <Text style={styles.lobbySummaryTitle}>{lobbyModeName}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Text style={styles.lobbySummaryTitle}>{lobbyModeName}</Text>
+                    <View
+                      style={[
+                        styles.publicRoomCasualBadge,
+                        activeRoom.mode === '2p' && {
+                          backgroundColor: THEME.colors.surfacePrimaryTint,
+                          borderColor: THEME.colors.surfacePrimaryTintBorder,
+                          borderWidth: 1,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.publicRoomCasualText,
+                          activeRoom.mode === '2p' && { color: THEME.colors.primaryDark },
+                        ]}
+                      >
+                        {activeRoom.mode === '2p' ? t('online.ranked') : t('online.casual')}
+                      </Text>
+                    </View>
+                  </View>
                   <Text style={styles.lobbySummarySub}>
                     {activeRoom.slots.length} Players · {lobbyClock} ({lobbyWalls})
                   </Text>
@@ -981,41 +1027,43 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                       </View>
 
                       <View style={styles.slotRight}>
-                        {isMe ? (
-                          <TouchableOpacity
-                            style={[styles.readyPill, slot.isReady ? styles.readyOn : styles.readyOff]}
-                            onPress={() => void setReady(!slot.isReady)}
-                          >
-                            <OrbIcon
-                              name="check"
-                              size={14}
-                              color={slot.isReady ? THEME.colors.assessmentExcellent : THEME.colors.textSecondaryStrong}
-                            />
-                            <Text
-                              style={[
-                                styles.readyPillText,
-                                slot.isReady ? styles.readyOnText : styles.readyOffText,
-                              ]}
+                        {!slot.isHost && (
+                          isMe ? (
+                            <TouchableOpacity
+                              style={[styles.readyPill, slot.isReady ? styles.readyOn : styles.readyOff]}
+                              onPress={() => void setReady(!slot.isReady)}
                             >
-                              {slot.isReady ? t('online.ready') : t('online.notReady')}
-                            </Text>
-                          </TouchableOpacity>
-                        ) : (
-                          <View style={[styles.readyPill, slot.isReady ? styles.readyOn : styles.readyOff]}>
-                            <OrbIcon
-                              name="check"
-                              size={14}
-                              color={slot.isReady ? THEME.colors.assessmentExcellent : THEME.colors.textSecondaryStrong}
-                            />
-                            <Text
-                              style={[
-                                styles.readyPillText,
-                                slot.isReady ? styles.readyOnText : styles.readyOffText,
-                              ]}
-                            >
-                              {slot.isReady ? t('online.ready') : t('online.notReady')}
-                            </Text>
-                          </View>
+                              <OrbIcon
+                                name="check"
+                                size={14}
+                                color={slot.isReady ? '#FFFFFF' : THEME.colors.textMuted}
+                              />
+                              <Text
+                                style={[
+                                  styles.readyPillText,
+                                  slot.isReady ? styles.readyOnText : styles.readyOffText,
+                                ]}
+                              >
+                                {slot.isReady ? t('online.ready') : t('online.notReady')}
+                              </Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <View style={[styles.readyPill, slot.isReady ? styles.readyOn : styles.readyOff]}>
+                              <OrbIcon
+                                name="check"
+                                size={14}
+                                color={slot.isReady ? '#FFFFFF' : THEME.colors.textMuted}
+                              />
+                              <Text
+                                style={[
+                                  styles.readyPillText,
+                                  slot.isReady ? styles.readyOnText : styles.readyOffText,
+                                ]}
+                              >
+                                {slot.isReady ? t('online.ready') : t('online.notReady')}
+                              </Text>
+                            </View>
+                          )
                         )}
                         {isHost && !isMe && slot.userId && (
                           <TouchableOpacity
@@ -1070,20 +1118,31 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   </TouchableOpacity>
                 </>
               ) : (
-                <TouchableOpacity
-                  style={[styles.lobbyCta, isReady && styles.lobbyCtaReady]}
-                  onPress={() => void setReady(!isReady)}
-                >
-                  <Text style={styles.lobbyCtaText}>
-                    {isReady ? t('common.cancel') : t('online.ready')}
-                  </Text>
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    style={[styles.lobbyCta, isReady && styles.lobbyCtaReady]}
+                    onPress={() => void setReady(!isReady)}
+                  >
+                    <Text style={[styles.lobbyCtaText, isReady && styles.lobbyCtaReadyText]}>
+                      {isReady ? t('common.cancel') : t('online.ready')}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.lobbyCloseBtn}
+                    activeOpacity={0.7}
+                    onPress={() => setConfirmMode('leave')}
+                    accessibilityLabel={t('online.leaveRoom')}
+                  >
+                    <OrbIcon name="log-out" size={15} color={THEME.colors.textSecondary} />
+                    <Text style={styles.lobbyCloseText}>{t('online.leaveRoom')}</Text>
+                  </TouchableOpacity>
+                </>
               )}
               {!!roomError && <Text style={styles.errorText}>{roomError}</Text>}
               <AdBanner placement="lobby" />
             </>
           ) : (
-            /* CREATE & JOIN: segmented Public Tables vs Play a Friend */
+            /* CREATE & JOIN: segmented Public Rooms vs Play a Friend */
             <>
               {/* Segmented Filter Control */}
               <View style={styles.roomPillsRow}>
@@ -1093,12 +1152,12 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   onPress={() => setRoomTab('public')}
                 >
                   <OrbIcon
-                    name="earth"
+                    name="globe"
                     size={15}
                     color={roomTab === 'public' ? THEME.colors.inverseOnSurface : THEME.colors.textMuted}
                   />
                   <Text style={[styles.roomPillText, roomTab === 'public' && styles.roomPillTextActive]}>
-                    Public Tables {publicRooms.length > 0 ? `(${publicRooms.length})` : ''}
+                    Public Rooms {publicRooms.length > 0 ? `(${publicRooms.length})` : ''}
                   </Text>
                 </TouchableOpacity>
 
@@ -1120,17 +1179,17 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
 
               {roomTab === 'public' ? (
                 <>
-                  {/* Public Tables List Card */}
+                  {/* Public Rooms List Card */}
                   <View style={styles.rmCard}>
                     <View style={styles.rmHeaderRow}>
-                      <OrbIcon name="earth" size={20} color={THEME.colors.primary} />
-                      <Text style={styles.rmLabel}>Open Tables ({publicRooms.length})</Text>
+                      <OrbIcon name="globe" size={20} color={THEME.colors.primary} />
+                      <Text style={styles.rmLabel}>Open Rooms ({publicRooms.length})</Text>
                     </View>
 
                     {publicRooms.length === 0 ? (
                       <View style={styles.emptyPublicState}>
                         <Text style={styles.emptyPublicRoomsText}>
-                          No open tables right now. Host one below to play casual variants with anyone online!
+                          No open rooms right now. Create one below to play casual variants with anyone online!
                         </Text>
                       </View>
                     ) : (
@@ -1142,8 +1201,24 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                                 <Text style={styles.publicRoomModeTitle}>
                                   {modeLabel(pubRoom.mode)}
                                 </Text>
-                                <View style={styles.publicRoomCasualBadge}>
-                                  <Text style={styles.publicRoomCasualText}>Casual</Text>
+                                <View
+                                  style={[
+                                    styles.publicRoomCasualBadge,
+                                    pubRoom.mode === '2p' && {
+                                      backgroundColor: THEME.colors.surfacePrimaryTint,
+                                      borderColor: THEME.colors.surfacePrimaryTintBorder,
+                                      borderWidth: 1,
+                                    },
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.publicRoomCasualText,
+                                      pubRoom.mode === '2p' && { color: THEME.colors.primaryDark },
+                                    ]}
+                                  >
+                                    {pubRoom.mode === '2p' ? t('online.ranked') : t('online.casual')}
+                                  </Text>
                                 </View>
                               </View>
                               <Text style={styles.publicRoomSubText}>
@@ -1170,7 +1245,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                     )}
                   </View>
 
-                  {/* Host a Table Section (collapsed by default) */}
+                  {/* Create Public Room Section (collapsed by default) */}
                   {!showPublicHostForm ? (
                     <TouchableOpacity
                       style={styles.hostTriggerBtn}
@@ -1178,14 +1253,14 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                       onPress={() => setShowPublicHostForm(true)}
                     >
                       <OrbIcon name="plus" size={18} color="#FFFFFF" />
-                      <Text style={styles.hostTriggerBtnText}>Host a Public Table</Text>
+                      <Text style={styles.hostTriggerBtnText}>Create Public Room</Text>
                     </TouchableOpacity>
                   ) : (
                     <View style={styles.rmCard}>
                       <View style={styles.rmHeaderBetween}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <OrbIcon name="plus-circle" size={20} color={THEME.colors.primary} />
-                          <Text style={styles.rmLabel}>Host a Public Table</Text>
+                          <OrbIcon name="plus" size={20} color={THEME.colors.primary} />
+                          <Text style={styles.rmLabel}>Create Public Room</Text>
                         </View>
                         <TouchableOpacity
                           style={styles.collapseBtn}
@@ -1195,7 +1270,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         </TouchableOpacity>
                       </View>
                       <Text style={styles.rmSubLabel}>
-                        Choose mode and rules. Anyone online can join your table.
+                        Choose mode and rules. Anyone online can join your room.
                       </Text>
 
                       <MatchOptionsPicker
@@ -1222,7 +1297,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         {roomLoading ? (
                           <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : (
-                          <Text style={styles.rmCtaText}>Create Public Table</Text>
+                          <Text style={styles.rmCtaText}>Create Public Room</Text>
                         )}
                       </TouchableOpacity>
                     </View>
@@ -1771,14 +1846,16 @@ const createStyles = () => StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 999,
   },
   readyOn: {
-    backgroundColor: THEME.colors.successLight,
+    backgroundColor: THEME.colors.primary,
   },
   readyOff: {
     backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
   },
   readyPillText: {
     fontFamily: THEME.fonts.bold,
@@ -1786,10 +1863,10 @@ const createStyles = () => StyleSheet.create({
     fontWeight: '700',
   },
   readyOnText: {
-    color: THEME.colors.assessmentExcellent,
+    color: '#FFFFFF',
   },
   readyOffText: {
-    color: THEME.colors.textSecondaryStrong,
+    color: THEME.colors.textMuted,
   },
   lobbyCta: {
     width: '100%',
@@ -1802,7 +1879,12 @@ const createStyles = () => StyleSheet.create({
     paddingVertical: 14,
   },
   lobbyCtaReady: {
-    backgroundColor: THEME.colors.textSecondaryStrong,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceHairline,
+  },
+  lobbyCtaReadyText: {
+    color: THEME.colors.textPrimary,
   },
   lobbyCtaText: {
     fontFamily: THEME.fonts.bold,

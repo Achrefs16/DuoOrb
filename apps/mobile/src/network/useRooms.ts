@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { GameMode } from '@duoorb/game-core';
 import { PublicRoomSummaryDto, RoomDto } from '@duoorb/protocol';
 import { TimeControl } from '../timeControls';
 import { socketManager } from './socket';
 import { useIdentity } from './auth';
+import { getBallSkinId, getWallSkinId } from '../theme/cosmeticsCatalog';
 
 interface UseRoomsOptions {
   onGameStarted: (roomId: string, gameId: string) => void;
@@ -15,6 +16,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const identity = useIdentity();
+  const leftRoomIdsRef = useRef<Set<string>>(new Set());
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -61,10 +63,13 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
               incrementSeconds: clock.incrementSeconds ?? 0,
               wallsEach,
               isPublic,
+              ballSkinId: getBallSkinId(),
+              wallSkinId: getWallSkinId(),
             },
             (res) => {
               setLoading(false);
               if (res && res.success && res.room) {
+                leftRoomIdsRef.current.delete(res.room.id);
                 setActiveRoom(res.room);
                 done(res.room);
               } else {
@@ -107,6 +112,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
             return;
           }
           if (res.room) {
+            leftRoomIdsRef.current.delete(res.room.id);
             setActiveRoom(res.room);
             resolve(res.room);
           } else {
@@ -124,9 +130,17 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
 
     return withAckTimeout<RoomDto | null>(
       (done) => {
-        socket.emit('room:join', { code: code.trim().toUpperCase() }, (res) => {
+        socket.emit(
+          'room:join',
+          {
+            code: code.trim().toUpperCase(),
+            ballSkinId: getBallSkinId(),
+            wallSkinId: getWallSkinId(),
+          },
+          (res) => {
           setLoading(false);
           if (res && res.success && res.room) {
+            leftRoomIdsRef.current.delete(res.room.id);
             setActiveRoom(res.room);
             done(res.room);
           } else {
@@ -147,7 +161,12 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
     (isReady: boolean) => {
       if (!activeRoom) return;
       const socket = socketManager.getSocket();
-      socket.emit('room:ready', { roomId: activeRoom.id, isReady });
+      socket.emit('room:ready', {
+        roomId: activeRoom.id,
+        isReady,
+        ballSkinId: getBallSkinId(),
+        wallSkinId: getWallSkinId(),
+      });
     },
     [activeRoom]
   );
@@ -187,7 +206,11 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
   const startRoom = useCallback(() => {
     if (!activeRoom) return;
     const socket = socketManager.getSocket();
-    socket.emit('room:start', { roomId: activeRoom.id });
+    socket.emit('room:start', {
+      roomId: activeRoom.id,
+      ballSkinId: getBallSkinId(),
+      wallSkinId: getWallSkinId(),
+    });
   }, [activeRoom]);
 
   const kickPlayer = useCallback((userId: string) => {
@@ -202,10 +225,11 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
     [activeRoom]
   );
 
-  const leaveRoom = useCallback(() => {
+  const leaveRoom = useCallback((close = false) => {
     if (!activeRoom) return;
+    leftRoomIdsRef.current.add(activeRoom.id);
     const socket = socketManager.getSocket();
-    socket.emit('room:leave', { roomId: activeRoom.id });
+    socket.emit('room:leave', { roomId: activeRoom.id, close });
     setActiveRoom(null);
   }, [activeRoom]);
 
@@ -218,9 +242,12 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
   const syncRoom = useCallback((roomId: string) => {
     const socket = socketManager.getSocket();
     socket.emit('room:sync', { roomId }, (res: { success?: boolean; error?: string } | undefined) => {
-      // A failure here is not fatal: the snapshot still renders the lobby.
-      // The server remains the authority on whether a game can start.
-      if (res && !res.success) return;
+      if (res && !res.success) {
+        leftRoomIdsRef.current.add(roomId);
+        setActiveRoom(null);
+        setError(res.error || 'This room is no longer available.');
+        return;
+      }
     });
   }, []);
 
@@ -228,6 +255,11 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
     const socket = socketManager.getSocket();
 
     const handleRoomState = (room: RoomDto) => {
+      if (leftRoomIdsRef.current.has(room.id)) return;
+      if (identity?.userId && !room.slots.some((s) => s.userId === identity.userId)) {
+        setActiveRoom((prev) => (prev?.id === room.id ? null : prev));
+        return;
+      }
       setActiveRoom(room);
     };
 
@@ -236,9 +268,16 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
       onGameStarted(payload.roomId, payload.gameId);
     };
 
-    const handleKicked = () => {
+    const handleKicked = (payload?: { roomId?: string; reason?: string }) => {
+      if (payload?.roomId) {
+        leftRoomIdsRef.current.add(payload.roomId);
+      }
       setActiveRoom(null);
-      setError('You were removed from the room by the host.');
+      setError(
+        payload?.reason === 'closed'
+          ? 'The room was closed by the host.'
+          : 'You were removed from the room by the host.'
+      );
     };
 
     socket.on('room:state', handleRoomState);
@@ -250,7 +289,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
       socket.off('room:started', handleRoomStarted);
       socket.off('room:kicked', handleKicked);
     };
-  }, [onGameStarted]);
+  }, [onGameStarted, identity?.userId]);
 
   // Re-entering the lobby from a finished match hands us a pre-match
   // snapshot, so pull the truth as soon as the hook mounts.
@@ -268,8 +307,8 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
     isHost &&
     activeRoom &&
     activeRoom.status === 'WAITING' &&
-    activeRoom.slots.every((s) => (s.userId ? s.isReady : false)) &&
-    activeRoom.slots.filter((s) => s.userId !== null).length >= 2
+    activeRoom.slots.filter((s) => s.userId !== null).length >= 2 &&
+    activeRoom.slots.filter((s) => s.userId !== null).every((s) => s.isHost || s.isReady)
   );
 
   return {

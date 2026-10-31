@@ -15,13 +15,11 @@ import { NetworkError } from '../network/errors';
 /** Whose fault it is: the device connection or our servers. */
 export type NoConnectionKind = 'offline' | 'server';
 
-/** Guest blue for the retry/OK buttons. */
-const BLUE_600 = '#2563eb';
 
 /**
  * Full-section offline/server state for every screen that needs internet
  * (Friends, History, Profile, Leaderboard, boot). Centered cloud-off icon,
- * plain title, one blue Retry button — no red, no banner pushing layout.
+ * plain title, one tactile green Retry button — no red, no banner pushing layout.
  * Same design for both kinds, different message.
  */
 export const NoConnectionSection: React.FC<{
@@ -179,16 +177,19 @@ const createStyles = () => StyleSheet.create({
   },
   retryBtn: {
     marginTop: 6,
-    height: 36,
-    borderRadius: THEME.radius.md,
-    backgroundColor: BLUE_600,
-    paddingHorizontal: 16,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: THEME.colors.primary,
+    borderBottomWidth: 2.5,
+    borderBottomColor: THEME.colors.primaryBevel,
+    paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   retryText: {
-    fontFamily: THEME.fonts.semiBold,
+    fontFamily: THEME.fonts.extraBold,
     fontSize: 13,
+    fontWeight: '800',
     color: '#FFFFFF',
   },
   // Modal dialog for action buttons.
@@ -228,14 +229,17 @@ const createStyles = () => StyleSheet.create({
     marginTop: 6,
     height: 48,
     width: '100%',
-    borderRadius: THEME.radius.md,
-    backgroundColor: BLUE_600,
+    borderRadius: 10,
+    backgroundColor: THEME.colors.primary,
+    borderBottomWidth: 3.5,
+    borderBottomColor: THEME.colors.primaryBevel,
     alignItems: 'center',
     justifyContent: 'center',
   },
   okText: {
-    fontFamily: THEME.fonts.semiBold,
+    fontFamily: THEME.fonts.extraBold,
     fontSize: 15,
+    fontWeight: '800',
     color: '#FFFFFF',
   },
 });

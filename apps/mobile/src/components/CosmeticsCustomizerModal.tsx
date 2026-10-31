@@ -20,6 +20,8 @@ import {
   useWallSkinId,
 } from '../theme/cosmeticsCatalog';
 import { api } from '../network/apiClient';
+import { PremiumBadge } from './PremiumBadge';
+import { isPremiumActive, usePremium } from '../monetization/premium';
 
 interface CosmeticsCustomizerModalProps {
   visible: boolean;
@@ -34,6 +36,7 @@ interface CosmeticsCustomizerModalProps {
 export const CosmeticsCustomizerModal: React.FC<CosmeticsCustomizerModalProps> = ({
   visible,
   onClose,
+  onOpenPremium,
   onEquipBall,
   onEquipWall,
   initialCategory,
@@ -45,6 +48,8 @@ export const CosmeticsCustomizerModal: React.FC<CosmeticsCustomizerModalProps> =
 
   const equippedBallId = useBallSkinId();
   const equippedWallId = useWallSkinId();
+  const premiumState = usePremium();
+  const isPremium = isPremiumActive(premiumState);
 
   if (!visible) return null;
 
@@ -53,6 +58,10 @@ export const CosmeticsCustomizerModal: React.FC<CosmeticsCustomizerModalProps> =
   const currentEquippedId = isBall ? equippedBallId : equippedWallId;
 
   const handleSkinTap = (skinId: string) => {
+    if (skinId !== 'classic' && !isPremium) {
+      onOpenPremium?.();
+      return;
+    }
     if (isBall) {
       onEquipBall(skinId);
     } else {
@@ -130,9 +139,10 @@ export const CosmeticsCustomizerModal: React.FC<CosmeticsCustomizerModalProps> =
                 {isClassicEquipped && <Text style={styles.equippedLabel}>Equipped</Text>}
               </TouchableOpacity>
 
-              {/* All 16 Skins */}
+              {/* All 16 Skins (strictly locked to DuoOrb Premium) */}
               {COSMETIC_SKIN_LIST.map((skin) => {
                 const isEquipped = currentEquippedId === skin.id;
+                const isLocked = !isPremium;
 
                 return (
                   <TouchableOpacity
@@ -146,18 +156,24 @@ export const CosmeticsCustomizerModal: React.FC<CosmeticsCustomizerModalProps> =
                         isBall ? styles.ballPreviewWrap : styles.wallPreviewWrap,
                         isEquipped &&
                           (isBall ? styles.ballPreviewSelected : styles.wallPreviewSelected),
+                        isLocked && styles.previewLocked,
                       ]}
                     >
+                      {isLocked && (
+                        <View style={styles.diamondLockBadge}>
+                          <PremiumBadge size={13} />
+                        </View>
+                      )}
                       {isBall ? (
                         <Image
                           source={skin.assets.orb}
-                          style={styles.orbImg}
+                          style={[styles.orbImg, isLocked && { opacity: 0.85 }]}
                           resizeMode="contain"
                         />
                       ) : (
                         <Image
                           source={skin.assets.wallTray}
-                          style={styles.wallImg}
+                          style={[styles.wallImg, isLocked && { opacity: 0.85 }]}
                           resizeMode="contain"
                         />
                       )}
@@ -169,7 +185,11 @@ export const CosmeticsCustomizerModal: React.FC<CosmeticsCustomizerModalProps> =
                     >
                       {skin.name}
                     </Text>
-                    {isEquipped && <Text style={styles.equippedLabel}>Equipped</Text>}
+                    {isEquipped ? (
+                      <Text style={styles.equippedLabel}>Equipped</Text>
+                    ) : isLocked ? (
+                      <Text style={styles.lockedLabel}>Premium</Text>
+                    ) : null}
                   </TouchableOpacity>
                 );
               })}
@@ -334,6 +354,25 @@ const createStyles = () =>
       fontSize: 10,
       fontWeight: '600',
       color: THEME.colors.primary,
+      marginTop: 2,
+    },
+    diamondLockBadge: {
+      position: 'absolute',
+      top: 4,
+      right: 4,
+      zIndex: 3,
+      backgroundColor: 'rgba(15, 23, 42, 0.75)',
+      borderRadius: 10,
+      padding: 3,
+    },
+    previewLocked: {
+      opacity: 0.9,
+    },
+    lockedLabel: {
+      fontFamily: THEME.fonts.bold,
+      fontSize: 10,
+      fontWeight: '700',
+      color: '#D97706',
       marginTop: 2,
     },
   });

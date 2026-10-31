@@ -69,26 +69,26 @@ export function privacyHtml(): string {
   return shell(
     'Privacy Policy',
     `<h1>Privacy Policy</h1>
-<div class="updated">Last updated: 2026-10-05. Applies to DuoOrb for Android (package com.asdigital.duoorb) and the DuoOrb game server.</div>
+<div class="updated">Last updated: 2026-10-31. Applies to DuoOrb for Android (package com.asdigital.duoorb), web, and the DuoOrb game server.</div>
 
 <h2>1. Who we are</h2>
-<p>DuoOrb is a tactical grid-strategy game by AS Digital. The mobile app talks to our authoritative game server for accounts, matchmaking, friends, history and ratings. Authentication is provided by Supabase Auth (Google sign-in and guest sessions minted by our server). Free play shows Google AdMob ads; DuoOrb Premium (sold through Google Play) removes them. Contact: <a href="mailto:${email}">${email}</a>.</p>
+<p>DuoOrb is a tactical grid-strategy game by AS Digital. The mobile app talks to our authoritative game server for accounts, matchmaking, rooms, friends, history, cosmetics and ratings. Authentication is provided by Supabase Auth (Google sign-in and guest sessions minted by our server). Post-game engine analysis runs locally on your device. Free play shows Google AdMob ads; DuoOrb Premium (sold through Google Play) removes them. Contact: <a href="mailto:${email}">${email}</a>.</p>
 
 <h2>2. Data we collect</h2>
 <table>
 <tr><th>Category</th><th>Examples</th><th>Purpose</th></tr>
 <tr><td>Account identifiers</td><td>User ID, username (@handle), display name, email (Google accounts only)</td><td>Account management, sign-in, player identity in matches</td></tr>
-<tr><td>Player content (UGC)</td><td>Bio (max 280 chars), avatar URL, badge showcase</td><td>Profile display, social features</td></tr>
-<tr><td>Game activity</td><td>Match history, moves, results, ratings (Glicko-2), achievements, AI wins</td><td>Gameplay, leaderboards, fair play / anti-cheat, progress</td></tr>
-<tr><td>Social graph</td><td>Friend requests, friendships, blocks</td><td>Friends, challenges, blocking</td></tr>
-<tr><td>Premium status</td><td>Whether Premium is active and when it expires (from Google Play via RevenueCat; we never receive card or payment details)</td><td>Unlocking Premium features</td></tr>
+<tr><td>Player content &amp; customization</td><td>Bio (max 280 chars), avatar URL, badge showcase, equipped Ball &amp; Wall cosmetic skins</td><td>Profile display, in-match cosmetic rendering, social features</td></tr>
+<tr><td>Game activity</td><td>Match history, moves, results, Glicko-2 ratings (Classical 1v1), achievements, AI wins, bot mastery stars (1&ndash;3 stars) and unlocked bots</td><td>Gameplay, leaderboards, fair play / anti-cheat, progress syncing</td></tr>
+<tr><td>Social graph</td><td>Friend requests, friendships, blocks, room participation</td><td>Friends, challenges, rooms, blocking</td></tr>
+<tr><td>Premium status</td><td>Whether Premium is active and when it expires (from Google Play via RevenueCat; we never receive card or payment details)</td><td>Unlocking Premium features (ad-free play, all 39 bots, 16 cosmetic sets, 9 Hints &amp; 9 Undos per bot match, unlimited reviews, diamond badge)</td></tr>
 <tr><td>Diagnostics</td><td>Hashed IP (SHA-256, for guest rate limiting), user-agent, crash/error logs</td><td>Security, abuse prevention, stability</td></tr>
-<tr><td>Advertising (AdMob)</td><td>Advertising ID, approximate location, ad-interaction data, collected by Google under its own Privacy Policy</td><td>Serving banner and rewarded ads to free players</td></tr>
+<tr><td>Advertising (AdMob)</td><td>Advertising ID, approximate location, ad-interaction data, collected by Google under its own Privacy Policy</td><td>Serving banner, interstitial, and optional rewarded video ads (for extra Hints, Undos, bot unlocks, and extra match reviews) to free players</td></tr>
 </table>
-<p>We do <strong>not</strong> collect precise location, contacts, camera, microphone, or files. There is no in-game chat.</p>
+<p>We do <strong>not</strong> collect precise location, contacts, camera, microphone, or files. There is no free-form in-game chat (only preset emoji reactions).</p>
 
 <h2>3. How we use data</h2>
-<p>Account management, gameplay and matchmaking, leaderboards and ratings, friends/challenges/rooms, Premium entitlement, safety (rate limiting, replay detection, cheat validation), and support. Free players see banner and rewarded ads; Premium members see none. We never sell personal data and never share it with data brokers.</p>
+<p>Account management, gameplay and matchmaking, leaderboards and ratings, friends/challenges/rooms, syncing cosmetics and bot mastery stars, Premium entitlement, safety (rate limiting, replay detection, cheat validation), and support. Post-game engine match analysis runs locally on your device. Free players see banner/interstitial ads and optional rewarded ads; Premium members see none. We never sell personal data and never share it with data brokers.</p>
 
 <h2>4. Sharing</h2>
 <p>Processors only: (a) Supabase (authentication - email, auth tokens), (b) hosting provider for the game server / database (account, game and social rows needed to run the service), (c) Google AdMob (advertising ID and ad-interaction data, under Google's policies), (d) Google Play Billing via RevenueCat (subscription status only - no payment details touch our servers). No data is shared with data brokers. Reactions during matches are ephemeral and never stored.</p>
@@ -120,10 +120,10 @@ export function termsHtml(): string {
   return shell(
     'Terms of Service',
     `<h1>Terms of Service</h1>
-<div class="updated">Last updated: 2026-10-05.</div>
+<div class="updated">Last updated: 2026-10-31.</div>
 
 <h2>1. The game</h2>
-<p>DuoOrb provides local AI, pass-and-play, and online ranked matches with matchmaking, rooms, friends, challenges and leaderboards. Online games are ranked on one universal Glicko-2 rating. There is no real-money gambling and no loot boxes. Free play is ad-supported; DuoOrb Premium removes ads and unlocks extras (section 6 below).</p>
+<p>DuoOrb provides local AI, pass-and-play, and online matches with matchmaking, rooms, friends, challenges and leaderboards. Classical 1v1 online games are ranked on one universal Glicko-2 rating; Center Rush and Race modes are casual/unranked. There is no real-money gambling and no loot boxes. Free play is ad-supported; DuoOrb Premium removes ads and unlocks all extras (section 6 below).</p>
 
 <h2>2. Accounts</h2>
 <p>You may play as a guest (progress stays on the server under a guest ID) or sign in with Google. One person, one account; do not share credentials or impersonate others. You must be at least 13 years old (or the minimum age in your country) to create an account. Guest progress can be merged once into a signed-in account via Settings; the merge is one-shot.</p>
@@ -144,7 +144,7 @@ export function termsHtml(): string {
 <p>The server is authoritative: clients submit moves, the server validates them and broadcasts state. Ranked status is forced server-side and cannot be spoofed as casual. Farming ratings with colluding accounts, win-trading, exploiting bugs, or using bots/scripts is prohibited and may lead to rating resets or bans. Hard-AI wins are verified by replaying notation before any badge is granted.</p>
 
 <h2>6. Premium subscriptions</h2>
-<p>DuoOrb Premium ($3.99/month or $24.99/year; prices vary by country) removes all ads and unlocks unlimited Engine Match Reviews (the free tier includes 1 full engine review per day plus extra reviews via optional rewarded ads). All game modes and all 7 offline AI bot personalities are free for all players. Both plans start with a 7-day free trial, then bill automatically each period until cancelled. Billing is handled entirely by Google Play: we never receive payment details. Cancel any time in the app under Settings &gt; Premium &gt; Manage subscription (or Play Store &gt; Payments &amp; subscriptions); access continues until the end of the paid period. Refunds follow Google Play policy. Promotional prices, if offered, renew at the standard rate stated at purchase. Guests must save with Google before purchasing so Premium attaches to an account. Deleting your DuoOrb account does <strong>not</strong> cancel billing - cancel the subscription separately first.</p>
+<p>DuoOrb Premium ($3.99/month or $24.99/year; prices vary by country) removes all ads and unlocks unlimited Engine Match Reviews (the free tier includes 1 full engine review per day plus extra reviews via optional rewarded ads), all 39 AI bot personalities (free tier includes starter bots plus 16 ad-unlockable bots), all 16 exclusive Ball &amp; Wall Cosmetic sets, 9 Hints &amp; 9 Undos per bot match (free tier starts with 1 Hint &amp; 1 Undo plus optional rewarded ad refills), and the subscriber Diamond badge. Both plans start with a 7-day free trial, then bill automatically each period until cancelled. Billing is handled entirely by Google Play: we never receive payment details. Cancel any time in the app under Settings &gt; Premium &gt; Manage subscription (or Play Store &gt; Payments &amp; subscriptions); access continues until the end of the paid period. Refunds follow Google Play policy. Promotional prices, if offered, renew at the standard rate stated at purchase. Guests must save with Google before purchasing so Premium attaches to an account. Deleting your DuoOrb account does <strong>not</strong> cancel billing - cancel the subscription separately first.</p>
 
 <h2>7. Availability</h2>
 <p>Online features require a connection and may be interrupted for maintenance. We may change, suspend or discontinue features. Guest sessions expire after 180 days of inactivity.</p>

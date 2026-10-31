@@ -142,6 +142,17 @@ export async function markLanguagePromptCompleted(): Promise<void> {
  */
 export async function hydrateLanguage(): Promise<LanguageCode> {
   try {
+    // Keep app component layout strictly LTR across all languages (including Arabic);
+    // Arabic script renders RTL naturally via Unicode BiDi without flipping flex rows.
+    I18nManager.allowRTL(false);
+    I18nManager.forceRTL(false);
+    if (Platform.OS === 'web' && typeof document !== 'undefined' && document?.documentElement) {
+      document.documentElement.dir = 'ltr';
+    }
+  } catch {
+    // ignore
+  }
+  try {
     let stored: string | null = null;
     if (typeof window !== 'undefined' && window.localStorage) {
       stored = webGet(LANGUAGE_STORAGE_KEY);
@@ -166,15 +177,14 @@ export async function hydrateLanguage(): Promise<LanguageCode> {
 }
 
 /**
- * Sets the active language, persists it, and handles RTL layout switching if needed.
+ * Sets the active language and persists it while keeping layout strictly LTR.
  */
 export async function setLanguage(
   code: LanguageCode,
-  options?: { reloadIfRTLChanged?: boolean }
+  _options?: { reloadIfRTLChanged?: boolean }
 ): Promise<{ rtlChanged: boolean }> {
   if (!isLanguageCode(code)) return { rtlChanged: false };
 
-  const prev = currentLanguage;
   currentLanguage = code;
   emitLanguageChange();
 
@@ -189,36 +199,17 @@ export async function setLanguage(
     // ignore
   }
 
-  const prevLang = getLanguage(prev);
-  const nextLang = getLanguage(code);
-  const rtlChanged = prevLang.rtl !== nextLang.rtl;
-
-  if (rtlChanged) {
-    I18nManager.allowRTL(nextLang.rtl);
-    I18nManager.forceRTL(nextLang.rtl);
-
-    if (options?.reloadIfRTLChanged !== false) {
-      if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        try {
-          if (document?.documentElement) {
-            document.documentElement.dir = nextLang.rtl ? 'rtl' : 'ltr';
-          }
-          window.location.reload();
-        } catch {
-          // ignore
-        }
-      } else {
-        try {
-          const Updates = await import('expo-updates');
-          await Updates.reloadAsync();
-        } catch {
-          // Dev client or Expo Go might not support reloadAsync
-        }
-      }
+  try {
+    I18nManager.allowRTL(false);
+    I18nManager.forceRTL(false);
+    if (Platform.OS === 'web' && typeof document !== 'undefined' && document?.documentElement) {
+      document.documentElement.dir = 'ltr';
     }
+  } catch {
+    // ignore
   }
 
-  return { rtlChanged };
+  return { rtlChanged: false };
 }
 
 /**

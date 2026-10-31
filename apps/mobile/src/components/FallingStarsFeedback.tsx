@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import { SmoothStar } from './SmoothStar';
 
 interface FallingStarsFeedbackProps {
@@ -29,6 +29,8 @@ export const FallingStarsFeedback: React.FC<FallingStarsFeedbackProps> = ({
   const fallingOpacity = useRef(new Animated.Value(1)).current;
   const remainingScale = useRef(new Animated.Value(1)).current;
 
+  const useNative = Platform.OS !== 'web';
+
   useEffect(() => {
     if (!triggerKey || lostStarIndex === null) return;
 
@@ -48,13 +50,13 @@ export const FallingStarsFeedback: React.FC<FallingStarsFeedbackProps> = ({
         Animated.timing(containerOpacity, {
           toValue: 1,
           duration: 180,
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
         Animated.timing(containerTranslateY, {
           toValue: 0,
           duration: 220,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
       ]),
       // Hold briefly so the user sees the initial stars
@@ -65,23 +67,23 @@ export const FallingStarsFeedback: React.FC<FallingStarsFeedbackProps> = ({
           toValue: 36,
           duration: 650,
           easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
         Animated.timing(fallingRotate, {
           toValue: 1,
           duration: 650,
           easing: Easing.ease,
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
         Animated.timing(fallingScale, {
           toValue: 0.3,
           duration: 650,
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
         Animated.timing(fallingOpacity, {
           toValue: 0,
           duration: 600,
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
         // Remaining stars pulse softly with reward feel
         Animated.sequence([
@@ -89,12 +91,12 @@ export const FallingStarsFeedback: React.FC<FallingStarsFeedbackProps> = ({
           Animated.timing(remainingScale, {
             toValue: 1.18,
             duration: 180,
-            useNativeDriver: true,
+            useNativeDriver: useNative,
           }),
           Animated.timing(remainingScale, {
             toValue: 1,
             duration: 180,
-            useNativeDriver: true,
+            useNativeDriver: useNative,
           }),
         ]),
       ]),
@@ -104,12 +106,12 @@ export const FallingStarsFeedback: React.FC<FallingStarsFeedbackProps> = ({
       Animated.timing(containerOpacity, {
         toValue: 0,
         duration: 250,
-        useNativeDriver: true,
+        useNativeDriver: useNative,
       }),
     ]).start(() => {
       setActive(false);
     });
-  }, [triggerKey, lostStarIndex]);
+  }, [triggerKey, lostStarIndex, useNative]);
 
   if (!active || lostStarIndex === null) return null;
 
@@ -178,7 +180,7 @@ export const FallingStarsFeedback: React.FC<FallingStarsFeedbackProps> = ({
 const styles = StyleSheet.create({
   floatingContainer: {
     position: 'absolute',
-    bottom: 110,
+    bottom: 165,
     alignSelf: 'center',
     zIndex: 9999,
     alignItems: 'center',

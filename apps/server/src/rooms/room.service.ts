@@ -392,22 +392,26 @@ export class RoomService {
     return room;
   }
 
-  public leaveRoom(roomId: string, userId: string): { room: RoomDto | null; disbanded: boolean } {
+  public leaveRoom(
+    roomId: string,
+    userId: string,
+    forceClose = false
+  ): { room: RoomDto | null; disbanded: boolean } {
     const room = this.rooms.get(roomId);
     if (!room) return { room: null, disbanded: false };
 
     const slotIndex = room.slots.findIndex((s) => s.userId === userId);
     if (slotIndex === -1) return { room, disbanded: false };
 
-    const wasHost = room.slots[slotIndex].isHost;
+    const wasHost = room.slots[slotIndex].isHost || room.hostId === userId;
     room.slots[slotIndex].userId = null;
     room.slots[slotIndex].displayName = null;
     room.slots[slotIndex].isReady = false;
     room.slots[slotIndex].isHost = false;
 
-    // Check remaining players
+    // Check remaining players or explicit host room closure
     const remainingSlots = room.slots.filter((s) => s.userId !== null);
-    if (remainingSlots.length === 0) {
+    if (remainingSlots.length === 0 || (wasHost && forceClose)) {
       this.rooms.delete(roomId);
       this.codeToId.delete(room.code);
       // Disbanded rooms take their invites with them: answering one would
@@ -418,7 +422,7 @@ export class RoomService {
       return { room: null, disbanded: true };
     }
 
-    // If host left, assign host to first remaining player
+    // If host left without force-closing, assign host to first remaining player
     if (wasHost) {
       const newHostSlot = remainingSlots[0];
       newHostSlot.isHost = true;

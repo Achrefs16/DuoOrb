@@ -258,7 +258,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Rooms</Text>
             <Text style={styles.rowSubtitle} numberOfLines={1}>
-              Public tables & play with friends
+              Public rooms & play with friends
             </Text>
           </View>
         </TouchableOpacity>

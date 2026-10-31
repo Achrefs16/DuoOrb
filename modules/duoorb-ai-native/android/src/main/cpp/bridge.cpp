@@ -7,6 +7,7 @@ extern "C" {
     char* duoorb_ai_get_bot_action(const char* state_json, const char* bot_id, int64_t seed);
     char* duoorb_ai_get_hint(const char* state_json);
     char* duoorb_ai_analyze_game(const char* initial_state_json, const char* history_json);
+    int32_t duoorb_ai_is_neural_loaded();
     void duoorb_ai_free_string(char* ptr);
 
     JNIEXPORT jstring JNICALL
@@ -112,5 +113,13 @@ extern "C" {
         jstring jresult = env->NewStringUTF(result);
         duoorb_ai_free_string(result);
         return jresult;
+    }
+
+    JNIEXPORT jboolean JNICALL
+    Java_expo_modules_ai_DuoOrbNativeBridge_nativeIsNeuralLoaded(
+        JNIEnv* /* env */,
+        jobject /* this */
+    ) {
+        return duoorb_ai_is_neural_loaded() == 1 ? JNI_TRUE : JNI_FALSE;
     }
 }

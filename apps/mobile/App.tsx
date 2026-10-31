@@ -282,15 +282,14 @@ export default function App() {
       }
       const clock = gameConfig.timeControl ?? DEFAULT_TIME_CONTROL;
       if (gameConfig.onlineSource === 'room' && gameConfig.room) {
-        setOnlineEntry({
-          clock,
-          view: 'rooms',
-          inviteName: null,
-          autoMatch: null,
-          autoRoom: null,
-          initialRoom: gameConfig.room,
-        });
-        dismissTo(currentTab, 'ONLINE');
+        try {
+          if (gameConfig.onlineGameId) {
+            socketManager.getSocket().emit('game:leave', { gameId: gameConfig.onlineGameId });
+          }
+          socketManager.getSocket().emit('room:leave', { roomId: gameConfig.room.id });
+        } catch {}
+        setOnlineEntry((prev) => (prev.initialRoom ? { ...prev, initialRoom: null } : prev));
+        dismissTo('PLAY', null);
         return;
       }
       if (gameConfig.onlineSource === 'custom') {
@@ -379,6 +378,38 @@ export default function App() {
     releaseSounds();
     dismissTo('BOTS', null);
   }, []);
+
+  const handleReturnToRoomMatch = useCallback(() => {
+    releaseSounds();
+    if (gameConfig.onlineSource === 'room' && gameConfig.room) {
+      const clock = gameConfig.timeControl ?? DEFAULT_TIME_CONTROL;
+      setOnlineEntry({
+        clock,
+        view: 'rooms',
+        inviteName: null,
+        autoMatch: null,
+        autoRoom: null,
+        initialRoom: gameConfig.room,
+      });
+      dismissTo(currentTab, 'ONLINE');
+      return;
+    }
+    dismissTo('PLAY', null);
+  }, [gameConfig, currentTab]);
+
+  const handleLeaveRoomMatch = useCallback(() => {
+    releaseSounds();
+    try {
+      if (gameConfig.onlineGameId) {
+        socketManager.getSocket().emit('game:leave', { gameId: gameConfig.onlineGameId });
+      }
+      if (gameConfig.room?.id) {
+        socketManager.getSocket().emit('room:leave', { roomId: gameConfig.room.id });
+      }
+    } catch {}
+    setOnlineEntry((prev) => (prev.initialRoom ? { ...prev, initialRoom: null } : prev));
+    dismissTo('PLAY', null);
+  }, [gameConfig.onlineGameId, gameConfig.room?.id]);
 
   // Close Review: navigating back from review restores the previous screen
   // (the finished GAME match if review was launched from a game, or
@@ -785,8 +816,8 @@ export default function App() {
    */
   const consumeOnlineEntryTransients = useCallback(() => {
     setOnlineEntry((prev) =>
-      prev.autoMatch || prev.autoRoom || prev.autoJoinCode
-        ? { ...prev, autoMatch: null, autoRoom: null, autoJoinCode: null }
+      prev.autoMatch || prev.autoRoom || prev.autoJoinCode || prev.initialRoom
+        ? { ...prev, autoMatch: null, autoRoom: null, autoJoinCode: null, initialRoom: null }
         : prev
     );
   }, []);
@@ -881,9 +912,21 @@ export default function App() {
   // one-ad unlock in place, so there is never a dead end.
   const premium = usePremium();
   const handleAnalyzeGameFromHistory = async (savedGame: SavedGameRecord) => {
+    if ((savedGame.mode || '2p') !== '2p') {
+      handleSelectGameFromHistory(savedGame);
+      return;
+    }
+    const initialState =
+      savedGame.initialState ||
+      createInitialState({
+        gameId: savedGame.id,
+        mode: savedGame.mode || '2p',
+        playerNames: [savedGame.winnerName || 'Player 1', 'Player 2'],
+      });
+    const history = savedGame.history || [];
     const accessKey = {
-      gameId: savedGame.id,
-      historyLength: savedGame.history.length,
+      gameId: savedGame.id || initialState.gameId,
+      historyLength: history.length,
     };
     const botPersonality =
       savedGame.botId || savedGame.type === 'ai'
@@ -893,11 +936,16 @@ export default function App() {
             avatarKey: savedGame.botId || 'martin',
           }
         : null;
+    await requestAnalysisEntry(
+      isPremiumActive(premium),
+      accessKey.gameId,
+      accessKey.historyLength
+    );
     setReplayData({
-      initialState: savedGame.initialState,
-      history: savedGame.history,
+      initialState,
+      history,
       perspectiveIdx: perspectiveIndexFor(
-        savedGame.initialState,
+        initialState,
         savedGame.perspectivePlayerId ?? savedGame.myPlayerId
       ),
       isViewerSeated: savedGame.isViewerSeated ?? Boolean(savedGame.myPlayerId),
@@ -907,11 +955,6 @@ export default function App() {
     setReviewBare(false);
     setReviewOrigin('history');
     navigate(currentTab, 'REVIEW_SUMMARY');
-    await requestAnalysisEntry(
-      isPremiumActive(premium),
-      accessKey.gameId,
-      accessKey.historyLength
-    );
   };
 
   // Render-time chrome: these read the ACTIVE theme (post-setThemeName),
@@ -1087,6 +1130,8 @@ export default function App() {
                 extendedQueue={settings.extendedQueue}
                 testThink={settings.testThink}
                 onHome={handleCloseMatch}
+                onReturnToRoom={handleReturnToRoomMatch}
+                onLeaveRoom={handleLeaveRoomMatch}
                 onNewGame={handleNewGameAfter}
                 onRematchAccepted={handleFreshOnlineGame}
                 onAnalyze={handleOpenReview}

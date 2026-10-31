@@ -9,6 +9,7 @@
 *.png binary
 *.jpg binary
 *.jpeg binary
+*.webp binary
 *.gif binary
 *.ico binary
 *.wav binary
@@ -17,3 +18,10 @@
 *.otf binary
 *.keystore binary
 *.jks binary
+*.so binary
+*.dll binary
+*.dylib binary
+*.a binary
+*.bin binary
+*.o binary
+*.obj binary

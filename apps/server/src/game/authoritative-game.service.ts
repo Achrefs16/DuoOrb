@@ -493,6 +493,10 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
           ballSkinId: u.ballSkinId,
           wallSkinId: u.wallSkinId,
         };
+        playerCosmetics[u.userId] = {
+          ballSkinId: u.ballSkinId,
+          wallSkinId: u.wallSkinId,
+        };
       }
     });
 

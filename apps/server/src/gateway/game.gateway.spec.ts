@@ -709,14 +709,14 @@ describe('GameGateway ranking policy: only 1v1 classical matches are rated', () 
     );
   });
 
-  it('forces unranked for rooms (handleRoomStart)', async () => {
+  it('rates 1v1 classical rooms and forces unranked for non-classical rooms (handleRoomStart)', async () => {
     const { gw } = liveGateway();
     const clients = new Map<string, any>();
     seatLive(gw, 'uA', 'sock-A', clients);
     seatLive(gw, 'uB', 'sock-B', clients);
     gw.server.sockets.sockets.get = (id: string) => clients.get(id);
 
-    vi.spyOn(gw.roomService, 'startRoom').mockReturnValue({
+    vi.spyOn(gw.roomService, 'startRoom').mockReturnValueOnce({
       success: true,
       room: {
         id: 'r1',
@@ -735,6 +735,32 @@ describe('GameGateway ranking policy: only 1v1 classical matches are rated', () 
     const createSpy = vi.spyOn(gw.gameService, 'createGame');
     const client = { id: 'sock-A', handshake: { query: {} }, emit: vi.fn() };
     await gw.handleRoomStart(client, { roomId: 'r1' });
+
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ isRanked: true })
+    );
+
+    // Clear activeGameUserMap so uA and uB can start a second room match
+    gw.activeGameUserMap.clear();
+    createSpy.mockClear();
+
+    vi.spyOn(gw.roomService, 'startRoom').mockReturnValueOnce({
+      success: true,
+      room: {
+        id: 'r2',
+        mode: 'center2',
+        timeControlMinutes: 3,
+        incrementSeconds: 0,
+        wallsEach: 10,
+        slots: [],
+      },
+      players: [
+        { userId: 'uA', displayName: 'A' },
+        { userId: 'uB', displayName: 'B' },
+      ],
+    } as any);
+
+    await gw.handleRoomStart(client, { roomId: 'r2' });
 
     expect(createSpy).toHaveBeenCalledWith(
       expect.objectContaining({ isRanked: false })
@@ -1160,6 +1186,145 @@ describe('GameGateway join pump edges (F11)', () => {
         'room:publicRoomsUpdated',
         expect.arrayContaining([expect.objectContaining({ mode: 'center2' })])
       );
+    });
+
+    it('propagates cosmetics through room lifecycle into created game playerCosmetics', async () => {
+      const { gateway } = makeGateway();
+      const { server, liveSockets } = fakeServer();
+      gateway.server = server;
+
+      const clientHost = {
+        id: 'sock-host',
+        handshake: { query: {} },
+        join: vi.fn(),
+        leave: vi.fn(),
+        emit: vi.fn(),
+      } as any;
+      const clientGuest = {
+        id: 'sock-guest',
+        handshake: { query: {} },
+        join: vi.fn(),
+        leave: vi.fn(),
+        emit: vi.fn(),
+      } as any;
+
+      (gateway as any).socketUserMap.set('sock-host', { userId: 'uHost', displayName: 'Host', rating: 1500, verified: true });
+      (gateway as any).userSocketMap.set('uHost', 'sock-host');
+      liveSockets.set('sock-host', clientHost);
+
+      (gateway as any).socketUserMap.set('sock-guest', { userId: 'uGuest', displayName: 'Guest', rating: 1500, verified: true });
+      (gateway as any).userSocketMap.set('uGuest', 'sock-guest');
+      liveSockets.set('sock-guest', clientGuest);
+
+      // Host creates room with custom cosmetics
+      const createRes = gateway.handleCreateRoom(clientHost, {
+        mode: '2p',
+        timeControlMinutes: 3,
+        ballSkinId: 'neon',
+        wallSkinId: 'obsidian',
+      }) as any;
+      expect(createRes.success).toBe(true);
+      const roomId = createRes.room.id;
+      const roomCode = createRes.room.code;
+
+      expect((gateway as any).userCosmeticsMap.get('uHost')).toEqual({
+        ballSkinId: 'neon',
+        wallSkinId: 'obsidian',
+      });
+
+      // Guest joins room with custom cosmetics
+      const joinRes = gateway.handleJoinRoom(clientGuest, {
+        code: roomCode,
+        ballSkinId: 'fire',
+        wallSkinId: 'gold',
+      }) as any;
+      expect(joinRes.success).toBe(true);
+
+      expect((gateway as any).userCosmeticsMap.get('uGuest')).toEqual({
+        ballSkinId: 'fire',
+        wallSkinId: 'gold',
+      });
+
+      // Guest marks ready
+      gateway.handleRoomReady(clientGuest, { roomId, isReady: true });
+
+      // Host starts room
+      const createSpy = vi.spyOn((gateway as any).gameService, 'createGame');
+      await gateway.handleRoomStart(clientHost, { roomId });
+
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      const createArgs = createSpy.mock.calls[0][0];
+      const hostUser = createArgs.users.find((u: any) => u.userId === 'uHost');
+      const guestUser = createArgs.users.find((u: any) => u.userId === 'uGuest');
+
+      expect(hostUser).toMatchObject({ ballSkinId: 'neon', wallSkinId: 'obsidian' });
+      expect(guestUser).toMatchObject({ ballSkinId: 'fire', wallSkinId: 'gold' });
+    });
+
+    it('propagates cosmetics through friend challenge into created game playerCosmetics', async () => {
+      const { gateway } = makeGateway(true);
+      const { server, liveSockets } = fakeServer();
+      gateway.server = server;
+
+      const clientSender = {
+        id: 'sock-snd',
+        handshake: { query: {} },
+        join: vi.fn(),
+        emit: vi.fn(),
+      } as any;
+      const clientTarget = {
+        id: 'sock-tgt',
+        handshake: { query: {} },
+        join: vi.fn(),
+        emit: vi.fn(),
+      } as any;
+
+      (gateway as any).socketUserMap.set('sock-snd', { userId: 'uSender', displayName: 'Sender', rating: 1500, verified: true });
+      (gateway as any).userSocketMap.set('uSender', 'sock-snd');
+      liveSockets.set('sock-snd', clientSender);
+
+      (gateway as any).socketUserMap.set('sock-tgt', { userId: 'uTarget', displayName: 'Target', rating: 1500, verified: true });
+      (gateway as any).userSocketMap.set('uTarget', 'sock-tgt');
+      liveSockets.set('sock-tgt', clientTarget);
+
+      // Sender sends challenge with cosmetics
+      const sendRes = await gateway.handleChallengeSend(clientSender, {
+        toUserId: 'uTarget',
+        mode: '2p',
+        timeControlMinutes: 3,
+        ballSkinId: 'crystal',
+        wallSkinId: 'emerald',
+      }) as any;
+      expect(sendRes.success).toBe(true);
+      const challengeId = sendRes.challenge.id;
+
+      expect((gateway as any).userCosmeticsMap.get('uSender')).toEqual({
+        ballSkinId: 'crystal',
+        wallSkinId: 'emerald',
+      });
+
+      // Target accepts challenge with cosmetics
+      const createSpy = vi.spyOn((gateway as any).gameService, 'createGame');
+      const respondRes = await gateway.handleChallengeRespond(clientTarget, {
+        challengeId,
+        accept: true,
+        ballSkinId: 'cosmic',
+        wallSkinId: 'ruby',
+      }) as any;
+
+      expect(respondRes.success).toBe(true);
+      expect((gateway as any).userCosmeticsMap.get('uTarget')).toEqual({
+        ballSkinId: 'cosmic',
+        wallSkinId: 'ruby',
+      });
+
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      const createArgs = createSpy.mock.calls[0][0];
+      const sndUser = createArgs.users.find((u: any) => u.userId === 'uSender');
+      const tgtUser = createArgs.users.find((u: any) => u.userId === 'uTarget');
+
+      expect(sndUser).toMatchObject({ ballSkinId: 'crystal', wallSkinId: 'emerald' });
+      expect(tgtUser).toMatchObject({ ballSkinId: 'cosmic', wallSkinId: 'ruby' });
     });
   });
 });

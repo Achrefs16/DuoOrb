@@ -18,10 +18,10 @@ pub mod types;
 
 use crate::types::{GameState, RecordedAction};
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
 use napi_derive::napi;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
 #[napi]
 pub fn analyze_game_sync(initial_state_json: String, history_json: String) -> napi::Result<String> {
     let initial_state: GameState = serde_json::from_str(&initial_state_json)
@@ -34,7 +34,7 @@ pub fn analyze_game_sync(initial_state_json: String, history_json: String) -> na
         .map_err(|e| napi::Error::from_reason(format!("Failed to serialize review: {}", e)))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
 #[napi]
 pub async fn analyze_game_async(
     initial_state_json: String,
@@ -43,7 +43,7 @@ pub async fn analyze_game_async(
     analyze_game_sync(initial_state_json, history_json)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
 #[napi]
 pub fn get_best_action_sync(
     state_json: String,
@@ -62,7 +62,7 @@ pub fn get_best_action_sync(
         .map_err(|e| napi::Error::from_reason(format!("Failed to serialize action: {}", e)))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
 #[napi]
 pub async fn get_best_action_async(
     state_json: String,
@@ -76,7 +76,7 @@ pub async fn get_best_action_async(
 /// Return the top root actions with aggregate visits/Q. The mobile hard-bot
 /// layer uses this to apply personality choices without throwing away the
 /// native search's evaluation of the alternatives.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
 #[napi]
 pub fn get_ranked_actions_sync(
     state_json: String,
@@ -109,7 +109,7 @@ pub fn get_ranked_actions_sync(
         .map_err(|e| napi::Error::from_reason(format!("Failed to serialize ranked actions: {}", e)))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
 #[napi]
 pub async fn get_ranked_actions_async(
     state_json: String,
@@ -121,7 +121,7 @@ pub async fn get_ranked_actions_async(
     get_ranked_actions_sync(state_json, simulations, threads, seed, top_k)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
 #[napi]
 pub fn get_bot_action_sync(
     state_json: String,
@@ -146,7 +146,7 @@ pub fn get_bot_action_sync(
         .map_err(|e| napi::Error::from_reason(format!("Failed to serialize bot action: {}", e)))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
 #[napi]
 pub async fn get_bot_action_async(
     state_json: String,
@@ -157,7 +157,7 @@ pub async fn get_bot_action_async(
     get_bot_action_sync(state_json, bot_id, profile_json, seed)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
 #[napi]
 pub fn get_hint_sync(state_json: String) -> napi::Result<String> {
     let state: GameState = serde_json::from_str(&state_json)
@@ -168,7 +168,7 @@ pub fn get_hint_sync(state_json: String) -> napi::Result<String> {
         .map_err(|e| napi::Error::from_reason(format!("Failed to serialize hint: {}", e)))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]
 #[napi]
 pub async fn get_hint_async(state_json: String) -> napi::Result<String> {
     get_hint_sync(state_json)
@@ -182,28 +182,31 @@ pub unsafe extern "C" fn duoorb_ai_find_best_action(
     threads: u32,
     seed: i64,
 ) -> *mut std::os::raw::c_char {
-    if state_json_ptr.is_null() {
-        return std::ptr::null_mut();
-    }
-    let c_str = std::ffi::CStr::from_ptr(state_json_ptr);
-    let str_slice = match c_str.to_str() {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let state: GameState = match serde_json::from_str(str_slice) {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let s = if seed != 0 {
-        seed as u64
-    } else {
-        mcts::position_seed(&state, 0)
-    };
-    let hybrid_result = hybrid::find_hybrid_action(&state, simulations as usize, threads as usize, s);
-    let result_json = serde_json::to_string(&hybrid_result.action).unwrap_or_else(|_| "null".to_string());
-    std::ffi::CString::new(result_json)
-        .map(|cs| cs.into_raw())
-        .unwrap_or(std::ptr::null_mut())
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if state_json_ptr.is_null() {
+            return std::ptr::null_mut();
+        }
+        let c_str = std::ffi::CStr::from_ptr(state_json_ptr);
+        let str_slice = match c_str.to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let state: GameState = match serde_json::from_str(str_slice) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let s = if seed != 0 {
+            seed as u64
+        } else {
+            mcts::position_seed(&state, 0)
+        };
+        let hybrid_result = hybrid::find_hybrid_action(&state, simulations as usize, threads as usize, s);
+        let result_json = serde_json::to_string(&hybrid_result.action).unwrap_or_else(|_| "null".to_string());
+        std::ffi::CString::new(result_json)
+            .map(|cs| cs.into_raw())
+            .unwrap_or(std::ptr::null_mut())
+    }))
+    .unwrap_or(std::ptr::null_mut())
 }
 
 /// Standard C ABI export for ranked root actions (Android personality layer).
@@ -215,45 +218,48 @@ pub unsafe extern "C" fn duoorb_ai_find_ranked_actions(
     seed: i64,
     top_k: u32,
 ) -> *mut std::os::raw::c_char {
-    if state_json_ptr.is_null() {
-        return std::ptr::null_mut();
-    }
-    let c_str = std::ffi::CStr::from_ptr(state_json_ptr);
-    let str_slice = match c_str.to_str() {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let state: GameState = match serde_json::from_str(str_slice) {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let s = if seed != 0 {
-        seed as u64
-    } else {
-        mcts::position_seed(&state, 0)
-    };
-    let ranked = mcts::find_ranked_actions_multithreaded(
-        &state,
-        simulations as usize,
-        threads as usize,
-        s,
-    );
-    let limit = (top_k.max(1)) as usize;
-    let output: Vec<serde_json::Value> = ranked
-        .into_iter()
-        .take(limit)
-        .map(|candidate| {
-            serde_json::json!({
-                "action": candidate.action,
-                "visits": candidate.visits,
-                "q": candidate.q,
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if state_json_ptr.is_null() {
+            return std::ptr::null_mut();
+        }
+        let c_str = std::ffi::CStr::from_ptr(state_json_ptr);
+        let str_slice = match c_str.to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let state: GameState = match serde_json::from_str(str_slice) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let s = if seed != 0 {
+            seed as u64
+        } else {
+            mcts::position_seed(&state, 0)
+        };
+        let ranked = mcts::find_ranked_actions_multithreaded(
+            &state,
+            simulations as usize,
+            threads as usize,
+            s,
+        );
+        let limit = (top_k.max(1)) as usize;
+        let output: Vec<serde_json::Value> = ranked
+            .into_iter()
+            .take(limit)
+            .map(|candidate| {
+                serde_json::json!({
+                    "action": candidate.action,
+                    "visits": candidate.visits,
+                    "q": candidate.q,
+                })
             })
-        })
-        .collect();
-    let result_json = serde_json::to_string(&output).unwrap_or_else(|_| "[]".to_string());
-    std::ffi::CString::new(result_json)
-        .map(|cs| cs.into_raw())
-        .unwrap_or(std::ptr::null_mut())
+            .collect();
+        let result_json = serde_json::to_string(&output).unwrap_or_else(|_| "[]".to_string());
+        std::ffi::CString::new(result_json)
+            .map(|cs| cs.into_raw())
+            .unwrap_or(std::ptr::null_mut())
+    }))
+    .unwrap_or(std::ptr::null_mut())
 }
 
 /// Standard C ABI export for bot personality action selection.
@@ -263,36 +269,39 @@ pub unsafe extern "C" fn duoorb_ai_get_bot_action(
     bot_id_ptr: *const std::os::raw::c_char,
     seed: i64,
 ) -> *mut std::os::raw::c_char {
-    if state_json_ptr.is_null() {
-        return std::ptr::null_mut();
-    }
-    let c_str = std::ffi::CStr::from_ptr(state_json_ptr);
-    let str_slice = match c_str.to_str() {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let state: GameState = match serde_json::from_str(str_slice) {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let bot_id = if !bot_id_ptr.is_null() {
-        std::ffi::CStr::from_ptr(bot_id_ptr)
-            .to_str()
-            .unwrap_or("achref")
-    } else {
-        "achref"
-    };
-    let profile = personality::get_bot_preset(bot_id);
-    let s = if seed != 0 {
-        seed as u64
-    } else {
-        mcts::position_seed(&state, 0)
-    };
-    let action = personality::select_bot_action(&state, &profile, s);
-    let result_json = serde_json::to_string(&action).unwrap_or_else(|_| "null".to_string());
-    std::ffi::CString::new(result_json)
-        .map(|cs| cs.into_raw())
-        .unwrap_or(std::ptr::null_mut())
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if state_json_ptr.is_null() {
+            return std::ptr::null_mut();
+        }
+        let c_str = std::ffi::CStr::from_ptr(state_json_ptr);
+        let str_slice = match c_str.to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let state: GameState = match serde_json::from_str(str_slice) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let bot_id = if !bot_id_ptr.is_null() {
+            std::ffi::CStr::from_ptr(bot_id_ptr)
+                .to_str()
+                .unwrap_or("achref")
+        } else {
+            "achref"
+        };
+        let profile = personality::get_bot_preset(bot_id);
+        let s = if seed != 0 {
+            seed as u64
+        } else {
+            mcts::position_seed(&state, 0)
+        };
+        let action = personality::select_bot_action(&state, &profile, s);
+        let result_json = serde_json::to_string(&action).unwrap_or_else(|_| "null".to_string());
+        std::ffi::CString::new(result_json)
+            .map(|cs| cs.into_raw())
+            .unwrap_or(std::ptr::null_mut())
+    }))
+    .unwrap_or(std::ptr::null_mut())
 }
 
 /// Standard C ABI export for Grandmaster Oracle hints.
@@ -300,23 +309,26 @@ pub unsafe extern "C" fn duoorb_ai_get_bot_action(
 pub unsafe extern "C" fn duoorb_ai_get_hint(
     state_json_ptr: *const std::os::raw::c_char,
 ) -> *mut std::os::raw::c_char {
-    if state_json_ptr.is_null() {
-        return std::ptr::null_mut();
-    }
-    let c_str = std::ffi::CStr::from_ptr(state_json_ptr);
-    let str_slice = match c_str.to_str() {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let state: GameState = match serde_json::from_str(str_slice) {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let hint = hints::get_grandmaster_hint(&state);
-    let result_json = serde_json::to_string(&hint).unwrap_or_else(|_| "null".to_string());
-    std::ffi::CString::new(result_json)
-        .map(|cs| cs.into_raw())
-        .unwrap_or(std::ptr::null_mut())
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if state_json_ptr.is_null() {
+            return std::ptr::null_mut();
+        }
+        let c_str = std::ffi::CStr::from_ptr(state_json_ptr);
+        let str_slice = match c_str.to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let state: GameState = match serde_json::from_str(str_slice) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let hint = hints::get_grandmaster_hint(&state);
+        let result_json = serde_json::to_string(&hint).unwrap_or_else(|_| "null".to_string());
+        std::ffi::CString::new(result_json)
+            .map(|cs| cs.into_raw())
+            .unwrap_or(std::ptr::null_mut())
+    }))
+    .unwrap_or(std::ptr::null_mut())
 }
 
 /// Standard C ABI export for offline match analysis.
@@ -325,30 +337,46 @@ pub unsafe extern "C" fn duoorb_ai_analyze_game(
     initial_state_json_ptr: *const std::os::raw::c_char,
     history_json_ptr: *const std::os::raw::c_char,
 ) -> *mut std::os::raw::c_char {
-    if initial_state_json_ptr.is_null() || history_json_ptr.is_null() {
-        return std::ptr::null_mut();
-    }
-    let init_str = match std::ffi::CStr::from_ptr(initial_state_json_ptr).to_str() {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let hist_str = match std::ffi::CStr::from_ptr(history_json_ptr).to_str() {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let initial_state: GameState = match serde_json::from_str(init_str) {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let history: Vec<RecordedAction> = match serde_json::from_str(hist_str) {
-        Ok(h) => h,
-        Err(_) => return std::ptr::null_mut(),
-    };
-    let review = review::analyze_game_internal(initial_state, history);
-    let result_json = serde_json::to_string(&review).unwrap_or_else(|_| "{}".to_string());
-    std::ffi::CString::new(result_json)
-        .map(|cs| cs.into_raw())
-        .unwrap_or(std::ptr::null_mut())
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if initial_state_json_ptr.is_null() || history_json_ptr.is_null() {
+            return std::ptr::null_mut();
+        }
+        let init_str = match std::ffi::CStr::from_ptr(initial_state_json_ptr).to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let hist_str = match std::ffi::CStr::from_ptr(history_json_ptr).to_str() {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let initial_state: GameState = match serde_json::from_str(init_str) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let history: Vec<RecordedAction> = match serde_json::from_str(hist_str) {
+            Ok(h) => h,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let review = review::analyze_game_internal(initial_state, history);
+        let result_json = serde_json::to_string(&review).unwrap_or_else(|_| "{}".to_string());
+        std::ffi::CString::new(result_json)
+            .map(|cs| cs.into_raw())
+            .unwrap_or(std::ptr::null_mut())
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Check if the ONNX neural evaluator is loaded and ready (returns 1 if loaded, 0 otherwise).
+#[no_mangle]
+pub unsafe extern "C" fn duoorb_ai_is_neural_loaded() -> i32 {
+    std::panic::catch_unwind(|| {
+        if hybrid::get_global_evaluator().is_some() {
+            1
+        } else {
+            0
+        }
+    })
+    .unwrap_or(0)
 }
 
 /// Free string allocated by duoorb_ai_find_best_action.

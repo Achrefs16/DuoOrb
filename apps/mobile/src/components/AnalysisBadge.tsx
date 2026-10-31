@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import type { MoveAssessment } from '@duoorb/game-core';
 import { OrbIcon } from './OrbIcon';
 import { SmoothStar } from './SmoothStar';
@@ -13,15 +14,48 @@ export interface AssessmentIconProps {
   style?: any;
 }
 
+const renderExclamation = (cx: number) => (
+  <>
+    <Path
+      d={`M ${cx} 6.3 L ${cx} 13.4`}
+      stroke="#FFFFFF"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+    />
+    <Circle cx={cx} cy={17.3} r={1.4} fill="#FFFFFF" />
+  </>
+);
+
+const renderQuestion = (cx: number, compact = false) => {
+  const w = compact ? 2.0 : 2.35;
+  const sw = compact ? 2.15 : 2.35;
+  return (
+    <>
+      <Path
+        d={`M ${cx - w} 8.6 C ${cx - w} 6.7 ${cx - 0.9} 5.8 ${cx + 0.15} 5.8 C ${cx + w * 0.68} 5.8 ${cx + w} 6.7 ${cx + w} 7.95 C ${cx + w} 9.0 ${cx + w * 0.72} 9.65 ${cx + 0.75} 10.3 C ${cx + 0.15} 10.75 ${cx} 11.35 ${cx} 12.6`}
+        stroke="#FFFFFF"
+        strokeWidth={sw}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <Circle cx={cx} cy={17.3} r={compact ? 1.3 : 1.4} fill="#FFFFFF" />
+    </>
+  );
+};
+
 /**
  * Standardized assessment icon matching Chess.com & DuoOrb summary review:
  * - Best: SmoothStar vector on green #69B342
  * - Excellent / Good: thumb-up vector on #78B833 / #69B342
- * - Brilliant: '!!' bold white text on teal #1BACA6
- * - Great: '!' bold white text on blue #2563EB
- * - Inaccuracy: '?!' bold white text on yellow #EAB308
- * - Mistake: '?' bold white text on orange #F97316
- * - Blunder: '??' bold white text on red #DC2626
+ * - Brilliant: '!!' vector on teal #1BACA6
+ * - Great: '!' vector on blue #2563EB
+ * - Inaccuracy: '?!' vector on yellow #EAB308
+ * - Mistake: '?' vector on orange #F97316
+ * - Blunder: '??' vector on red #DC2626
+ *
+ * All punctuation glyphs use precision SVG paths centered in a 24x24 viewBox
+ * so they remain pixel-centered across iOS, Android, and Web at any badge size.
  */
 export const AssessmentIcon: React.FC<AssessmentIconProps> = ({
   assessment,
@@ -30,7 +64,7 @@ export const AssessmentIcon: React.FC<AssessmentIconProps> = ({
 }) => {
   if (!assessment) return null;
   const bg = assessmentBadgeColor(assessment);
-  const iconSize = Math.max(10, Math.round(size * 0.58));
+  const iconSize = Math.max(10, Math.round(size * 0.6));
 
   const renderContent = () => {
     switch (assessment) {
@@ -41,99 +75,57 @@ export const AssessmentIcon: React.FC<AssessmentIconProps> = ({
         return (
           <OrbIcon
             name="thumb-up"
-            size={Math.max(9, Math.round(size * 0.52))}
+            size={Math.max(10, Math.round(size * 0.54))}
             color="#FFFFFF"
           />
         );
       case 'BRILLIANT':
         return (
-          <Text
-            style={{
-              color: '#FFFFFF',
-              fontFamily: THEME.fonts.bold,
-              fontSize: Math.max(9, Math.round(size * 0.5)),
-              fontWeight: '800',
-              lineHeight: size,
-              textAlign: 'center',
-            }}
-          >
-            !!
-          </Text>
+          <Svg width={size} height={size} viewBox="0 0 24 24">
+            {renderExclamation(9.3)}
+            {renderExclamation(14.7)}
+          </Svg>
         );
       case 'GREAT':
         return (
-          <Text
-            style={{
-              color: '#FFFFFF',
-              fontFamily: THEME.fonts.bold,
-              fontSize: Math.max(10, Math.round(size * 0.58)),
-              fontWeight: '800',
-              lineHeight: size,
-              textAlign: 'center',
-            }}
-          >
-            !
-          </Text>
+          <Svg width={size} height={size} viewBox="0 0 24 24">
+            {renderExclamation(12)}
+          </Svg>
         );
       case 'INACCURACY':
         return (
-          <Text
-            style={{
-              color: '#FFFFFF',
-              fontFamily: THEME.fonts.bold,
-              fontSize: Math.max(8, Math.round(size * 0.46)),
-              fontWeight: '800',
-              lineHeight: size,
-              textAlign: 'center',
-            }}
-          >
-            ?!
-          </Text>
+          <Svg width={size} height={size} viewBox="0 0 24 24">
+            {renderQuestion(9.1, true)}
+            {renderExclamation(15.3)}
+          </Svg>
         );
       case 'MISTAKE':
         return (
-          <Text
-            style={{
-              color: '#FFFFFF',
-              fontFamily: THEME.fonts.bold,
-              fontSize: Math.max(10, Math.round(size * 0.58)),
-              fontWeight: '800',
-              lineHeight: size,
-              textAlign: 'center',
-            }}
-          >
-            ?
-          </Text>
+          <Svg width={size} height={size} viewBox="0 0 24 24">
+            {renderQuestion(12, false)}
+          </Svg>
         );
       case 'BLUNDER':
         return (
-          <Text
-            style={{
-              color: '#FFFFFF',
-              fontFamily: THEME.fonts.bold,
-              fontSize: Math.max(8, Math.round(size * 0.46)),
-              fontWeight: '800',
-              lineHeight: size,
-              textAlign: 'center',
-            }}
-          >
-            ??
-          </Text>
+          <Svg width={size} height={size} viewBox="0 0 24 24">
+            {renderQuestion(8.6, true)}
+            {renderQuestion(15.2, true)}
+          </Svg>
         );
       case 'FORCED':
         return (
-          <Text
-            style={{
-              color: '#FFFFFF',
-              fontFamily: THEME.fonts.bold,
-              fontSize: Math.max(9, Math.round(size * 0.52)),
-              fontWeight: '800',
-              lineHeight: size,
-              textAlign: 'center',
-            }}
-          >
-            □
-          </Text>
+          <Svg width={size} height={size} viewBox="0 0 24 24">
+            <Rect
+              x={7.5}
+              y={7.5}
+              width={9}
+              height={9}
+              rx={2}
+              stroke="#FFFFFF"
+              strokeWidth={2.2}
+              fill="none"
+            />
+          </Svg>
         );
       default:
         return null;
