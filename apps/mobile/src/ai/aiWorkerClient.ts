@@ -261,7 +261,7 @@ export async function getAiMove(
     typeof nativeAi.isNativeAiAvailable === 'function' &&
     nativeAi.isNativeAiAvailable();
 
-  if (Platform.OS !== 'web' && isAvailable && isClassic2P) {
+  if (Platform.OS !== 'web' && isAvailable) {
     try {
       const isHint = Boolean(options.isHint);
       const isHard = profile.difficulty === 'hard';
@@ -380,7 +380,7 @@ export async function getGrandmasterHint(
 
   const isClassic2P = state.mode === '2p';
 
-  if (Platform.OS !== 'web' && isAvailable && isClassic2P) {
+  if (Platform.OS !== 'web' && isAvailable) {
     if (typeof (nativeAi as Record<string, unknown>).getHintNative === 'function') {
       try {
         return await (nativeAi as any).getHintNative(state);

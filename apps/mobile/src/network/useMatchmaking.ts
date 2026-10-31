@@ -3,6 +3,7 @@ import { GameMode } from '@duoorb/game-core';
 import { TimeControl } from '../timeControls';
 import { socketManager, useVerified } from './socket';
 import { getBallSkinId, getWallSkinId } from '../theme/cosmeticsCatalog';
+import { isPremiumActive } from '../monetization/premium';
 
 export type MatchmakingState = 'idle' | 'searching' | 'matched';
 
@@ -93,6 +94,7 @@ export function useMatchmaking({ onMatched }: UseMatchmakingOptions) {
           wallsEach: config.wallsEach,
           ballSkinId: getBallSkinId(),
           wallSkinId: getWallSkinId(),
+          isPremium: isPremiumActive(),
         },
         (res: {
           success?: boolean;

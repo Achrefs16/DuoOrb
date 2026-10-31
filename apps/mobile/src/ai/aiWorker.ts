@@ -140,9 +140,9 @@ function pump(): void {
 
       // 2. Classic 2P Search (STRICTLY WASM AlphaZero ONNX — NEVER runs JavaScript)
       const isClassic2P = request.state.mode === '2p';
+      const wasm = await getWasmEngine();
 
       if (isClassic2P) {
-        const wasm = await getWasmEngine();
         if (!wasm) {
           throw new Error('WebAssembly AlphaZero ONNX engine failed to initialize');
         }
@@ -172,10 +172,21 @@ function pump(): void {
         }
 
         throw new Error(`WASM AlphaZero engine returned null action for ${botPreset}`);
+      } else if (wasm && !request.isHint) {
+        // Multi-player and variant modes ('4p', 'center2', 'center3', 'race2', 'race3', 'race4') via Rust WASM
+        const botPreset = request.botId || (request.profile?.difficulty === 'easy' ? 'martin' : 'achref');
+        const action = runWasmBot(wasm, request.state, botPreset, request.seed);
+        if (action) {
+          console.log(`[WebWorker AI] 🧠 ${botPreset} (${request.state.mode}) move generated via WASM:`, action);
+          response = { type: 'result', id: request.id, action, engine: 'wasm-onnx' };
+          activeId = null;
+          scope.postMessage(response);
+          pump();
+          return;
+        }
       }
 
-      // 3. Multi-player and variant modes ('4p', 'center2', 'center3', 'race2', 'race3', 'race4')
-      // Handcrafted multi-agent heuristic engine in @duoorb/game-core
+      // 3. Fallback: Handcrafted multi-agent heuristic engine in @duoorb/game-core
       const baseProfile =
         request.profile ??
         (request.botId ? botById(request.botId)?.profile : undefined) ??

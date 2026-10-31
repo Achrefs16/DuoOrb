@@ -5,6 +5,7 @@ import { TimeControl } from '../timeControls';
 import { socketManager } from './socket';
 import { useIdentity } from './auth';
 import { getBallSkinId, getWallSkinId } from '../theme/cosmeticsCatalog';
+import { isPremiumActive } from '../monetization/premium';
 
 interface UseRoomsOptions {
   onGameStarted: (roomId: string, gameId: string) => void;
@@ -65,6 +66,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
               isPublic,
               ballSkinId: getBallSkinId(),
               wallSkinId: getWallSkinId(),
+              isPremium: isPremiumActive(),
             },
             (res) => {
               setLoading(false);
@@ -105,7 +107,16 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
     (inviteId: string, accept: boolean): Promise<RoomDto | null> =>
       new Promise((resolve) => {
         const socket = socketManager.getSocket();
-        socket.emit('room:inviteRespond', { inviteId, accept }, (res) => {
+        socket.emit(
+          'room:inviteRespond',
+          {
+            inviteId,
+            accept,
+            ballSkinId: getBallSkinId(),
+            wallSkinId: getWallSkinId(),
+            isPremium: isPremiumActive(),
+          },
+          (res) => {
           if (!res?.success) {
             setError(res?.error || 'Could not respond to room invite.');
             resolve(null);
@@ -136,6 +147,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
             code: code.trim().toUpperCase(),
             ballSkinId: getBallSkinId(),
             wallSkinId: getWallSkinId(),
+            isPremium: isPremiumActive(),
           },
           (res) => {
           setLoading(false);
@@ -166,6 +178,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
         isReady,
         ballSkinId: getBallSkinId(),
         wallSkinId: getWallSkinId(),
+        isPremium: isPremiumActive(),
       });
     },
     [activeRoom]
@@ -210,6 +223,7 @@ export function useRooms({ onGameStarted, initialRoom = null }: UseRoomsOptions)
       roomId: activeRoom.id,
       ballSkinId: getBallSkinId(),
       wallSkinId: getWallSkinId(),
+      isPremium: isPremiumActive(),
     });
   }, [activeRoom]);
 

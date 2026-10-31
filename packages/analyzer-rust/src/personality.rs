@@ -677,6 +677,10 @@ fn wall_style_bias(
         score += 0.045;
     }
 
+    if (state.mode.starts_with("race") || state.mode.starts_with("center")) && rival_distance <= 3.0 {
+        score += 0.04;
+    }
+
     score += wall_prob_bias * 0.05;
     score
 }

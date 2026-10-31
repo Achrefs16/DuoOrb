@@ -662,7 +662,12 @@ const GameBoardView: React.FC<GameBoardProps> = ({
         {/* Placed walls. Finish respects skin and cosmetic settings — geometry shared. */}
         {state.walls.map((wall) => {
           const rect = wallRect(wall, CELL, GAP);
-          const owner = state.players.find((p) => p.id === wall.placedByPlayerId);
+          const owner = state.players.find(
+            (p) =>
+              p.id === wall.placedByPlayerId ||
+              (p as any).userId === wall.placedByPlayerId ||
+              String(p.index) === String(wall.placedByPlayerId)
+          );
           const ball = playerColor(owner?.index ?? 0, owner?.color);
           const isH = wall.orientation === 'H';
           const neutral = skin.wallStyle === 'neutral';
@@ -672,11 +677,11 @@ const GameBoardView: React.FC<GameBoardProps> = ({
           const wallEdge = neutral ? skin.neutralWallEdge : skin.wallTopLight;
 
           const resolveWallIdForPlayer = (pl?: typeof owner) => {
-            if (!pl) return null;
-            const isLocal = pl.index === localPlayerIndex;
+            const isLocal = pl ? pl.index === localPlayerIndex : false;
             const onlineId =
-              (pl.id ? playerCosmetics?.[pl.id]?.wallSkinId : undefined) ??
-              ((pl as any)?.userId ? playerCosmetics?.[(pl as any).userId]?.wallSkinId : undefined);
+              (pl?.id ? playerCosmetics?.[pl.id]?.wallSkinId : undefined) ??
+              ((pl as any)?.userId ? playerCosmetics?.[(pl as any).userId]?.wallSkinId : undefined) ??
+              (wall.placedByPlayerId ? playerCosmetics?.[wall.placedByPlayerId]?.wallSkinId : undefined);
             const id =
               onlineId && onlineId !== 'classic'
                 ? onlineId
@@ -719,6 +724,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                   height: wallH,
                   borderRadius: wallRadiusFor(wallW, wallH),
                   overflow: 'hidden',
+                  zIndex: 10,
                 }}
               >
                 <Image

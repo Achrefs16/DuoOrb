@@ -480,6 +480,13 @@ export interface MatchSetupDraft {
 }
 
 export const MATCH_SETUP_KINDS = ['ai', 'local', 'challenge', 'online'] as const;
+const VALID_CLOCK_IDS = new Set([
+  'no-timer',
+  'bullet-1-0',
+  'bullet-1-1',
+  'rapid-3-0',
+  'rapid-5-0',
+]);
 
 /** Unknown values (downgrade, corrupt store) are dropped, never applied. */
 export function sanitizeMatchSetupDraft(raw: unknown): MatchSetupDraft {
@@ -494,7 +501,7 @@ export function sanitizeMatchSetupDraft(raw: unknown): MatchSetupDraft {
   if (typeof r.botId === 'string' || r.botId === null) out.botId = r.botId;
   if (isSideChoice(r.side)) out.side = r.side;
   if (r.wallsEach === 10 || r.wallsEach === 15 || r.wallsEach === 99) out.wallsEach = r.wallsEach;
-  if (typeof r.clockId === 'string' && r.clockId.length > 0) out.clockId = r.clockId;
+  if (typeof r.clockId === 'string' && VALID_CLOCK_IDS.has(r.clockId)) out.clockId = r.clockId;
   return out;
 }
 

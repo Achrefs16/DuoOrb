@@ -7,9 +7,9 @@
  *
  * Rules:
  * - Free tier: starts with 1 Free Hint + 1 Free Undo per match (tracked separately).
- *   Can watch a rewarded video ad for +1 Hint (when out of hints) or +1 Undo (when out of undos),
+ *   Can watch a rewarded video ad for +2 Hints (when out of hints) or +2 Undos (when out of undos),
  *   up to MAX_AD_REFILLS_PER_MATCH per category.
- * - Premium tier: starts with 9 Hints + 9 Undos per match.
+ * - Premium tier: starts with 5 Hints + 5 Undos per match.
  * - Star rating synergy:
  *   0 assists used = 3 Stars ⭐️⭐️⭐️
  *   1 assist used  = 2 Stars ⭐️⭐️
@@ -21,10 +21,10 @@ export type AssistKind = 'hint' | 'undo';
 export const FREE_STARTING_ASSISTS = 1;
 export const FREE_STARTING_HINTS = 1;
 export const FREE_STARTING_UNDOS = 1;
-export const PREMIUM_STARTING_ASSISTS = 9;
-export const PREMIUM_STARTING_HINTS = 9;
-export const PREMIUM_STARTING_UNDOS = 9;
-export const REFILL_ASSISTS_GRANT = 1;
+export const PREMIUM_STARTING_ASSISTS = 5;
+export const PREMIUM_STARTING_HINTS = 5;
+export const PREMIUM_STARTING_UNDOS = 5;
+export const REFILL_ASSISTS_GRANT = 2;
 export const MAX_AD_REFILLS_PER_MATCH = 2;
 
 export interface MatchAssistsState {

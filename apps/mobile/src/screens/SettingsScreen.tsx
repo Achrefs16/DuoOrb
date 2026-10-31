@@ -442,94 +442,92 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
         {/* Premium (MONETIZATION.md P7.3): the manage/cancel path is legally
             required — premium members get the Play Subscription Center link
-            right here, next to the upgrade entry. Web hides this card for
-            non-subscribers while preserving status & manage link for Google Play subscribers. */}
-        {!(Platform.OS === 'web' && !isPremiumMember) && (
-          <LinearGradient
-            colors={['#F7DE9B', '#D9A62E']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.card, styles.premiumCard]}
-          >
-            <Text style={[styles.sectionLabel, styles.premiumLabel]}>{t('settings.premium')}</Text>
-            {isPremiumMember ? (
-              <View style={styles.settingRow}>
-                <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                  <PremiumBadge size="xs" />
-                </View>
-                <View style={styles.settingText}>
-                  <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.premiumActive')}</Text>
-                  <Text style={[styles.settingDesc, styles.premiumDesc]}>
-                    {t('settings.premiumActiveDesc')}
-                  </Text>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.settingRow}
-                onPress={() => {
-                  setPremiumEntry('settings');
-                  setPremiumOpen(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={t('settings.getPremium')}
-              >
-                <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                  <PremiumBadge size="xs" />
-                </View>
-                <View style={styles.settingText}>
-                  <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.getPremium')}</Text>
-                  <Text style={[styles.settingDesc, styles.premiumDesc]}>
-                    {t('settings.getPremiumDesc', { price: '$3.99' })}
-                  </Text>
-                </View>
-                <OrbIcon name="chevron-right" size={14} color="#3A2A00" />
-              </TouchableOpacity>
-            )}
-            {isPremiumMember && (
-              <>
-                <View style={[styles.divider, styles.premiumDivider]} />
-                <TouchableOpacity
-                  style={styles.settingRow}
-                  onPress={openSubscriptionCenter}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('settings.manageSub')}
-                >
-                  <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                    <OrbIcon name="settings" size={15} color={PREMIUM_GOLD} />
-                  </View>
-                  <View style={styles.settingText}>
-                    <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.manageSub')}</Text>
-                    <Text style={[styles.settingDesc, styles.premiumDesc]}>
-                      {t('settings.manageSubDesc')}
-                    </Text>
-                  </View>
-                  <OrbIcon name="external-link" size={14} color="#3A2A00" />
-                </TouchableOpacity>
-              </>
-            )}
-            <View style={[styles.divider, styles.premiumDivider]} />
+            right here, next to the upgrade entry. Also includes the developer
+            Diamond override toggle on all platforms including Web. */}
+        <LinearGradient
+          colors={['#F7DE9B', '#D9A62E']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.card, styles.premiumCard]}
+        >
+          <Text style={[styles.sectionLabel, styles.premiumLabel]}>{t('settings.premium')}</Text>
+          {isPremiumMember ? (
             <View style={styles.settingRow}>
               <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-                <OrbIcon name="sliders" size={15} color={PREMIUM_GOLD} />
+                <PremiumBadge size="xs" />
               </View>
               <View style={styles.settingText}>
-                <Text style={[styles.settingTitle, styles.premiumTitle]}>Developer: Diamond Active</Text>
+                <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.premiumActive')}</Text>
                 <Text style={[styles.settingDesc, styles.premiumDesc]}>
-                  Toggle to preview diamond badge & perks
+                  {t('settings.premiumActiveDesc')}
                 </Text>
               </View>
-              <Switch
-                value={isPremiumMember}
-                onValueChange={(val) => {
-                  setDevPremiumOverride(val);
-                }}
-                trackColor={{ false: 'rgba(0,0,0,0.25)', true: THEME.colors.primary }}
-                thumbColor={isPremiumMember ? '#FFFFFF' : '#E0E0E0'}
-              />
             </View>
-          </LinearGradient>
-        )}
+          ) : (
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => {
+                setPremiumEntry('settings');
+                setPremiumOpen(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.getPremium')}
+            >
+              <View style={[styles.settingIconBox, styles.premiumIconBox]}>
+                <PremiumBadge size="xs" />
+              </View>
+              <View style={styles.settingText}>
+                <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.getPremium')}</Text>
+                <Text style={[styles.settingDesc, styles.premiumDesc]}>
+                  {t('settings.getPremiumDesc', { price: '$3.99' })}
+                </Text>
+              </View>
+              <OrbIcon name="chevron-right" size={14} color="#3A2A00" />
+            </TouchableOpacity>
+          )}
+          {isPremiumMember && (
+            <>
+              <View style={[styles.divider, styles.premiumDivider]} />
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={openSubscriptionCenter}
+                accessibilityRole="button"
+                accessibilityLabel={t('settings.manageSub')}
+              >
+                <View style={[styles.settingIconBox, styles.premiumIconBox]}>
+                  <OrbIcon name="settings" size={15} color={PREMIUM_GOLD} />
+                </View>
+                <View style={styles.settingText}>
+                  <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.manageSub')}</Text>
+                  <Text style={[styles.settingDesc, styles.premiumDesc]}>
+                    {t('settings.manageSubDesc')}
+                  </Text>
+                </View>
+                <OrbIcon name="external-link" size={14} color="#3A2A00" />
+              </TouchableOpacity>
+            </>
+          )}
+          <View style={[styles.divider, styles.premiumDivider]} />
+          <View style={styles.settingRow}>
+            <View style={[styles.settingIconBox, styles.premiumIconBox]}>
+              <OrbIcon name="sliders" size={15} color={PREMIUM_GOLD} />
+            </View>
+            <View style={styles.settingText}>
+              <Text style={[styles.settingTitle, styles.premiumTitle]}>Developer: Diamond Active</Text>
+              <Text style={[styles.settingDesc, styles.premiumDesc]}>
+                Toggle to preview diamond badge & perks
+              </Text>
+            </View>
+            <Switch
+              value={isPremiumMember}
+              onValueChange={(val) => {
+                setDevPremiumOverride(val);
+              }}
+              trackColor={{ false: 'rgba(0,0,0,0.25)', true: THEME.colors.primary }}
+              thumbColor={isPremiumMember ? '#FFFFFF' : '#E0E0E0'}
+            />
+          </View>
+        </LinearGradient>
 
         <PremiumSheet
           visible={premiumOpen}

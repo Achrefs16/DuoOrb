@@ -249,9 +249,9 @@ export interface ClientToServerEvents {
    * anything outside them is dropped, never stored, never sequenced.
    */
   'game:reaction': (payload: { gameId: string; reaction: string }) => void;
-  'room:create': (payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; isPublic?: boolean; ballSkinId?: string; wallSkinId?: string }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
-  'room:join': (payload: { code: string; ballSkinId?: string; wallSkinId?: string }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
-  'room:ready': (payload: { roomId: string; isReady: boolean; ballSkinId?: string; wallSkinId?: string }) => void;
+  'room:create': (payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; isPublic?: boolean; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
+  'room:join': (payload: { code: string; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }, callback: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
+  'room:ready': (payload: { roomId: string; isReady: boolean; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }) => void;
   /**
    * Host-only setup edit (mode/clock/walls) from a WAITING lobby. Returns
    * the updated room; every member also gets it via room:state broadcast.
@@ -260,11 +260,11 @@ export interface ClientToServerEvents {
     payload: { roomId: string; mode?: GameMode; timeControlMinutes?: number; incrementSeconds?: number; wallsEach?: number; isPublic?: boolean },
     callback?: (res: { success: boolean; room?: RoomDto; error?: string }) => void
   ) => void;
-  'room:start': (payload: { roomId: string; ballSkinId?: string; wallSkinId?: string }) => void;
+  'room:start': (payload: { roomId: string; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }) => void;
   'room:leave': (payload: { roomId: string; close?: boolean }, callback?: (res: { success: boolean; error?: string }) => void) => void;
   'room:kick': (payload: { roomId: string; userId: string }, callback?: (res: { success: boolean; error?: string }) => void) => void;
   'room:invite': (payload: { roomId: string; toUserId: string }, callback?: (res: { success: boolean; error?: string }) => void) => void;
-  'room:inviteRespond': (payload: { inviteId: string; accept: boolean }, callback?: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
+  'room:inviteRespond': (payload: { inviteId: string; accept: boolean; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }, callback?: (res: { success: boolean; room?: RoomDto; error?: string }) => void) => void;
   /** Pull the room's authoritative state. Used when re-entering a lobby from
    * a finished match, where the client only holds a pre-match snapshot. */
   'room:sync': (payload: { roomId?: string; code?: string }, callback?: (res: { success: boolean; error?: string }) => void) => void;
@@ -282,6 +282,7 @@ export interface ClientToServerEvents {
       wallsEach?: number;
       ballSkinId?: string;
       wallSkinId?: string;
+      isPremium?: boolean;
     },
     callback?: (res: {
       success: boolean;
@@ -293,8 +294,8 @@ export interface ClientToServerEvents {
     }) => void
   ) => void;
   'matchmaking:cancel': (callback?: (res: { success: boolean }) => void) => void;
-  /** Inform server of current equipped ball and wall cosmetic skins */
-  'cosmetics:equip': (payload: { ballSkinId?: string; wallSkinId?: string }) => void;
+  /** Inform server of current equipped ball and wall cosmetic skins and premium status */
+  'cosmetics:equip': (payload: { ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }) => void;
   /**
    * Presence heartbeat (ONLINE_HEALTH C1): verified sockets ping at most
    * every ~60s so `updatedAt` stays fresh while the app is open. The 5-minute
@@ -302,8 +303,8 @@ export interface ClientToServerEvents {
    * connections — never a live, idle lobby sitter. Throttled server-side.
    */
   'presence:ping': () => void;
-  'challenge:send': (payload: { toUserId: string; mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; ballSkinId?: string; wallSkinId?: string }, callback?: (res: { success: boolean; challenge?: ChallengeDto; error?: string }) => void) => void;
-  'challenge:respond': (payload: { challengeId: string; accept: boolean; ballSkinId?: string; wallSkinId?: string }, callback?: (res: { success: boolean; error?: string }) => void) => void;
+  'challenge:send': (payload: { toUserId: string; mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }, callback?: (res: { success: boolean; challenge?: ChallengeDto; error?: string }) => void) => void;
+  'challenge:respond': (payload: { challengeId: string; accept: boolean; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }, callback?: (res: { success: boolean; error?: string }) => void) => void;
   'challenge:cancel': (payload: { challengeId: string }) => void;
 }
 

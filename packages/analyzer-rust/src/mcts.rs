@@ -329,15 +329,17 @@ pub fn generate_logical_actions(
                                 }
 
                                 // Opening wall squandering prevention:
-                                // On an open board (walls <= 2 and mover far from goal >= 6),
+                                // On an open board (walls <= 2 and mover far from goal >= 6 in Classic 2P),
                                 // casual walls that only inflict <= 2 delay waste valuable walls and tempo.
-                                let is_opening = state.walls.len() <= 2 && mover_dist >= 6;
+                                let is_opening = state.walls.len() <= 2 && mover_dist >= 6 && state.mode == "2p";
                                 if is_opening && max_opp_delta <= 2 {
                                     continue;
                                 }
                             }
                         }
 
+                        let is_variant = state.mode.starts_with("race") || state.mode.starts_with("center");
+                        let variant_bonus = if is_variant && max_opp_delta >= 1 && net_gain >= 0 { 0.25 } else { 0.0 };
                         let corridor_bonus = if touches_corridor || touches_mover_corridor { 0.10 } else { 0.0 };
                         let counter_bonus = if is_defensive_counter { 0.45 } else { 0.0 };
                         let wall_prior = if include_all_walls {
@@ -347,13 +349,15 @@ pub fn generate_logical_actions(
                                 + (max_opp_delta.max(0) as f64) * 0.08
                                 + (net_gain.max(0) as f64) * 0.04
                                 + corridor_bonus
-                                + counter_bonus)
+                                + counter_bonus
+                                + variant_bonus)
                                 .clamp(0.04, 0.95)
                         } else {
                             (0.35
                                 + (net_gain as f64) * 0.10
                                 + corridor_bonus
-                                + counter_bonus)
+                                + counter_bonus
+                                + variant_bonus)
                                 .clamp(0.05, 0.95)
                         };
 
@@ -477,7 +481,9 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
         // resilience. Absolute progress is intentionally not double-counted:
         // only the race margin matters in a two-player game.
         let turn_bonus = if state.current_player_index == 0 { 0.5 } else { -0.5 };
-        let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * 1.35;
+        let is_variant = state.mode.starts_with("race") || state.mode.starts_with("center");
+        let wall_weight = if is_variant { 0.25 } else { 1.35 };
+        let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * wall_weight;
         let width_bonus = (width0 - width1) * 0.45;
 
         // Corridor constriction / trap vulnerability penalty:
@@ -542,7 +548,9 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
         let turns_until_move = (i + n - state.current_player_index) % n;
         let turn_tempo = 0.5 * (1.0 - (turns_until_move as f64) / (n as f64));
         let eff_walls = (p.walls_remaining as f64).min(base_dist);
-        let wall_bonus = (eff_walls - avg_walls) * 0.55;
+        let is_variant = state.mode.starts_with("race") || state.mode.starts_with("center");
+        let wall_scale = if is_variant { 0.20 } else { 0.55 };
+        let wall_bonus = (eff_walls - avg_walls) * wall_scale;
         eff_dists[i] = base_dist - turn_tempo - wall_bonus;
     }
 

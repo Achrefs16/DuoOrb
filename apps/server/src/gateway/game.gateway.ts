@@ -167,6 +167,38 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   /** Equipped cosmetic skins per user: ballSkinId & wallSkinId. */
   private userCosmeticsMap = new Map<string, { ballSkinId?: string; wallSkinId?: string }>();
 
+  private recordUserCosmeticsAndPremium(
+    user: SocketUserInfo,
+    cosmetics?: { ballSkinId?: string; wallSkinId?: string },
+    isPremium?: boolean,
+    allowResetToClassic = true
+  ) {
+    if (isPremium !== undefined) {
+      user.isPremium = Boolean(isPremium);
+    }
+    if (cosmetics && (cosmetics.ballSkinId !== undefined || cosmetics.wallSkinId !== undefined)) {
+      const prev = this.userCosmeticsMap.get(user.userId) ?? {};
+      let ballSkinId = cosmetics.ballSkinId;
+      if (ballSkinId === undefined) {
+        ballSkinId = prev.ballSkinId;
+      } else if (!allowResetToClassic && ballSkinId === 'classic' && prev.ballSkinId && prev.ballSkinId !== 'classic') {
+        ballSkinId = prev.ballSkinId;
+      }
+
+      let wallSkinId = cosmetics.wallSkinId;
+      if (wallSkinId === undefined) {
+        wallSkinId = prev.wallSkinId;
+      } else if (!allowResetToClassic && wallSkinId === 'classic' && prev.wallSkinId && prev.wallSkinId !== 'classic') {
+        wallSkinId = prev.wallSkinId;
+      }
+
+      this.userCosmeticsMap.set(user.userId, {
+        ballSkinId,
+        wallSkinId,
+      });
+    }
+  }
+
   constructor(
     private readonly authService: AuthService,
     private readonly prisma: PrismaService,
@@ -329,7 +361,14 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       this.failPendingHandshakesForSocket(client.id);
     }
 
-    let isPremium = false;
+    const authPrem = client.handshake.auth?.isPremium;
+    const queryPrem = client.handshake.query?.isPremium;
+    let isPremium = Boolean(
+      authPrem === true ||
+        authPrem === 'true' ||
+        queryPrem === 'true' ||
+        (queryPrem as unknown) === true
+    );
     // Fetch the universal rating and premium status if DB is available
     if (this.prisma.isConnected && verified) {
       try {
@@ -346,11 +385,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
           rating = Math.round(ratingRecord.rating);
         }
         if (profileRecord) {
-          isPremium = Boolean(
+          const dbPremium = Boolean(
             profileRecord.isPremium &&
               (!profileRecord.premiumExpiresAt ||
                 profileRecord.premiumExpiresAt.getTime() > Date.now())
           );
+          if (dbPremium) isPremium = true;
         }
       } catch (err: any) {
         this.logger.warn(`Rating/Profile lookup failed for ${effectiveId}: ${err?.message}`);
@@ -374,13 +414,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       this.socketUserMap.set(client.id, userInfo);
       const ballSkinId = (client.handshake.auth?.ballSkinId ?? client.handshake.query?.ballSkinId) as string | undefined;
       const wallSkinId = (client.handshake.auth?.wallSkinId ?? client.handshake.query?.wallSkinId) as string | undefined;
-      const prevCosmetics = this.userCosmeticsMap.get(effectiveId);
-      if (ballSkinId || wallSkinId) {
-        this.userCosmeticsMap.set(effectiveId, {
-          ballSkinId: (ballSkinId && ballSkinId !== 'classic') ? ballSkinId : (prevCosmetics?.ballSkinId ?? ballSkinId),
-          wallSkinId: (wallSkinId && wallSkinId !== 'classic') ? wallSkinId : (prevCosmetics?.wallSkinId ?? wallSkinId),
-        });
-      }
+      this.recordUserCosmeticsAndPremium(userInfo, { ballSkinId, wallSkinId }, isPremium, false);
       this.userSocketMap.delete(earlyId);
       // Single controlling session: if a different LIVE socket already spoke
       // for this user, it is now stale — tell it to stand down instead of
@@ -908,17 +942,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   handleCreateRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; isPublic?: boolean; ballSkinId?: string; wallSkinId?: string }
+    payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; isPublic?: boolean; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }
   ) {
     const user = this.getUser(client);
     const denied = this.requireVerified(user);
     if (denied) return denied;
-    if (payload.ballSkinId || payload.wallSkinId) {
-      this.userCosmeticsMap.set(user.userId, {
-        ballSkinId: payload.ballSkinId,
-        wallSkinId: payload.wallSkinId,
-      });
-    }
+    this.recordUserCosmeticsAndPremium(user, payload, payload.isPremium);
     const room = this.roomService.createRoom(
       user.userId,
       user.displayName,
@@ -936,17 +965,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('room:join')
   handleJoinRoom(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { code: string; ballSkinId?: string; wallSkinId?: string }
+    @MessageBody() payload: { code: string; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }
   ) {
     const user = this.getUser(client);
     const denied = this.requireVerified(user);
     if (denied) return denied;
-    if (payload.ballSkinId || payload.wallSkinId) {
-      this.userCosmeticsMap.set(user.userId, {
-        ballSkinId: payload.ballSkinId,
-        wallSkinId: payload.wallSkinId,
-      });
-    }
+    this.recordUserCosmeticsAndPremium(user, payload, payload.isPremium);
     const result = this.roomService.joinRoom(payload.code, user.userId, user.displayName);
 
     if (result.success) {
@@ -984,11 +1008,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('room:inviteRespond')
   handleRoomInviteRespond(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { inviteId: string; accept: boolean }
+    @MessageBody() payload: { inviteId: string; accept: boolean; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }
   ) {
     const user = this.getUser(client);
     const denied = this.requireVerified(user);
     if (denied) return denied;
+    this.recordUserCosmeticsAndPremium(user, payload, payload.isPremium);
     const result = this.roomService.respondInvite(
       payload.inviteId,
       user.userId,
@@ -1014,19 +1039,14 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('room:ready')
   handleRoomReady(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { roomId: string; isReady: boolean; ballSkinId?: string; wallSkinId?: string }
+    @MessageBody() payload: { roomId: string; isReady: boolean; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }
   ) {
     const user = this.getUser(client);
     if (!user.verified) {
       client.emit('game:error', { code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
       return;
     }
-    if (payload.ballSkinId || payload.wallSkinId) {
-      this.userCosmeticsMap.set(user.userId, {
-        ballSkinId: payload.ballSkinId,
-        wallSkinId: payload.wallSkinId,
-      });
-    }
+    this.recordUserCosmeticsAndPremium(user, payload, payload.isPremium);
     const room = this.roomService.setReady(payload.roomId, user.userId, payload.isReady);
     if (room) {
       this.server.to(room.id).emit('room:state', this.enrichRoom(room));
@@ -1153,19 +1173,14 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('room:start')
   async handleRoomStart(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { roomId: string; ballSkinId?: string; wallSkinId?: string }
+    @MessageBody() payload: { roomId: string; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }
   ) {
     const user = this.getUser(client);
     if (!user.verified) {
       client.emit('game:error', { code: 'UNAUTHENTICATED', message: 'Reconnect and try again.' });
       return;
     }
-    if (payload.ballSkinId || payload.wallSkinId) {
-      this.userCosmeticsMap.set(user.userId, {
-        ballSkinId: payload.ballSkinId,
-        wallSkinId: payload.wallSkinId,
-      });
-    }
+    this.recordUserCosmeticsAndPremium(user, payload, payload.isPremium);
 
     // A seat can only be readied from the lobby. If someone is still mid-match
     // they are not in the lobby, so they must not count towards the quorum —
@@ -1324,21 +1339,18 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('cosmetics:equip')
   handleEquipCosmetics(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { ballSkinId?: string; wallSkinId?: string }
+    @MessageBody() payload: { ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }
   ) {
     const user = this.getUser(client);
     if (user?.userId) {
-      this.userCosmeticsMap.set(user.userId, {
-        ballSkinId: payload.ballSkinId,
-        wallSkinId: payload.wallSkinId,
-      });
+      this.recordUserCosmeticsAndPremium(user, payload, payload.isPremium);
     }
   }
 
   @SubscribeMessage('matchmaking:find')
   handleFindMatch(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; ballSkinId?: string; wallSkinId?: string },
+    @MessageBody() payload: { mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean },
     @Ack() ack?: (result: {
       success: boolean;
       queued?: boolean;
@@ -1354,12 +1366,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       ack?.({ success: false, code: 'UNAUTHENTICATED' });
       return;
     }
-    if (payload.ballSkinId || payload.wallSkinId) {
-      this.userCosmeticsMap.set(user.userId, {
-        ballSkinId: payload.ballSkinId,
-        wallSkinId: payload.wallSkinId,
-      });
-    }
+    this.recordUserCosmeticsAndPremium(user, payload, payload.isPremium);
     const busyGameId = this.activeGameUserMap.get(user.userId);
     const busyGame = busyGameId ? this.gameService.getGame(busyGameId) : undefined;
     const busySeat = busyGame?.userPlayerIds[user.userId];
@@ -1429,17 +1436,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   async handleChallengeSend(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    payload: { toUserId: string; mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; ballSkinId?: string; wallSkinId?: string }
+    payload: { toUserId: string; mode: GameMode; timeControlMinutes: number; incrementSeconds?: number; wallsEach?: number; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }
   ) {
     const user = this.getUser(client);
     const denied = this.requireVerified(user);
     if (denied) return denied;
-    if (payload.ballSkinId || payload.wallSkinId) {
-      this.userCosmeticsMap.set(user.userId, {
-        ballSkinId: payload.ballSkinId,
-        wallSkinId: payload.wallSkinId,
-      });
-    }
+    this.recordUserCosmeticsAndPremium(user, payload, payload.isPremium);
     if (payload.toUserId === user.userId) {
       return { success: false, error: 'You cannot challenge yourself.' };
     }
@@ -1507,17 +1509,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('challenge:respond')
   async handleChallengeRespond(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { challengeId: string; accept: boolean; ballSkinId?: string; wallSkinId?: string }
+    @MessageBody() payload: { challengeId: string; accept: boolean; ballSkinId?: string; wallSkinId?: string; isPremium?: boolean }
   ) {
     const user = this.getUser(client);
     const denied = this.requireVerified(user);
     if (denied) return denied;
-    if (payload.ballSkinId || payload.wallSkinId) {
-      this.userCosmeticsMap.set(user.userId, {
-        ballSkinId: payload.ballSkinId,
-        wallSkinId: payload.wallSkinId,
-      });
-    }
+    this.recordUserCosmeticsAndPremium(user, payload, payload.isPremium);
     const result = this.challengeService.resolve(payload.challengeId, user.userId, payload.accept);
     if (!result.success || !payload.accept) {
       if (result.success) {
@@ -2395,11 +2392,18 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       args.isRanked && args.mode === '2p' && args.seatUserIds.length === 2
     );
 
+    const dbPremiums = new Set(await this.billing.premiumUserIdsFor(args.seatUserIds));
+    const effectivePremiumUserIds = args.seatUserIds.filter((userId) => {
+      if (dbPremiums.has(userId)) return true;
+      const sid = this.userSocketMap.get(userId);
+      return sid ? Boolean(this.socketUserMap.get(sid)?.isPremium) : false;
+    });
+
     this.gameService.createGame({
       gameId: args.gameId,
       mode: args.mode,
       users,
-      premiumUserIds: await this.billing.premiumUserIdsFor(args.seatUserIds),
+      premiumUserIds: effectivePremiumUserIds,
       timeControlMinutes: args.timeControlMinutes,
       incrementSeconds: args.incrementSeconds,
       wallsEach: args.wallsEach,

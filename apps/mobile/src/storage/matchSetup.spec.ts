@@ -44,7 +44,7 @@ describe('match setup drafts', () => {
         botId: 'nox',
         side: 'random',
         wallsEach: 99,
-        clockId: 'blitz-3-2',
+        clockId: 'rapid-5-0',
         extra: true,
       })
     ).toEqual({
@@ -54,8 +54,16 @@ describe('match setup drafts', () => {
       botId: 'nox',
       side: 'random',
       wallsEach: 99,
-      clockId: 'blitz-3-2',
+      clockId: 'rapid-5-0',
     });
+  });
+
+  it('drops removed legacy clockIds such as bullet-2-1 so a valid time tile is always selected', () => {
+    expect(
+      sanitizeMatchSetupDraft({
+        clockId: 'bullet-2-1',
+      })
+    ).toEqual({});
   });
 
   it('round-trips per entry kind', () => {

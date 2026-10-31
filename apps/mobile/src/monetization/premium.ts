@@ -43,6 +43,7 @@ let devOverride: boolean | null = null;
 
 export function setDevPremiumOverride(enabled: boolean | null): void {
   devOverride = enabled;
+  current = { ...current };
   if (enabled === null) {
     void AsyncStorage.removeItem(DEV_PREMIUM_KEY).catch(() => {});
   } else {
@@ -72,6 +73,10 @@ const listeners = new Set<() => void>();
 
 function emit(): void {
   listeners.forEach((fn) => fn());
+}
+
+export function subscribePremium(fn: () => void): () => void {
+  return subscribe(fn);
 }
 
 function subscribe(fn: () => void): () => void {
@@ -146,6 +151,7 @@ export async function hydratePremiumCache(): Promise<PremiumState> {
     const devRaw = await AsyncStorage.getItem(DEV_PREMIUM_KEY);
     if (devRaw !== null) {
       devOverride = devRaw === 'true';
+      current = { ...current };
     } else {
       devOverride = null;
     }

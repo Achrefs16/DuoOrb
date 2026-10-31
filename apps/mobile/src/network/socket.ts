@@ -7,6 +7,7 @@ import { SERVER_URL } from './config';
 import { getIdentity, subscribeIdentity } from './auth';
 import { isTokenFresh } from './tokenFreshness';
 import { getBallSkinId, getWallSkinId, syncCosmeticsToServer } from '../theme/cosmeticsCatalog';
+import { isPremiumActive } from '../monetization/premium';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
 
@@ -562,9 +563,10 @@ class SocketManager {
     // survives purely as a label for a socket that has not authenticated yet.
     const ballSkinId = getBallSkinId();
     const wallSkinId = getWallSkinId();
+    const isPremium = isPremiumActive();
     const s: RawSocket = io(SERVER_URL, {
-      auth: { token, ballSkinId, wallSkinId },
-      query: { userId, displayName, ballSkinId, wallSkinId },
+      auth: { token, ballSkinId, wallSkinId, isPremium },
+      query: { userId, displayName, ballSkinId, wallSkinId, isPremium: String(isPremium) },
       autoConnect: false,
       reconnection: true,
       reconnectionAttempts: 15,

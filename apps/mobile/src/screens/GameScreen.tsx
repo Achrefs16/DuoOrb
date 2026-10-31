@@ -514,12 +514,22 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [rewardBusy, setRewardBusy] = useState(false);
   const [rewardError, setRewardError] = useState<string | null>(null);
   // Match Assists Economy (Hints & Undos "Lives" system):
-  // Free: 1 assist per match + rewarded ad refill (+3, max 2 ads per match)
-  // Premium: 9 assists per match + instant refill
+  // Free: 1 hint + 1 undo per match + rewarded ad refill (+2, max 2 ads per match)
+  // Premium: 5 hints + 5 undos per match
   // `assistsUsedRef` drives 3-star bot mastery (0 assists = 3 stars).
   const [assistsState, setAssistsState] = useState<MatchAssistsState>(() =>
     createMatchAssists(isPremiumActive(premiumState))
   );
+  useEffect(() => {
+    const active = isPremiumActive(premiumState);
+    setAssistsState((prev) => {
+      if (prev.isPremium === active) return prev;
+      if (prev.used === 0 && prev.hintRefillsUsed === 0 && prev.undoRefillsUsed === 0) {
+        return createMatchAssists(active);
+      }
+      return { ...prev, isPremium: active };
+    });
+  }, [premiumState]);
   const currentBotStars = type === 'ai' ? computeBotStars(assistsState.used) : 3;
   const [lostStarIndex, setLostStarIndex] = useState<2 | 1 | null>(null);
   const [starFeedbackTrigger, setStarFeedbackTrigger] = useState(0);
@@ -4073,7 +4083,7 @@ const createStyles = () => StyleSheet.create({
   dockReviewCircle: {
     width: 22,
     height: 22,
-    borderRadius: 11,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: THEME.colors.primary,

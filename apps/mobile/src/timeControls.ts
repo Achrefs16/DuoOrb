@@ -27,16 +27,11 @@ export const NO_TIMER_CONTROL: TimeControl = {
 export const TIME_CONTROLS: TimeControl[] = [
   { id: 'bullet-1-0', name: 'Bullet 1+0', short: '1+0', minutes: 1, incrementSeconds: 0, category: 'bullet' },
   { id: 'bullet-1-1', name: 'Bullet 1+1', short: '1+1', minutes: 1, incrementSeconds: 1, category: 'bullet' },
-  { id: 'bullet-2-1', name: 'Bullet 2+1', short: '2+1', minutes: 2, incrementSeconds: 1, category: 'bullet' },
   { id: 'rapid-3-0', name: 'Blitz 3+0', short: '3+0', minutes: 3, incrementSeconds: 0, category: 'blitz' },
-  { id: 'blitz-3-2', name: 'Blitz 3+2', short: '3+2', minutes: 3, incrementSeconds: 2, category: 'blitz' },
   { id: 'rapid-5-0', name: 'Blitz 5+0', short: '5+0', minutes: 5, incrementSeconds: 0, category: 'blitz' },
-  { id: 'rapid-5-3', name: 'Blitz 5+3', short: '5+3', minutes: 5, incrementSeconds: 3, category: 'blitz' },
-  { id: 'rapid-10-0', name: 'Rapid 10+0', short: '10+0', minutes: 10, incrementSeconds: 0, category: 'rapid' },
-  { id: 'rapid-15-10', name: 'Rapid 15+10', short: '15+10', minutes: 15, incrementSeconds: 10, category: 'rapid' },
 ];
 
-export const DEFAULT_TIME_CONTROL: TimeControl = TIME_CONTROLS[3];
+export const DEFAULT_TIME_CONTROL: TimeControl = TIME_CONTROLS[2];
 
 export function formatTimeControlDisplay(tc: TimeControl): string {
   if (tc.id === 'no-timer') return 'No Timer';

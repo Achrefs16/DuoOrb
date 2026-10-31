@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
-import { ImageSourcePropType } from 'react-native';
-import { isPremiumActive } from '../monetization/premium';
+import type { ImageSourcePropType } from 'react-native';
+import { isPremiumActive, subscribePremium } from '../monetization/premium';
 
 export type CosmeticTier = 'free' | 'premium';
 export type CosmeticCollection = 'fantasy' | 'warriors' | 'mythic';
@@ -365,20 +365,23 @@ export function syncCosmeticsToServer(): void {
     const { socketManager } = require('../network/socket');
     const raw = socketManager?.getSocket?.();
     if (raw) {
+      const isPremium = isPremiumActive();
       try {
         const rawAuth = (raw as any).auth ?? {};
         (raw as any).auth = {
           ...rawAuth,
           ballSkinId: activeBallSkinId,
           wallSkinId: activeWallSkinId,
+          isPremium,
         };
       } catch {
         // Non-fatal
       }
       if (raw.connected) {
-        socketManager.emit('cosmetics:equip', {
+        raw.emit('cosmetics:equip', {
           ballSkinId: activeBallSkinId,
           wallSkinId: activeWallSkinId,
+          isPremium,
         });
       }
     }
@@ -432,6 +435,14 @@ export function useEquippedWallSkin(): CosmeticSkin | null {
   const id = useWallSkinId();
   if (!isPremiumActive()) return null;
   return getCosmeticSkin(id);
+}
+
+try {
+  subscribePremium(() => {
+    syncCosmeticsToServer();
+  });
+} catch {
+  // Non-fatal
 }
 
 

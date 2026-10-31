@@ -5,6 +5,7 @@ import { TimeControl } from '../timeControls';
 import { socketManager } from './socket';
 import { playNotifySound } from '../audio/sounds';
 import { getBallSkinId, getWallSkinId } from '../theme/cosmeticsCatalog';
+import { isPremiumActive } from '../monetization/premium';
 
 export interface OutgoingChallenge {
   challenge: ChallengeDto;
@@ -95,6 +96,7 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
           wallsEach: opts.wallsEach,
           ballSkinId: getBallSkinId(),
           wallSkinId: getWallSkinId(),
+          isPremium: isPremiumActive(),
         },
         (res) => {
           if (answered) return;
@@ -119,6 +121,7 @@ export function useChallenge({ onGameStart }: UseChallengeOptions) {
           accept,
           ballSkinId: getBallSkinId(),
           wallSkinId: getWallSkinId(),
+          isPremium: isPremiumActive(),
         });
       }
       return null;

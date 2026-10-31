@@ -1,7 +1,7 @@
 use crate::board::Board;
 use crate::neural::{map_index_to_action, NeuralPrediction, ACTION_SPACE};
 use crate::pathfinding::shortest_distance;
-use crate::types::{GameAction, GameState, GoalDirection};
+use crate::types::{GameAction, GameState, GoalDirection, Orientation};
 
 #[derive(Debug, Clone)]
 pub struct AdaptedPrediction {
@@ -112,16 +112,16 @@ fn adapt_center_rush(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredic
 
     let cur_dist = shortest_distance(mover.position, GoalDirection::Center, &board, &state.mode);
 
-    // Adjust the 8 pawn move candidates (indices 0..8)
+    // 1. Adjust the 8 pawn move candidates (indices 0..8)
     for action_idx in 0..8 {
         if let Some(GameAction::Move { to }) = map_index_to_action(state, action_idx, is_p2) {
             let next_dist = shortest_distance(to, GoalDirection::Center, &board, &state.mode);
             if next_dist < cur_dist {
-                // Moving closer to center: boost prior x2.5
-                probs[action_idx] *= 2.5;
+                // Moving closer to center: moderate boost
+                probs[action_idx] *= 1.35;
             } else if next_dist == cur_dist {
                 // Lateral move around obstacle: maintain prior
-                probs[action_idx] *= 1.0;
+                probs[action_idx] *= 0.9;
             } else {
                 // Moving away from center: heavily damp prior
                 probs[action_idx] *= 0.15;
@@ -129,10 +129,6 @@ fn adapt_center_rush(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredic
         }
     }
 
-    // Re-normalize probabilities so they sum to 1.0
-    normalize_probs(&mut probs);
-
-    // Re-anchor value: blend neural positional control with center-distance race delta
     let min_opp_dist = state
         .players
         .iter()
@@ -141,6 +137,57 @@ fn adapt_center_rush(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredic
         .map(|(_, p)| shortest_distance(p.position, GoalDirection::Center, &board, &state.mode))
         .min()
         .unwrap_or(8);
+
+    // 2. Adjust wall candidates (indices 8..ACTION_SPACE):
+    // In Center Rush, walls that block opponents from the center while keeping our path open are high priority!
+    if mover.walls_remaining > 0 {
+        for action_idx in 8..ACTION_SPACE {
+            if let Some(GameAction::PlaceWall { wall }) = map_index_to_action(state, action_idx, is_p2) {
+                let is_h = wall.orientation == Orientation::H;
+                if !board.can_place_wall_geometry(wall.row as u8, wall.col as u8, is_h) {
+                    probs[action_idx] = 0.0;
+                    continue;
+                }
+                let mut test_board = board;
+                test_board.place_wall_raw(wall.row as u8, wall.col as u8, is_h);
+
+                let my_new_dist = shortest_distance(mover.position, GoalDirection::Center, &test_board, &state.mode);
+                if my_new_dist < 0 || my_new_dist > cur_dist {
+                    // Do not delay oneself to the center
+                    probs[action_idx] *= 0.1;
+                    continue;
+                }
+
+                let mut min_opp_new_dist = i32::MAX;
+                let mut all_opps_valid = true;
+                for (i, p) in state.players.iter().enumerate() {
+                    if i != mover_idx && p.status != "FINISHED" {
+                        let d = shortest_distance(p.position, GoalDirection::Center, &test_board, &state.mode);
+                        if d < 0 {
+                            all_opps_valid = false;
+                            break;
+                        }
+                        if d < min_opp_new_dist {
+                            min_opp_new_dist = d;
+                        }
+                    }
+                }
+                if !all_opps_valid {
+                    probs[action_idx] = 0.0;
+                    continue;
+                }
+
+                let opp_delay = min_opp_new_dist - min_opp_dist;
+                if opp_delay >= 1 {
+                    // Delays opponent from center and leaves mover's own path 100% open
+                    probs[action_idx] = (probs[action_idx] * 2.5 + 0.12 * (opp_delay as f32)).max(0.08);
+                }
+            }
+        }
+    }
+
+    // Re-normalize probabilities so they sum to 1.0
+    normalize_probs(&mut probs);
 
     let race_delta = ((min_opp_dist - cur_dist) as f32) / 8.0;
     let adapted_value = (0.4 * raw.value + 0.6 * race_delta).clamp(-1.0, 1.0);
@@ -155,7 +202,8 @@ fn adapt_center_rush(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredic
 
 /// Adapt prediction for Race Mode (race2, race3, race4):
 /// - Players share the same goal direction.
-/// - Pawn moves advancing toward the shared goal line receive a boost.
+/// - Tactical walls that block opponent's sprint lane while keeping mover's own lane open receive a strong prior.
+/// - Pawn moves advancing toward the shared goal line receive a balanced boost.
 /// - Value re-anchored on race delta.
 fn adapt_race_mode(state: &GameState, raw: &NeuralPrediction) -> AdaptedPrediction {
     let mut probs = raw.policy_probs.clone();
@@ -174,13 +222,71 @@ fn adapt_race_mode(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredicti
 
     let cur_dist = shortest_distance(mover.position, mover.goal_direction, &board, &state.mode);
 
+    // 1. Pawn moves (indices 0..8)
     for action_idx in 0..8 {
         if let Some(GameAction::Move { to }) = map_index_to_action(state, action_idx, is_p2) {
             let next_dist = shortest_distance(to, mover.goal_direction, &board, &state.mode);
             if next_dist < cur_dist {
-                probs[action_idx] *= 2.0;
+                probs[action_idx] *= 1.35;
             } else if next_dist > cur_dist {
-                probs[action_idx] *= 0.2;
+                probs[action_idx] *= 0.15;
+            }
+        }
+    }
+
+    let min_opp_dist = state
+        .players
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != mover_idx)
+        .map(|(_, p)| shortest_distance(p.position, p.goal_direction, &board, &state.mode))
+        .min()
+        .unwrap_or(8);
+
+    // 2. Tactical walls (indices 8..ACTION_SPACE):
+    // In Race mode, closing on opponents and opening one's own path requires dropping walls across opponent lanes!
+    if mover.walls_remaining > 0 {
+        for action_idx in 8..ACTION_SPACE {
+            if let Some(GameAction::PlaceWall { wall }) = map_index_to_action(state, action_idx, is_p2) {
+                let is_h = wall.orientation == Orientation::H;
+                if !board.can_place_wall_geometry(wall.row as u8, wall.col as u8, is_h) {
+                    probs[action_idx] = 0.0;
+                    continue;
+                }
+                let mut test_board = board;
+                test_board.place_wall_raw(wall.row as u8, wall.col as u8, is_h);
+
+                let my_new_dist = shortest_distance(mover.position, mover.goal_direction, &test_board, &state.mode);
+                if my_new_dist < 0 || my_new_dist > cur_dist {
+                    // Do not block oneself
+                    probs[action_idx] *= 0.1;
+                    continue;
+                }
+
+                let mut min_opp_new_dist = i32::MAX;
+                let mut all_opps_valid = true;
+                for (i, p) in state.players.iter().enumerate() {
+                    if i != mover_idx && p.status != "FINISHED" {
+                        let d = shortest_distance(p.position, p.goal_direction, &test_board, &state.mode);
+                        if d < 0 {
+                            all_opps_valid = false;
+                            break;
+                        }
+                        if d < min_opp_new_dist {
+                            min_opp_new_dist = d;
+                        }
+                    }
+                }
+                if !all_opps_valid {
+                    probs[action_idx] = 0.0;
+                    continue;
+                }
+
+                let opp_delay = min_opp_new_dist - min_opp_dist;
+                if opp_delay >= 1 {
+                    // Delays opponent's sprint and keeps mover's own lane 100% open
+                    probs[action_idx] = (probs[action_idx] * 2.5 + 0.12 * (opp_delay as f32)).max(0.08);
+                }
             }
         }
     }

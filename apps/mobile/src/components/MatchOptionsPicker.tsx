@@ -2,7 +2,6 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { OrbIcon } from './OrbIcon';
 import { THEME, useStyles } from '../theme';
-import { useTranslation } from '../i18n';
 import {
   NO_TIMER_CONTROL,
   TimeControl,
@@ -72,7 +71,6 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
   style,
 }) => {
   const styles = useStyles(createStyles);
-  const { t } = useTranslation();
 
   return (
     <View style={[styles.container, style]}>
@@ -102,28 +100,6 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
               styles={styles}
             />
           ))}
-        </View>
-        <View
-          style={[
-            styles.modeMetaPill,
-            mode === 'classic' ? styles.modeMetaPillRanked : styles.modeMetaPillCasual,
-          ]}
-        >
-          <OrbIcon
-            name={mode === 'classic' ? 'award' : 'info'}
-            size={13}
-            color={mode === 'classic' ? THEME.colors.primary : THEME.colors.textSecondary}
-          />
-          <Text
-            style={[
-              styles.modeMetaText,
-              mode === 'classic' ? styles.modeMetaTextRanked : styles.modeMetaTextCasual,
-            ]}
-          >
-            {mode === 'classic'
-              ? t('matchOptions.classicRankedNote')
-              : t('matchOptions.casualNote')}
-          </Text>
         </View>
       </View>
 
@@ -305,35 +281,5 @@ const createStyles = () =>
     unifiedTileTextSelected: {
       color: THEME.colors.textPrimary,
       fontWeight: '800',
-    },
-    modeMetaPill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 8,
-      borderWidth: 1,
-      marginTop: 2,
-    },
-    modeMetaPillRanked: {
-      backgroundColor: THEME.colors.surfacePrimaryTint,
-      borderColor: THEME.colors.surfacePrimaryTintBorder,
-    },
-    modeMetaPillCasual: {
-      backgroundColor: THEME.colors.surfaceMuted,
-      borderColor: THEME.colors.surfaceHairline,
-    },
-    modeMetaText: {
-      flex: 1,
-      fontFamily: THEME.fonts.semiBold,
-      fontSize: 11,
-      lineHeight: 14.5,
-    },
-    modeMetaTextRanked: {
-      color: THEME.colors.primaryDark,
-    },
-    modeMetaTextCasual: {
-      color: THEME.colors.textSecondary,
     },
   });

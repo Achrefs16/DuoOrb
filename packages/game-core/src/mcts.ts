@@ -243,7 +243,7 @@ function probableWalls(st: GameState, playerId: string, horizon = 6, _isEasy = f
   }
 
   const me = st.players.find((p) => p.id === playerId);
-  const isOpening = st.walls.length <= 2 && (me ? getShortestDistance(me.position, me.goalDirection, st.walls, st.mode) >= 6 : false);
+  const isOpening = st.mode === '2p' && st.walls.length <= 2 && (me ? getShortestDistance(me.position, me.goalDirection, st.walls, st.mode) >= 6 : false);
 
   // Generate candidate walls that STOP/DELAY active opponents.
   // Walls that do not delay an opponent (delay <= 0) are strictly pruned.
@@ -343,7 +343,7 @@ function createMctsSession(state: GameState, opts: MctsOptions = {}): MctsSessio
     }
   }
   const hasCriticalFoe = minFoeDist === 1;
-  const isRacing = state.mode.startsWith('race') || state.mode.startsWith('center');
+  const isRacing = state.mode === '2p';
   const isLeadingRace = myDist <= minFoeDist && minFoeDist > 1;
   const isCloseRace = isRacing && myDist <= minFoeDist + 1 && minFoeDist > 1;
   const isRacingFarBehind = minFoeDist > 1 && myDist >= minFoeDist + 3;
