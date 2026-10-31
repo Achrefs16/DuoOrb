@@ -1,6 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
-import { analyzeGameAsync } from '@duoorb/analyzer-rust';
 import {
   createInitialState,
   type GameMode,
@@ -13,15 +12,15 @@ import {
 export class AnalysisService {
   private readonly logger = new Logger(AnalysisService.name);
 
-  /** Bump together with the Rust `review.analysis_version`. */
+  /** Bump together with client-side analysis version. */
   private static readonly ANALYSIS_VERSION = 'analysis-3.3';
 
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * High-performance asynchronous game analysis powered by the native Rust engine.
-   * Utilizes background OS threads so Node.js and real-time WebSockets remain unblocked.
-   * Caches results in PostgreSQL when the database is available.
+   * Match review service.
+   * Serves cached analyses from the database when available.
+   * Active analysis is computed directly on client devices (native Android / WebAssembly).
    */
   async reviewGame(
     initialState?: GameState,
@@ -53,8 +52,6 @@ export class AnalysisService {
           return cached.reviewData as unknown as GameReview;
         }
         if (cached && cached.reviewData) {
-          // Stale "everything is a blunder" review (analysis-2.0): recompute
-          // now and let the upsert below replace both the JSON and version.
           this.logger.debug(
             `Stale analysis cache for ${gameId} (${cached.analysisVersion}); recomputing`
           );
@@ -64,46 +61,7 @@ export class AnalysisService {
       }
     }
 
-    // 2. If initial state or history is missing and we have a database connection,
-    // attempt to reconstruct the match from the online game history table
-    if (this.prisma.isConnected && gameId && (!safeState || safeHistory.length === 0)) {
-      try {
-        const dbGame = await this.prisma.game.findUnique({
-          where: { id: gameId },
-          include: {
-            players: {
-              include: { user: { include: { profile: true } } },
-            },
-            moves: {
-              orderBy: { sequence: 'asc' },
-            },
-          },
-        });
-        if (dbGame) {
-          if (!safeState) {
-            safeState = createInitialState({
-              gameId: dbGame.id,
-              mode: dbGame.mode as GameMode,
-              playerNames: dbGame.players.map(
-                (p) => p.user?.profile?.displayName || `Player ${p.playerIndex + 1}`
-              ),
-            });
-          }
-          if (safeHistory.length === 0 && dbGame.moves.length > 0) {
-            safeHistory = dbGame.moves.map((m) => ({
-              sequence: m.sequence,
-              playerId: `p${m.playerIndex + 1}`,
-              action: m.payload as any,
-              timestamp: Number(m.serverTimestamp),
-            }));
-          }
-        }
-      } catch (err: any) {
-        this.logger.warn(`Failed fetching game history for ${gameId}: ${err.message}`);
-      }
-    }
-
-    // 3. Synthesize initial state if still absent (e.g. from local/AI/old offline games)
+    // 2. Synthesize initial state if absent
     if (!safeState || !Array.isArray(safeState.players) || safeState.players.length === 0) {
       const playerIds = new Set(safeHistory.map((h) => h.playerId));
       const mode: GameMode =
@@ -133,71 +91,47 @@ export class AnalysisService {
           },
           confidence: 'unsupported',
         },
-        engineVersion: 'duoorb-rust-hybrid-4.0',
+        engineVersion: 'client-native',
         analysisVersion: AnalysisService.ANALYSIS_VERSION,
       } as unknown as GameReview;
     }
 
-    // 4. Compute analysis asynchronously in Rust via NAPI worker thread
-    const startTime = performance.now();
-    const rawReview = await analyzeGameAsync(safeState, safeHistory);
-    const durationMs = (performance.now() - startTime).toFixed(2);
-    this.logger.log(`Analyzed game ${gameId} (${safeHistory.length} moves) in ${durationMs}ms via Rust engine`);
-
-    // Normalize and alias fields so mobile UI receives both canonical and UI-convenience shapes
-    const normalizedMoves = (rawReview.moveAnalyses || []).map((m: any) => {
-      const act = m.playedAction ?? m.action;
-      const evalVal = m.evaluationAfter ?? m.evaluation ?? 0;
-      const winVal = m.winChanceAfter ?? m.winChance ?? 0.5;
-      return {
-        ...m,
-        action: act,
-        playedAction: act,
-        evaluation: evalVal,
-        evaluationAfter: evalVal,
-        winChance: winVal,
-        winChanceAfter: winVal,
-      };
-    });
-
-    const winChanceHistory = normalizedMoves.map((m: any, idx: number) => ({
-      step: m.step ?? idx + 1,
-      winChance: m.winChance,
-    }));
-
-    const decidingMoments = (rawReview.criticalMoments ?? []).map((step: number) => ({
-      moveNumber: step,
-      playerId: normalizedMoves[step - 1]?.playerId ?? 'p1',
-      reason: 'SWING' as const,
-      beforeWinChance: normalizedMoves[step - 2]?.winChance ?? 0.5,
-      afterWinChance: normalizedMoves[step - 1]?.winChance ?? 0.5,
-      evaluationSwing: normalizedMoves[step - 1]?.evaluationLoss ?? 0,
-      raceSwing: 0,
-      importance: 1,
-    }));
-
+    // 3. Client devices (Android native & Web WASM) execute the neural/MCTS engine locally.
+    // The server returns a lightweight review response and can store it in the database cache.
     const review: GameReview = {
-      ...rawReview,
-      moveAnalyses: normalizedMoves,
-      winChanceHistory,
-      decidingMoments,
-    };
+      gameId,
+      mode: safeState.mode,
+      totalMoves: safeHistory.length,
+      accuracies: {},
+      moveAnalyses: [],
+      winChanceHistory: [],
+      criticalMoments: [],
+      decidingMoments: [],
+      summary: {
+        keyLesson: {
+          title: 'Client-Side Analysis',
+          detail: 'Game analysis is performed directly on-device via native AI engine.',
+        },
+        confidence: 'low',
+      },
+      engineVersion: 'client-native',
+      analysisVersion: AnalysisService.ANALYSIS_VERSION,
+    } as unknown as GameReview;
 
-    // 5. Persist to database cache in background if connected
     if (this.prisma.isConnected) {
       this.prisma.gameAnalysis
         .upsert({
           where: { gameId },
           create: {
             gameId,
-            engineVersion: review.engineVersion ?? 'duoorb-rust-2.1',
+            engineVersion: review.engineVersion ?? 'client-native',
             analysisVersion: AnalysisService.ANALYSIS_VERSION,
             totalMoves: review.totalMoves,
             winnerId: review.winnerId ?? null,
             reviewData: review as any,
           },
           update: {
-            engineVersion: review.engineVersion ?? 'duoorb-rust-2.1',
+            engineVersion: review.engineVersion ?? 'client-native',
             analysisVersion: AnalysisService.ANALYSIS_VERSION,
             reviewData: review as any,
           },
@@ -226,8 +160,6 @@ export class AnalysisService {
       throw new NotFoundException(`No analysis found for game ${gameId}`);
     }
 
-    // Never serve a cached "everything is a blunder" 2.0 review. The client
-    // will fall back to POST /review, which recomputes and replaces this row.
     if (record.analysisVersion !== AnalysisService.ANALYSIS_VERSION) {
       throw new NotFoundException(
         `Analysis for game ${gameId} is outdated; request a fresh review`

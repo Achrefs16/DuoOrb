@@ -3,7 +3,7 @@ import { AnalysisService } from './analysis.service.js';
 import { createInitialState, applyAction } from '@duoorb/game-core';
 
 describe('AnalysisService', () => {
-  it('analyzes a game using the native Rust engine', async () => {
+  it('returns client-side analysis response when not cached', async () => {
     const mockPrisma: any = {
       isConnected: false,
       gameAnalysis: {
@@ -37,9 +37,8 @@ describe('AnalysisService', () => {
 
     expect(review).toBeDefined();
     expect(review.totalMoves).toBe(4);
-    expect(review.moveAnalyses.length).toBe(4);
     expect(review.summary).toBeDefined();
-    expect(review.engineVersion).toBe('duoorb-rust-hybrid-4.0');
+    expect(review.engineVersion).toBe('client-native');
     expect(review.analysisVersion).toBe('analysis-3.3');
   });
 
@@ -98,7 +97,7 @@ describe('AnalysisService', () => {
     const review = await service.reviewGame(undefined, []);
     expect(review).toBeDefined();
     expect(review.totalMoves).toBe(0);
-    expect(review.engineVersion).toBe('duoorb-rust-hybrid-4.0');
+    expect(review.engineVersion).toBe('client-native');
     expect(review.analysisVersion).toBe('analysis-3.3');
   });
 

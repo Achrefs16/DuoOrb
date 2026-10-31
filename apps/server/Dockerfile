@@ -1,13 +1,3 @@
-# Stage 1: Build native Rust analyzer
-FROM rust:bookworm AS rust-builder
-WORKDIR /build/packages/analyzer-rust
-COPY packages/analyzer-rust/Cargo.* ./
-COPY packages/analyzer-rust/build.rs ./
-COPY packages/analyzer-rust/src ./src
-RUN cargo build --release
-RUN cp target/release/libduoorb_analyzer.so duoorb-analyzer.node
-
-# Stage 2: Node.js server runtime
 FROM node:22-bookworm-slim
 
 WORKDIR /app
@@ -19,7 +9,6 @@ RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 COPY packages/game-core/package*.json ./packages/game-core/
 COPY packages/protocol/package*.json ./packages/protocol/
-COPY packages/analyzer-rust/package*.json ./packages/analyzer-rust/
 COPY apps/server/package*.json ./apps/server/
 
 # Install monorepo dependencies. Scripts are skipped here on purpose: the
@@ -27,11 +16,9 @@ COPY apps/server/package*.json ./apps/server/
 # only copied below. The explicit builds further down cover it.
 RUN npm install --ignore-scripts
 
-# Copy source trees and compiled Rust binary
+# Copy source trees
 COPY packages/game-core ./packages/game-core
 COPY packages/protocol ./packages/protocol
-COPY packages/analyzer-rust ./packages/analyzer-rust
-COPY --from=rust-builder /build/packages/analyzer-rust/duoorb-analyzer.node ./packages/analyzer-rust/duoorb-analyzer.node
 COPY apps/server ./apps/server
 
 # Build game-core, protocol, generate Prisma client, and build server

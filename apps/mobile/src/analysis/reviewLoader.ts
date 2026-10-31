@@ -94,7 +94,7 @@ export async function fetchOrComputeReview(
   try {
     const serverReview = await api.requestGameReview(safeInitial, history, gameId);
     if (options?.isCancelled?.()) return null;
-    if (serverReview && Array.isArray(serverReview.moveAnalyses)) {
+    if (serverReview && Array.isArray(serverReview.moveAnalyses) && serverReview.moveAnalyses.length > 0) {
       console.log(
         `[ReviewLoader] ✅ Received SERVER review (${serverReview.engineVersion || 'duoorb-rust-hybrid-4.0'}) for ${gameId}`
       );
