@@ -14,6 +14,7 @@ import { ReportsModule } from './reports/reports.module.js';
 import { BillingModule } from './billing/billing.module.js';
 import { AnalysisModule } from './analysis/analysis.module.js';
 import { GatewayModule } from './gateway/gateway.module.js';
+import { VersionModule } from './version/version.module.js';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { GatewayModule } from './gateway/gateway.module.js';
     BillingModule,
     AnalysisModule,
     GatewayModule,
+    VersionModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

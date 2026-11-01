@@ -44,6 +44,13 @@ import { ChallengeToast } from './src/components/ChallengeToast';
 import { OnlineJoinGate } from './src/components/OnlineJoinGate';
 import { RoomInviteToast } from './src/components/RoomInviteToast';
 import { InstallPromptModal } from './src/components/InstallPromptModal';
+import { UpdateModal } from './src/components/UpdateModal';
+import {
+  checkAppVersion,
+  dismissOptionalUpdate,
+  type AppVersionConfig,
+  type VersionGateStatus,
+} from './src/network/versionGate';
 import * as SplashScreen from 'expo-splash-screen';
 import { isPremiumActive, refreshPremium, usePremium } from './src/monetization/premium';
 import { useRoomInvites } from './src/network/useRoomInvites';
@@ -925,6 +932,28 @@ export default function App() {
   const [historyRewardError, setHistoryRewardError] = useState<string | null>(null);
   const [pendingHistoryAnalysis, setPendingHistoryAnalysis] = useState<SavedGameRecord | null>(null);
 
+  // In-App Update (Flexible optional & strict forced) state
+  const [updateStatus, setUpdateStatus] = useState<VersionGateStatus>('none');
+  const [updateConfig, setUpdateConfig] = useState<AppVersionConfig | null>(null);
+
+  useEffect(() => {
+    if (booted) {
+      void checkAppVersion().then((result) => {
+        if (result.status !== 'none' && result.config) {
+          setUpdateConfig(result.config);
+          setUpdateStatus(result.status);
+        }
+      });
+    }
+  }, [booted]);
+
+  const handleDismissUpdate = () => {
+    if (updateConfig) {
+      void dismissOptionalUpdate(updateConfig.latestVersionCode);
+    }
+    setUpdateStatus('none');
+  };
+
   const startAnalysisFromHistory = (savedGame: SavedGameRecord) => {
     const initialState =
       savedGame.initialState ||
@@ -1481,6 +1510,12 @@ export default function App() {
       </SessionProvider>
       <AppToast />
       <OfflineModal />
+      <UpdateModal
+        visible={updateStatus !== 'none'}
+        status={updateStatus}
+        config={updateConfig}
+        onDismiss={handleDismissUpdate}
+      />
       {Platform.OS === 'web' && (
         <InstallPromptModal
           visible={installModalOpen}
