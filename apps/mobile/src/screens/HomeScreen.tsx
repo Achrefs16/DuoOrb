@@ -209,10 +209,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
           {onOpenPremium && (
             <TouchableOpacity
-              style={[
-                styles.headerIconButton,
-                !isPremiumMember && styles.headerDiamondButton,
-              ]}
+              style={styles.headerIconButton}
               activeOpacity={0.7}
               onPress={onOpenPremium}
               accessibilityRole="button"
@@ -445,11 +442,6 @@ const createStyles = () =>
       justifyContent: 'center',
       backgroundColor: THEME.colors.surfaceMuted,
       borderWidth: 0,
-    },
-    headerDiamondButton: {
-      backgroundColor: THEME.colors.surfaceMuted,
-      borderWidth: 1,
-      borderColor: 'rgba(217, 166, 46, 0.45)',
     },
     scrollArea: {
       flex: 1,
