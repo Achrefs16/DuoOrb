@@ -79,6 +79,16 @@ export interface GuestCredentialsDto {
   accessExpiresAt: number;
 }
 
+/** What the server returns when a Google Play reviewer signs in with email/password. */
+export interface ReviewerCredentialsDto {
+  userId: string;
+  email: string;
+  username: string;
+  displayName: string;
+  accessToken: string;
+  refreshToken: string | null;
+}
+
 export interface FriendItemDto {
   id: string;
   username: string;
@@ -380,6 +390,33 @@ export async function refreshGuestSession(
 }
 
 /**
+ * Authenticates a Google Play reviewer with email and password.
+ */
+export async function loginReviewerSession(
+  email: string,
+  password: string
+): Promise<ReviewerCredentialsDto> {
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      `${API_URL}/auth/reviewer/login`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      },
+      15000
+    );
+  } catch (e) {
+    throw toNetworkError(e);
+  }
+  if (!res.ok) {
+    throw await throwHttpError(res, `Reviewer login failed (${res.status})`);
+  }
+  return parseJson<ReviewerCredentialsDto>(res);
+}
+
+/**
  * fetch with a hard timeout. Abort maps to TIMEOUT; any other transport
  * failure maps to OFFLINE. Never returns null, never swallows.
  */
@@ -542,6 +579,10 @@ async function request<T>(
 }
 
 export const api = {
+  async loginReviewer(email: string, password: string): Promise<ReviewerCredentialsDto> {
+    return loginReviewerSession(email, password);
+  },
+
   async getMe(): Promise<UserMeDto> {
     return request<UserMeDto>('/me');
   },

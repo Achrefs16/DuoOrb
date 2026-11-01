@@ -665,6 +665,13 @@ export class UsersService {
       throw new BadRequestException('Account deletion is unavailable right now.');
     }
 
+    const reviewerCred = await this.prisma.reviewerCredential.findUnique({
+      where: { userId },
+    });
+    if (reviewerCred) {
+      throw new BadRequestException('The reviewer account cannot be deleted.');
+    }
+
     // Supabase Auth holds the Google credential outside Postgres. Best-effort:
     // the PG delete below is authoritative for Play; a failed admin call is
     // logged, never blocks deletion.

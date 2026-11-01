@@ -25,6 +25,8 @@ interface WelcomeScreenProps {
   onOpenLegal: (kind: LegalKind) => void;
   /** Opens the language selection modal. */
   onOpenLanguage?: () => void;
+  /** Opens the dedicated reviewer login screen. */
+  onOpenReviewerLogin?: () => void;
 }
 
 /** Google's button blue (busy spinner). */
@@ -44,6 +46,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   error,
   onOpenLegal,
   onOpenLanguage,
+  onOpenReviewerLogin,
 }) => {
   const styles = useStyles(createStyles);
   const { t, currentLanguage } = useTranslation();
@@ -128,6 +131,19 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           </Text>
           {t('welcome.noticeAfter')}
         </Text>
+
+        {onOpenReviewerLogin && (
+          <TouchableOpacity
+            style={styles.reviewerLink}
+            activeOpacity={0.7}
+            onPress={onOpenReviewerLogin}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel={t('welcome.reviewerLogin')}
+          >
+            <Text style={styles.reviewerLinkText}>{t('welcome.reviewerLogin')}</Text>
+          </TouchableOpacity>
+        )}
 
         {!!error && <Text style={styles.errorText}>{error}</Text>}
       </View>
@@ -248,6 +264,17 @@ const createStyles = () =>
       lineHeight: 17,
       color: THEME.colors.textSecondary,
       textAlign: 'center',
+    },
+    reviewerLink: {
+      alignItems: 'center',
+      paddingVertical: 6,
+      marginTop: 2,
+    },
+    reviewerLinkText: {
+      fontFamily: THEME.fonts.medium,
+      fontSize: 13,
+      color: THEME.colors.textMuted,
+      textDecorationLine: 'underline',
     },
     errorText: {
       fontFamily: THEME.fonts.medium,

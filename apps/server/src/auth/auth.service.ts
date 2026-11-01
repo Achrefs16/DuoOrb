@@ -2,6 +2,7 @@ import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { PrismaService } from '../database/prisma.service.js';
 import { GuestTokenService } from './guest-token.service.js';
+import { ReviewerTokenService } from './reviewer-token.service.js';
 import { validateUsername } from '../users/username.js';
 import {
   DEFAULT_INITIAL_RATING,
@@ -46,7 +47,8 @@ export class AuthService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly guestTokens: GuestTokenService
+    private readonly guestTokens: GuestTokenService,
+    private readonly reviewerTokens?: ReviewerTokenService
   ) {
     const jwksUrl = process.env.SUPABASE_JWKS_URL;
     if (jwksUrl) {
@@ -81,6 +83,19 @@ export class AuthService {
       return {
         sub: guestUserId,
         user_metadata: { role: 'guest' },
+      };
+    }
+
+    // Reviewer tokens are local HMACs for Google Play review accounts.
+    const reviewerClaims = this.reviewerTokens?.verify(token);
+    if (reviewerClaims) {
+      return {
+        sub: reviewerClaims.sub,
+        email: reviewerClaims.email,
+        user_metadata: {
+          role: 'reviewer',
+          full_name: reviewerClaims.displayName || 'Play Reviewer',
+        },
       };
     }
 
@@ -141,6 +156,13 @@ export class AuthService {
         false
       );
     }
+  }
+
+  /**
+   * Synchronously verifies a reviewer access token. Used on socket handshake path.
+   */
+  verifyReviewerToken(token: string | undefined | null) {
+    return this.reviewerTokens?.verify(token) ?? null;
   }
 
   /**

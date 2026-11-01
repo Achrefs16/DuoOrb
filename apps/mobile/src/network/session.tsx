@@ -22,7 +22,7 @@ import {
 } from './auth';
 import { classifyAuthEvent } from './sessionEvents';
 import { socketManager } from './socket';
-import { api, ApiError, setTokenProvider, createGuestSession, refreshGuestSession } from './apiClient';
+import { api, ApiError, setTokenProvider, createGuestSession, refreshGuestSession, loginReviewerSession } from './apiClient';
 import { isRetryable, kindOf, loadMessage, type ErrorKind } from './errors';
 import { ingestServerBotStars } from '../storage/gameStorage';
 import {
@@ -65,6 +65,7 @@ interface SessionContextValue {
   signingIn: boolean;
   error: string | null;
   signInWithGoogle: () => Promise<void>;
+  signInWithReviewer: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
   /**
@@ -398,6 +399,58 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const signInWithReviewer = useCallback(
+    async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+      setSigningIn(true);
+      setError(null);
+      try {
+        const res = await loginReviewerSession(email, password);
+        const previous = getIdentity();
+        const mergingGuest =
+          previous?.isGuest === true && previous.userId !== res.userId
+            ? previous.userId
+            : null;
+
+        setIdentity({
+          userId: res.userId,
+          username: res.username || '',
+          displayName: res.displayName || 'Play Reviewer',
+          accessToken: res.accessToken,
+          refreshToken: null,
+          isGuest: false,
+        });
+
+        void initializePurchases(res.userId);
+
+        socketManager.adoptSession(res.accessToken).then((ok) => {
+          if (!ok) socketManager.syncWithIdentity();
+        });
+
+        if (mergingGuest) {
+          void linkGuestProgress(res.accessToken, mergingGuest);
+        }
+
+        const next = await loadCanonicalProfile(res.accessToken, fetchProfile);
+        if (next) {
+          applyProfileToState({ username: next.username, displayName: next.displayName });
+        }
+
+        setStatus('ready');
+        return { success: true };
+      } catch (e: any) {
+        const msg =
+          e instanceof ApiError
+            ? e.message
+            : 'Login failed. Please check your credentials.';
+        setError(msg);
+        return { success: false, error: msg };
+      } finally {
+        setSigningIn(false);
+      }
+    },
+    [fetchProfile, applyProfileToState]
+  );
+
   const signOut = useCallback(async () => {
     setError(null);
     try {
@@ -476,6 +529,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     signingIn,
     error,
     signInWithGoogle,
+    signInWithReviewer,
     signOut,
     getAccessToken: async () => {
       const live = getIdentity();

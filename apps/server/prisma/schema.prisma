@@ -28,6 +28,7 @@ model User {
   blockedBy         Block[] @relation("Blocked")
 
   guestSession      GuestSession?
+  reviewerCredential ReviewerCredential?
 
   aiWins            AiWin[]
   achievements      Achievement[]
@@ -66,6 +67,19 @@ model GuestSession {
 
   @@index([expiresAt])
   @@map("guest_sessions")
+}
+
+/// Dedicated reviewer credentials for Google Play review and administrative access.
+model ReviewerCredential {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("reviewer_credentials")
 }
 
 model Profile {

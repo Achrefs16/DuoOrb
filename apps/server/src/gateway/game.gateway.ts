@@ -304,6 +304,13 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         // The token itself names the identity, so this claim is authoritative
         // even if the handshake query omitted or spoofed userId.
         this.reservePendingHandshake(guestUserId, client.id);
+      } else if (typeof this.authService?.verifyReviewerToken === 'function') {
+        const reviewerUserId = this.authService.verifyReviewerToken(rawToken)?.sub ?? null;
+        if (reviewerUserId) {
+          userId = reviewerUserId;
+          verified = true;
+          this.reservePendingHandshake(reviewerUserId, client.id);
+        }
       }
     }
 

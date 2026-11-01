@@ -16,7 +16,7 @@ import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
 import { useSession } from '../network/session';
 import { GoogleGLogo } from './GoogleGLogo';
-import { PREMIUM_GOLD } from './PremiumBadge';
+import { PremiumBadge, PREMIUM_GOLD } from './PremiumBadge';
 import {
   getPremiumPlans,
   purchaseNeedsLink,
@@ -91,6 +91,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
   const [linkError, setLinkError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showLink, setShowLink] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const bullets = [
     t('premium.bulletAds'),
@@ -141,7 +142,13 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
     setShowLink(false);
     setLinking(false);
     setLinkError(null);
+    setSuccess(false);
     onClose();
+  };
+
+  const handleSuccessDone = () => {
+    setSuccess(false);
+    onDone();
   };
 
   const handleBuy = async () => {
@@ -157,7 +164,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
     setBuying(false);
     if (res.status === 'done') {
       track('trial_started', { plan: activePlan.id });
-      onDone();
+      setSuccess(true);
     } else if (res.status === 'needs-link') {
       setShowLink(true);
     } else if (res.status === 'error') {
@@ -176,7 +183,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
     setError(null);
     const res = await restorePremium();
     setRestoring(false);
-    if (res.status === 'done') onDone();
+    if (res.status === 'done') setSuccess(true);
     else if (res.status === 'error') setError(res.message);
   };
 
@@ -196,18 +203,55 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.backdrop}>
         <View style={[styles.card, { paddingBottom: 32 + insets.bottom }]}>
-          <LinearGradient
-            colors={['#F7DE9B', '#D9A62E']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.hero}
-          >
-            <View style={styles.heroHandle} />
-            <View style={styles.heroCrownTile}>
-              <Image source={DIAMOND_IMG} style={{ width: 32, height: 32 }} resizeMode="contain" />
+          {success ? (
+            <View style={styles.successWrapper}>
+              <LinearGradient
+                colors={['#F7DE9B', '#D9A62E']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.successHero}
+              >
+                <View style={styles.heroHandle} />
+                <View style={styles.successCrownTile}>
+                  <Image source={DIAMOND_IMG} style={{ width: 44, height: 44 }} resizeMode="contain" />
+                </View>
+                <Text style={styles.successHeroTitle}>{t('premium.successTitle')}</Text>
+              </LinearGradient>
+
+              <View style={styles.successBody}>
+                <View style={styles.vipTag}>
+                  <Text style={styles.vipName} numberOfLines={1}>
+                    {identity?.displayName || identity?.username || 'Player'}
+                  </Text>
+                  <PremiumBadge size={16} />
+                </View>
+
+                <Text style={styles.successSubtitle}>{t('premium.successSubtitle')}</Text>
+
+                <TouchableOpacity
+                  style={styles.buyButton}
+                  onPress={handleSuccessDone}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('premium.letsPlay')}
+                >
+                  <Text style={styles.buyText}>{t('premium.letsPlay')}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            <Text style={styles.heroTitle}>{t('premium.title')}</Text>
-          </LinearGradient>
+          ) : (
+            <>
+              <LinearGradient
+                colors={['#F7DE9B', '#D9A62E']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.hero}
+              >
+                <View style={styles.heroHandle} />
+                <View style={styles.heroCrownTile}>
+                  <Image source={DIAMOND_IMG} style={{ width: 32, height: 32 }} resizeMode="contain" />
+                </View>
+                <Text style={styles.heroTitle}>{t('premium.title')}</Text>
+              </LinearGradient>
 
           <View style={styles.bullets}>
             {bullets.map((b) => (
@@ -391,6 +435,8 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
               )}
             </>
           )}
+        </>
+      )}
         </View>
       </View>
     </Modal>
@@ -463,6 +509,71 @@ const createStyles = () => StyleSheet.create({
     fontSize: 13,
     color: '#3A2A00',
     opacity: 0.8,
+  },
+  successWrapper: {
+    marginHorizontal: -24,
+    marginTop: -12,
+  },
+  successHero: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 16,
+    paddingBottom: 22,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    gap: 8,
+  },
+  successCrownTile: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#1E1700',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  successHeroTitle: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#2A1D00',
+    textAlign: 'center',
+    letterSpacing: -0.3,
+  },
+  successBody: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    alignItems: 'center',
+    gap: 12,
+  },
+  vipTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.surfacePrimaryTint,
+    paddingVertical: 7,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    gap: 8,
+  },
+  vipName: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 16,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+  },
+  successSubtitle: {
+    fontFamily: THEME.fonts.medium,
+    fontSize: 14,
+    color: THEME.colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 21,
+    paddingHorizontal: 12,
+    marginBottom: 8,
   },
   bullets: {
     gap: 8,
