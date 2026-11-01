@@ -42,24 +42,19 @@ const isTestEnv = typeof process !== 'undefined' && process.env?.NODE_ENV === 't
 export const isDevEnvironment = typeof __DEV__ !== 'undefined' && Boolean(__DEV__);
 
 /**
- * Developer override: defaults to null (disabled) so the app tests with real
- * Google Play / RevenueCat subscriptions and actual free tier limits.
+ * Developer override: permanently disabled so web and developer environments
+ * strictly test real subscription status and actual free tier limits.
  */
 let devOverride: boolean | null = null;
 
-export function setDevPremiumOverride(enabled: boolean | null): void {
-  devOverride = enabled;
-  current = { ...current };
-  if (enabled === null) {
-    void AsyncStorage.removeItem(DEV_PREMIUM_KEY).catch(() => {});
-  } else {
-    void AsyncStorage.setItem(DEV_PREMIUM_KEY, enabled ? 'true' : 'false').catch(() => {});
-  }
+export function setDevPremiumOverride(_enabled: boolean | null): void {
+  devOverride = null;
+  void AsyncStorage.removeItem(DEV_PREMIUM_KEY).catch(() => {});
   emit();
 }
 
 export function getDevPremiumOverride(): boolean | null {
-  return devOverride;
+  return null;
 }
 
 /** Normal offline trust window for a server-confirmed entitlement. */
@@ -202,13 +197,9 @@ export async function refreshPremium(): Promise<PremiumState> {
 /** Offline-boot fast path: cached state, expiry still enforced by isPremiumActive. */
 export async function hydratePremiumCache(): Promise<PremiumState> {
   try {
-    const devRaw = await AsyncStorage.getItem(DEV_PREMIUM_KEY);
-    if (devRaw !== null) {
-      devOverride = devRaw === 'true';
-      current = { ...current };
-    } else {
-      devOverride = null;
-    }
+    // Disabled: remove any stale developer override from storage
+    void AsyncStorage.removeItem(DEV_PREMIUM_KEY).catch(() => {});
+    devOverride = null;
   } catch {
     // ignore
   }
@@ -266,6 +257,8 @@ export function __resetPremiumForTests(): void {
  */
 export function clearPremium(): void {
   current = { ...EMPTY, loading: false };
+  devOverride = null;
   emit();
   void AsyncStorage.removeItem(PREMIUM_CACHE_KEY).catch(() => {});
+  void AsyncStorage.removeItem(DEV_PREMIUM_KEY).catch(() => {});
 }

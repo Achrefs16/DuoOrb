@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.asdigital.duoorb",
-      "versionCode": 15,
+      "versionCode": 16,
       "permissions": [],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",

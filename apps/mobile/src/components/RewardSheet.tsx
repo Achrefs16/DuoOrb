@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Animated,
   Modal,
-  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -11,32 +10,39 @@ import {
 } from 'react-native';
 import { OrbIcon } from './OrbIcon';
 import { PremiumBadge } from './PremiumBadge';
+import { BotAvatar } from './BotAvatar';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, useStyles } from '../theme';
 import { useTranslation } from '../i18n';
 import { sheetSlideStyle, useSheetSlide } from './sheetAnimation';
+import { botById } from '@duoorb/game-core';
 
 /**
- * High-converting Rewarded / Premium gate sheet (MONETIZATION.md P3.2).
+ * Contextual, zero-clutter Rewarded / Premium gate sheet.
  *
- * Positions DuoOrb Premium as the hero solution (unlimited analysis, no ads),
- * with watching a rewarded video as the honest single-use free alternative.
+ * Dedicated layouts for:
+ * 1. Hint: Amber compass/lightbulb, match refill action
+ * 2. Undo: Cyan rewind, match rewind action
+ * 3. Bot Unlock: Real Bot Avatar, character ELO, permanent unlock
+ * 4. Game Review: Tactical activity radar, full move analysis
  */
 
-interface RewardSheetProps {
+export interface RewardSheetProps {
   visible: boolean;
   /** Ad showing / reward pending. */
   busy: boolean;
   /** Machine error from showRewarded(): 'unavailable' | 'dismissed' | 'error' | 'store'. */
   error: string | null;
   onWatch: () => void;
-  /** Paywall entry (P7): unlimited analysis with no ads. */
+  /** Paywall entry: unlimited access with zero ads. */
   onPremium: () => void;
   onClose: () => void;
-  /** Copy variant: analysis unlock (default), offline Undo, offline Hint, unified assist, or locked bot pass. */
+  /** Specific variant. */
   variant?: 'analysis' | 'undo' | 'hint' | 'assist' | 'bot';
   /** Target bot name if unlocking a bot with an ad. */
   botName?: string;
+  /** Target bot ID for avatar and ELO display. */
+  botId?: string;
   /** Whether the user has reached the max rewarded ad limit for this match */
   watchLimitReached?: boolean;
 }
@@ -50,6 +56,7 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
   onClose,
   variant = 'analysis',
   botName,
+  botId,
   watchLimitReached = false,
 }) => {
   const styles = useStyles(createStyles);
@@ -61,8 +68,12 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
   const isHint = variant === 'hint';
   const isAssist = variant === 'assist';
   const isBot = variant === 'bot';
-  const resolvedBotName = botName || t('bots.defaultBotName');
 
+  // Resolved bot information for the bot unlock variant
+  const bot = botId ? botById(botId) : null;
+  const resolvedBotName = botName || bot?.name || t('bots.defaultBotName');
+
+  // Specific titles and subtitles
   const title = isHint
     ? t('hintSheet.title')
     : isUndo
@@ -73,49 +84,17 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
           ? t('bots.unlockBotTitle', { name: resolvedBotName })
           : t('reward.title');
 
-  const headerIcon = isHint
-    ? 'help-circle'
+  const subtitle = isHint
+    ? t('hintSheet.watchSub')
     : isUndo
-      ? 'rotate-ccw'
+      ? t('undoSheet.watchSub')
       : isAssist
-        ? 'help-circle'
+        ? t('hintSheet.watchSub')
         : isBot
-          ? 'cpu'
-          : 'zap';
-
-  const features = isHint || isUndo || isAssist
-    ? [
-        t('reward.featAssists'),
-        t('reward.featNoAds'),
-        t('reward.featAnalysisAndBots'),
-        t('reward.featCosmetics'),
-      ]
-    : isBot
-      ? [
-        t('reward.featAllBots'),
-        t('reward.featAssists'),
-        t('reward.featNoAds'),
-        t('reward.featCosmetics'),
-      ]
-    : [
-        t('reward.featNoAds'),
-        t('reward.featAnalysisAndBots'),
-        t('reward.featAllBots'),
-        t('reward.featAssists'),
-        t('reward.featCosmetics'),
-      ];
-
-  const premiumTitle = isHint || isUndo || isAssist
-    ? t('reward.goPremiumAssists')
-    : isBot
-      ? t('reward.goPremiumBots')
-      : t('reward.goPremium');
-
-  const premiumSubtitle = isHint || isUndo || isAssist
-    ? t('reward.subAssists')
-    : isBot
-      ? t('reward.subBots')
-      : t('reward.subAnalysis');
+          ? bot
+            ? `${bot.elo} ELO · ${bot.style || bot.title}`
+            : t('bots.watchToUnlockSub', { name: resolvedBotName })
+          : t('reward.watchOneReviewSub');
 
   const watchTitle = isHint
     ? t('hintSheet.watch')
@@ -127,15 +106,17 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
           ? t('bots.watchToUnlock')
           : t('reward.watchOneReview');
 
-  const watchSubtitle = isHint
-    ? t('hintSheet.watchSub')
-    : isUndo
-      ? t('undoSheet.watchSub')
-      : isAssist
-        ? t('hintSheet.watchSub')
-        : isBot
-          ? t('bots.watchToUnlockSub', { name: resolvedBotName })
-          : t('reward.watchOneReviewSub');
+  const premiumTitle = isHint || isUndo || isAssist
+    ? t('reward.goPremiumAssists')
+    : isBot
+      ? t('reward.goPremiumBots')
+      : t('reward.goPremium');
+
+  const premiumSubtitle = isHint || isUndo || isAssist
+    ? t('reward.featAssists')
+    : isBot
+      ? t('reward.featAllBots')
+      : t('premium.bulletAnalysis');
 
   const getErrorCopy = (err: string): string => {
     switch (err) {
@@ -159,36 +140,53 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
             {/* Grab Handle */}
             <View style={styles.handle} />
 
-            {/* Header Row: Title & Close X */}
-            <View style={styles.headerRow}>
-              <View style={styles.headerTitleWrap}>
-                <View style={styles.headerIconBadge}>
-                  <OrbIcon name={headerIcon} size={18} color={THEME.colors.primary} />
-                </View>
-                <Text style={styles.title}>{title}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.closeBtn}
-                onPress={onClose}
-                disabled={busy}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                accessibilityRole="button"
-                accessibilityLabel={t('common.closeA11y')}
-              >
-                <OrbIcon name="x" size={22} color={THEME.colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
+            {/* Top Close Button */}
+            <TouchableOpacity
+              style={styles.closeBtn}
+              onPress={onClose}
+              disabled={busy}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.closeA11y')}
+            >
+              <OrbIcon name="x" size={20} color={THEME.colors.textSecondary} />
+            </TouchableOpacity>
 
-            {/* Feature Showcase Card */}
-            <View style={styles.valueCard}>
-              {features.map((feature, idx) => (
-                <View key={idx} style={styles.valueFeatureRow}>
-                  <View style={styles.valueFeatureCheck}>
-                    <OrbIcon name="check" size={12} color={THEME.colors.primary} />
+            {/* Contextual Hero Section */}
+            <View style={styles.heroSection}>
+              {isBot ? (
+                bot ? (
+                  <View style={styles.botAvatarContainer}>
+                    <BotAvatar avatarKey={bot.avatarKey} size={68} noBg />
+                    <View style={styles.botEloBadge}>
+                      <Text style={styles.botEloText}>{bot.elo} ELO</Text>
+                    </View>
                   </View>
-                  <Text style={styles.valueFeatureText}>{feature}</Text>
+                ) : (
+                  <View style={[styles.heroIconBadge, styles.botBadgeBg]}>
+                    <OrbIcon name="cpu" size={28} color="#8B5CF6" />
+                  </View>
+                )
+              ) : isHint || isAssist ? (
+                <View style={[styles.heroIconBadge, styles.hintBadgeBg]}>
+                  <OrbIcon name="lightbulb-on" size={28} color="#F59E0B" />
                 </View>
-              ))}
+              ) : isUndo ? (
+                <View style={[styles.heroIconBadge, styles.undoBadgeBg]}>
+                  <OrbIcon name="undo-variant" size={28} color={THEME.colors.primary} />
+                </View>
+              ) : (
+                <View style={[styles.heroIconBadge, styles.analysisBadgeBg]}>
+                  <OrbIcon name="activity" size={28} color={THEME.colors.primary} />
+                </View>
+              )}
+
+              <Text style={styles.title} numberOfLines={1}>
+                {title}
+              </Text>
+              <Text style={styles.subtitle} numberOfLines={2}>
+                {subtitle}
+              </Text>
             </View>
 
             {/* Error Banner */}
@@ -199,76 +197,96 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
               </View>
             )}
 
-            {/* PRIMARY HERO ACTION: Go Premium */}
-            <TouchableOpacity
-              style={styles.premiumButton}
-              activeOpacity={0.85}
-              onPress={onPremium}
-              disabled={busy}
-              accessibilityRole="button"
-              accessibilityLabel={premiumTitle}
-            >
-              <View style={styles.premiumButtonContent}>
-                <View style={styles.premiumButtonLeft}>
-                  <View style={styles.premiumCrownBadge}>
-                    <PremiumBadge size="md" />
-                  </View>
-                  <View style={styles.premiumTextWrap}>
-                    <Text style={styles.premiumButtonTitle} numberOfLines={1}>
-                      {premiumTitle}
-                    </Text>
-                    <Text style={styles.premiumButtonSub} numberOfLines={1}>
-                      {premiumSubtitle}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.premiumCtaBox}>
-                  <Text style={styles.premiumCtaText}>{t('reward.subscribe')}</Text>
-                  <OrbIcon name="chevron-right" size={14} color="#FFFFFF" />
-                </View>
-              </View>
-            </TouchableOpacity>
-
-            {/* SECONDARY FREE ALTERNATIVE: Watch Ad (only if not limit reached) */}
-            {!watchLimitReached && (
+            {/* ACTION 1: Watch Ad (Primary Green Tactile Button) */}
+            {!watchLimitReached ? (
               <TouchableOpacity
-                style={[styles.watchButton, busy && styles.watchButtonBusy]}
-                activeOpacity={0.75}
+                style={[styles.watchBtn, busy && styles.btnBusy]}
+                activeOpacity={0.85}
                 onPress={onWatch}
                 disabled={busy}
                 accessibilityRole="button"
                 accessibilityLabel={watchTitle}
               >
                 {busy ? (
-                  <ActivityIndicator size="small" color={THEME.colors.primary} />
+                  <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <View style={styles.watchButtonContent}>
-                    <View style={styles.watchButtonLeft}>
-                      <View style={styles.watchPlayBadge}>
-                        <OrbIcon name="play" size={14} color={THEME.colors.textPrimary} />
-                      </View>
-                      <View style={styles.watchTextWrap}>
-                        <Text style={styles.watchTitle} numberOfLines={1}>
-                          {watchTitle}
-                        </Text>
-                        <Text style={styles.watchSub} numberOfLines={1}>
-                          {watchSubtitle}
-                        </Text>
-                      </View>
+                  <View style={styles.watchBtnContent}>
+                    <View style={styles.watchPlayIcon}>
+                      <OrbIcon name="play" size={13} color="#FFFFFF" />
                     </View>
-                    <View style={styles.watchFreePill}>
-                      <Text style={styles.watchFreePillText}>{t('reward.free')}</Text>
+                    <Text style={styles.watchBtnText} numberOfLines={1}>
+                      {watchTitle}
+                    </Text>
+                    <View style={styles.freeBadge}>
+                      <Text style={styles.freeBadgeText}>{t('reward.free')}</Text>
                     </View>
                   </View>
                 )}
               </TouchableOpacity>
+            ) : (
+              <View style={styles.limitReachedBox}>
+                <OrbIcon name="lock" size={14} color={THEME.colors.textMuted} />
+                <Text style={styles.limitReachedText}>
+                  Match limit reached (1/1)
+                </Text>
+              </View>
             )}
+
+            {/* ACTION 2: Go Premium (Hero Value Option) */}
+            <TouchableOpacity
+              style={[
+                styles.premiumCardBtn,
+                watchLimitReached && styles.premiumPrimaryHighlight,
+              ]}
+              activeOpacity={0.85}
+              onPress={onPremium}
+              disabled={busy}
+              accessibilityRole="button"
+              accessibilityLabel={premiumTitle}
+            >
+              <View style={styles.premiumLeft}>
+                <View
+                  style={[
+                    styles.premiumCrownBox,
+                    watchLimitReached && styles.premiumCrownBoxHighlight,
+                  ]}
+                >
+                  <PremiumBadge size="md" />
+                </View>
+                <View style={styles.premiumTextWrap}>
+                  <Text
+                    style={[
+                      styles.premiumTitle,
+                      watchLimitReached && styles.premiumTitleHighlight,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {premiumTitle}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.premiumSub,
+                      watchLimitReached && styles.premiumSubHighlight,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {premiumSubtitle}
+                  </Text>
+                </View>
+              </View>
+              <OrbIcon
+                name="chevron-right"
+                size={18}
+                color={watchLimitReached ? '#FFFFFF' : THEME.colors.textSecondary}
+              />
+            </TouchableOpacity>
 
             {/* Subtle Dismiss */}
             <TouchableOpacity
               onPress={onClose}
               disabled={busy}
               activeOpacity={0.7}
+              style={styles.notNowTouch}
               accessibilityRole="button"
             >
               <Text style={[styles.notNowText, busy && styles.notNowBusy]}>
@@ -292,7 +310,7 @@ const createStyles = () =>
     sheetContainer: {
       justifyContent: 'flex-end',
       width: '100%',
-      maxWidth: 520,
+      maxWidth: 440,
       alignSelf: 'center',
     },
     card: {
@@ -301,7 +319,8 @@ const createStyles = () =>
       borderTopRightRadius: 24,
       paddingHorizontal: 22,
       paddingTop: 12,
-      paddingBottom: 24,
+      paddingBottom: 22,
+      alignItems: 'center',
     },
     handle: {
       width: 40,
@@ -309,66 +328,83 @@ const createStyles = () =>
       borderRadius: 2,
       backgroundColor: THEME.colors.surfaceHairline,
       alignSelf: 'center',
-      marginBottom: 12,
+      marginBottom: 10,
     },
-    headerRow: {
-      flexDirection: 'row',
+    closeBtn: {
+      position: 'absolute',
+      top: 14,
+      right: 18,
+      zIndex: 10,
+      padding: 6,
+    },
+    heroSection: {
       alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 16,
+      marginTop: 4,
+      marginBottom: 20,
+      paddingHorizontal: 12,
+      width: '100%',
     },
-    headerTitleWrap: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      flex: 1,
-    },
-    headerIconBadge: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: THEME.colors.surfacePrimaryTint,
+    heroIconBadge: {
+      width: 58,
+      height: 58,
+      borderRadius: 29,
       alignItems: 'center',
       justifyContent: 'center',
+      marginBottom: 12,
+    },
+    hintBadgeBg: {
+      backgroundColor: 'rgba(245, 158, 11, 0.12)',
+      borderWidth: 1.5,
+      borderColor: 'rgba(245, 158, 11, 0.28)',
+    },
+    undoBadgeBg: {
+      backgroundColor: THEME.colors.surfacePrimaryTint,
+      borderWidth: 1.5,
+      borderColor: THEME.colors.surfacePrimaryTintBorder,
+    },
+    botBadgeBg: {
+      backgroundColor: 'rgba(139, 92, 246, 0.12)',
+      borderWidth: 1.5,
+      borderColor: 'rgba(139, 92, 246, 0.28)',
+    },
+    analysisBadgeBg: {
+      backgroundColor: 'rgba(105, 179, 66, 0.14)',
+      borderWidth: 1.5,
+      borderColor: 'rgba(105, 179, 66, 0.3)',
+    },
+    botAvatarContainer: {
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    botEloBadge: {
+      backgroundColor: THEME.colors.surfaceContainerLowest,
+      borderWidth: 1,
+      borderColor: THEME.colors.surfaceHairline,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 8,
+      marginTop: -8,
+    },
+    botEloText: {
+      fontFamily: THEME.fonts.bold,
+      fontSize: 11,
+      color: THEME.colors.textSecondary,
     },
     title: {
       fontFamily: THEME.fonts.bold,
-      fontSize: 18,
+      fontSize: 20,
       fontWeight: '700',
       color: THEME.colors.textPrimary,
-      flex: 1,
+      textAlign: 'center',
+      marginBottom: 6,
     },
-    closeBtn: {
-      padding: 4,
-    },
-    valueCard: {
-      backgroundColor: THEME.colors.backgroundCard,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: THEME.colors.surfaceHairline,
-      padding: 14,
-      marginBottom: 16,
-      gap: 10,
-    },
-    valueFeatureRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-    },
-    valueFeatureCheck: {
-      width: 20,
-      height: 20,
-      borderRadius: 10,
-      backgroundColor: THEME.colors.surfacePrimaryTint,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    valueFeatureText: {
-      fontFamily: THEME.fonts.medium,
+    subtitle: {
+      fontFamily: THEME.fonts.regular,
       fontSize: 13,
-      color: THEME.colors.textPrimary,
-      flex: 1,
+      color: THEME.colors.textSecondary,
+      textAlign: 'center',
       lineHeight: 18,
+      maxWidth: 320,
     },
     errorBox: {
       flexDirection: 'row',
@@ -378,7 +414,8 @@ const createStyles = () =>
       borderRadius: 10,
       paddingHorizontal: 12,
       paddingVertical: 8,
-      marginBottom: 14,
+      marginBottom: 12,
+      width: '100%',
     },
     errorText: {
       fontFamily: THEME.fonts.regular,
@@ -386,154 +423,145 @@ const createStyles = () =>
       color: THEME.colors.danger,
       flex: 1,
     },
-    premiumButton: {
+    watchBtn: {
+      width: '100%',
+      height: 52,
       backgroundColor: THEME.colors.primary,
+      borderBottomWidth: 3.5,
+      borderBottomColor: '#4E8C2F',
       borderRadius: 14,
-      paddingVertical: 12,
-      paddingHorizontal: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
       marginBottom: 10,
-      shadowColor: THEME.colors.primary,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.22,
-      shadowRadius: 8,
-      elevation: 3,
     },
-    premiumButtonContent: {
+    btnBusy: {
+      opacity: 0.7,
+    },
+    watchBtnContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      paddingHorizontal: 16,
+      width: '100%',
+    },
+    watchPlayIcon: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: 'rgba(255, 255, 255, 0.22)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingLeft: 2,
+    },
+    watchBtnText: {
+      fontFamily: THEME.fonts.bold,
+      fontSize: 15,
+      fontWeight: '700',
+      color: '#FFFFFF',
+      letterSpacing: 0.2,
+      flexShrink: 1,
+    },
+    freeBadge: {
+      backgroundColor: 'rgba(255, 255, 255, 0.26)',
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 6,
+      marginLeft: 'auto',
+    },
+    freeBadgeText: {
+      fontFamily: THEME.fonts.bold,
+      fontSize: 10.5,
+      fontWeight: '800',
+      color: '#FFFFFF',
+      letterSpacing: 0.4,
+    },
+    limitReachedBox: {
+      width: '100%',
+      height: 48,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      backgroundColor: THEME.colors.surfaceContainerLowest,
+      borderWidth: 1,
+      borderColor: THEME.colors.surfaceHairline,
+      borderRadius: 14,
+      marginBottom: 10,
+    },
+    limitReachedText: {
+      fontFamily: THEME.fonts.medium,
+      fontSize: 13,
+      color: THEME.colors.textMuted,
+    },
+    premiumCardBtn: {
+      width: '100%',
+      height: 56,
+      backgroundColor: THEME.colors.surfaceContainerLowest,
+      borderWidth: 1.5,
+      borderColor: THEME.colors.surfaceHairline,
+      borderBottomWidth: 3,
+      borderBottomColor: THEME.colors.surfaceHairline,
+      borderRadius: 14,
+      paddingHorizontal: 16,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      marginBottom: 8,
     },
-    premiumButtonLeft: {
+    premiumPrimaryHighlight: {
+      backgroundColor: THEME.colors.primary,
+      borderWidth: 0,
+      borderBottomWidth: 3.5,
+      borderBottomColor: '#4E8C2F',
+    },
+    premiumLeft: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
       flex: 1,
     },
-    premiumCrownBadge: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    premiumCrownBox: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: THEME.colors.surfacePrimaryTint,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    premiumCrownBoxHighlight: {
+      backgroundColor: 'rgba(255, 255, 255, 0.22)',
     },
     premiumTextWrap: {
       flex: 1,
     },
-    premiumButtonTitle: {
+    premiumTitle: {
       fontFamily: THEME.fonts.bold,
-      fontSize: 15,
+      fontSize: 14,
       fontWeight: '700',
-      color: '#FFFFFF',
-    },
-    premiumButtonSub: {
-      fontFamily: THEME.fonts.regular,
-      fontSize: 11,
-      color: 'rgba(255, 255, 255, 0.85)',
-      marginTop: 2,
-    },
-    premiumCtaBox: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: 'rgba(255, 255, 255, 0.25)',
-      paddingHorizontal: 12,
-      paddingVertical: 7,
-      borderRadius: 10,
-      gap: 3,
-      marginLeft: 8,
-    },
-    premiumCtaText: {
-      fontFamily: THEME.fonts.bold,
-      fontSize: 13,
-      fontWeight: '700',
-      color: '#FFFFFF',
-    },
-    watchButton: {
-      backgroundColor: THEME.colors.surfaceContainerLowest,
-      borderWidth: 1.5,
-      borderColor: THEME.colors.surfaceHairline,
-      borderRadius: 14,
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: 8,
-    },
-    watchLimitBox: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      backgroundColor: THEME.colors.surfaceContainerLowest,
-      borderWidth: 1,
-      borderColor: THEME.colors.surfaceHairline,
-      borderRadius: 14,
-      paddingVertical: 12,
-      paddingHorizontal: 14,
-      marginBottom: 8,
-    },
-    watchLimitText: {
-      fontFamily: THEME.fonts.regular,
-      fontSize: 12,
-      color: THEME.colors.textSecondary,
-      flex: 1,
-      lineHeight: 16,
-    },
-    watchButtonBusy: {
-      opacity: 0.65,
-    },
-    watchButtonContent: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    watchButtonLeft: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      flex: 1,
-    },
-    watchPlayBadge: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      backgroundColor: THEME.colors.surfaceHairline,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    watchTextWrap: {
-      flex: 1,
-    },
-    watchTitle: {
-      fontFamily: THEME.fonts.semiBold,
-      fontSize: 13.5,
-      fontWeight: '600',
       color: THEME.colors.textPrimary,
     },
-    watchSub: {
-      fontFamily: THEME.fonts.regular,
-      fontSize: 11,
-      color: THEME.colors.textSecondary,
-      marginTop: 1,
+    premiumTitleHighlight: {
+      color: '#FFFFFF',
     },
-    watchFreePill: {
-      backgroundColor: THEME.colors.surfaceHairline,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 6,
-      marginLeft: 6,
-    },
-    watchFreePillText: {
-      fontFamily: THEME.fonts.bold,
-      fontSize: 11,
-      fontWeight: '700',
+    premiumSub: {
+      fontFamily: THEME.fonts.medium,
+      fontSize: 11.5,
       color: THEME.colors.textSecondary,
+      marginTop: 2,
+    },
+    premiumSubHighlight: {
+      color: 'rgba(255, 255, 255, 0.9)',
+    },
+    notNowTouch: {
+      paddingVertical: 8,
+      paddingHorizontal: 16,
     },
     notNowText: {
       fontFamily: THEME.fonts.medium,
       fontSize: 13,
       color: THEME.colors.textMuted,
       textAlign: 'center',
-      paddingVertical: 8,
     },
     notNowBusy: {
       opacity: 0.4,

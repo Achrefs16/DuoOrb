@@ -25,7 +25,7 @@ export const PREMIUM_STARTING_ASSISTS = 3;
 export const PREMIUM_STARTING_HINTS = 3;
 export const PREMIUM_STARTING_UNDOS = 3;
 export const REFILL_ASSISTS_GRANT = 2;
-export const MAX_AD_REFILLS_PER_MATCH = 2;
+export const MAX_AD_REFILLS_PER_MATCH = 1;
 
 export interface MatchAssistsState {
   /** Remaining hint tokens available in the current match (3 for premium, 1 for free) */

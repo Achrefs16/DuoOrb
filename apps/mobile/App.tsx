@@ -34,9 +34,11 @@ import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
 import { LegalScreen } from './src/screens/LegalScreen';
 import type { LegalKind } from './src/legal-content';
 import { BottomNav, MainTab } from './src/components/BottomNav';
-import { requestAnalysisEntry } from './src/monetization/analysisAccess';
+import { markAnalysisUnlocked, requestAnalysisEntry } from './src/monetization/analysisAccess';
+import { showRewarded } from './src/monetization/ads';
 import { AppToast } from './src/components/AppToast';
 import { PremiumSheet } from './src/components/PremiumSheet';
+import { RewardSheet } from './src/components/RewardSheet';
 import { NoConnectionSection, OfflineModal } from './src/components/NoConnection';
 import { ChallengeToast } from './src/components/ChallengeToast';
 import { OnlineJoinGate } from './src/components/OnlineJoinGate';
@@ -915,15 +917,15 @@ export default function App() {
   };
 
   // Direct Analyse from History/Profile (no replay first): runs the single
-  // gate (premium unlimited, unlocked free, else the free daily), then opens
-  // full review. 'locked' still opens — the in-review lock panel offers the
-  // one-ad unlock in place, so there is never a dead end.
+  // gate (premium unlimited, unlocked free, else the free daily).
+  // When locked, opens RewardSheet to defend the feature with a rewarded ad or Premium.
   const premium = usePremium();
-  const handleAnalyzeGameFromHistory = async (savedGame: SavedGameRecord) => {
-    if ((savedGame.mode || '2p') !== '2p') {
-      handleSelectGameFromHistory(savedGame);
-      return;
-    }
+  const [historyRewardOpen, setHistoryRewardOpen] = useState(false);
+  const [historyRewardBusy, setHistoryRewardBusy] = useState(false);
+  const [historyRewardError, setHistoryRewardError] = useState<string | null>(null);
+  const [pendingHistoryAnalysis, setPendingHistoryAnalysis] = useState<SavedGameRecord | null>(null);
+
+  const startAnalysisFromHistory = (savedGame: SavedGameRecord) => {
     const initialState =
       savedGame.initialState ||
       createInitialState({
@@ -944,11 +946,7 @@ export default function App() {
             avatarKey: savedGame.botId || 'martin',
           }
         : null;
-    await requestAnalysisEntry(
-      isPremiumActive(premium),
-      accessKey.gameId,
-      accessKey.historyLength
-    );
+
     setReplayData({
       initialState,
       history,
@@ -963,6 +961,53 @@ export default function App() {
     setReviewBare(false);
     setReviewOrigin('history');
     navigate(currentTab, 'REVIEW_SUMMARY');
+  };
+
+  const handleAnalyzeGameFromHistory = async (savedGame: SavedGameRecord) => {
+    if ((savedGame.mode || '2p') !== '2p') {
+      handleSelectGameFromHistory(savedGame);
+      return;
+    }
+    const gameId = savedGame.id || savedGame.initialState?.gameId || 'game';
+    const historyLength = savedGame.history?.length || 0;
+    const entry = await requestAnalysisEntry(
+      isPremiumActive(premium),
+      gameId,
+      historyLength
+    );
+    if (entry === 'locked') {
+      setPendingHistoryAnalysis(savedGame);
+      setHistoryRewardError(null);
+      setHistoryRewardOpen(true);
+      return;
+    }
+    startAnalysisFromHistory(savedGame);
+  };
+
+  const handleWatchHistoryAnalysisAd = async () => {
+    if (!pendingHistoryAnalysis || historyRewardBusy) return;
+    setHistoryRewardBusy(true);
+    setHistoryRewardError(null);
+    const res = await showRewarded('analysis');
+    if (res.earned) {
+      try {
+        const gameId =
+          pendingHistoryAnalysis.id ||
+          pendingHistoryAnalysis.initialState?.gameId ||
+          'game';
+        const historyLength = pendingHistoryAnalysis.history?.length || 0;
+        await markAnalysisUnlocked(gameId, historyLength);
+        setHistoryRewardOpen(false);
+        const gameToReview = pendingHistoryAnalysis;
+        setPendingHistoryAnalysis(null);
+        startAnalysisFromHistory(gameToReview);
+      } catch {
+        setHistoryRewardError('store');
+      }
+    } else {
+      setHistoryRewardError(res.error ?? 'dismissed');
+    }
+    setHistoryRewardBusy(false);
   };
 
   // Render-time chrome: these read the ACTIVE theme (post-setThemeName),
@@ -1222,6 +1267,29 @@ export default function App() {
             onClose={() => setPremiumOpen(false)}
             onDone={() => {
               setPremiumOpen(false);
+            }}
+          />
+
+          {/* Rewarded gate for direct Game Review from History / Opponent Profile */}
+          <RewardSheet
+            visible={historyRewardOpen}
+            busy={historyRewardBusy}
+            error={historyRewardError}
+            variant="analysis"
+            onWatch={handleWatchHistoryAnalysisAd}
+            onPremium={() => {
+              if (historyRewardBusy) return;
+              setHistoryRewardOpen(false);
+              setPremiumEntry('analysis');
+              setTimeout(() => {
+                setPremiumOpen(true);
+              }, 120);
+            }}
+            onClose={() => {
+              if (!historyRewardBusy) {
+                setHistoryRewardOpen(false);
+                setPendingHistoryAnalysis(null);
+              }
             }}
           />
 

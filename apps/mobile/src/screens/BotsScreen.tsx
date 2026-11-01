@@ -184,6 +184,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
   const [botRewardBusy, setBotRewardBusy] = useState(false);
   const [botRewardError, setBotRewardError] = useState<string | null>(null);
   const [targetBotNameToUnlock, setTargetBotNameToUnlock] = useState<string | undefined>();
+  const [targetBotIdToUnlock, setTargetBotIdToUnlock] = useState<string | undefined>();
   const [premiumSheetOpen, setPremiumSheetOpen] = useState(false);
   const pendingConfigRef = useRef<BotMatchConfig | null>(null);
   const targetBotToUnlockRef = useRef<string | null>(null);
@@ -359,6 +360,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
         return;
       }
       targetBotToUnlockRef.current = lockedBot.id;
+      setTargetBotIdToUnlock(lockedBot.id);
       setTargetBotNameToUnlock(lockedBot.name);
       pendingConfigRef.current = config;
       setBotRewardError(null);
@@ -766,6 +768,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
         error={botRewardError}
         variant="bot"
         botName={targetBotNameToUnlock}
+        botId={targetBotIdToUnlock}
         onWatch={handleWatchBotAd}
         onPremium={() => {
           setBotRewardOpen(false);

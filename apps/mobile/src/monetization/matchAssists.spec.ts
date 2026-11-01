@@ -64,25 +64,18 @@ describe('matchAssists economy (divided hints & undos)', () => {
     expect(s.used).toBe(2);
   });
 
-  it('handles rewarded ad refills independently for hints (+2) and undos (+2)', () => {
+  it('handles rewarded ad refills independently for hints (+2) and undos (+2) up to 1 refill per match', () => {
     let s = createMatchAssists(false);
     s = consumeAssist(s, 'hint').next;
     expect(s.hintsRemaining).toBe(0);
     expect(canRefillAssists(s, 'hint')).toBe(true);
 
-    // Watch ad for more hints (+2 hints)
+    // Watch ad for more hints (+2 hints) -> brings total to 3 hints consumed/available in match
     s = refillAssists(s, 'hint');
     expect(s.hintsRemaining).toBe(2);
     expect(s.hintRefillsUsed).toBe(1);
     expect(s.undoRefillsUsed).toBe(0);
-
-    // Exhaust both refilled hints and refill a 2nd time
-    s = consumeAssist(s, 'hint').next;
-    s = consumeAssist(s, 'hint').next;
-    expect(s.hintsRemaining).toBe(0);
-    s = refillAssists(s, 'hint');
-    expect(s.hintsRemaining).toBe(2);
-    expect(s.hintRefillsUsed).toBe(2);
+    // 1 refill used -> cannot refill hints again in this match
     expect(canRefillAssists(s, 'hint')).toBe(false);
 
     // Undo refills are still available independently (+2 undos)
@@ -92,6 +85,8 @@ describe('matchAssists economy (divided hints & undos)', () => {
     s = refillAssists(s, 'undo');
     expect(s.undosRemaining).toBe(2);
     expect(s.undoRefillsUsed).toBe(1);
+    // 1 undo refill used -> cannot refill undos again in this match
+    expect(canRefillAssists(s, 'undo')).toBe(false);
   });
 
   it('enforces premium match cap without ad prompts while tracking used for stars', () => {
