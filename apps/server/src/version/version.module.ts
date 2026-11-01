@@ -6,3 +6,4 @@ import { VersionController } from './version.controller.js';
   exports: [],
 })
 export class VersionModule {}
+

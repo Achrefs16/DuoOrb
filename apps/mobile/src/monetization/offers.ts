@@ -77,12 +77,16 @@ export async function initializePurchases(userId?: string): Promise<void> {
   if (!key) return;
   try {
     const identity = getIdentity();
-    const appUserID = userId ?? identity?.userId ?? 'anonymous';
+    const appUserID = userId ?? (identity?.userId && !identity.isGuest ? identity.userId : undefined);
     if (configuredKey !== key) {
-      Purchases.configure({ apiKey: key, appUserID });
+      if (appUserID) {
+        Purchases.configure({ apiKey: key, appUserID });
+      } else {
+        Purchases.configure({ apiKey: key });
+      }
       configuredKey = key;
-      configuredUser = appUserID;
-    } else if (configuredUser !== appUserID && appUserID !== 'anonymous') {
+      configuredUser = appUserID ?? null;
+    } else if (appUserID && configuredUser !== appUserID) {
       await Purchases.logIn(appUserID);
       configuredUser = appUserID;
     }
@@ -106,16 +110,20 @@ export async function initializePurchases(userId?: string): Promise<void> {
   }
 }
 
-async function ensureConfigured(): Promise<string> {
+async function ensureConfigured(): Promise<string | undefined> {
   const key = publicKey();
   if (!key) throw codedError('not-configured', 'Purchases not configured yet.');
   const identity = getIdentity();
-  const appUserID = identity?.userId ?? 'anonymous';
+  const appUserID = identity?.userId && !identity.isGuest ? identity.userId : undefined;
   if (configuredKey !== key) {
-    Purchases.configure({ apiKey: key, appUserID });
+    if (appUserID) {
+      Purchases.configure({ apiKey: key, appUserID });
+    } else {
+      Purchases.configure({ apiKey: key });
+    }
     configuredKey = key;
-    configuredUser = appUserID;
-  } else if (configuredUser !== appUserID) {
+    configuredUser = appUserID ?? null;
+  } else if (appUserID && configuredUser !== appUserID) {
     await Purchases.logIn(appUserID);
     configuredUser = appUserID;
   }
@@ -248,8 +256,44 @@ export async function purchasePlan(plan: PremiumPlan): Promise<PurchaseOutcome> 
   }
   try {
     await ensureConfigured();
-    const { customerInfo } = await Purchases.purchasePackage(plan.rcPackage);
-    const entitlement = customerInfo.entitlements.active[ENTITLEMENT_ID];
+    const result = await Purchases.purchasePackage(plan.rcPackage);
+    let customerInfo = result?.customerInfo;
+    let entitlement = customerInfo?.entitlements?.active?.[ENTITLEMENT_ID];
+
+    // On Android (specifically Google Play Sandbox), token validation with RevenueCat
+    // can take 1-3 seconds. If not immediately present in customerInfo.entitlements.active:
+    if (!entitlement) {
+      const hasActiveSub =
+        (Array.isArray(customerInfo?.activeSubscriptions) && customerInfo.activeSubscriptions.length > 0) ||
+        (Array.isArray(customerInfo?.allPurchasedProductIdentifiers) &&
+          customerInfo.allPurchasedProductIdentifiers.length > 0);
+
+      // Poll getCustomerInfo() with cache invalidation to give server token validation time to complete
+      for (let attempt = 0; attempt < 2 && !entitlement; attempt++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        try {
+          if (typeof (Purchases as any).invalidateCustomerInfoCache === 'function') {
+            await (Purchases as any).invalidateCustomerInfoCache();
+          }
+          if (typeof Purchases.getCustomerInfo === 'function') {
+            customerInfo = await Purchases.getCustomerInfo();
+            entitlement = customerInfo?.entitlements?.active?.[ENTITLEMENT_ID];
+          }
+        } catch {
+          // Retry
+        }
+      }
+
+      // If still missing from entitlements map but store receipt confirmed the subscription:
+      if (!entitlement && hasActiveSub) {
+        recordLocalPurchase(customerInfo?.latestExpirationDate ?? null);
+        track('purchase_completed', { plan: plan.id });
+        if (plan.trialLine) track('trial_started', { plan: plan.id });
+        void syncPremiumAfterPurchase();
+        return { status: 'done' };
+      }
+    }
+
     if (entitlement) {
       // Store truth lands before the server webhook. Protect with local purchase grace
       // so early /me polling does not overwrite isPremium back to false.
@@ -259,18 +303,52 @@ export async function purchasePlan(plan: PremiumPlan): Promise<PurchaseOutcome> 
       void syncPremiumAfterPurchase();
       return { status: 'done' };
     }
+
+    // Always schedule background sync so server webhook reconciles client state
+    void syncPremiumAfterPurchase();
+
+    // Check if the backend webhook has already landed
+    try {
+      const serverState = await refreshPremium();
+      if (serverState.isPremium) {
+        track('purchase_completed', { plan: plan.id });
+        return { status: 'done' };
+      }
+    } catch {
+      // Best-effort check
+    }
+
     return {
       status: 'error',
       code: 'not-entitled',
       message: 'Purchase went through but Premium is not active yet. Try Restore.',
     };
   } catch (e) {
-    const err = e as { code?: unknown; message?: unknown };
+    const err = e as { code?: unknown; message?: unknown; userCancelled?: boolean };
     const code = String(err?.code ?? '');
     const message = String(err?.message ?? 'Purchase failed.');
-    if (/cancel|cancelled|user_cancelled/i.test(code + message)) {
+    if (err?.userCancelled || /cancel|cancelled|user_cancelled/i.test(code + message)) {
       return { status: 'cancelled' };
     }
+
+    // Handle ITEM_ALREADY_OWNED / PRODUCT_ALREADY_PURCHASED_ERROR (Google Play error code 7 / RC code 6)
+    const isAlreadyPurchased =
+      code === 'PRODUCT_ALREADY_PURCHASED_ERROR' ||
+      /already_purchased|already_owned|already owned|already subscribed|item_already_owned/i.test(
+        code + message
+      );
+
+    if (isAlreadyPurchased) {
+      try {
+        const restoreOutcome = await restorePremium();
+        if (restoreOutcome.status === 'done') {
+          return { status: 'done' };
+        }
+      } catch {
+        // Fall through to error
+      }
+    }
+
     track('purchase_failed', { plan: plan.id, code });
     return { status: 'error', code: code || 'unknown', message };
   }
@@ -280,14 +358,58 @@ export async function restorePremium(): Promise<PurchaseOutcome> {
   if (purchaseNeedsLink()) return { status: 'needs-link' };
   try {
     await ensureConfigured();
-    const customerInfo = await Purchases.restorePurchases();
-    const entitlement = customerInfo.entitlements.active[ENTITLEMENT_ID];
+    let customerInfo = await Purchases.restorePurchases();
+    let entitlement = customerInfo?.entitlements?.active?.[ENTITLEMENT_ID];
+
+    if (!entitlement) {
+      const hasActiveSub =
+        (Array.isArray(customerInfo?.activeSubscriptions) && customerInfo.activeSubscriptions.length > 0) ||
+        (Array.isArray(customerInfo?.allPurchasedProductIdentifiers) &&
+          customerInfo.allPurchasedProductIdentifiers.length > 0);
+
+      if (hasActiveSub) {
+        try {
+          if (typeof (Purchases as any).invalidateCustomerInfoCache === 'function') {
+            await (Purchases as any).invalidateCustomerInfoCache();
+          }
+          if (typeof Purchases.getCustomerInfo === 'function') {
+            customerInfo = await Purchases.getCustomerInfo();
+            entitlement = customerInfo?.entitlements?.active?.[ENTITLEMENT_ID];
+          }
+        } catch {
+          // Retry
+        }
+      }
+    }
+
     if (entitlement) {
       recordLocalPurchase(entitlement.expirationDate ?? null);
       track('restored', {});
       void syncPremiumAfterPurchase();
       return { status: 'done' };
     }
+
+    // Store has an active subscription even if entitlement map is delayed
+    const hasActiveStoreSub =
+      Array.isArray(customerInfo?.activeSubscriptions) && customerInfo.activeSubscriptions.length > 0;
+    if (hasActiveStoreSub) {
+      recordLocalPurchase(customerInfo?.latestExpirationDate ?? null);
+      track('restored', {});
+      void syncPremiumAfterPurchase();
+      return { status: 'done' };
+    }
+
+    // Server fallback: check if server webhook already granted Premium
+    try {
+      const serverState = await refreshPremium();
+      if (serverState.isPremium) {
+        track('restored', {});
+        return { status: 'done' };
+      }
+    } catch {
+      // Best-effort check
+    }
+
     return {
       status: 'error',
       code: 'nothing-to-restore',
@@ -295,6 +417,15 @@ export async function restorePremium(): Promise<PurchaseOutcome> {
     };
   } catch (e) {
     const err = e as { code?: unknown; message?: unknown };
+    try {
+      const serverState = await refreshPremium();
+      if (serverState.isPremium) {
+        track('restored', {});
+        return { status: 'done' };
+      }
+    } catch {
+      // Best-effort check
+    }
     return {
       status: 'error',
       code: String(err?.code ?? 'unknown'),

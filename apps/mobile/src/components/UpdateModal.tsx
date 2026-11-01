@@ -206,7 +206,7 @@ function createStyles(theme: Theme) {
   return StyleSheet.create({
     backdrop: {
       flex: 1,
-      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.78)' : 'rgba(0, 0, 0, 0.65)',
+      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'center',
       alignItems: 'center',
       paddingHorizontal: 20,
@@ -214,7 +214,7 @@ function createStyles(theme: Theme) {
     card: {
       width: '100%',
       maxWidth: 390,
-      backgroundColor: theme.colors.surfaceContainerLowest,
+      backgroundColor: theme.colors.background,
       borderRadius: 24,
       paddingHorizontal: 22,
       paddingTop: 24,
@@ -290,9 +290,9 @@ function createStyles(theme: Theme) {
     },
     notesContainer: {
       width: '100%',
-      backgroundColor: theme.colors.surfaceContainerLow,
+      backgroundColor: theme.colors.surfaceContainerLowest,
       borderRadius: 14,
-      borderWidth: 1,
+      borderWidth: 1.5,
       borderColor: theme.colors.surfaceHairline,
       paddingVertical: 10,
       paddingHorizontal: 12,
@@ -308,7 +308,7 @@ function createStyles(theme: Theme) {
       width: 18,
       height: 18,
       borderRadius: 9,
-      backgroundColor: theme.colors.surfaceContainerLowest,
+      backgroundColor: theme.colors.background,
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: 1,
@@ -355,3 +355,4 @@ function createStyles(theme: Theme) {
     },
   });
 }
+

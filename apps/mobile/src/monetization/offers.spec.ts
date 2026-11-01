@@ -18,7 +18,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 vi.mock('../network/apiClient', () => ({
-  api: { getMe: async () => ({}) },
+  api: { getMe: vi.fn(async () => ({})) },
 }));
 
 const purchasesMock = vi.hoisted(() => ({
@@ -26,6 +26,9 @@ const purchasesMock = vi.hoisted(() => ({
   getOfferings: vi.fn(),
   purchasePackage: vi.fn(),
   restorePurchases: vi.fn(),
+  getCustomerInfo: vi.fn(),
+  invalidateCustomerInfoCache: vi.fn(),
+  addCustomerInfoUpdateListener: vi.fn(),
 }));
 
 vi.mock('react-native-purchases', () => ({
@@ -133,5 +136,146 @@ describe('premium offers', () => {
     expect(await purchasePlan(plan)).toEqual({ status: 'needs-link' });
     expect(await restorePremium()).toEqual({ status: 'needs-link' });
     expect(purchasesMock.purchasePackage).not.toHaveBeenCalled();
+  });
+
+  it('completes purchase when active entitlement is present immediately', async () => {
+    process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY = 'rc-test-key';
+    setIdentity({
+      userId: 'user-1',
+      username: 'player',
+      displayName: 'Player',
+      accessToken: 't',
+      refreshToken: null,
+      isGuest: false,
+    });
+    purchasesMock.purchasePackage.mockResolvedValueOnce({
+      customerInfo: {
+        entitlements: {
+          active: {
+            premium: {
+              expirationDate: '2026-12-31T23:59:59.000Z',
+              willRenew: true,
+            },
+          },
+        },
+      },
+    });
+    const plan: PremiumPlan = {
+      id: 'monthly',
+      title: 'Monthly',
+      priceLine: '$3.99/mo',
+      trialLine: null,
+      rcPackage: { identifier: '$rc_monthly', product: { priceString: '$3.99' } } as never,
+    };
+    const outcome = await purchasePlan(plan);
+    expect(outcome).toEqual({ status: 'done' });
+  });
+
+  it('recovers when entitlement is delayed but store activeSubscriptions exists', async () => {
+    process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY = 'rc-test-key';
+    setIdentity({
+      userId: 'user-1',
+      username: 'player',
+      displayName: 'Player',
+      accessToken: 't',
+      refreshToken: null,
+      isGuest: false,
+    });
+    purchasesMock.purchasePackage.mockResolvedValueOnce({
+      customerInfo: {
+        entitlements: { active: {} },
+        activeSubscriptions: ['com.duoorb.monthly'],
+        latestExpirationDate: '2026-12-31T23:59:59.000Z',
+      },
+    });
+    purchasesMock.getCustomerInfo.mockResolvedValue({
+      entitlements: { active: {} },
+      activeSubscriptions: ['com.duoorb.monthly'],
+    });
+    const plan: PremiumPlan = {
+      id: 'monthly',
+      title: 'Monthly',
+      priceLine: '$3.99/mo',
+      trialLine: null,
+      rcPackage: { identifier: '$rc_monthly', product: { priceString: '$3.99' } } as never,
+    };
+    const outcome = await purchasePlan(plan);
+    expect(outcome).toEqual({ status: 'done' });
+  });
+
+  it('auto-recovers when product is already purchased / item already owned', async () => {
+    process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY = 'rc-test-key';
+    setIdentity({
+      userId: 'user-1',
+      username: 'player',
+      displayName: 'Player',
+      accessToken: 't',
+      refreshToken: null,
+      isGuest: false,
+    });
+    purchasesMock.purchasePackage.mockRejectedValueOnce({
+      code: 'PRODUCT_ALREADY_PURCHASED_ERROR',
+      message: 'This product is already active for the user.',
+    });
+    purchasesMock.restorePurchases.mockResolvedValueOnce({
+      entitlements: {
+        active: {
+          premium: { expirationDate: null, willRenew: true },
+        },
+      },
+    });
+    const plan: PremiumPlan = {
+      id: 'monthly',
+      title: 'Monthly',
+      priceLine: '$3.99/mo',
+      trialLine: null,
+      rcPackage: { identifier: '$rc_monthly', product: { priceString: '$3.99' } } as never,
+    };
+    const outcome = await purchasePlan(plan);
+    expect(outcome).toEqual({ status: 'done' });
+  });
+
+  it('restores successfully when store returns active entitlement', async () => {
+    process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY = 'rc-test-key';
+    setIdentity({
+      userId: 'user-1',
+      username: 'player',
+      displayName: 'Player',
+      accessToken: 't',
+      refreshToken: null,
+      isGuest: false,
+    });
+    purchasesMock.restorePurchases.mockResolvedValueOnce({
+      entitlements: {
+        active: {
+          premium: { expirationDate: '2026-12-31T23:59:59.000Z', willRenew: true },
+        },
+      },
+    });
+    const outcome = await restorePremium();
+    expect(outcome).toEqual({ status: 'done' });
+  });
+
+  it('restores successfully via server fallback when webhook has already processed', async () => {
+    process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY = 'rc-test-key';
+    setIdentity({
+      userId: 'user-1',
+      username: 'player',
+      displayName: 'Player',
+      accessToken: 't',
+      refreshToken: null,
+      isGuest: false,
+    });
+    purchasesMock.restorePurchases.mockResolvedValueOnce({
+      entitlements: { active: {} },
+      activeSubscriptions: [],
+    });
+    const { api } = await import('../network/apiClient');
+    vi.mocked(api.getMe).mockResolvedValueOnce({
+      isPremium: true,
+      premiumExpiresAt: '2026-12-31T23:59:59.000Z',
+    } as never);
+    const outcome = await restorePremium();
+    expect(outcome).toEqual({ status: 'done' });
   });
 });

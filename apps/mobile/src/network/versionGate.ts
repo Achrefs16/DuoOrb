@@ -175,3 +175,4 @@ export function openStoreUpdate(storeUrl?: string, webUrl?: string): void {
     Linking.openURL(fallback).catch(() => {});
   });
 }
+

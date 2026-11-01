@@ -23,6 +23,8 @@ import { useTranslation } from '../i18n';
 import { detectWebInstallPlatform } from '../components/InstallPromptModal';
 import { MiniBoardPreview } from '../components/MiniBoardPreview';
 import { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
+import { PremiumBadge } from '../components/PremiumBadge';
+import { isPremiumActive, usePremium } from '../monetization/premium';
 
 interface HomeScreenProps {
   onOpenOnline: (clock: TimeControl, view: OnlineMode) => void;
@@ -32,6 +34,7 @@ interface HomeScreenProps {
   onOpenInstallPrompt?: () => void;
   onSelectBotsTab?: () => void;
   onOpenHistory?: () => void;
+  onOpenPremium?: () => void;
   /** Everyone online in the game right now. Null = unknown. */
   onlineCount: number | null;
 }
@@ -44,10 +47,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onOpenInstallPrompt,
   onSelectBotsTab,
   onOpenHistory,
+  onOpenPremium,
   onlineCount,
 }) => {
   const styles = useStyles(createStyles);
   const { t } = useTranslation();
+  const premium = usePremium();
+  const isPremiumMember = isPremiumActive(premium);
   const navLock = useRef(0);
   const { isConnected } = useConnectivity();
   const verified = useVerified();
@@ -78,10 +84,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const contentWidth =
     Platform.OS === 'web'
       ? webLayoutWidth ||
-        (typeof document !== 'undefined'
-          ? document.getElementById('root')?.clientWidth
-          : 0) ||
-        Math.min(winWidth, maxWebWidth)
+      (typeof document !== 'undefined'
+        ? document.getElementById('root')?.clientWidth
+        : 0) ||
+      Math.min(winWidth, maxWebWidth)
       : winWidth;
 
   const rs = (n: number) => {
@@ -131,49 +137,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     <View style={styles.screen} onLayout={handleLayout}>
       {/* Top Header Bar — Flat, unbordered Chess.com style */}
       <View style={styles.topHeader}>
-        {/* Left: Online Status Pill */}
-        <TouchableOpacity
-          style={styles.presencePill}
-          activeOpacity={verified === false ? 0.7 : 1}
-          onPress={() => {
-            if (isConnected === false || verified === false) {
-              socketManager.retryNow();
-            }
-          }}
-          accessibilityLabel={
-            isConnected === false
-              ? t('home.offlineA11y')
-              : verified === false
-              ? t('home.connIssueA11y')
-              : onlineCount === 1
-              ? t('home.playersOnlineOne', { count: 1 })
-              : t('home.playersOnlineMany', { count: onlineCount ?? 0 })
-          }
-        >
-          <View
-            style={[
-              styles.presenceDot,
-              (isConnected === false ||
-                verified === false ||
-                (onlineCount ?? 0) === 0) &&
-                styles.presenceDotIdle,
-            ]}
-          />
-          <Text style={styles.presenceText}>
-            {isConnected === false
-              ? t('home.offline')
-              : verified === false
-              ? t('home.connIssue')
-              : onlineCount === null
-              ? t('home.checking')
-              : onlineCount === 1
-              ? '1 Online'
-              : `${onlineCount} Online`}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Center: DuoOrb Brand */}
-        <View style={styles.brandCenter}>
+        {/* Center: DuoOrb Brand — Absolutely centered across full width */}
+        <View style={styles.brandCenter} pointerEvents="none">
           <Image
             source={require('../../assets/logo-512.webp')}
             style={styles.brandLogo}
@@ -184,7 +149,50 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <Text style={styles.brandTitle}>DuoOrb</Text>
         </View>
 
-        {/* Right: Install Pill & Settings Button */}
+        {/* Left: Online Status Pill */}
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            style={styles.presencePill}
+            activeOpacity={verified === false ? 0.7 : 1}
+            onPress={() => {
+              if (isConnected === false || verified === false) {
+                socketManager.retryNow();
+              }
+            }}
+            accessibilityLabel={
+              isConnected === false
+                ? t('home.offlineA11y')
+                : verified === false
+                  ? t('home.connIssueA11y')
+                  : onlineCount === 1
+                    ? t('home.playersOnlineOne', { count: 1 })
+                    : t('home.playersOnlineMany', { count: onlineCount ?? 0 })
+            }
+          >
+            <View
+              style={[
+                styles.presenceDot,
+                (isConnected === false ||
+                  verified === false ||
+                  (onlineCount ?? 0) === 0) &&
+                styles.presenceDotIdle,
+              ]}
+            />
+            <Text style={styles.presenceText}>
+              {isConnected === false
+                ? t('home.offline')
+                : verified === false
+                  ? t('home.connIssue')
+                  : onlineCount === null
+                    ? t('home.checking')
+                    : onlineCount === 1
+                      ? '1 Online'
+                      : `${onlineCount} Online`}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Right: Install Pill, Diamond Button & Settings Button */}
         <View style={styles.headerRightActions}>
           {showInstallPill && (
             <TouchableOpacity
@@ -196,6 +204,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             >
               <OrbIcon name="download" size={13} color={THEME.colors.primary} />
               <Text style={styles.installPillText}>{t('home.installPill')}</Text>
+            </TouchableOpacity>
+          )}
+
+          {onOpenPremium && (
+            <TouchableOpacity
+              style={[
+                styles.headerIconButton,
+                !isPremiumMember && styles.headerDiamondButton,
+              ]}
+              activeOpacity={0.7}
+              onPress={onOpenPremium}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isPremiumMember
+                  ? t('settings.premiumActive')
+                  : t('settings.getPremium')
+              }
+            >
+              <PremiumBadge size={19} />
             </TouchableOpacity>
           )}
 
@@ -330,22 +357,28 @@ const createStyles = () =>
       justifyContent: 'space-between',
       backgroundColor: THEME.colors.background,
       borderBottomWidth: 0,
+      position: 'relative',
       zIndex: 10,
+    },
+    headerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      zIndex: 2,
     },
     presencePill: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
+      gap: 5,
+      paddingHorizontal: 8,
+      paddingVertical: 4.5,
       borderRadius: 999,
       backgroundColor: THEME.colors.surfaceMuted,
       borderWidth: 0,
     },
     presenceDot: {
-      width: 7,
-      height: 7,
-      borderRadius: 3.5,
+      width: 6,
+      height: 6,
+      borderRadius: 3,
       backgroundColor: THEME.colors.primary,
     },
     presenceDotIdle: {
@@ -353,14 +386,22 @@ const createStyles = () =>
     },
     presenceText: {
       fontFamily: THEME.fonts.bold,
-      fontSize: 11.5,
+      fontSize: 10.5,
       color: THEME.colors.textSecondary,
       fontWeight: '700',
+      letterSpacing: 0.1,
     },
     brandCenter: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
       gap: 6,
+      zIndex: 1,
     },
     brandLogo: {
       width: 26,
@@ -378,6 +419,7 @@ const createStyles = () =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
+      zIndex: 2,
     },
     installPill: {
       flexDirection: 'row',
@@ -403,6 +445,11 @@ const createStyles = () =>
       justifyContent: 'center',
       backgroundColor: THEME.colors.surfaceMuted,
       borderWidth: 0,
+    },
+    headerDiamondButton: {
+      backgroundColor: THEME.colors.surfaceMuted,
+      borderWidth: 1,
+      borderColor: 'rgba(217, 166, 46, 0.45)',
     },
     scrollArea: {
       flex: 1,

@@ -1130,6 +1130,10 @@ export default function App() {
                   }}
                   onSelectBotsTab={() => setCurrentTab('BOTS')}
                   onOpenHistory={() => navigate(currentTab, 'HISTORY')}
+                  onOpenPremium={() => {
+                    setPremiumEntry('home');
+                    setPremiumOpen(true);
+                  }}
                   onlineCount={onlineCount}
                 />
               )}

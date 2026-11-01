@@ -34,3 +34,4 @@ describe('VersionController', () => {
     delete process.env.UPDATE_MESSAGE;
   });
 });
+
