@@ -12,7 +12,8 @@
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:status": "prisma migrate status",
-    "provision:reviewer": "tsx scripts/provision-reviewer.ts"
+    "provision:reviewer": "tsx scripts/provision-reviewer.ts",
+    "reset:tester-data": "tsx scripts/reset-tester-data.ts"
   },
   "dependencies": {
     "@duoorb/game-core": "*",
