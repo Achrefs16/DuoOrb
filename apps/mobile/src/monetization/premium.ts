@@ -20,13 +20,19 @@ import { api } from '../network/apiClient';
 export interface PremiumState {
   isPremium: boolean;
   premiumExpiresAt: string | null;
+  isCancelled: boolean;
+  willRenew: boolean;
   loading: boolean;
   syncedAt: number | null;
+  localPurchasedAt?: number | null;
 }
 
 export interface PremiumMe {
   isPremium?: boolean | null;
   premiumExpiresAt?: string | number | null;
+  isCancelled?: boolean | null;
+  willRenew?: boolean | null;
+  localPurchasedAt?: number | null;
 }
 
 const PREMIUM_CACHE_KEY = '@duoorb:premium:v1';
@@ -60,12 +66,17 @@ export function getDevPremiumOverride(): boolean | null {
 const OFFLINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Hard ceiling on how long a cached paid window is trusted without /me. */
 const MAX_OFFLINE_EXPIRY_TRUST_MS = 35 * 24 * 60 * 60 * 1000;
+/** Optimistic grace for local purchase before server webhook arrives. */
+const LOCAL_PURCHASE_GRACE_MS = 60 * 1000;
 
 const EMPTY: PremiumState = {
   isPremium: false,
   premiumExpiresAt: null,
+  isCancelled: false,
+  willRenew: true,
   loading: true,
   syncedAt: null,
+  localPurchasedAt: null,
 };
 
 let current: PremiumState = { ...EMPTY };
@@ -102,7 +113,7 @@ function coerce(me: PremiumMe): Pick<PremiumState, 'isPremium' | 'premiumExpires
  * no-expiry entitlement survives 7 days. This keeps a stolen cache from
  * granting Premium forever without ever re-checking the server.
  */
-export function isPremiumActive(s: PremiumState = current): boolean {
+export function isPremiumActive(s: Partial<PremiumState> = current): boolean {
   if (devOverride !== null) return devOverride;
   if (!s.isPremium) return false;
   const now = Date.now();
@@ -123,12 +134,55 @@ export function isPremiumActive(s: PremiumState = current): boolean {
 
 /** Fold a `/me` response into state + cache. Never throws. */
 export function ingestMe(me: PremiumMe): PremiumState {
-  current = { ...coerce(me), loading: false, syncedAt: Date.now() };
+  const now = Date.now();
+  const coerced = coerce(me);
+
+  // Anti-overwrite shield: If a purchase happened locally in the last 60s
+  // and the server returned isPremium: false (because the RevenueCat webhook is still in flight),
+  // retain isPremium: true until the server webhook reconciles.
+  const localGraceActive =
+    current.localPurchasedAt != null &&
+    now - current.localPurchasedAt < LOCAL_PURCHASE_GRACE_MS &&
+    current.isPremium &&
+    !coerced.isPremium;
+
+  const isPremium = localGraceActive ? true : coerced.isPremium;
+  const premiumExpiresAt =
+    localGraceActive && !coerced.premiumExpiresAt
+      ? current.premiumExpiresAt
+      : coerced.premiumExpiresAt;
+  const localPurchasedAt =
+    me.localPurchasedAt !== undefined
+      ? me.localPurchasedAt
+      : localGraceActive
+        ? current.localPurchasedAt
+        : null;
+
+  current = {
+    isPremium,
+    premiumExpiresAt,
+    isCancelled: me.isCancelled === true,
+    willRenew: me.willRenew !== false,
+    loading: false,
+    syncedAt: now,
+    localPurchasedAt,
+  };
   emit();
   void AsyncStorage.setItem(PREMIUM_CACHE_KEY, JSON.stringify(current)).catch(
     () => {}
   );
   return current;
+}
+
+/** Record a successful on-device purchase with an anti-overwrite grace window. */
+export function recordLocalPurchase(premiumExpiresAt?: string | null): PremiumState {
+  return ingestMe({
+    isPremium: true,
+    premiumExpiresAt: premiumExpiresAt ?? null,
+    isCancelled: false,
+    willRenew: true,
+    localPurchasedAt: Date.now(),
+  });
 }
 
 /** Re-read `/me` now (post-purchase, foreground refresh). Keeps last state on error. */
@@ -167,8 +221,12 @@ export async function hydratePremiumCache(): Promise<PremiumState> {
         isPremium: parsed.isPremium === true,
         premiumExpiresAt:
           typeof parsed.premiumExpiresAt === 'string' ? parsed.premiumExpiresAt : null,
+        isCancelled: parsed.isCancelled === true,
+        willRenew: parsed.willRenew !== false,
         loading: false,
         syncedAt: typeof parsed.syncedAt === 'number' ? parsed.syncedAt : null,
+        localPurchasedAt:
+          typeof parsed.localPurchasedAt === 'number' ? parsed.localPurchasedAt : null,
       };
       emit();
     } else if (current.loading) {

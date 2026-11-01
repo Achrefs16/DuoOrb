@@ -42,8 +42,8 @@ export const ADS_CONFIG = {
   /** Rewarded placements currently offered. */
   rewardedPlacements: ['analysis', 'undo', 'assist', 'bot'] as const,
   interstitialEnabled: true,
-  /** Eligible after the 1st completed win. */
-  interstitialMinGames: 1,
+  /** Eligible after 2 completed games. */
+  interstitialMinGames: 2,
   /** Post-loss interstitials wait for a 2nd completed game. */
   interstitialMinGamesAfterLoss: 2,
   interstitialMaxPerDay: 8,
@@ -51,12 +51,18 @@ export const ADS_CONFIG = {
   interstitialWinGapSec: 75,
   /** 150s cooldown on neutral transitions. */
   interstitialNeutralGapSec: 150,
+  /** 4 minutes of active board play required before AI "New Bot" transition ad. */
+  interstitialAiAccumulatedPlaySec: 240,
   /** 3-minute immunity after watching a rewarded video. */
   interstitialRewardedShieldSec: 180,
   /** Skip instant resigns/aborts; quick real matches still count. */
   interstitialMinGameSec: 20,
-  /** Tilt protection: never show on a 2+ loss streak. */
-  maxConsecutiveLossesForAd: 1,
+  /** Minimum game seconds for an ad on post-loss continue. */
+  interstitialMinLostGameSecForContinue: 45,
+  /** Tilt protection: never show on exit/close after a loss. */
+  maxConsecutiveLossesForExitAd: 0,
+  /** Allow ads on "New Game" continue up to 3 consecutive losses. */
+  maxConsecutiveLossesForContinueAd: 3,
   /** The first completed win is eligible, even in session one. */
   skipFirstSession: false,
 } as const;
@@ -123,6 +129,10 @@ export async function showRewarded(placement: RewardedPlacement): Promise<Reward
       // Only a completed view earns the interstitial shield. A failed load or
       // early close must never suppress ads for the next three minutes.
       lastRewardedAtMs = Date.now();
+      try {
+        const { resetAccumulatedAiPlay } = require('./interstitial');
+        void resetAccumulatedAiPlay();
+      } catch {}
       return { earned: true };
     }
     return { earned: false, error: res?.error ?? 'dismissed' };

@@ -347,36 +347,36 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   if (endReason) {
     switch (endReason) {
       case 'GOAL_REACHED':
-        reasonCopy = 'Goal Reached';
+        reasonCopy = t('gameover.reasonGoal');
         break;
       case 'RESIGNATION':
-        reasonCopy = actorIsMe ? 'Resignation' : 'Opponent Resigned';
+        reasonCopy = actorIsMe ? t('gameover.reasonResignSelf') : t('gameover.reasonResignOpponent');
         break;
       case 'TIMEOUT':
-        reasonCopy = actorIsMe ? 'Timeout' : 'Opponent Timeout';
+        reasonCopy = actorIsMe ? t('gameover.reasonTimeoutSelf') : t('gameover.reasonTimeoutOpponent');
         break;
       case 'DISCONNECT':
-        reasonCopy = iWon ? 'Opponent Disconnected' : 'Disconnected';
+        reasonCopy = iWon ? t('gameover.reasonDisconnectOpponent') : t('gameover.reasonDisconnectSelf');
         break;
       case 'AFK':
-        reasonCopy = 'Inactivity';
+        reasonCopy = t('gameover.reasonAfk');
         break;
     }
   } else if (!isDraw) {
     const lastAction = lastMove?.action as { type?: string } | undefined;
     if (lastAction?.type === 'RESIGN') {
-      reasonCopy = 'Resignation';
+      reasonCopy = t('gameover.reasonResignSelf');
     } else {
-      reasonCopy = 'Goal Reached';
+      reasonCopy = t('gameover.reasonGoal');
     }
   }
 
   const subtitle = isMultiplayer
     ? `${state.players.length} Players · ${modeLabel(state.mode)}`
     : reasonCopy
-    ? `by ${reasonCopy}`
+    ? t('gameover.byReason', { reason: reasonCopy })
     : opponentName
-    ? `vs ${opponentName}`
+    ? t('gameover.vs', { name: opponentName })
     : null;
 
   const ratingBefore =
@@ -544,7 +544,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               onPress={onAnalyze}
             >
               <SmoothStar size={17} color="#FFFFFF" />
-              <Text style={styles.gameReviewText}>Game Review</Text>
+              <Text style={styles.gameReviewText}>{t('gameover.btnGameReview')}</Text>
             </TouchableOpacity>
           ) : isRoom ? (
             <TouchableOpacity
@@ -553,7 +553,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               onPress={onReturnToRoom ?? onHome}
             >
               <OrbIcon name="arrow-left" size={17} color="#FFFFFF" />
-              <Text style={styles.gameReviewText}>Return to Room</Text>
+              <Text style={styles.gameReviewText}>{t('gameover.btnReturnToRoom')}</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -562,7 +562,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               onPress={type === 'ai' ? (onRematch ?? onNewGame) : onRematch}
             >
               <OrbIcon name="rotate-ccw" size={17} color="#FFFFFF" />
-              <Text style={styles.gameReviewText}>Play Again</Text>
+              <Text style={styles.gameReviewText}>{t('gameover.btnPlayAgain')}</Text>
             </TouchableOpacity>
           )}
 
@@ -576,7 +576,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   onPress={onNewGame}
                 >
                   <OrbIcon name="robot-outline" size={17} color={THEME.colors.textPrimary} />
-                  <Text style={styles.secondaryBtnText}>New Bot</Text>
+                  <Text style={styles.secondaryBtnText}>{t('gameover.btnNewBot')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -585,7 +585,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   onPress={onRematch}
                 >
                   <OrbIcon name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
-                  <Text style={styles.secondaryBtnText}>Rematch</Text>
+                  <Text style={styles.secondaryBtnText}>{t('gameover.btnRematch')}</Text>
                 </TouchableOpacity>
               </>
             ) : isRoom ? (
@@ -597,7 +597,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                     onPress={onReturnToRoom ?? onHome}
                   >
                     <OrbIcon name="arrow-left" size={15} color={THEME.colors.textPrimary} />
-                    <Text style={styles.secondaryBtnText}>Return to Room</Text>
+                    <Text style={styles.secondaryBtnText}>{t('gameover.btnReturnToRoom')}</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -606,7 +606,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                     onPress={onLeaveRoom ?? onHome}
                   >
                     <OrbIcon name="log-out" size={15} color={THEME.colors.textPrimary} />
-                    <Text style={styles.secondaryBtnText}>Leave Room</Text>
+                    <Text style={styles.secondaryBtnText}>{t('gameover.btnLeaveRoom')}</Text>
                   </TouchableOpacity>
                 </>
               ) : (
@@ -616,7 +616,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   onPress={onLeaveRoom ?? onHome}
                 >
                   <OrbIcon name="log-out" size={15} color={THEME.colors.textPrimary} />
-                  <Text style={styles.secondaryBtnText}>Leave Room</Text>
+                  <Text style={styles.secondaryBtnText}>{t('gameover.btnLeaveRoom')}</Text>
                 </TouchableOpacity>
               )
             ) : type === 'online' ? (
@@ -627,7 +627,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   onPress={onRematch}
                 >
                   <OrbIcon name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
-                  <Text style={styles.secondaryBtnText}>Rematch</Text>
+                  <Text style={styles.secondaryBtnText}>{t('gameover.btnRematch')}</Text>
                 </TouchableOpacity>
 
                 {showNewGame ? (
@@ -637,7 +637,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                     onPress={onNewGame}
                   >
                     <OrbIcon name="play" size={15} color={THEME.colors.textPrimary} />
-                    <Text style={styles.secondaryBtnText}>New Game</Text>
+                    <Text style={styles.secondaryBtnText}>{t('gameover.btnNewGame')}</Text>
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
@@ -646,7 +646,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                     onPress={onHome}
                   >
                     <OrbIcon name="log-out" size={15} color={THEME.colors.textPrimary} />
-                    <Text style={styles.secondaryBtnText}>Exit Match</Text>
+                    <Text style={styles.secondaryBtnText}>{t('gameover.btnExitMatch')}</Text>
                   </TouchableOpacity>
                 )}
               </>
@@ -658,7 +658,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   onPress={onRematch}
                 >
                   <OrbIcon name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
-                  <Text style={styles.secondaryBtnText}>Rematch</Text>
+                  <Text style={styles.secondaryBtnText}>{t('gameover.btnRematch')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -667,7 +667,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   onPress={onHome}
                 >
                   <OrbIcon name="log-out" size={15} color={THEME.colors.textPrimary} />
-                  <Text style={styles.secondaryBtnText}>Exit Match</Text>
+                  <Text style={styles.secondaryBtnText}>{t('gameover.btnExitMatch')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -689,7 +689,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           {/* Ad Container & Remove Ads */}
           {!hasPremium && (
             <View style={styles.adSection}>
-              <AdBanner placement="modal" />
+              <AdBanner
+                placement="modal"
+                keepReservedSpaceOnFail={true}
+                onOpenPremium={onOpenPremium}
+              />
               {onOpenPremium && (
                 <TouchableOpacity
                   style={styles.removeAdsBtn}
@@ -697,7 +701,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                   onPress={onOpenPremium}
                 >
                   <OrbIcon name="slash" size={13} color={THEME.colors.primary} />
-                  <Text style={styles.removeAdsText}>Remove Ads</Text>
+                  <Text style={styles.removeAdsText}>{t('gameover.removeAds')}</Text>
                 </TouchableOpacity>
               )}
             </View>

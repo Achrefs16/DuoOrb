@@ -3,14 +3,16 @@ use crate::pathfinding::shortest_distance;
 use crate::rules::{apply_action, get_legal_moves, is_legal_wall_placement};
 use crate::types::{GameAction, GameState, Orientation, WallCoord};
 
-const WIN_SCORE: i32 = 10_000;
-const LOSS_SCORE: i32 = -10_000;
+pub const WIN_SCORE: i32 = 10_000;
+pub const LOSS_SCORE: i32 = -10_000;
+pub const TACTICAL_WIN_THRESHOLD: i32 = 8_000;
+pub const TACTICAL_LOSS_THRESHOLD: i32 = -8_000;
 
 /// Check if a position qualifies for exact tactical solving:
 /// - 2-player match
 /// - Mover is within 3 steps of winning OR both players have 0 walls and distance <= 5
 pub fn can_solve_tactically(state: &GameState) -> bool {
-    if state.players.len() != 2 || state.status == "FINISHED" {
+    if state.players.len() != 2 || state.status == "COMPLETED" || state.status == "FINISHED" {
         return false;
     }
 
@@ -21,7 +23,12 @@ pub fn can_solve_tactically(state: &GameState) -> bool {
     let mover_dist = shortest_distance(mover.position, mover.goal_direction, &board, &state.mode);
     let opp_dist = shortest_distance(opp.position, opp.goal_direction, &board, &state.mode);
 
-    if mover_dist <= 3 || opp_dist <= 2 {
+    let is_variant_2p = state.mode == "center2" || state.mode == "race2";
+    if is_variant_2p {
+        if mover_dist <= 4 || opp_dist <= 3 {
+            return true;
+        }
+    } else if mover_dist <= 3 || opp_dist <= 2 {
         return true;
     }
 
@@ -33,9 +40,9 @@ pub fn can_solve_tactically(state: &GameState) -> bool {
 }
 
 /// Solves the position using Alpha-Beta Minimax search up to depth `max_depth`.
-/// Returns `Some(optimal_action)` if an exact solution was found, or `None` if
-/// search was skipped or inconclusive.
-pub fn solve_tactical_position(state: &GameState, max_depth: usize) -> Option<GameAction> {
+/// Returns `Some((optimal_action, minimax_score))` if candidate moves exist,
+/// or `None` if search was skipped or inconclusive.
+pub fn solve_tactical_position_with_score(state: &GameState, max_depth: usize) -> Option<(GameAction, i32)> {
     if !can_solve_tactically(state) {
         return None;
     }
@@ -56,8 +63,8 @@ pub fn solve_tactical_position(state: &GameState, max_depth: usize) -> Option<Ga
         let mut sim_board = board;
         if let Some(next_state) = apply_action(state, &action, &mut sim_board) {
             // Check immediate win
-            if next_state.status == "FINISHED" {
-                return Some(action);
+            if next_state.status == "COMPLETED" || next_state.status == "FINISHED" {
+                return Some((action, WIN_SCORE));
             }
 
             let score = -negamax(&next_state, max_depth - 1, -beta, -alpha, &mut sim_board, mover_idx);
@@ -68,7 +75,14 @@ pub fn solve_tactical_position(state: &GameState, max_depth: usize) -> Option<Ga
         }
     }
 
-    best_action
+    best_action.map(|action| (action, alpha))
+}
+
+/// Solves the position using Alpha-Beta Minimax search up to depth `max_depth`.
+/// Returns `Some(optimal_action)` if an exact solution was found, or `None` if
+/// search was skipped or inconclusive.
+pub fn solve_tactical_position(state: &GameState, max_depth: usize) -> Option<GameAction> {
+    solve_tactical_position_with_score(state, max_depth).map(|(act, _)| act)
 }
 
 fn negamax(
@@ -88,22 +102,21 @@ fn negamax(
     let mover_dist = shortest_distance(mover.position, mover.goal_direction, board, &state.mode);
     let opp_dist = shortest_distance(opp.position, opp.goal_direction, board, &state.mode);
 
-    // Terminal: current player has reached goal
-    if mover_dist == 0 || state.status == "FINISHED" {
-        return WIN_SCORE - (10 - depth as i32);
+    // Terminal: opponent has already reached goal and completed match
+    if state.status == "COMPLETED" || state.players[opp_idx].status == "FINISHED" || opp_dist == 0 {
+        return LOSS_SCORE + (10 - depth as i32);
     }
 
-    // Opponent has already reached goal
-    if opp_dist == 0 {
-        return LOSS_SCORE + (10 - depth as i32);
+    // Current player has reached goal
+    if mover_dist == 0 || state.players[mover_idx].status == "FINISHED" {
+        return WIN_SCORE - (10 - depth as i32);
     }
 
     // Leaf evaluation at depth cutoff
     if depth == 0 {
         let dist_delta = (opp_dist - mover_dist) * 100;
         let wall_delta = (mover.walls_remaining - opp.walls_remaining) * 25;
-        let score = dist_delta + wall_delta;
-        return if mover_idx == root_player_idx { score } else { -score };
+        return dist_delta + wall_delta;
     }
 
     let candidates = generate_solver_candidates(state, board);
@@ -145,6 +158,8 @@ fn generate_solver_candidates(state: &GameState, board: &Board) -> Vec<GameActio
     if mover.walls_remaining > 0 {
         let opp_dist = shortest_distance(opp.position, opp.goal_direction, board, &state.mode);
         if opp_dist <= 4 {
+            let mut candidate_vertices = Vec::new();
+
             // Generate walls near the opponent
             let min_r = (opp.position.row - 1).max(0) as i8;
             let max_r = (opp.position.row + 1).min(7) as i8;
@@ -153,16 +168,29 @@ fn generate_solver_candidates(state: &GameState, board: &Board) -> Vec<GameActio
 
             for r in min_r..=max_r {
                 for c in min_c..=max_c {
-                    for &orientation in &[Orientation::H, Orientation::V] {
-                        let wall = WallCoord { row: r, col: c, orientation };
-                        if is_legal_wall_placement(state, &mover.id, &wall, board) {
-                            let mut test_board = *board;
-                            test_board.place_wall(&wall);
-                            let new_opp_dist = shortest_distance(opp.position, opp.goal_direction, &test_board, &state.mode);
-                            if new_opp_dist > opp_dist {
-                                // Only keep walls that actually delay the opponent
-                                actions.push(GameAction::PlaceWall { wall });
-                            }
+                    candidate_vertices.push((r, c));
+                }
+            }
+
+            // In Center Rush, also consider the goal choke vertices surrounding the center (4,4)
+            if state.mode == "center2" {
+                for &(cr, cc) in &[(3, 3), (3, 4), (4, 3), (4, 4)] {
+                    if !candidate_vertices.contains(&(cr, cc)) {
+                        candidate_vertices.push((cr, cc));
+                    }
+                }
+            }
+
+            for (r, c) in candidate_vertices {
+                for &orientation in &[Orientation::H, Orientation::V] {
+                    let wall = WallCoord { row: r, col: c, orientation };
+                    if is_legal_wall_placement(state, &mover.id, &wall, board) {
+                        let mut test_board = *board;
+                        test_board.place_wall(&wall);
+                        let new_opp_dist = shortest_distance(opp.position, opp.goal_direction, &test_board, &state.mode);
+                        if new_opp_dist > opp_dist {
+                            // Only keep walls that actually delay the opponent
+                            actions.push(GameAction::PlaceWall { wall });
                         }
                     }
                 }
@@ -260,6 +288,48 @@ mod tests {
                 assert_eq!(wall.orientation, Orientation::H);
             }
             _ => panic!("Solver must place a wall to stop rival from winning on next turn"),
+        }
+    }
+
+    #[test]
+    fn solver_triggers_early_and_blocks_in_center2() {
+        let state = GameState {
+            game_id: "solver-center2".to_string(),
+            mode: "center2".to_string(),
+            current_player_index: 0,
+            players: vec![
+                PlayerState {
+                    id: "p1".to_string(),
+                    index: 0,
+                    display_name: "P1".to_string(),
+                    position: CellCoord { row: 7, col: 4 }, // dist = 3 to (4,4)
+                    walls_remaining: 5,
+                    goal_direction: GoalDirection::Center,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "p2".to_string(),
+                    index: 1,
+                    display_name: "P2".to_string(),
+                    position: CellCoord { row: 3, col: 4 }, // dist = 1 to (4,4)!
+                    walls_remaining: 5,
+                    goal_direction: GoalDirection::Center,
+                    status: "ACTIVE".to_string(),
+                },
+            ],
+            walls: vec![],
+            move_number: 2,
+            status: "IN_PROGRESS".to_string(),
+        };
+
+        assert!(can_solve_tactically(&state), "Center2 at d <= 4 must qualify for tactical solve");
+        let best = solve_tactical_position(&state, 6).expect("Solver should find tactical move in Center2");
+        // P2 is only 1 step from (4,4). P1 must place a wall to block P2's direct path!
+        match best {
+            GameAction::PlaceWall { wall } => {
+                assert!(wall.row <= 3, "Wall must obstruct P2 from reaching center");
+            }
+            _ => panic!("Expected tactical wall to prevent opponent from reaching center first"),
         }
     }
 }

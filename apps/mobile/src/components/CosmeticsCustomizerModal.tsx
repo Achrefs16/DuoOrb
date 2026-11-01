@@ -22,6 +22,7 @@ import {
 import { api } from '../network/apiClient';
 import { PremiumBadge } from './PremiumBadge';
 import { isPremiumActive, usePremium } from '../monetization/premium';
+import { useTranslation } from '../i18n';
 
 interface CosmeticsCustomizerModalProps {
   visible: boolean;
@@ -46,6 +47,7 @@ export const CosmeticsCustomizerModal: React.FC<CosmeticsCustomizerModalProps> =
   const insets = useSafeAreaInsets();
   const slide = useSheetSlide(visible);
 
+  const { t } = useTranslation();
   const equippedBallId = useBallSkinId();
   const equippedWallId = useWallSkinId();
   const premiumState = usePremium();
@@ -72,7 +74,7 @@ export const CosmeticsCustomizerModal: React.FC<CosmeticsCustomizerModalProps> =
     }
   };
 
-  const isClassicEquipped = currentEquippedId === 'classic';
+  const isClassicEquipped = currentEquippedId === 'classic' || !isPremium;
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
@@ -85,14 +87,14 @@ export const CosmeticsCustomizerModal: React.FC<CosmeticsCustomizerModalProps> =
             {/* Header: Clean title + normal close X icon (no circle buttons or icons) */}
             <View style={styles.headerRow}>
               <Text style={styles.title}>
-                {isBall ? 'Choose Ball Skin' : 'Choose Wall Skin'}
+                {isBall ? t('cosmetics.chooseBallSkin') : t('cosmetics.chooseWallSkin')}
               </Text>
               <TouchableOpacity
                 style={styles.closeBtn}
                 onPress={onClose}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 accessibilityRole="button"
-                accessibilityLabel="Close"
+                accessibilityLabel={t('common.closeA11y')}
               >
                 <OrbIcon name="x" size={24} color={THEME.colors.textPrimary} />
               </TouchableOpacity>
@@ -134,14 +136,14 @@ export const CosmeticsCustomizerModal: React.FC<CosmeticsCustomizerModalProps> =
                   style={[styles.itemTitle, isClassicEquipped && styles.itemTitleSelected]}
                   numberOfLines={1}
                 >
-                  Classic
+                  {t('cosmetics.skinClassic')}
                 </Text>
-                {isClassicEquipped && <Text style={styles.equippedLabel}>Equipped</Text>}
+                {isClassicEquipped && <Text style={styles.equippedLabel}>{t('cosmetics.equipped')}</Text>}
               </TouchableOpacity>
 
               {/* All 16 Skins (strictly locked to DuoOrb Premium) */}
               {COSMETIC_SKIN_LIST.map((skin) => {
-                const isEquipped = currentEquippedId === skin.id;
+                const isEquipped = currentEquippedId === skin.id && isPremium;
                 const isLocked = !isPremium;
 
                 return (
@@ -186,9 +188,9 @@ export const CosmeticsCustomizerModal: React.FC<CosmeticsCustomizerModalProps> =
                       {skin.name}
                     </Text>
                     {isEquipped ? (
-                      <Text style={styles.equippedLabel}>Equipped</Text>
+                      <Text style={styles.equippedLabel}>{t('cosmetics.equipped')}</Text>
                     ) : isLocked ? (
-                      <Text style={styles.lockedLabel}>Premium</Text>
+                      <Text style={styles.lockedLabel}>{t('cosmetics.premiumTier')}</Text>
                     ) : null}
                   </TouchableOpacity>
                 );

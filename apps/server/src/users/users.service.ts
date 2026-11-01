@@ -100,6 +100,8 @@ export class UsersService {
         draws: 0,
         isPremium: false,
         premiumExpiresAt: null,
+        isCancelled: false,
+        willRenew: false,
         botStars: {},
       };
     }
@@ -145,16 +147,20 @@ export class UsersService {
     // correct effective value.
     let isPremium = user.profile?.isPremium ?? false;
     const premiumExpiresAt = user.profile?.premiumExpiresAt ?? null;
+    let isCancelled = user.profile?.isCancelled ?? false;
+    let willRenew = user.profile?.willRenew ?? true;
     if (
       isPremium &&
       premiumExpiresAt &&
       new Date(premiumExpiresAt).getTime() <= Date.now()
     ) {
       isPremium = false;
+      isCancelled = true;
+      willRenew = false;
       try {
         await this.prisma.profile.update({
           where: { userId },
-          data: { isPremium: false, premiumUpdatedAt: new Date() },
+          data: { isPremium: false, isCancelled: true, willRenew: false, premiumUpdatedAt: new Date() },
         });
       } catch {
         // Read stays correct; the next /me retries the flip.
@@ -170,6 +176,8 @@ export class UsersService {
       bio: user.profile?.bio,
       isPremium,
       premiumExpiresAt,
+      isCancelled,
+      willRenew,
       // Flat fields (legacy) + nested ratings map (mobile contract).
       rating1v1: rating?.rating ?? 1500,
       rating4p: rating?.rating ?? 1500,

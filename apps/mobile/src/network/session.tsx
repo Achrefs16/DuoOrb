@@ -33,6 +33,7 @@ import {
 } from './sessionRestore';
 import { clearOnboarding } from '../storage/onboarding';
 import { clearPremium, hydratePremiumCache, ingestMe } from '../monetization/premium';
+import { initializePurchases } from '../monetization/offers';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -189,6 +190,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             refreshToken: null,
             isGuest: false,
           });
+          void initializePurchases(supabaseSession.user.id);
           let serverNames: ServerProfile | null = null;
           let profileError: unknown = null;
           try {
@@ -321,6 +323,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           refreshToken: null,
           isGuest: false,
         });
+        void initializePurchases(action.userId);
         // The socket observes identity changes itself and rebuilds with the
         // account credential, then migrates live rooms/seats/queue.
         // A failed migration must not strand the socket on the old identity:

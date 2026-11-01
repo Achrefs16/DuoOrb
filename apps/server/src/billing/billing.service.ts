@@ -16,6 +16,8 @@ export interface RevenueCatEvent {
   type: string;
   /** Our DuoOrb userId (client sets it as the RevenueCat App User ID). */
   appUserId: string;
+  originalAppUserId?: string;
+  aliases?: string[];
   productId?: string;
   /** RevenueCat `expiration_at_ms`, if the event carries one. */
   expiresAtMs?: number;
@@ -26,6 +28,8 @@ export interface RevenueCatEvent {
 export interface PremiumStatus {
   isPremium: boolean;
   premiumExpiresAt: Date | null;
+  isCancelled?: boolean;
+  willRenew?: boolean;
 }
 
 @Injectable()
@@ -48,26 +52,41 @@ export class BillingService {
       ? new Date(evt.expiresAtMs as number)
       : null;
 
+    // Resolve candidate IDs to handle anonymous / aliased RevenueCat user IDs
+    const candidateIds = [
+      evt.appUserId,
+      evt.originalAppUserId,
+      ...(Array.isArray(evt.aliases) ? evt.aliases : []),
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+
     // B1: profile check FIRST. The event row carries an FK to users(id), so
     // inserting before this check turns every unknown-user delivery (dashboard
     // test events, deleted accounts) into a 500 that RevenueCat retries
     // forever. Unknown users return inactive with no row stored.
-    const profile = await prisma.profile.findUnique({
-      where: { userId: evt.appUserId },
-      select: { isPremium: true, premiumExpiresAt: true, premiumUpdatedAt: true },
-    });
+    const profile = await (prisma.profile.findFirst
+      ? prisma.profile.findFirst({
+          where: { userId: { in: candidateIds } },
+          select: { userId: true, isPremium: true, premiumExpiresAt: true, premiumUpdatedAt: true, isCancelled: true, willRenew: true },
+        })
+      : prisma.profile.findUnique({
+          where: { userId: evt.appUserId },
+          select: { userId: true, isPremium: true, premiumExpiresAt: true, premiumUpdatedAt: true, isCancelled: true, willRenew: true },
+        }));
+
     if (!profile) {
       // Unknown user (e.g. RevenueCat sandbox/test event): log + 200, never 500.
       this.logger.warn(
         `webhook for unknown user ignored: ${evt.appUserId} (${evt.type})`
       );
-      return { isPremium: false, premiumExpiresAt: null };
+      return { isPremium: false, premiumExpiresAt: null, isCancelled: false, willRenew: false };
     }
+
+    const resolvedUserId = profile.userId ?? evt.appUserId;
 
     try {
       await prisma.subscriptionEvent.create({
         data: {
-          userId: evt.appUserId,
+          userId: resolvedUserId,
           rcEventId: evt.id,
           eventType: evt.type,
           productId: evt.productId ?? null,
@@ -80,7 +99,7 @@ export class BillingService {
         // (Concurrent duplicates still serialize here: one insert wins, the
         // other lands on P2002 and reads the already-applied state.)
         this.logger.warn(`duplicate webhook event ignored: ${evt.id}`);
-        return this.getStatus(evt.appUserId);
+        return this.getStatus(resolvedUserId);
       }
       throw e;
     }
@@ -94,9 +113,11 @@ export class BillingService {
       const incoming = expiresAt ? expiresAt.getTime() : 0;
       if (!expiresAt || incoming > stored) {
         await prisma.profile.update({
-          where: { userId: evt.appUserId },
+          where: { userId: resolvedUserId },
           data: {
             isPremium: true,
+            isCancelled: false,
+            willRenew: true,
             ...(expiresAt ? { premiumExpiresAt: expiresAt } : {}),
             premiumSource: 'revenuecat',
             premiumUpdatedAt: now,
@@ -105,20 +126,40 @@ export class BillingService {
         return {
           isPremium: true,
           premiumExpiresAt: expiresAt ?? profile.premiumExpiresAt,
+          isCancelled: false,
+          willRenew: true,
         };
       }
       return {
         isPremium: profile.isPremium,
         premiumExpiresAt: profile.premiumExpiresAt,
+        isCancelled: false,
+        willRenew: true,
       };
     }
 
     if (evt.type === 'CANCELLATION') {
-      // E3: keep the paid period — Play policy. Expiry flips it later
-      // (EXPIRATION event or lazy-expiry on /me).
+      // Option A (Play policy): Keep access active until expiresAt, but directly update
+      // cancellation & auto-renew state so both app and backend recognize it immediately.
+      // If expiresAt is in the past (e.g. immediate revocation / refund), revoke premium.
+      const isPastExpiry = expiresAt ? expiresAt.getTime() <= now.getTime() : false;
+      const effectivePremium = isPastExpiry ? false : profile.isPremium;
+
+      await prisma.profile.update({
+        where: { userId: resolvedUserId },
+        data: {
+          isCancelled: true,
+          willRenew: false,
+          ...(isPastExpiry ? { isPremium: false } : {}),
+          ...(expiresAt ? { premiumExpiresAt: expiresAt } : {}),
+          premiumUpdatedAt: now,
+        },
+      });
       return {
-        isPremium: profile.isPremium,
-        premiumExpiresAt: profile.premiumExpiresAt,
+        isPremium: effectivePremium,
+        premiumExpiresAt: expiresAt ?? profile.premiumExpiresAt,
+        isCancelled: true,
+        willRenew: false,
       };
     }
 
@@ -140,17 +181,21 @@ export class BillingService {
           : 0;
       if (occurredAt > 0 && lastWrite > 0 && occurredAt < lastWrite) {
         this.logger.warn(
-          `stale expiration ignored for ${evt.appUserId} (occurred before last entitlement write)`
+          `stale expiration ignored for ${resolvedUserId} (occurred before last entitlement write)`
         );
         return {
           isPremium: profile.isPremium,
           premiumExpiresAt: profile.premiumExpiresAt,
+          isCancelled: profile.isCancelled,
+          willRenew: profile.willRenew,
         };
       }
       await prisma.profile.update({
-        where: { userId: evt.appUserId },
+        where: { userId: resolvedUserId },
         data: {
           isPremium: false,
+          isCancelled: true,
+          willRenew: false,
           ...(expiresAt ? { premiumExpiresAt: expiresAt } : {}),
           premiumUpdatedAt: now,
         },
@@ -158,6 +203,8 @@ export class BillingService {
       return {
         isPremium: false,
         premiumExpiresAt: expiresAt ?? profile.premiumExpiresAt,
+        isCancelled: true,
+        willRenew: false,
       };
     }
 
@@ -167,6 +214,8 @@ export class BillingService {
     return {
       isPremium: profile.isPremium,
       premiumExpiresAt: profile.premiumExpiresAt,
+      isCancelled: profile.isCancelled,
+      willRenew: profile.willRenew,
     };
   }
 
@@ -208,9 +257,9 @@ export class BillingService {
     const prisma = this.prisma as any;
     const profile = await prisma.profile.findUnique({
       where: { userId },
-      select: { isPremium: true, premiumExpiresAt: true },
+      select: { isPremium: true, premiumExpiresAt: true, isCancelled: true, willRenew: true },
     });
-    if (!profile) return { isPremium: false, premiumExpiresAt: null };
+    if (!profile) return { isPremium: false, premiumExpiresAt: null, isCancelled: false, willRenew: false };
     if (
       profile.isPremium &&
       profile.premiumExpiresAt &&
@@ -218,13 +267,15 @@ export class BillingService {
     ) {
       await prisma.profile.update({
         where: { userId },
-        data: { isPremium: false, premiumUpdatedAt: new Date() },
+        data: { isPremium: false, isCancelled: true, willRenew: false, premiumUpdatedAt: new Date() },
       });
-      return { isPremium: false, premiumExpiresAt: profile.premiumExpiresAt };
+      return { isPremium: false, premiumExpiresAt: profile.premiumExpiresAt, isCancelled: true, willRenew: false };
     }
     return {
       isPremium: profile.isPremium,
       premiumExpiresAt: profile.premiumExpiresAt,
+      isCancelled: profile.isCancelled ?? false,
+      willRenew: profile.willRenew ?? true,
     };
   }
 }

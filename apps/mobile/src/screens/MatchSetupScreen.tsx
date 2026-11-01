@@ -123,11 +123,12 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
       playerCount,
       difficulty,
       botId,
+      botIds: draft.botIds,
       side,
       wallsEach: walls,
-      clockId: clock.id,
+      clockId: vsType === 'ai' ? 'no-timer' : clock.id,
     });
-  }, [vsType, modeSel, playerCount, difficulty, botId, side, walls, clock]);
+  }, [vsType, modeSel, playerCount, difficulty, botId, draft.botIds, side, walls, clock]);
 
   const resolvedMode: GameMode = resolveMode(
     modeSel === 'race' ? 'race' : modeSel === 'center' ? 'center' : 'classic',
@@ -139,7 +140,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
       onConfirm({
         mode: resolvedMode,
         vsType,
-        clock,
+        clock: vsType === 'ai' ? NO_TIMER_CONTROL : clock,
         difficulty,
         botId,
         side,
@@ -154,24 +155,32 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
   // Human readable labels
   const modeName =
     modeSel === 'classic'
-      ? 'Classic'
+      ? t('setup.classic')
       : modeSel === 'center'
-      ? 'Center Rush'
-      : 'Race';
+      ? t('setup.modeCenterRush')
+      : t('setup.modeRace');
 
-  const wallsLabel = walls === 99 ? '∞ Walls' : `${walls} Walls`;
+  const wallsLabel =
+    walls === 99
+      ? t('setup.wallsUnlimited')
+      : walls === 15
+      ? t('setup.wallsCount15')
+      : t('setup.wallsCount10');
   const timeLabel = formatTimeControlDisplay(clock);
 
-  const summaryText = `${timeLabel} · ${modeName} (${wallsLabel})`;
+  const summaryText =
+    vsType === 'ai'
+      ? `${modeName} · ${wallsLabel}`
+      : `${timeLabel} · ${modeName} (${wallsLabel})`;
 
 
   // Header Title
   const getHeaderTitle = () => {
-    if (optionsOpen) return 'Time & Options';
-    if (vsType === 'challenge') return `Challenge ${challengeName ?? ''}`;
-    if (vsType === 'local') return 'Pass & Play';
-    if (vsType === 'ai') return 'Play a Bot';
-    return 'New Game';
+    if (optionsOpen) return vsType === 'ai' ? t('game.optionsTitle') : t('bots.timeAndOptions');
+    if (vsType === 'challenge') return t('setup.challengeTitle', { name: challengeName ?? '' });
+    if (vsType === 'local') return t('setup.passAndPlay');
+    if (vsType === 'ai') return t('setup.playBots');
+    return t('gameover.newGame');
   };
 
   return (
@@ -188,7 +197,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
           }}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.backBtn}
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('common.goBackA11y')}
         >
           <OrbIcon name="arrow-left" size={24} color={THEME.colors.textPrimary} />
         </TouchableOpacity>
@@ -215,7 +224,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             activeOpacity={0.8}
             onPress={() => setOptionsOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel={`Match options: ${summaryText}`}
+            accessibilityLabel={`${t('game.optionsTitle')}: ${summaryText}`}
           >
             <View style={styles.selectorLeft}>
               <OrbIcon
@@ -235,7 +244,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             onPress={handleLaunchGame}
           >
             <Text style={styles.primaryCtaText}>
-              {vsType === 'challenge' ? 'Send Challenge' : 'Start Game'}
+              {vsType === 'challenge' ? t('setup.sendChallenge') : t('online.startGame')}
             </Text>
           </TouchableOpacity>
 
@@ -250,7 +259,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                 onPress={() => onOpenRooms?.()}
               >
                 <OrbIcon name="users" size={20} color={THEME.colors.textSecondary} />
-                <Text style={styles.secRowText}>Play a Friend</Text>
+                <Text style={styles.secRowText}>{t('setup.playFriend')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -259,7 +268,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                 onPress={() => onSelectBotsTab?.()}
               >
                 <OrbIcon name="cpu" size={20} color={THEME.colors.textSecondary} />
-                <Text style={styles.secRowText}>Play Bots</Text>
+                <Text style={styles.secRowText}>{t('setup.playBots')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -275,7 +284,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                   color={THEME.colors.textSecondary}
                 />
                 <Text style={styles.secRowText}>
-                  {vsType === 'online' ? 'Pass & Play' : 'Play Online'}
+                  {vsType === 'online' ? t('setup.passAndPlay') : t('setup.playOnline')}
                 </Text>
               </TouchableOpacity>
 
@@ -283,7 +292,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
                 style={styles.chevronExpandBtn}
                 activeOpacity={0.8}
                 onPress={() => setOptionsOpen(true)}
-                accessibilityLabel="More match options"
+                accessibilityLabel={t('setup.moreOptionsA11y')}
               >
                 <OrbIcon name="chevron-down" size={22} color={THEME.colors.textMuted} />
               </TouchableOpacity>
@@ -291,16 +300,22 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
           )}
 
           {/* If In Challenge Mode */}
-          {vsType === 'challenge' && challengeName && (
-            <View style={styles.challengeBox}>
-              <View style={styles.challengeAvatar}>
-                <OrbIcon name="user" size={24} color={THEME.colors.primary} />
+          {vsType === 'challenge' && challengeName && (() => {
+            const challengePrompt = t('setup.challengeReadyFor', { name: '___NAME___' });
+            const [before, after] = challengePrompt.split('___NAME___');
+            return (
+              <View style={styles.challengeBox}>
+                <View style={styles.challengeAvatar}>
+                  <OrbIcon name="user" size={24} color={THEME.colors.primary} />
+                </View>
+                <Text style={styles.challengePrompt}>
+                  {before}
+                  <Text style={styles.challengeTargetName}>{challengeName}</Text>
+                  {after}
+                </Text>
               </View>
-              <Text style={styles.challengePrompt}>
-                Live 1v1 challenge ready for <Text style={styles.challengeTargetName}>{challengeName}</Text>
-              </Text>
-            </View>
-          )}
+            );
+          })()}
 
         </ScrollView>
       ) : (
@@ -319,6 +334,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             onWallsChange={setWalls}
             clock={clock}
             onClockChange={setClock}
+            hideClock={vsType === 'ai'}
           />
 
           {/* Done / Apply Button */}
@@ -327,7 +343,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
             activeOpacity={0.88}
             onPress={() => setOptionsOpen(false)}
           >
-            <Text style={styles.doneBtnText}>Done</Text>
+            <Text style={styles.doneBtnText}>{t('common.done')}</Text>
           </TouchableOpacity>
         </ScrollView>
       )}

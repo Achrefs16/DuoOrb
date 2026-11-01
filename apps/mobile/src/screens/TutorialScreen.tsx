@@ -41,6 +41,7 @@ import {
 import { THEME, playerColor, wallPreviewColor, useStyles } from '../theme';
 import { useBoardSkin } from '../theme/boardTheme';
 import { useEquippedWallSkin } from '../theme/cosmeticsCatalog';
+import { useTranslation } from '../i18n';
 
 interface TutorialScreenProps {
   onFinish: () => void;
@@ -55,6 +56,7 @@ interface WallDragState {
 
 export const TutorialScreen: React.FC<TutorialScreenProps> = ({ onFinish, onSkip }) => {
   const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const skin = useBoardSkin();
   const customWall = useEquippedWallSkin();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -454,9 +456,9 @@ export const TutorialScreen: React.FC<TutorialScreenProps> = ({ onFinish, onSkip
           <TouchableOpacity
             onPress={handleSkip}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            accessibilityLabel="Skip"
+            accessibilityLabel={t('tutorial.skipA11y')}
           >
-            <Text style={styles.skipBtnText}>Skip</Text>
+            <Text style={styles.skipBtnText}>{t('tutorial.skip')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -474,7 +476,7 @@ export const TutorialScreen: React.FC<TutorialScreenProps> = ({ onFinish, onSkip
             <View style={[styles.avatarDot, { backgroundColor: playerColor(1, oppPlayer.color) }]}>
               <Text style={styles.avatarInitial}>O</Text>
             </View>
-            <Text style={styles.playerName}>Opponent</Text>
+            <Text style={styles.playerName}>{t('tutorial.opponent')}</Text>
           </View>
           <View style={styles.wallCountChip}>
             <OrbIcon name="wall" size={13} color={THEME.colors.textSecondary} />
@@ -526,7 +528,7 @@ export const TutorialScreen: React.FC<TutorialScreenProps> = ({ onFinish, onSkip
                 <View style={[styles.avatarDot, { backgroundColor: trayColor }]}>
                   <Text style={styles.avatarInitial}>Y</Text>
                 </View>
-                <Text style={styles.playerName}>You</Text>
+                <Text style={styles.playerName}>{t('tutorial.you')}</Text>
               </View>
               <View style={styles.wallCountChip}>
                 <OrbIcon name="wall" size={13} color={THEME.colors.textSecondary} />
@@ -543,7 +545,7 @@ export const TutorialScreen: React.FC<TutorialScreenProps> = ({ onFinish, onSkip
                   activeOpacity={0.85}
                 >
                   <Text style={styles.continueBtnText}>
-                    {scenarioIndex < TUTORIAL_SCENARIOS.length - 1 ? 'Continue' : 'Start Playing'}
+                    {scenarioIndex < TUTORIAL_SCENARIOS.length - 1 ? t('common.continue') : t('online.startGame')}
                   </Text>
                   <OrbIcon name="arrow-right" size={18} color="#FFFFFF" />
                 </TouchableOpacity>

@@ -18,4 +18,4 @@ This directory contains the detailed, step-by-step engineering implementation pl
 ---
 
 ## Master Plan Reference
-- Full architectural context & cross-phase summary: [`../CLOSED_TEST_MASTER_PLAN.md`](../CLOSED_TEST_MASTER_PLAN.md)
+- Full architectural context & cross-phase summary: [`./archive/CLOSED_TEST_MASTER_PLAN.md`](./archive/CLOSED_TEST_MASTER_PLAN.md)

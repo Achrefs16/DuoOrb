@@ -218,9 +218,8 @@ export async function getAiMove(
 
   const isClassic2P = state.mode === '2p';
 
-  // 1. Classic 2P on Web is strictly powered by WASM AlphaZero ONNX Web Worker.
-  // NEVER silently fall back to JavaScript engine.
-  if (Platform.OS === 'web' && isClassic2P) {
+  // 1. Web is powered by WebAssembly Pure-Rust Worker (with AlphaZero ONNX & Tactical Solver).
+  if (Platform.OS === 'web') {
     try {
       return await searchInWorker(
         state,
@@ -234,24 +233,8 @@ export async function getAiMove(
       if (error instanceof AiWorkerCancelledError || options.shouldCancel?.()) {
         return null;
       }
-      console.error('[aiWorkerClient] Web AlphaZero ONNX engine error for Classic 2P:', error);
-      return null;
-    }
-  }
-
-  // 2. Non-2P mode on Web (4p, race, etc.) uses worker with game-core heuristic
-  if (Platform.OS === 'web' && !isClassic2P && !workerUnavailable) {
-    try {
-      return await searchInWorker(
-        state,
-        profile,
-        liveSeed,
-        options.budget,
-        options.botId,
-        options.isHint
-      );
-    } catch (error) {
-      if (error instanceof AiWorkerCancelledError || options.shouldCancel?.()) {
+      if (isClassic2P) {
+        console.error('[aiWorkerClient] Web AlphaZero ONNX engine error for Classic 2P:', error);
         return null;
       }
     }

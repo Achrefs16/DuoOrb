@@ -65,8 +65,9 @@ describe('smart ad pacing rules', () => {
     store.clear();
   });
 
-  it('shows after the first completed win on a positive transition', () => {
-    expect(shouldShowInterstitial(ctx(), state({ gamesFinished: 1 }))).toBe(true);
+  it('shows after 2 completed games on a positive transition', () => {
+    expect(shouldShowInterstitial(ctx(), state({ gamesFinished: 1 }))).toBe(false);
+    expect(shouldShowInterstitial(ctx(), state({ gamesFinished: 2 }))).toBe(true);
   });
 
   it('never shows for premium or short/aborted matches', () => {
@@ -75,7 +76,22 @@ describe('smart ad pacing rules', () => {
     expect(shouldShowInterstitial(ctx({ gameSec: 20 }), state())).toBe(true);
   });
 
-  it('suppresses post-loss ads on close and after a 2+ loss streak', () => {
+  it('enforces 240s active playtime threshold for new_bot transitions', () => {
+    expect(
+      shouldShowInterstitial(
+        ctx({ trigger: 'new_bot' }),
+        state({ accumulatedAiPlaySec: 239 })
+      )
+    ).toBe(false);
+    expect(
+      shouldShowInterstitial(
+        ctx({ trigger: 'new_bot' }),
+        state({ accumulatedAiPlaySec: 240 })
+      )
+    ).toBe(true);
+  });
+
+  it('suppresses post-loss ads on close and allows new_match up to 3 losses', () => {
     // Leaving after a loss is never monetised.
     expect(
       shouldShowInterstitial(
@@ -83,18 +99,18 @@ describe('smart ad pacing rules', () => {
         state({ consecutiveLosses: 1 })
       )
     ).toBe(false);
-    // New Match after one long loss is allowed once two games are recorded.
+    // New Match after up to 3 losses is allowed once two games are recorded.
     expect(
       shouldShowInterstitial(
         ctx({ userWon: false, trigger: 'new_match', gameSec: 120 }),
-        state({ consecutiveLosses: 1, gamesFinished: 2 })
+        state({ consecutiveLosses: 3, gamesFinished: 2 })
       )
     ).toBe(true);
-    // Tilt: two losses in a row silence everything.
+    // 4 losses in a row silences everything.
     expect(
       shouldShowInterstitial(
         ctx({ userWon: false, trigger: 'new_match', gameSec: 120 }),
-        state({ consecutiveLosses: 2, gamesFinished: 5 })
+        state({ consecutiveLosses: 4, gamesFinished: 5 })
       )
     ).toBe(false);
     // Post-loss new-match ads still require a real match (>=45s).
@@ -169,11 +185,12 @@ describe('completion recording', () => {
   });
 
   it('shows on success only and never double-counts games at exit', async () => {
+    await recordGameFinished({ userWon: true, gameSec: 120, gameId: 'g0' });
     await recordGameFinished({ userWon: true, gameSec: 120, gameId: 'g1' });
     const showAd = vi.fn(async () => true);
     expect(await showInterstitialIfDue(ctx(), { showAd })).toBe(true);
     expect(showAd).toHaveBeenCalledTimes(1);
-    expect(store.get(GAMES)).toBe('1');
+    expect(store.get(GAMES)).toBe('2');
     const dayKeys = [...store.keys()].filter((k) =>
       k.includes('interstitial-day')
     );
@@ -182,6 +199,7 @@ describe('completion recording', () => {
   });
 
   it('a failed show writes nothing', async () => {
+    await recordGameFinished({ userWon: true, gameSec: 120, gameId: 'g0' });
     await recordGameFinished({ userWon: true, gameSec: 120, gameId: 'g1' });
     const failing = vi.fn(async () => false);
     expect(await showInterstitialIfDue(ctx(), { showAd: failing })).toBe(false);

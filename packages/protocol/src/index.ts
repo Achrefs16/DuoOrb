@@ -191,7 +191,7 @@ export type ActionAck =
 
 export interface ClientToServerEvents {
   'game:ping': (
-    payload: { gameId: string; clientSentAt: number },
+    payload: { gameId: string; clientSentAt: number; rtt?: number },
     ack: (res: { serverTimestamp: number; clientSentAt: number }) => void
   ) => void;
   'game:join': (payload: {

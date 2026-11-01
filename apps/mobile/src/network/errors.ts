@@ -7,6 +7,8 @@
  * — never this layer — decide what the user sees.
  */
 
+import { t } from '../i18n';
+
 export type ErrorKind =
   | 'OFFLINE'
   | 'TIMEOUT'
@@ -108,14 +110,28 @@ export function reportError(e: unknown, context: string): void {
 
 /** Exact user-facing copy. Screens and banners read these, never invent text. */
 export const COPY = {
-  offlineBanner: "You're offline — showing saved games.",
-  serverBanner: "Can't reach DuoOrb servers — retrying…",
-  screenOfflineTitle: "You're offline",
-  screenOfflineSub: 'Check connection',
-  screenServerTitle: 'Something broke on our side',
-  actionRetry: "Couldn't save — tap to retry",
-  sessionExpired: 'Session expired, sign in again.',
-} as const;
+  get offlineBanner() {
+    return t('errors.offlineBanner');
+  },
+  get serverBanner() {
+    return t('errors.serverBanner');
+  },
+  get screenOfflineTitle() {
+    return t('errors.screenOfflineTitle');
+  },
+  get screenOfflineSub() {
+    return t('errors.screenOfflineSub');
+  },
+  get screenServerTitle() {
+    return t('errors.screenServerTitle');
+  },
+  get actionRetry() {
+    return t('errors.actionRetry');
+  },
+  get sessionExpired() {
+    return t('errors.sessionExpired');
+  },
+};
 
 /** "Too many tries, wait Xs." — seconds from the server when provided. */
 export function rateMessage(e: unknown): string {
@@ -123,7 +139,9 @@ export function rateMessage(e: unknown): string {
     e instanceof ApiError && typeof e.retryAfterMs === 'number'
       ? Math.max(1, Math.ceil(e.retryAfterMs / 1000))
       : undefined;
-  return s ? `Too many tries, wait ${s}s.` : 'Too many tries, try again soon.';
+  return s
+    ? t('errors.tooManyTriesWithSeconds', { seconds: s })
+    : t('errors.tooManyTriesGeneric');
 }
 
 /**

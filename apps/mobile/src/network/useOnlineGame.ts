@@ -5,6 +5,7 @@ import { ClockStateDto, GameEndedDto, GameSyncDto, PlayerCosmeticsDto } from '@d
 import { socketManager, useVerified, ConnectionStatus } from './socket';
 import { getIdentity, useIdentity } from './auth';
 import { refreshSessionOnce } from './apiClient';
+import { t } from '../i18n';
 
 export interface UseOnlineGameOptions {
   gameId: string;
@@ -363,6 +364,7 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
   const everConnectedRef = useRef(false);
   const gameStateRef = useRef<GameState | null>(null);
   gameStateRef.current = gameState;
+  const optimisticStateRef = useRef<GameState | null>(null);
 
   /** Server time, as best we can tell, right now. */
   const serverNow = useCallback((): number => {
@@ -386,7 +388,8 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
     const socket = socketManager.getSocket();
     if (!socket.connected) return;
     const clientSentAt = Date.now();
-    socket.emit('game:ping', { gameId, clientSentAt }, (res) => {
+    const lastRtt = Math.round(roundTripMsRef.current);
+    socket.emit('game:ping', { gameId, clientSentAt, rtt: lastRtt > 0 ? lastRtt : undefined }, (res) => {
       const receivedAt = Date.now();
       const rtt = receivedAt - clientSentAt;
       // Implausible samples are dropped rather than believed: a phone waking
@@ -422,7 +425,10 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
    * zero and triggers a fresh probe instead of anchoring on ancient data.
    */
   const anchorClock = useCallback(
-    (packet: { remainingMs: Record<string, number>; serverTimestamp: number }) => {
+    (
+      packet: { remainingMs: Record<string, number>; serverTimestamp: number },
+      options?: { isSync?: boolean }
+    ) => {
       const localReceive = Date.now();
       // One-way delay is half the last measured round trip (capped so a single
       // pathological sample cannot shift the whole clock).
@@ -430,24 +436,62 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
       const oneWay =
         roundTripAtRef.current === 0 || rttAge > 30_000
           ? 0
-          : Math.min(roundTripMsRef.current / 2, 1000);
+          : Math.min(roundTripMsRef.current / 2, 2000);
       if (oneWay === 0 && roundTripAtRef.current !== 0) {
         // Sample too old to trust: re-measure now; this anchor goes out
         // uncorrected and the next tick replaces it.
         probeLatency();
       }
-      const anchorLocalTime = localReceive - oneWay;
+
+      // If skew has been calibrated and packet has serverTimestamp, determine
+      // the actual transit delay this packet experienced rather than guessing.
+      const serverNowAtReceive = localReceive + serverSkewMsRef.current;
+      const packetTransitMs =
+        packet.serverTimestamp > 0 && serverSkewMsRef.current !== 0
+          ? Math.max(0, serverNowAtReceive - packet.serverTimestamp)
+          : 0;
+      const effectiveDelayMs =
+        packetTransitMs > 0 && packetTransitMs < 15_000
+          ? packetTransitMs
+          : oneWay;
+
+      const anchorLocalTime = localReceive - effectiveDelayMs;
       clockAnchorRef.current = {
         remainingMs: { ...packet.remainingMs },
         at: anchorLocalTime,
       };
-      const seconds: Record<string, number> = {};
-      for (const [playerId, ms] of Object.entries(packet.remainingMs)) {
-        seconds[playerId] = Math.ceil(ms / 1000);
-      }
-      setClocks(seconds);
+
+      const livePending = pendingFor();
+      const activeState =
+        livePending.length > 0 && optimisticStateRef.current
+          ? optimisticStateRef.current
+          : gameStateRef.current;
+      const activePlayerId =
+        activeState && activeState.status === 'IN_PROGRESS'
+          ? activeState.players[activeState.currentPlayerIndex]?.id
+          : null;
+
+      setClocks((prev) => {
+        const next: Record<string, number> = { ...prev };
+        for (const [playerId, ms] of Object.entries(packet.remainingMs)) {
+          if (playerId === activePlayerId) {
+            const elapsed = Math.max(0, localReceive - anchorLocalTime);
+            const activeShown = Math.max(0, Math.ceil((ms - elapsed) / 1000));
+            // Monotonic non-increasing guard: during a player's active turn,
+            // jittered or delayed server packets must never rewind the displayed clock.
+            if (!options?.isSync && prev[playerId] !== undefined && prev[playerId] > 0) {
+              next[playerId] = Math.min(prev[playerId], activeShown);
+            } else {
+              next[playerId] = activeShown;
+            }
+          } else {
+            next[playerId] = Math.ceil(ms / 1000);
+          }
+        }
+        return next;
+      });
     },
-    [probeLatency]
+    [probeLatency, pendingFor]
   );
 
   useEffect(() => {
@@ -456,7 +500,7 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
     // like everything after it. Placed after anchorClock: effects run post-
     // render, but the declaration must still precede the use statically.
     if (initialSync && !clockAnchorRef.current) {
-      anchorClock(initialSync.clock);
+      anchorClock(initialSync.clock, { isSync: true });
     }
     // Runs once per mount: the seed belongs to the mounted game.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -469,7 +513,11 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
     if (!gameState || gameState.status !== 'IN_PROGRESS') return;
 
     const timer = setInterval(() => {
-      const activeState = gameStateRef.current;
+      const livePending = pendingFor();
+      const activeState =
+        livePending.length > 0 && optimisticStateRef.current
+          ? optimisticStateRef.current
+          : gameStateRef.current;
       const anchor = clockAnchorRef.current;
       if (!activeState || activeState.status !== 'IN_PROGRESS' || !anchor) return;
 
@@ -482,7 +530,7 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [gameState?.status]);
+  }, [gameState?.status, pendingFor]);
 
   /**
    * Keeps the latency/skew estimate fresh while a match runs.
@@ -605,7 +653,7 @@ const getSyncClockMs = useCallback((): Record<string, number> => {
       if (ids.size === 0) return;
       setPending(pendingFor().filter((p) => !ids.has(p.clientActionId)));
       setDropNotice({
-        message: 'Move not sent — connection was down too long. Tap again.',
+        message: t('errors.moveDroppedNotice'),
         nonce: Date.now(),
       });
     });
@@ -887,6 +935,25 @@ setOpponentGrace({});
           setPending(list.filter((p) => p.clientActionId !== echoedId));
         }
       }
+
+      // Re-anchor clock for the new turn: the mover's clock is finalized with
+      // their remaining time (+ Fischer increment), and the next player's turn
+      // begins at Date.now(), so they do not inherit previous turn's latency.
+      if (clockAnchorRef.current) {
+        const updatedMs = { ...clockAnchorRef.current.remainingMs };
+        if (typeof recorded.clockRemainingMs === 'number') {
+          updatedMs[recorded.playerId] = recorded.clockRemainingMs;
+        }
+        clockAnchorRef.current = {
+          remainingMs: updatedMs,
+          at: Date.now(),
+        };
+        if (typeof recorded.clockRemainingMs === 'number') {
+          const moverSec = Math.ceil(recorded.clockRemainingMs / 1000);
+          setClocks((prev) => ({ ...prev, [recorded.playerId]: moverSec }));
+        }
+      }
+
       setGameState((prev) => {
         if (!prev) return prev;
         // Already folded in (the other delivery path won the race).
@@ -982,7 +1049,7 @@ setOpponentGrace({});
       // Anchor from the SERVER's sample, corrected for clock skew and the
       // measured one-way delay. Treating `Date.now()` as the server's clock is
       // what made a phone with a skewed clock show a frozen game.
-      anchorClock(sync.clock);
+      anchorClock(sync.clock, { isSync: true });
       // The sync's own latency sample is worth taking: it costs nothing here
       // and keeps the skew estimate fresh across a reconnect.
       probeLatency();
@@ -1238,6 +1305,7 @@ setOpponentGrace({});
       }),
     };
   }, [gameState, pendingActions]);
+  optimisticStateRef.current = optimisticState;
 
   const sendAction = useCallback(
     (action: GameAction) => {
@@ -1272,6 +1340,14 @@ setOpponentGrace({});
       // day the lock is relaxed.
       const expectedSequence = historyLen + list.length + 1;
       setPending([...list, { clientActionId, expectedSequence, action, clientTimestamp }]);
+      // Re-anchor clock optimistically: the local player's move is in flight,
+      // so the next player's turn begins locally now and the mover's clock pauses.
+      if (clockAnchorRef.current) {
+        clockAnchorRef.current = {
+          remainingMs: { ...clockAnchorRef.current.remainingMs },
+          at: clientTimestamp,
+        };
+      }
       socket.emit(
         'game:action',
         {

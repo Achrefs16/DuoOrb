@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use crate::adapter::adapt_prediction;
 use crate::neural::{map_index_to_action, NeuralEvaluator};
 use crate::rules::is_legal_action;
-use crate::solver::solve_tactical_position;
+use crate::solver::{solve_tactical_position_with_score, TACTICAL_WIN_THRESHOLD};
 use crate::types::{GameAction, GameState};
 
 static EXPLICIT_EVALUATOR: OnceLock<Option<NeuralEvaluator>> = OnceLock::new();
@@ -130,23 +130,25 @@ pub fn find_ranked_hybrid_actions(
     let is_p2 = mover_idx == 1;
 
     // 1. TACTICAL ENDGAME SOLVER (only if enabled, e.g. Elo >= 1600 or hints)
-    let solver_action_opt = if use_solver {
-        solve_tactical_position(state, 8).filter(|act| is_legal_action(state, act))
+    let solver_result = if use_solver {
+        solve_tactical_position_with_score(state, 8).filter(|(act, _)| is_legal_action(state, act))
     } else {
         None
     };
 
-    if let Some(ref solver_action) = solver_action_opt {
-        let is_wall = matches!(solver_action, GameAction::PlaceWall { .. });
-        ranked.push(HybridRankedAction {
-            action: solver_action.clone(),
-            prob: 1.0,
-            logit: 10.0,
-            q: 0.99,
-            is_wall,
-        });
-        if limit == 1 {
-            return ranked;
+    if let Some((ref solver_action, solver_score)) = solver_result {
+        if solver_score >= TACTICAL_WIN_THRESHOLD {
+            let is_wall = matches!(solver_action, GameAction::PlaceWall { .. });
+            ranked.push(HybridRankedAction {
+                action: solver_action.clone(),
+                prob: 1.0,
+                logit: 10.0,
+                q: 0.99,
+                is_wall,
+            });
+            if limit == 1 {
+                return ranked;
+            }
         }
     }
 

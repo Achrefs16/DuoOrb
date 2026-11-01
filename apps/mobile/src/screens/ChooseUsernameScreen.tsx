@@ -199,7 +199,7 @@ export const ChooseUsernameScreen: React.FC<ChooseUsernameScreenProps> = ({ onDo
             <Text style={styles.prefix}>@</Text>
             <TextInput
               style={[styles.input, NO_OUTLINE]}
-              placeholder="yourname"
+              placeholder={t('settings.displayNamePlaceholder')}
               placeholderTextColor={THEME.colors.textMuted}
               value={draft}
               onChangeText={(t) => {

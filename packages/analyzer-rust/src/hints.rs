@@ -4,7 +4,7 @@ use crate::board::Board;
 use crate::hybrid::find_ranked_hybrid_actions;
 use crate::pathfinding::shortest_distance;
 use crate::rules::{apply_action, is_legal_action};
-use crate::solver::solve_tactical_position;
+use crate::solver::{solve_tactical_position_with_score, TACTICAL_WIN_THRESHOLD};
 use crate::types::{CellCoord, GameAction, GameState, Orientation, WallCoord};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,9 +224,9 @@ fn evaluate_candidate_tactics(
 /// Evaluates current position, identifies the optimal tactical move, win probability,
 /// and rich tactical explanations for top 3 candidates.
 pub fn get_grandmaster_hint(state: &GameState) -> HintResponse {
-    // 1. Tactical Endgame Solver (checks if immediate win or forced conversion exists)
-    if let Some(solver_action) = solve_tactical_position(state, 8) {
-        if is_legal_action(state, &solver_action) {
+    // 1. Tactical Endgame Solver (checks if proven forced win exists)
+    if let Some((solver_action, solver_score)) = solve_tactical_position_with_score(state, 8) {
+        if solver_score >= TACTICAL_WIN_THRESHOLD && is_legal_action(state, &solver_action) {
             let (tag, explanation, _own_delta, _opp_delta, notation) =
                 evaluate_candidate_tactics(state, &solver_action, 0.99);
             return HintResponse {

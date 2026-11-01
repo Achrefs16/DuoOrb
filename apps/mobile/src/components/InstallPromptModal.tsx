@@ -11,6 +11,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { OrbIcon } from './OrbIcon';
 import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 
 import {
   COOLDOWN_MS,
@@ -43,6 +44,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
   forceShow = false,
 }) => {
   const styles = useStyles(createStyles);
+  const { t } = useTranslation();
   const [canShow, setCanShow] = useState(false);
   const [hasDeferredPrompt, setHasDeferredPrompt] = useState(false);
 
@@ -168,7 +170,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
           {platform === 'ios' ? (
             <View style={styles.bodyWrap}>
               <Text style={styles.instructionIntro}>
-                Install as a full-screen app in two simple steps:
+                {t('install.iosIntro')}
               </Text>
 
               <View style={styles.stepCard}>
@@ -177,12 +179,11 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                 </View>
                 <View style={styles.stepContent}>
                   <Text style={styles.stepText}>
-                    Tap the <Text style={styles.stepBold}>Share</Text> button in
-                    your Safari toolbar:
+                    {t('install.iosStep1')}
                   </Text>
                   <View style={styles.iconRow}>
                     <OrbIcon name="share" size={16} color={THEME.colors.primary} />
-                    <Text style={styles.iconDesc}>Square with arrow pointing up</Text>
+                    <Text style={styles.iconDesc}>{t('install.iosShareIconDesc')}</Text>
                   </View>
                 </View>
               </View>
@@ -193,12 +194,11 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                 </View>
                 <View style={styles.stepContent}>
                   <Text style={styles.stepText}>
-                    Scroll down and tap{' '}
-                    <Text style={styles.stepBold}>"Add to Home Screen"</Text>:
+                    {t('install.iosStep2')}
                   </Text>
                   <View style={styles.iconRow}>
                     <OrbIcon name="plus-square" size={16} color={THEME.colors.primary} />
-                    <Text style={styles.iconDesc}>Plus icon in actions list</Text>
+                    <Text style={styles.iconDesc}>{t('install.iosPlusIconDesc')}</Text>
                   </View>
                 </View>
               </View>
@@ -206,7 +206,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
           ) : platform === 'android' ? (
             <View style={styles.bodyWrap}>
               <Text style={styles.instructionIntro}>
-                Experience the game at its best with zero browser URL bar distractions and instant offline play:
+                {t('install.androidIntro')}
               </Text>
 
               {/* Primary Google Play CTA */}
@@ -216,7 +216,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                 onPress={handleGooglePlay}
               >
                 <OrbIcon name="google-play" size={20} color="#FFFFFF" />
-                <Text style={styles.primaryButtonText}>Install from Google Play</Text>
+                <Text style={styles.primaryButtonText}>{t('install.fromGooglePlay')}</Text>
               </TouchableOpacity>
 
               {/* Secondary PWA CTA (if supported by browser) */}
@@ -228,7 +228,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                 >
                   <OrbIcon name="download" size={16} color={THEME.colors.textPrimary} />
                   <Text style={styles.secondaryButtonText}>
-                    Or Install Instant Web App (2 MB)
+                    {t('install.instantWebApp')}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -236,7 +236,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
           ) : (
             <View style={styles.bodyWrap}>
               <Text style={styles.instructionIntro}>
-                Install DuoOrb on your desktop for quick launch and offline board game sparring:
+                {t('install.desktopIntro')}
               </Text>
               {hasDeferredPrompt ? (
                 <TouchableOpacity
@@ -245,7 +245,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                   onPress={handleInstallPwa}
                 >
                   <OrbIcon name="download" size={18} color="#FFFFFF" />
-                  <Text style={styles.primaryButtonText}>Install Desktop App</Text>
+                  <Text style={styles.primaryButtonText}>{t('install.desktopApp')}</Text>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
@@ -254,7 +254,7 @@ export const InstallPromptModal: React.FC<InstallPromptModalProps> = ({
                   onPress={handleGooglePlay}
                 >
                   <OrbIcon name="google-play" size={20} color="#FFFFFF" />
-                  <Text style={styles.primaryButtonText}>View on Google Play</Text>
+                  <Text style={styles.primaryButtonText}>{t('install.viewOnGooglePlay')}</Text>
                 </TouchableOpacity>
               )}
             </View>

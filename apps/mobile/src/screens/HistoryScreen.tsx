@@ -21,7 +21,6 @@ import { kindOf, loadMessage, sectionKind, type ErrorKind } from '../network/err
 import { HistorySkeleton } from '../components/Skeleton';
 import { MatchResultModal } from '../components/MatchResultModal';
 import { PremiumBadge } from '../components/PremiumBadge';
-import { AdBanner } from '../components/AdBanner';
 import { SavedGameRecord, loadGameHistory } from '../storage/gameStorage';
 import {
   combineHistorySummary,
@@ -594,8 +593,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
                   </Text>
                 </TouchableOpacity>
               ) : null}
-              {/* Ad slot (P6, O2): below the pager, never above a button. */}
-              <AdBanner placement="list" />
             </>
           }
           />

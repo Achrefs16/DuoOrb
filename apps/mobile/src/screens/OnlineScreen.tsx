@@ -27,7 +27,7 @@ import { useMatchmaking } from '../network/useMatchmaking';
 import type { MatchedOpponent } from '../network/useMatchmaking';
 import type { GameSyncDto } from '@duoorb/protocol';
 import { OnlineJoinGate } from '../components/OnlineJoinGate';
-import { AdBanner } from '../components/AdBanner';
+
 import { runWhenOnline } from '../components/NoConnection';
 import { useRooms, usePublicRooms } from '../network/useRooms';
 import { api } from '../network/apiClient';
@@ -1139,7 +1139,6 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                 </>
               )}
               {!!roomError && <Text style={styles.errorText}>{roomError}</Text>}
-              <AdBanner placement="lobby" />
             </>
           ) : (
             /* CREATE & JOIN: segmented Public Rooms vs Play a Friend */
@@ -1228,7 +1227,10 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                                 · {pubRoom.wallsEach === 99 ? '∞' : pubRoom.wallsEach} Walls · {pubRoom.occupiedSlots}/{pubRoom.totalSlots} Players
                               </Text>
                               <Text style={styles.publicRoomHostText}>
-                                Host: {pubRoom.hostDisplayName} ({pubRoom.hostRating ?? 1500})
+                                {t('online.roomHostInfo', {
+                                  name: pubRoom.hostDisplayName,
+                                  rating: pubRoom.hostRating ?? 1500,
+                                })}
                               </Text>
                             </View>
                             <TouchableOpacity
@@ -1237,7 +1239,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                               activeOpacity={0.82}
                               onPress={() => runWhenOnline(() => joinRoom(pubRoom.code))}
                             >
-                              <Text style={styles.publicRoomJoinBtnText}>Join</Text>
+                              <Text style={styles.publicRoomJoinBtnText}>{t('online.join')}</Text>
                             </TouchableOpacity>
                           </View>
                         ))}
@@ -1253,14 +1255,14 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                       onPress={() => setShowPublicHostForm(true)}
                     >
                       <OrbIcon name="plus" size={18} color="#FFFFFF" />
-                      <Text style={styles.hostTriggerBtnText}>Create Public Room</Text>
+                      <Text style={styles.hostTriggerBtnText}>{t('online.createPublicRoom')}</Text>
                     </TouchableOpacity>
                   ) : (
                     <View style={styles.rmCard}>
                       <View style={styles.rmHeaderBetween}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <OrbIcon name="plus" size={20} color={THEME.colors.primary} />
-                          <Text style={styles.rmLabel}>Create Public Room</Text>
+                          <Text style={styles.rmLabel}>{t('online.createPublicRoom')}</Text>
                         </View>
                         <TouchableOpacity
                           style={styles.collapseBtn}
@@ -1270,7 +1272,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         </TouchableOpacity>
                       </View>
                       <Text style={styles.rmSubLabel}>
-                        Choose mode and rules. Anyone online can join your room.
+                        {t('online.publicHostDesc')}
                       </Text>
 
                       <MatchOptionsPicker
@@ -1297,7 +1299,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         {roomLoading ? (
                           <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : (
-                          <Text style={styles.rmCtaText}>Create Public Room</Text>
+                          <Text style={styles.rmCtaText}>{t('online.createPublicRoom')}</Text>
                         )}
                       </TouchableOpacity>
                     </View>
@@ -1309,7 +1311,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   <View style={styles.rmCard}>
                     <Text style={styles.rmLabel}>{t('online.joinRoom')}</Text>
                     <Text style={styles.rmSubLabel}>
-                      Enter the 6-letter room code shared by your friend.
+                      {t('online.enterCodeDesc')}
                     </Text>
                     <View style={styles.rmJoinRow}>
                       <TextInput
@@ -1351,14 +1353,14 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                       onPress={() => setShowFriendHostForm(true)}
                     >
                       <OrbIcon name="plus" size={18} color="#FFFFFF" />
-                      <Text style={styles.hostTriggerBtnText}>Create Private Room</Text>
+                      <Text style={styles.hostTriggerBtnText}>{t('online.createPrivateRoom')}</Text>
                     </TouchableOpacity>
                   ) : (
                     <View style={styles.rmCard}>
                       <View style={styles.rmHeaderBetween}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                           <OrbIcon name="plus-circle" size={20} color={THEME.colors.primary} />
-                          <Text style={styles.rmLabel}>Create Private Room</Text>
+                          <Text style={styles.rmLabel}>{t('online.createPrivateRoom')}</Text>
                         </View>
                         <TouchableOpacity
                           style={styles.collapseBtn}
@@ -1368,7 +1370,7 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                         </TouchableOpacity>
                       </View>
                       <Text style={styles.rmSubLabel}>
-                        You will receive a 6-letter code to invite your friends.
+                        {t('online.privateHostDesc')}
                       </Text>
 
                       <MatchOptionsPicker
@@ -1402,7 +1404,6 @@ export const OnlineScreen: React.FC<OnlineScreenProps> = ({
                   )}
                 </>
               )}
-              <AdBanner placement="lobby" />
             </>
           )}
         </ScrollView>

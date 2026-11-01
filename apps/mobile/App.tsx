@@ -70,7 +70,7 @@ import { createInitialState } from '@duoorb/game-core';
 import { resolveSideChoice } from './src/lib/sideChoice';
 import type { SavedGameRecord } from './src/storage/gameStorage';
 import { THEME, setThemeName, useTheme } from './src/theme';
-import { DEFAULT_TIME_CONTROL, TimeControl } from './src/timeControls';
+import { DEFAULT_TIME_CONTROL, NO_TIMER_CONTROL, TimeControl } from './src/timeControls';
 import { api, type FriendRequestItemDto } from './src/network/apiClient';
 import { useConnectivity } from './src/network/useConnectivity';
 import { sectionKind } from './src/network/errors';
@@ -602,7 +602,11 @@ export default function App() {
     // identity on disk (next boot hydrates a stranger). Flush every
     // write the moment the app leaves the foreground.
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'background') void flushIdentityStorage();
+      if (state === 'background') {
+        void flushIdentityStorage();
+      } else if (state === 'active') {
+        void refreshPremium();
+      }
     });
     return () => sub.remove();
   }, []);
@@ -623,8 +627,9 @@ export default function App() {
       // the render gate keeps those premium-only.
       setBoardThemeName(s.darkMode ? 'midnight' : 'light');
       setBoardSkinId(s.boardSkinId);
-      setBallSkinId(s.ballSkinId);
-      setWallSkinId(s.wallSkinId);
+      const isPrem = isPremiumActive();
+      setBallSkinId(isPrem ? s.ballSkinId : 'classic');
+      setWallSkinId(isPrem ? s.wallSkinId : 'classic');
       void hydrateLanguage();
     });
     // Ads runtime (P6): installs the real rewarded provider when the native
@@ -673,7 +678,10 @@ export default function App() {
         // offline — server grace path covers it
       }
     }
-    setGameConfig(config);
+    setGameConfig({
+      ...config,
+      timeControl: config.type === 'ai' ? NO_TIMER_CONTROL : config.timeControl,
+    });
     // A fresh entry mounts a fresh game screen. Rematches (via
     // handleFreshOnlineGame below) deliberately skip this: the finished board
     // stays mounted as the waiting visual while the new game syncs.
@@ -1061,7 +1069,7 @@ export default function App() {
                       botId: cfg.botId,
                       botIds: cfg.botIds,
                       sideChoice: resolveSideChoice(cfg.side, cfg.mode),
-                      timeControl: cfg.clock,
+                      timeControl: NO_TIMER_CONTROL,
                       wallsEach: cfg.wallsEach,
                     });
                   }}
@@ -1200,7 +1208,7 @@ export default function App() {
                   type: sel.vsType,
                   aiDifficulty: sel.difficulty,
                   botId: sel.botId ?? null,
-                  timeControl: sel.clock,
+                  timeControl: sel.vsType === 'ai' ? NO_TIMER_CONTROL : sel.clock,
                   sideChoice: resolveSideChoice(sel.side, sel.mode),
                   wallsEach: sel.wallsEach,
                 });
@@ -1214,7 +1222,6 @@ export default function App() {
             onClose={() => setPremiumOpen(false)}
             onDone={() => {
               setPremiumOpen(false);
-              void refreshPremium();
             }}
           />
 

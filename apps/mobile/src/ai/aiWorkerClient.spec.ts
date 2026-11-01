@@ -299,11 +299,12 @@ describe('aiWorkerClient routing & native fallback', () => {
     expect(action).toEqual(mockHintAction);
   });
 
-  it('routes non-2p modes (4p, center2, race4) to native module when available on mobile', async () => {
+  it('routes non-2p modes (4p, center2, race4) to native Rust engine when native module is available', async () => {
     const state4p = createInitialState({ mode: '4p' });
-    const mockNativeMove: GameAction = { type: 'MOVE', to: { row: 7, col: 4 } };
-    const mockGetBotActionNative = vi.fn().mockResolvedValue(mockNativeMove);
+    const nativeMove: GameAction = { type: 'MOVE', to: { row: 7, col: 4 } };
+    const mockGetBotActionNative = vi.fn().mockResolvedValue(nativeMove);
     const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
+    const mockGetBestActionAsync = vi.fn();
 
     vi.doMock('react-native', () => ({
       Platform: { OS: 'android' },
@@ -314,11 +315,51 @@ describe('aiWorkerClient routing & native fallback', () => {
       getBotActionNative: mockGetBotActionNative,
     }));
 
+    vi.doMock('@duoorb/game-core', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@duoorb/game-core')>();
+      return {
+        ...actual,
+        getBestActionAsync: mockGetBestActionAsync,
+      };
+    });
+
     const { getAiMove } = await import('./aiWorkerClient');
     const action = await getAiMove(state4p, achrefProfile, 12345, { botId: 'viktor' });
 
-    expect(mockIsNativeAiAvailable).toHaveBeenCalled();
     expect(mockGetBotActionNative).toHaveBeenCalledWith(state4p, 'viktor', 12345);
-    expect(action).toEqual(mockNativeMove);
+    expect(mockGetBestActionAsync).not.toHaveBeenCalled();
+    expect(action).toEqual(nativeMove);
+  });
+
+  it('routes Center Rush (center2) and Race Mode (race2) to native Rust engine with botId and seed', async () => {
+    const stateCenter2 = createInitialState({ mode: 'center2' });
+    const nativeCenterMove: GameAction = { type: 'MOVE', to: { row: 7, col: 4 } };
+    const mockGetBotActionNative = vi.fn().mockResolvedValue(nativeCenterMove);
+    const mockIsNativeAiAvailable = vi.fn().mockReturnValue(true);
+    const mockGetBestActionAsync = vi.fn();
+
+    vi.doMock('react-native', () => ({
+      Platform: { OS: 'android' },
+    }));
+
+    vi.doMock('duoorb-ai-native', () => ({
+      isNativeAiAvailable: mockIsNativeAiAvailable,
+      getBotActionNative: mockGetBotActionNative,
+    }));
+
+    vi.doMock('@duoorb/game-core', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@duoorb/game-core')>();
+      return {
+        ...actual,
+        getBestActionAsync: mockGetBestActionAsync,
+      };
+    });
+
+    const { getAiMove } = await import('./aiWorkerClient');
+    const action = await getAiMove(stateCenter2, achrefProfile, 99999, { botId: 'milo' });
+
+    expect(mockGetBotActionNative).toHaveBeenCalledWith(stateCenter2, 'milo', 99999);
+    expect(mockGetBestActionAsync).not.toHaveBeenCalled();
+    expect(action).toEqual(nativeCenterMove);
   });
 });

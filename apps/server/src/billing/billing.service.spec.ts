@@ -31,6 +31,7 @@ function makePrisma(opts?: {
     },
     profile: {
       findUnique: async () => state.profile,
+      findFirst: async () => state.profile,
       update: async ({ data }: any) => {
         state.updates.push(data);
         state.profile = { ...state.profile, ...data };
@@ -115,7 +116,9 @@ describe('billing cancellation and expiry (E3)', () => {
       appUserId: 'u1',
     });
     expect(cancelled.isPremium).toBe(true);
-    expect(prisma.state.updates).toHaveLength(0);
+    expect(cancelled.isCancelled).toBe(true);
+    expect(cancelled.willRenew).toBe(false);
+    expect(prisma.state.updates).toHaveLength(1);
     const expired = await svc.applyEvent({
       id: 'rc-expire',
       type: 'EXPIRATION',
@@ -123,6 +126,7 @@ describe('billing cancellation and expiry (E3)', () => {
       expiresAtMs: Date.now() - 1000,
     });
     expect(expired.isPremium).toBe(false);
+    expect(expired.isCancelled).toBe(true);
   });
 
   it('ignores a stale expiration that lost a race with a renewal (E2)', async () => {
@@ -221,9 +225,31 @@ describe('unknown webhook user', () => {
     const prisma = makePrisma({ profile: null });
     const svc = new BillingService(prisma);
     const res = await svc.applyEvent(grant());
-    expect(res).toEqual({ isPremium: false, premiumExpiresAt: null });
+    expect(res).toEqual({ isPremium: false, premiumExpiresAt: null, isCancelled: false, willRenew: false });
     // B1: no event row may be stored for unknown users (FK would 500-loop).
     expect(prisma.state.events).toHaveLength(0);
+  });
+
+  it('resolves user from aliases when appUserId is anonymous', async () => {
+    const prisma = makePrisma({
+      profile: {
+        userId: 'u1',
+        isPremium: false,
+        premiumExpiresAt: null,
+      } as any,
+    });
+    const svc = new BillingService(prisma);
+    const res = await svc.applyEvent({
+      id: 'rc-anon-1',
+      type: 'INITIAL_PURCHASE',
+      appUserId: '$RCAnonymousID:12345',
+      aliases: ['$RCAnonymousID:12345', 'u1'],
+      productId: 'duoorb_premium_monthly',
+      expiresAtMs: Date.now() + 30 * 24 * 3600 * 1000,
+    });
+    expect(res.isPremium).toBe(true);
+    expect(prisma.state.events[0].userId).toBe('u1');
+    expect(prisma.state.updates[0].isPremium).toBe(true);
   });
 });
 

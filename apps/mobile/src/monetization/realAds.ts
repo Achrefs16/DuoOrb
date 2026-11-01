@@ -9,6 +9,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  */
 
 const ADS_STORE_KEY = '@duoorb:ads:v1';
+const COMPLETED_GAMES_KEY = '@duoorb:interstitial-games:v1';
+
+export async function getCompletedGamesCount(): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(COMPLETED_GAMES_KEY);
+    if (!raw) return 0;
+    const n = Number(JSON.parse(raw));
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
 
 export async function recordAppSession(): Promise<number> {
   try {
@@ -44,14 +56,17 @@ export function __resetAdsSessionForTests(): void {
   recordedThisLaunch = false;
 }
 
-/** Pure visibility rule (unit-tested): premium/launcher/session-zero/failure. */
+/** Pure visibility rule (unit-tested): premium/launcher/session-zero/failure/games-threshold. */
 export function shouldShowBanner(opts: {
   isPremium: boolean;
   sessions: number;
+  completedGames?: number;
   loadFailed: boolean;
+  keepReservedSpaceOnFail?: boolean;
 }): boolean {
   if (opts.isPremium) return false;
   if (opts.sessions < 1) return false;
-  if (opts.loadFailed) return false;
+  if (opts.completedGames != null && opts.completedGames < 2) return false;
+  if (opts.loadFailed && !opts.keepReservedSpaceOnFail) return false;
   return true;
 }

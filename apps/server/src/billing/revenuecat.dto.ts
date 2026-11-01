@@ -24,6 +24,14 @@ export class RevenueCatEventDto {
 
   @IsOptional()
   @IsString()
+  original_app_user_id?: string;
+
+  @IsOptional()
+  @IsString({ each: true })
+  aliases?: string[];
+
+  @IsOptional()
+  @IsString()
   product_id?: string;
 
   @IsOptional()

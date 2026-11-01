@@ -178,23 +178,18 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     }
     if (cosmetics && (cosmetics.ballSkinId !== undefined || cosmetics.wallSkinId !== undefined)) {
       const prev = this.userCosmeticsMap.get(user.userId) ?? {};
-      let ballSkinId = cosmetics.ballSkinId;
-      if (ballSkinId === undefined) {
-        ballSkinId = prev.ballSkinId;
-      } else if (!allowResetToClassic && ballSkinId === 'classic' && prev.ballSkinId && prev.ballSkinId !== 'classic') {
-        ballSkinId = prev.ballSkinId;
-      }
+      let ballSkinId = cosmetics.ballSkinId !== undefined ? cosmetics.ballSkinId : prev.ballSkinId;
+      let wallSkinId = cosmetics.wallSkinId !== undefined ? cosmetics.wallSkinId : prev.wallSkinId;
 
-      let wallSkinId = cosmetics.wallSkinId;
-      if (wallSkinId === undefined) {
-        wallSkinId = prev.wallSkinId;
-      } else if (!allowResetToClassic && wallSkinId === 'classic' && prev.wallSkinId && prev.wallSkinId !== 'classic') {
-        wallSkinId = prev.wallSkinId;
+      // Gate: if user is explicitly not premium (isPremium === false), enforce classic cosmetics
+      if (user.isPremium === false) {
+        ballSkinId = 'classic';
+        wallSkinId = 'classic';
       }
 
       this.userCosmeticsMap.set(user.userId, {
-        ballSkinId,
-        wallSkinId,
+        ballSkinId: ballSkinId || 'classic',
+        wallSkinId: wallSkinId || 'classic',
       });
     }
   }
@@ -2024,6 +2019,18 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       // same recorded action and the client applies them idempotently.
       ack?.({ ok: true, recorded: result.recorded });
       this.server.to(payload.gameId).emit('game:actionAccepted', result.recorded);
+
+      // Broadcast fresh clock immediately upon move acceptance so clients
+      // don't have to wait up to a full second for the periodic tick.
+      const activeGame = this.gameService.getGame(payload.gameId);
+      if (activeGame && activeGame.state.status === 'IN_PROGRESS' && activeGame.timeControlMinutes > 0 && activeGame.clockStarted) {
+        this.server.to(payload.gameId).emit('game:clock', {
+          activePlayerIndex: activeGame.state.currentPlayerIndex,
+          remainingMs: this.gameService.clockSnapshot(activeGame),
+          serverTimestamp: Date.now(),
+          incrementSeconds: activeGame.incrementSeconds,
+        });
+      }
       if (result.finished) {
         this.server.to(payload.gameId).emit('game:playerFinished', { gameId: payload.gameId, ...result.finished });
         if (!result.ended) {
@@ -2558,7 +2565,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   @SubscribeMessage('game:ping')
   handleGamePing(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { gameId?: string; clientSentAt?: number } | undefined,
+    @MessageBody() payload: { gameId?: string; clientSentAt?: number; rtt?: number } | undefined,
     @Ack() ack?: (res: { serverTimestamp: number; clientSentAt?: number }) => void
   ) {
     const now = Date.now();
@@ -2577,7 +2584,11 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
             const last = this.pingThrottle.get(throttleKey) ?? 0;
             if (now - last >= 1000) {
               this.pingThrottle.set(throttleKey, now);
-              this.gameService.recordLatency(payload.gameId, user.userId, now - payload.clientSentAt);
+              const rttSample =
+                typeof payload.rtt === 'number' && Number.isFinite(payload.rtt) && payload.rtt >= 0 && payload.rtt <= 5000
+                  ? payload.rtt
+                  : now - payload.clientSentAt;
+              this.gameService.recordLatency(payload.gameId, user.userId, rttSample);
             }
           }
         }

@@ -11,7 +11,9 @@ use crate::mcts::position_seed;
 use crate::neural::map_index_to_action;
 use crate::pathfinding::shortest_distance;
 use crate::rules::{apply_action, get_legal_moves, is_legal_action};
-use crate::solver::solve_tactical_position;
+use crate::solver::{
+    solve_tactical_position_with_score, TACTICAL_LOSS_THRESHOLD, TACTICAL_WIN_THRESHOLD,
+};
 use crate::types::{
     GameAction, GameReview, GameState, KeyLesson, MoveAnalysis, MoveAssessment, RecordedAction,
     ReviewSummary,
@@ -71,21 +73,41 @@ fn evaluate_ply_hybrid(
     rec_action: &GameAction,
     _seed: u64,
 ) -> (GameAction, f64, f64, f64, f64, bool) {
-    // 1. TACTICAL SOLVER: Check for forced win or emergency conversion
-    if let Some(solver_action) = solve_tactical_position(state_before, 8) {
+    // 1. TACTICAL SOLVER: Check for forced win, forced loss, or emergency conversion
+    if let Some((solver_action, solver_score)) = solve_tactical_position_with_score(state_before, 8) {
         if is_legal_action(state_before, &solver_action) {
             let is_engine_best = solver_action == *rec_action;
-            let played_q = if is_engine_best {
-                0.99
+            let is_forced_loss = solver_score <= TACTICAL_LOSS_THRESHOLD;
+            let is_forced_win = solver_score >= TACTICAL_WIN_THRESHOLD;
+
+            if is_forced_loss {
+                // When the position is an unavoidable forced loss (opponent has a forced win within
+                // 1..4 plies and no legal move can stop it), every legal move retains the same zero equity.
+                // It is NEVER a blunder to make a move in an already-lost position.
+                let played_q = 0.05;
+                let best_q = 0.05;
+                return (solver_action, best_q, played_q, 0.05, 0.05, is_engine_best);
+            }
+
+            let mut scratch = *board_before;
+            let opp_has_win_after_played = if let Some(next_state) = apply_action(state_before, rec_action, &mut scratch) {
+                solve_tactical_position_with_score(&next_state, 8)
+                    .map(|(_, s)| s >= TACTICAL_WIN_THRESHOLD)
+                    .unwrap_or(false)
             } else {
-                let mut scratch = *board_before;
-                if let Some(next_state) = apply_action(state_before, rec_action, &mut scratch) {
+                false
+            };
+
+            let played_q: f64 = if is_engine_best {
+                if is_forced_win { 0.99 } else { 0.85 }
+            } else if opp_has_win_after_played {
+                0.05
+            } else {
+                let mut scratch_p = *board_before;
+                if let Some(next_state) = apply_action(state_before, rec_action, &mut scratch_p) {
                     let mover_idx = state_before.current_player_index;
-                    let (my_d, opp_d) = race_snapshot(&next_state, &scratch, mover_idx);
-                    let opp_has_win = solve_tactical_position(&next_state, 8).is_some();
-                    if opp_has_win {
-                        0.05
-                    } else if my_d <= 3 && opp_d >= my_d + 2 {
+                    let (my_d, opp_d) = race_snapshot(&next_state, &scratch_p, mover_idx);
+                    if my_d <= 3 && opp_d >= my_d + 2 {
                         0.95
                     } else if my_d < opp_d {
                         0.85
@@ -96,7 +118,27 @@ fn evaluate_ply_hybrid(
                     0.15
                 }
             };
-            return (solver_action, 0.99, played_q, 0.25, 0.25, is_engine_best);
+
+            let best_q: f64 = if is_forced_win {
+                0.99
+            } else {
+                let mut scratch_b = *board_before;
+                if let Some(best_state) = apply_action(state_before, &solver_action, &mut scratch_b) {
+                    let mover_idx = state_before.current_player_index;
+                    let (my_d, opp_d) = race_snapshot(&best_state, &scratch_b, mover_idx);
+                    if my_d <= 3 && opp_d >= my_d + 2 {
+                        0.95
+                    } else if my_d < opp_d {
+                        0.85
+                    } else {
+                        0.65
+                    }
+                } else {
+                    played_q.max(0.65)
+                }
+            };
+
+            return (solver_action, best_q, played_q, 0.25, 0.25, is_engine_best);
         }
     }
 
@@ -533,5 +575,59 @@ mod tests {
         assert_eq!(review.mode, "4p");
         assert_eq!(review.move_analyses.len(), 0);
         assert_eq!(review.summary.key_lesson.title, "Classic 2P Only");
+    }
+
+    #[test]
+    fn forced_loss_endgame_is_never_a_blunder() {
+        use crate::types::{CellCoord, GoalDirection, PlayerState};
+
+        let state = GameState {
+            game_id: "test-forced-loss".to_string(),
+            mode: "2p".to_string(),
+            current_player_index: 0,
+            players: vec![
+                PlayerState {
+                    id: "p1".to_string(),
+                    index: 0,
+                    display_name: "P1".to_string(),
+                    position: CellCoord { row: 5, col: 4 },
+                    walls_remaining: 0,
+                    goal_direction: GoalDirection::Top,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "p2".to_string(),
+                    index: 1,
+                    display_name: "P2".to_string(),
+                    position: CellCoord { row: 7, col: 4 },
+                    walls_remaining: 0,
+                    goal_direction: GoalDirection::Bottom,
+                    status: "ACTIVE".to_string(),
+                },
+            ],
+            walls: vec![],
+            move_number: 25,
+            status: "IN_PROGRESS".to_string(),
+        };
+
+        // P1 moves sideways to (5, 3) when P2 is 1 step from row 8 with 0 walls
+        let history = vec![RecordedAction {
+            action: GameAction::Move {
+                to: CellCoord { row: 5, col: 3 },
+            },
+            player: "p1".to_string(),
+            ply: 1,
+            timestamp: Some(100),
+        }];
+
+        let review = analyze_game_internal(state, history);
+        assert_eq!(review.move_analyses.len(), 1);
+        let m = &review.move_analyses[0];
+        assert_ne!(
+            m.assessment,
+            MoveAssessment::Blunder,
+            "Sideways move when rival has forced win must NEVER be a Blunder!"
+        );
+        assert_eq!(m.assessment, MoveAssessment::Best);
     }
 }

@@ -67,18 +67,21 @@ describe('i18n System', () => {
   it('preserves all interpolation placeholders in all languages', () => {
     const placeholderRegex = /\{([a-zA-Z0-9_]+)\}/g;
 
+    const mismatches: string[] = [];
     for (const [key, enText] of Object.entries(en)) {
       const enPlaceholders = Array.from(enText.matchAll(placeholderRegex), (m) => m[1]).sort();
-      if (enPlaceholders.length === 0) continue;
 
       for (const [code, dict] of Object.entries(DICTIONARIES) as [LanguageCode, typeof en][]) {
         const text = dict[key as keyof typeof en];
         const placeholders = Array.from(text.matchAll(placeholderRegex), (m) => m[1]).sort();
-        expect(placeholders, `Mismatched placeholders for key "${key}" in locale "${code}"`).toEqual(
-          enPlaceholders
-        );
+        if (JSON.stringify(placeholders) !== JSON.stringify(enPlaceholders)) {
+          mismatches.push(
+            `Key "${key}" in locale "${code}": expected ${JSON.stringify(enPlaceholders)} (en="${enText}"), got ${JSON.stringify(placeholders)} (${code}="${text}")`
+          );
+        }
       }
     }
+    expect(mismatches).toEqual([]);
   });
 
   it('interpolates parameters correctly', () => {

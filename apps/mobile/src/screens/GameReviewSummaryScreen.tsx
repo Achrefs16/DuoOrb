@@ -147,8 +147,8 @@ export const GameReviewSummaryScreen: React.FC<GameReviewSummaryScreenProps> = (
     return loadReview();
   }, [loadReview]);
 
-  const p1 = initialState.players[0] || { id: 'p1', displayName: 'Player 1' };
-  const p2 = initialState.players[1] || { id: 'p2', displayName: 'Player 2' };
+  const p1 = initialState.players[0] || { id: 'p1', displayName: t('common.player1') };
+  const p2 = initialState.players[1] || { id: 'p2', displayName: t('common.player2') };
 
   // Orient left = user perspective, right = opponent
   const userPlayer = perspectiveIdx === 1 ? p2 : p1;

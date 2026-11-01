@@ -21,7 +21,6 @@ import {
   RatingHistoryPointDto,
 } from '../network/apiClient';
 import { RatingChart } from '../components/RatingChart';
-import { AdBanner } from '../components/AdBanner';
 import { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 import {
   AchievementMedal,
@@ -366,7 +365,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           <View style={styles.cosmeticsSection}>
             <View style={styles.cosmeticsHeaderLeft}>
               <OrbIcon name="palette-swatch" size={16} color={THEME.colors.primary} />
-              <Text style={styles.sectionHeading}>Equipment & Style</Text>
+              <Text style={styles.sectionHeading}>{t('profile.equipmentAndStyle')}</Text>
             </View>
 
             <View style={styles.cosmeticsCard}>
@@ -376,7 +375,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 activeOpacity={0.75}
                 onPress={() => setCosmeticsCategory('ball')}
                 accessibilityRole="button"
-                accessibilityLabel="Choose Ball Skin"
+                accessibilityLabel={t('cosmetics.chooseBallSkinA11y')}
               >
                 <View style={styles.cosmeticPreviewCircle}>
                   {activeBall ? (
@@ -386,9 +385,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   )}
                 </View>
                 <View style={styles.cosmeticSlotInfo}>
-                  <Text style={styles.slotCategory}>BALL SKIN</Text>
+                  <Text style={styles.slotCategory}>{t('cosmetics.ballSkinCategory')}</Text>
                   <Text style={styles.slotName} numberOfLines={1}>
-                    {activeBall ? activeBall.name : 'Classic Duo'}
+                    {activeBall ? activeBall.name : t('cosmetics.classicDuo')}
                   </Text>
                 </View>
                 <OrbIcon name="chevron-right" size={16} color={THEME.colors.textMuted} />
@@ -402,7 +401,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 activeOpacity={0.75}
                 onPress={() => setCosmeticsCategory('wall')}
                 accessibilityRole="button"
-                accessibilityLabel="Choose Wall Skin"
+                accessibilityLabel={t('cosmetics.chooseWallSkinA11y')}
               >
                 <View style={styles.cosmeticPreviewRect}>
                   {activeWall ? (
@@ -415,9 +414,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   )}
                 </View>
                 <View style={styles.cosmeticSlotInfo}>
-                  <Text style={styles.slotCategory}>WALL SKIN</Text>
+                  <Text style={styles.slotCategory}>{t('cosmetics.wallSkinCategory')}</Text>
                   <Text style={styles.slotName} numberOfLines={1}>
-                    {activeWall ? activeWall.name : 'Classic Duo'}
+                    {activeWall ? activeWall.name : t('cosmetics.classicDuo')}
                   </Text>
                 </View>
                 <OrbIcon name="chevron-right" size={16} color={THEME.colors.textMuted} />
@@ -516,9 +515,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <OrbIcon name="chevron-right" size={20} color={THEME.colors.textMuted} />
             </TouchableOpacity>
           )}
-
-          {/* Ad slot: bottom of the page, below all actions. */}
-          <AdBanner placement="list" />
 
           {/* Recent matches live on the History tab — one home for match history,
             not two. The opponent/friend profile keeps its own RECENT
@@ -644,7 +640,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         onClose={() => setPremiumOpen(false)}
         onDone={() => {
           setPremiumOpen(false);
-          void refreshPremium();
         }}
       />
     </View>

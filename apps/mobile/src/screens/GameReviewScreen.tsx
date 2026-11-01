@@ -470,6 +470,39 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
       currentAnalysis.missedDefense ||
       bestDiffers);
 
+  const getLocalizedExplanation = (
+    analysis: MoveAnalysis | undefined,
+    playerIndex: number
+  ): string => {
+    if (!analysis) return '';
+    const action = analysis.playedAction ?? (analysis as any).action;
+    const notation = action ? shortMoveLabel(action, playerIndex) : '';
+    const best = analysis.bestAction ? shortMoveLabel(analysis.bestAction, playerIndex) : '';
+
+    switch (analysis.assessment) {
+      case 'BRILLIANT':
+        return t('analysis.explanationBrilliant', { notation, best });
+      case 'GREAT':
+        return t('analysis.explanationGreat', { notation, best });
+      case 'BEST':
+        return t('analysis.explanationBest', { notation, best });
+      case 'EXCELLENT':
+        return t('analysis.explanationExcellent', { notation, best });
+      case 'GOOD':
+        return t('analysis.explanationGood', { notation, best });
+      case 'INACCURACY':
+        return t('analysis.explanationInaccuracy', { notation, best });
+      case 'MISTAKE':
+        return t('analysis.explanationMistake', { notation, best });
+      case 'BLUNDER':
+        return t('analysis.explanationBlunder', { notation, best });
+      case 'FORCED':
+        return t('analysis.explanationForced', { notation, best });
+      default:
+        return analysis.explanation || '';
+    }
+  };
+
   const moveMark = useMemo(() => {
     // Bare replay shows the plain board: no assessment-colored lines.
     if (bare || !currentAnalysis) return null;
@@ -674,7 +707,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
     return [currentStep - 1, currentStep, currentStep + 1];
   }, [history.length, currentStep]);
   const stripLabel = (step: number): string => {
-    if (step === 0) return 'Start';
+    if (step === 0) return t('analysis.startChip');
     const rec = history[step - 1];
     if (!rec) return `${step}`;
     const idx = initialState.players.findIndex((p) => p.id === rec.playerId);
@@ -969,7 +1002,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           onPress={handleAnalyzeUpgrade}
           disabled={access === 'checking'}
           accessibilityRole="button"
-          accessibilityLabel="Analyze this game"
+          accessibilityLabel={t('analysis.analyzeGameA11y')}
         >
           {access === 'checking' ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
@@ -1001,7 +1034,9 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             </View>
 
             {currentAnalysis.explanation ? (
-              <Text style={styles.insightText}>{currentAnalysis.explanation}</Text>
+              <Text style={styles.insightText}>
+                {getLocalizedExplanation(currentAnalysis, mover?.index ?? 0)}
+              </Text>
             ) : null}
 
             {currentAnalysis.before && currentAnalysis.after && (
@@ -1090,7 +1125,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
             onPress={handleUnlockHere}
             disabled={unlockBusy}
             accessibilityRole="button"
-            accessibilityLabel="Watch ad to unlock analysis"
+            accessibilityLabel={t('analysis.watchAdA11y')}
           >
             {unlockBusy ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
@@ -1102,10 +1137,10 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
           {unlockError && (
             <Text style={styles.lockError}>
               {unlockError === 'unavailable'
-                ? "Ads aren't available right now — check your connection and try again."
+                ? t('analysis.adsUnavailable')
                 : unlockError === 'store'
-                  ? "Couldn't save the unlock — please try again."
-                  : 'No problem — the analysis stays locked for this game.'}
+                  ? t('reward.errorStore')
+                  : t('analysis.stayLockedNotice')}
             </Text>
           )}
           <TouchableOpacity onPress={onBack} disabled={unlockBusy}>
@@ -1181,7 +1216,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 </View>
                 {currentAnalysis.explanation ? (
                   <Text style={styles.coachText} numberOfLines={3}>
-                    {currentAnalysis.explanation}
+                    {getLocalizedExplanation(currentAnalysis, mover?.index ?? 0)}
                   </Text>
                 ) : null}
               </View>
@@ -1276,7 +1311,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               disabled={currentStep <= 0}
               onPress={() => goTo(currentStep - 1)}
               accessibilityRole="button"
-              accessibilityLabel="Previous move"
+              accessibilityLabel={t('analysis.prevMoveA11y')}
             >
               <OrbIcon
                 name="chevron-left"
@@ -1304,7 +1339,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                     ]}
                     numberOfLines={1}
                   >
-                    {s === 0 ? 'Start' : `${s} · ${stripLabel(s)}`}
+                    {s === 0 ? t('analysis.startChip') : `${s} · ${stripLabel(s)}`}
                   </Text>
                   {a ? (
                     <AssessmentIcon assessment={a} size={15} />
@@ -1320,7 +1355,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               disabled={currentStep >= history.length}
               onPress={() => goTo(currentStep + 1)}
               accessibilityRole="button"
-              accessibilityLabel="Next move"
+              accessibilityLabel={t('analysis.nextMoveA11y')}
             >
               <OrbIcon
                 name="chevron-right"
@@ -1345,7 +1380,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
               disabled={!canShowBest}
               onPress={() => setShowBest((v) => !v)}
               accessibilityRole="button"
-              accessibilityLabel="Show best move"
+              accessibilityLabel={t('analysis.showBestMoveA11y')}
             >
               <OrbIcon
                 name="star"
@@ -1384,7 +1419,7 @@ export const GameReviewScreen: React.FC<GameReviewScreenProps> = ({
                 }
               }}
               accessibilityRole="button"
-              accessibilityLabel="Next move or key moment"
+              accessibilityLabel={t('analysis.nextOrKeyMomentA11y')}
             >
               <Text style={styles.nextBtnText} numberOfLines={1}>{t('review.next')}</Text>
             </TouchableOpacity>

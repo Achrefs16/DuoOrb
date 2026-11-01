@@ -79,8 +79,9 @@ pub fn classify_mcts_move(
     // 2. Suboptimal Tiers (Strict adversarial equity comparison)
     let win_threshold = 0.50 / mode_scale;
     let losing_threshold = 0.32 / mode_scale;
-    let flipped_bar = (q_best >= win_threshold && q_played <= losing_threshold && delta_q >= 0.14)
-        || delta_q >= 0.25;
+    let is_already_lost = q_best <= losing_threshold;
+    let flipped_bar = (!is_already_lost && q_best >= win_threshold && q_played <= losing_threshold && delta_q >= 0.14)
+        || (!is_already_lost && delta_q >= 0.25);
 
     let (assessment, accuracy) = if delta_q <= 0.035 {
         // EXCELLENT (✓): Within 3.5% equity of engine #1 (almost as good)
@@ -97,6 +98,10 @@ pub fn classify_mcts_move(
     } else if delta_q <= 0.250 && !flipped_bar {
         // MISTAKE (?): Substantial tactical loss (16% to 25% equity dropped)
         let acc = (57.0 - ((delta_q - 0.160) / 0.090) * 27.0).clamp(30.0, 57.0);
+        (MoveAssessment::Mistake, acc)
+    } else if is_already_lost {
+        // If the position was already losing before the move, cap penalty at MISTAKE (never a false BLUNDER!)
+        let acc = (45.0 - (delta_q * 30.0)).clamp(20.0, 45.0);
         (MoveAssessment::Mistake, acc)
     } else {
         // BLUNDER (??): Game-losing swing or massive equity throw (> 25%)
@@ -207,5 +212,18 @@ mod tests {
         let (assessment, _, _) =
             classify_mcts_move(0.35, 0.15, 0.30, 0.20, false, 0, 0, false, false, false, 4, 10);
         assert_eq!(assessment, MoveAssessment::Blunder);
+    }
+
+    #[test]
+    fn already_lost_position_never_blunders() {
+        // If player was already lost (q_best <= 0.32, e.g. 0.05), even a suboptimal choice
+        // must never be classified as a Blunder.
+        let (assessment, _, _) =
+            classify_mcts_move(0.05, 0.05, 0.05, 0.05, false, 0, 0, false, false, false, 2, 10);
+        assert_eq!(assessment, MoveAssessment::Best);
+
+        let (assessment2, _, _) =
+            classify_mcts_move(0.20, 0.02, 0.15, 0.05, false, 0, 0, false, false, false, 2, 10);
+        assert_ne!(assessment2, MoveAssessment::Blunder);
     }
 }

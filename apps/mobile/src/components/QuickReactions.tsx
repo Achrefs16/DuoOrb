@@ -166,7 +166,6 @@ const createStyles = () => StyleSheet.create({
   // never covers the board.
   dock: {
     position: 'absolute',
-    top: 0,
     left: 0,
     right: 0,
     height: 52,
@@ -176,9 +175,13 @@ const createStyles = () => StyleSheet.create({
     elevation: 10,
   },
   // Over the wall inventory: your own reactions, rising from the tray.
-  dockBottom: {},
+  dockBottom: {
+    bottom: 0,
+  },
   // Over the opponent card: their reactions, dropping in.
-  dockTop: {},
+  dockTop: {
+    top: 0,
+  },
   dockRow: {
     flexDirection: 'row',
     alignItems: 'center',

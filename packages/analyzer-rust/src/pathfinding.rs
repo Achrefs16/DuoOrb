@@ -51,7 +51,7 @@ impl GoalMask {
 
     #[inline(always)]
     pub fn from_goal_and_mode(goal: GoalDirection, mode: &str) -> Self {
-        if mode == "center2" || mode == "center3" {
+        if is_center_goal_mode(mode) {
             GoalMask::CenterCell
         } else {
             match goal {
@@ -248,7 +248,7 @@ impl EdgeMasks {
 
 #[inline(always)]
 pub fn is_center_goal_mode(mode: &str) -> bool {
-    mode == "center2" || mode == "center3"
+    mode == "4p" || mode == "center2" || mode == "center3" || mode.starts_with("center")
 }
 
 #[inline(always)]

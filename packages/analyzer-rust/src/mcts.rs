@@ -58,6 +58,48 @@ fn sigmoid(x: f64) -> f64 {
     1.0 / (1.0 + (-x).exp())
 }
 
+/// Checks whether placing a wall at vertex (r, c) forms a parallel protective shield/chute
+/// along the mover's shortest path corridor.
+///
+/// In Quoridor geometry:
+/// - A vertical wall at (r, c) occupies vertex (r, c) and permanently prevents the opponent
+///   from placing a cross-cutting horizontal wall at (r, c), shielding vertical corridor steps
+///   through col c (TL to BL) or col c+1 (TR to BR).
+/// - A horizontal wall at (r, c) permanently prevents a vertical cut at (r, c), shielding
+///   horizontal corridor steps through row r (TL to TR) or row r+1 (BL to BR).
+#[inline]
+pub fn is_parallel_funnel_wall(r: u8, c: u8, is_h: bool, mover_corridor: u128) -> bool {
+    let tl = 1u128 << (r as u32 * 9 + c as u32);
+    let tr = 1u128 << (r as u32 * 9 + c as u32 + 1);
+    let bl = 1u128 << ((r as u32 + 1) * 9 + c as u32);
+    let br = 1u128 << ((r as u32 + 1) * 9 + c as u32 + 1);
+
+    if is_h {
+        ((mover_corridor & tl) != 0 && (mover_corridor & tr) != 0)
+            || ((mover_corridor & bl) != 0 && (mover_corridor & br) != 0)
+    } else {
+        ((mover_corridor & tl) != 0 && (mover_corridor & bl) != 0)
+            || ((mover_corridor & tr) != 0 && (mover_corridor & br) != 0)
+    }
+}
+
+/// Evaluates total friendly corridor protection from existing placed walls.
+#[inline]
+pub fn corridor_shield_bonus(walls: &[WallCoord], corridor: u128) -> f64 {
+    let mut shielded_count = 0usize;
+    for w in walls {
+        if (0..8).contains(&w.row) && (0..8).contains(&w.col) {
+            let r = w.row as u8;
+            let c = w.col as u8;
+            let is_h = w.orientation == Orientation::H;
+            if is_parallel_funnel_wall(r, c, is_h, corridor) {
+                shielded_count += 1;
+            }
+        }
+    }
+    (shielded_count as f64) * 0.45
+}
+
 /// Generates strictly legal, logically filtered candidate actions sorted by prior.
 ///
 /// Pruning rules:
@@ -292,6 +334,15 @@ pub fn generate_logical_actions(
                         // Golden Rule: all active opponents must retain a path
                         let mut all_opps_have_path = true;
                         let mut max_opp_delta = i32::MIN;
+                        let mut leader_delta = i32::MIN;
+                        let mut min_opp_base = i32::MAX;
+
+                        for (_, _, opp_base, _) in &opps {
+                            if *opp_base < min_opp_base {
+                                min_opp_base = *opp_base;
+                            }
+                        }
+
                         for (_, opp, opp_base, _) in &opps {
                             let opp_g =
                                 GoalMask::from_goal_and_mode(opp.goal_direction, &state.mode);
@@ -305,8 +356,16 @@ pub fn generate_logical_actions(
                                 break;
                             }
                             let delta = opp_after - *opp_base;
-                            if delta > max_opp_delta {
+                            // In variant modes, only consider an opponent if they are a genuine race contender:
+                            let is_contender = state.mode == "2p"
+                                || *opp_base <= mover_dist + 1
+                                || *opp_base <= 3
+                                || *opp_base == min_opp_base;
+                            if is_contender && delta > max_opp_delta {
                                 max_opp_delta = delta;
+                            }
+                            if *opp_base == min_opp_base && delta > leader_delta {
+                                leader_delta = delta;
                             }
                         }
                         if !all_opps_have_path {
@@ -316,33 +375,74 @@ pub fn generate_logical_actions(
                         let my_delta = (my_after - mover_dist).max(0);
                         let net_gain = max_opp_delta - my_delta;
 
-                        // Rule B: Candidate walls must actually delay an active opponent or defend against a threat.
-                        // At the root we deliberately keep every legal wall so the
-                        // search cannot prune a strategically strong setup wall.
-                        if !include_all_walls {
-                            if !is_defensive_counter {
-                                if max_opp_delta <= 0 {
-                                    continue;
-                                }
-                                if net_gain < 0 {
-                                    continue;
-                                }
-
-                                // Opening wall squandering prevention:
-                                // On an open board (walls <= 2 and mover far from goal >= 6 in Classic 2P),
-                                // casual walls that only inflict <= 2 delay waste valuable walls and tempo.
-                                let is_opening = state.walls.len() <= 2 && mover_dist >= 6 && state.mode == "2p";
-                                if is_opening && max_opp_delta <= 2 {
-                                    continue;
+                        let is_funnel_shield = is_parallel_funnel_wall(r, c, is_h, mover_corridor);
+                        let mut is_corridor_squeeze = false;
+                        if max_opp_delta == 0 && state.mode != "2p" {
+                            for (_, opp, _, opp_corridor) in &opps {
+                                let opp_g = GoalMask::from_goal_and_mode(opp.goal_direction, &state.mode);
+                                let (_, new_opp_corridor) = spec_masks.shortest_path_corridor(
+                                    opp.position.row as u8,
+                                    opp.position.col as u8,
+                                    opp_g,
+                                );
+                                let reduction = opp_corridor.count_ones().saturating_sub(new_opp_corridor.count_ones());
+                                if reduction >= 2 {
+                                    is_corridor_squeeze = true;
+                                    break;
                                 }
                             }
                         }
 
-                        let is_variant = state.mode.starts_with("race") || state.mode.starts_with("center");
-                        let variant_bonus = if is_variant && max_opp_delta >= 1 && net_gain >= 0 { 0.25 } else { 0.0 };
+                        // Rule B: Candidate walls must actually delay an active opponent, defend against a threat,
+                        // or build a proactive funnel / corridor squeeze in variant modes.
+                        // At the root we deliberately keep every legal wall so the
+                        // search cannot prune a strategically strong setup wall.
+                        if !include_all_walls {
+                            if !is_defensive_counter {
+                                if state.mode == "2p" {
+                                    if max_opp_delta <= 0 {
+                                        continue;
+                                    }
+                                    if net_gain < 0 {
+                                        continue;
+                                    }
+
+                                    // Opening wall squandering prevention:
+                                    // On an open board (walls <= 2 and mover far from goal >= 6),
+                                    // casual walls that only inflict <= 2 delay waste valuable walls and tempo.
+                                    let is_opening = state.walls.len() <= 2 && mover_dist >= 6;
+                                    if is_opening && max_opp_delta <= 2 {
+                                        continue;
+                                    }
+                                } else {
+                                    // Variant modes (center2, center3, 4p, race2, race3, race4):
+                                    // Allow delay walls, defensive counters, and zero-self-harm funnel/squeeze walls.
+                                    let is_proactive_wall = (is_funnel_shield || is_corridor_squeeze) && my_delta == 0;
+                                    if max_opp_delta <= 0 && !is_proactive_wall {
+                                        continue;
+                                    }
+                                    if net_gain < 0 && !is_proactive_wall {
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+
                         let corridor_bonus = if touches_corridor || touches_mover_corridor { 0.10 } else { 0.0 };
                         let counter_bonus = if is_defensive_counter { 0.45 } else { 0.0 };
-                        let wall_prior = if include_all_walls {
+                        let funnel_bonus = if is_funnel_shield && my_delta == 0 && state.mode != "2p" { 0.25 } else { 0.0 };
+                        let squeeze_bonus = if is_corridor_squeeze && my_delta == 0 && state.mode != "2p" { 0.15 } else { 0.0 };
+                        let leader_bonus = if state.mode != "2p" && leader_delta > 0 {
+                            (leader_delta as f64) * 0.10
+                        } else {
+                            0.0
+                        };
+
+                        let is_sprint_finish = state.mode != "2p" && mover_dist <= 2 && mover_dist <= min_opp_base;
+                        let wall_prior = if is_sprint_finish && !is_defensive_counter && min_opp_base > 1 {
+                            // Mover is 1-2 steps from winning with race lead: suppress walls so pawn advance dominates
+                            0.04
+                        } else if include_all_walls {
                             // Strong delaying walls and defensive counters sort first; setup walls
                             // remain searchable with a small but non-zero prior.
                             (0.12
@@ -350,14 +450,18 @@ pub fn generate_logical_actions(
                                 + (net_gain.max(0) as f64) * 0.04
                                 + corridor_bonus
                                 + counter_bonus
-                                + variant_bonus)
+                                + funnel_bonus
+                                + squeeze_bonus
+                                + leader_bonus)
                                 .clamp(0.04, 0.95)
                         } else {
                             (0.35
                                 + (net_gain as f64) * 0.10
                                 + corridor_bonus
                                 + counter_bonus
-                                + variant_bonus)
+                                + funnel_bonus
+                                + squeeze_bonus
+                                + leader_bonus)
                                 .clamp(0.05, 0.95)
                         };
 
@@ -477,44 +581,121 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
             1.0
         };
 
-        // Race value: relative distance + tempo + wall equity + corridor
-        // resilience. Absolute progress is intentionally not double-counted:
-        // only the race margin matters in a two-player game.
-        let turn_bonus = if state.current_player_index == 0 { 0.5 } else { -0.5 };
-        let is_variant = state.mode.starts_with("race") || state.mode.starts_with("center");
-        let wall_weight = if is_variant { 0.25 } else { 1.35 };
-        let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * wall_weight;
-        let width_bonus = (width0 - width1) * 0.45;
+        if state.mode == "2p" {
+            // === EXACT 100% UNTOUCHED ORIGINAL CLASSIC 2P LOGIC ===
+            let turn_bonus = if state.current_player_index == 0 { 0.5 } else { -0.5 };
+            let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * 1.35;
+            let width_bonus = (width0 - width1) * 0.45;
 
-        // Corridor constriction / trap vulnerability penalty:
-        // When entering a 1-wide dead-end slot while opponent has walls, penalize the fake
-        // shortest-path advance so MCTS does not sprint blindly into closing funnels.
-        let trap_penalty0 = if width0 <= 1.25 && p1.walls_remaining > 0 && d0 > 1.0 {
-            (1.30 - width0) * 3.5
+            // Corridor constriction / trap vulnerability penalty:
+            // When entering a 1-wide dead-end slot while opponent has walls, penalize the fake
+            // shortest-path advance so MCTS does not sprint blindly into closing funnels.
+            let trap_penalty0 = if width0 <= 1.25 && p1.walls_remaining > 0 && d0 > 1.0 {
+                (1.30 - width0) * 3.5
+            } else {
+                0.0
+            };
+            let trap_penalty1 = if width1 <= 1.25 && p0.walls_remaining > 0 && d1 > 1.0 {
+                (1.30 - width1) * 3.5
+            } else {
+                0.0
+            };
+
+            let lead = d1 - d0 + turn_bonus + wall_bonus + width_bonus - trap_penalty0 + trap_penalty1;
+            let mut p0_win = sigmoid(lead / 3.2);
+
+            // Make one-step finishes decisive. The sigmoid alone is too flat when
+            // both players are close, which lets the search drift into a lost race.
+            if d0 <= 1.0 && d1 <= 1.0 {
+                // Both players are one step away; the side to move wins. Keep a
+                // tiny wall-reserve term so the leaf value still respects material
+                // in otherwise decided positions.
+                let tempo = if state.current_player_index == 0 { 0.92 } else { 0.08 };
+                p0_win = (tempo + wall_bonus * 0.001).clamp(0.01, 0.99);
+            } else if d1 <= 1.0 && d0 > 1.0 {
+                p0_win = p0_win.min(0.10);
+            } else if d0 <= 1.0 && d1 > 1.0 {
+                p0_win = p0_win.max(0.90);
+            }
+
+            rewards[0] = p0_win;
+            rewards[1] = 1.0 - p0_win;
+            return rewards;
+        }
+
+        // === VARIANT 2P LOGIC (center2, race2) ===
+        // 1. Horizon & Clamped Wall Equity (eliminates the +2 Wall Dominance Trap)
+        let h = d0.min(d1);
+        let max_spendable = ((0.85 * h).ceil() as i32 + 1).max(0);
+        let weff0 = (p0.walls_remaining.max(0).min(max_spendable) as f64).sqrt();
+        let weff1 = (p1.walls_remaining.max(0).min(max_spendable) as f64).sqrt();
+        let lambda_wall = if state.mode == "center2" { 0.30 } else { 0.45 };
+        let wall_bonus = lambda_wall * (weff0 - weff1);
+
+        // 2. Tempo-Adjusted Effective Distance (exploits first-mover advantage)
+        let t0 = d0 - if state.current_player_index == 0 { 0.85 } else { 0.0 };
+        let t1 = d1 - if state.current_player_index == 1 { 0.85 } else { 0.0 };
+
+        // 3. Smooth Red-Zone Urgency Threat (d <= 3.0: prevents Last-Square Panic)
+        let threat_penalty0 = if t1 < t0 && d1 <= 3.0 {
+            0.85 * (3.5 - t1.max(0.0)).powi(2)
         } else {
             0.0
         };
-        let trap_penalty1 = if width1 <= 1.25 && p0.walls_remaining > 0 && d1 > 1.0 {
-            (1.30 - width1) * 3.5
+        let threat_penalty1 = if t0 < t1 && d0 <= 3.0 {
+            0.85 * (3.5 - t0.max(0.0)).powi(2)
         } else {
             0.0
         };
 
-        let lead = d1 - d0 + turn_bonus + wall_bonus + width_bonus - trap_penalty0 + trap_penalty1;
-        let mut p0_win = sigmoid(lead / 3.2);
+        // 4. Shield Chute Protection Bonus
+        let shield0 = corridor_shield_bonus(&state.walls, c0);
+        let shield1 = corridor_shield_bonus(&state.walls, c1);
+        let shield_bonus = shield0 - shield1;
 
-        // Make one-step finishes decisive. The sigmoid alone is too flat when
-        // both players are close, which lets the search drift into a lost race.
+        // 5. Unshielded Approach Trap Penalty (only if unshielded and opponent holds walls)
+        let unshielded_trap0 = if shield0 < 0.1 && width0 <= 1.25 && p1.walls_remaining > 0 && d0 > 1.0 && d0 <= 3.0 {
+            (1.30 - width0) * 2.5
+        } else {
+            0.0
+        };
+        let unshielded_trap1 = if shield1 < 0.1 && width1 <= 1.25 && p0.walls_remaining > 0 && d1 > 1.0 && d1 <= 3.0 {
+            (1.30 - width1) * 2.5
+        } else {
+            0.0
+        };
+
+        let width_bonus = (width0 - width1) * 0.35;
+        let lead = (t1 - t0) + wall_bonus + width_bonus + shield_bonus
+            - threat_penalty0 + threat_penalty1
+            - unshielded_trap0 + unshielded_trap1;
+
+        let mut p0_win = sigmoid(lead / 3.0);
+
+        // 6. Turn-Aware Decisive Finish (No Turn-Blind Cliff)
         if d0 <= 1.0 && d1 <= 1.0 {
-            // Both players are one step away; the side to move wins. Keep a
-            // tiny wall-reserve term so the leaf value still respects material
-            // in otherwise decided positions.
-            let tempo = if state.current_player_index == 0 { 0.92 } else { 0.08 };
-            p0_win = (tempo + wall_bonus * 0.001).clamp(0.01, 0.99);
-        } else if d1 <= 1.0 && d0 > 1.0 {
-            p0_win = p0_win.min(0.10);
+            let tempo = if state.current_player_index == 0 { 0.95 } else { 0.05 };
+            p0_win = (tempo + wall_bonus * 0.01).clamp(0.01, 0.99);
         } else if d0 <= 1.0 && d1 > 1.0 {
-            p0_win = p0_win.max(0.90);
+            if state.current_player_index == 0 {
+                p0_win = 0.99; // P0 to move: immediate win
+            } else if p1.walls_remaining == 0 {
+                p0_win = 0.98; // P1 cannot block
+            } else if shield0 >= 0.40 {
+                p0_win = 0.92; // P0 corridor is shielded against blocks
+            } else {
+                p0_win = p0_win.clamp(0.35, 0.85); // P1 can block, not an automatic 90% win
+            }
+        } else if d1 <= 1.0 && d0 > 1.0 {
+            if state.current_player_index == 1 {
+                p0_win = 0.01; // P1 to move: immediate win
+            } else if p0.walls_remaining == 0 {
+                p0_win = 0.02; // P0 cannot block
+            } else if shield1 >= 0.40 {
+                p0_win = 0.08; // P1 corridor is shielded against blocks
+            } else {
+                p0_win = p0_win.clamp(0.15, 0.65); // P0 can block, not an automatic 10% lost game
+            }
         }
 
         rewards[0] = p0_win;
@@ -523,6 +704,7 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
     }
 
     // N-player (3P/4P)
+    let is_variant_n = state.mode.starts_with("center") || state.mode.starts_with("race") || state.mode == "4p";
     let avg_walls = state
         .players
         .iter()
@@ -547,11 +729,46 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
         let base_dist = if dist < 0 { 99.0 } else { dist as f64 };
         let turns_until_move = (i + n - state.current_player_index) % n;
         let turn_tempo = 0.5 * (1.0 - (turns_until_move as f64) / (n as f64));
-        let eff_walls = (p.walls_remaining as f64).min(base_dist);
-        let is_variant = state.mode.starts_with("race") || state.mode.starts_with("center");
-        let wall_scale = if is_variant { 0.20 } else { 0.55 };
-        let wall_bonus = (eff_walls - avg_walls) * wall_scale;
+
+        let wall_bonus = if is_variant_n {
+            let max_spendable = ((0.85 * base_dist).ceil() as i32 + 1).max(0);
+            let weff = (p.walls_remaining.max(0).min(max_spendable) as f64).sqrt();
+            let lambda = if state.mode.starts_with("race") { 0.50 } else { 0.28 };
+            lambda * (weff - avg_walls.max(0.0).sqrt())
+        } else {
+            let eff_walls = (p.walls_remaining as f64).min(base_dist);
+            (eff_walls - avg_walls) * 0.55
+        };
+
         eff_dists[i] = base_dist - turn_tempo - wall_bonus;
+    }
+
+    // Decisive finish check in N-player mode:
+    // If any player is at d <= 1.0 and to move (or finished), they decisively convert the win.
+    let mut decisive_winner = None;
+    for i in 0..n {
+        let p = &state.players[i];
+        if p.status == "FINISHED" {
+            decisive_winner = Some(i);
+            break;
+        }
+        let goal_mask = GoalMask::from_goal_and_mode(p.goal_direction, &state.mode);
+        let dist = edge_masks.shortest_distance(
+            p.position.row as u8,
+            p.position.col as u8,
+            goal_mask,
+        );
+        if dist <= 1 && state.current_player_index == i {
+            decisive_winner = Some(i);
+            break;
+        }
+    }
+
+    if let Some(w) = decisive_winner {
+        for i in 0..n {
+            rewards[i] = if i == w { 0.94 } else { 0.06 / ((n - 1) as f64).max(1.0) };
+        }
+        return rewards;
     }
 
     // N-player softmax
@@ -561,9 +778,10 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
             min_dist = eff_dists[i];
         }
     }
+    let temp = if is_variant_n { -0.75 } else { -0.40 };
     let mut sum_exp = 0.0f64;
     for i in 0..n {
-        let val = (-0.4 * (eff_dists[i] - min_dist)).exp();
+        let val = (temp * (eff_dists[i] - min_dist)).exp();
         rewards[i] = val;
         sum_exp += val;
     }
@@ -980,6 +1198,12 @@ pub(crate) fn evaluate_pawn_step_danger(
     let edge_masks = EdgeMasks::from_board(board);
     let (to_dist, _to_corridor) = edge_masks.shortest_path_corridor(to.row as u8, to.col as u8, mover_goal);
     if to_dist <= 0 {
+        return None;
+    }
+
+    // In Center Rush modes, stepping adjacent to the center (to_dist <= 1) is the
+    // primary winning objective and must never be suppressed as a corridor trap.
+    if crate::pathfinding::is_center_goal_mode(&state.mode) && to_dist <= 1 {
         return None;
     }
 
@@ -1454,7 +1678,10 @@ fn choose_action(
 
     // Tactical refutation guard: never walk a pawn into a lethal corridor trap.
     let refutation_action = if let Some(GameAction::Move { to }) = final_action {
-        if simulations >= 1_000 {
+        let is_winning_step = is_goal_cell(to, mover.goal_direction, &root_state.mode);
+        let to_dist = edge_masks.shortest_distance(to.row as u8, to.col as u8, mover_goal);
+        let is_sprint_finish = (root_state.mode != "2p") && (to_dist <= 1 || is_winning_step);
+        if simulations >= 1_000 && !is_sprint_finish {
             if let Some((_delay, _lw)) = evaluate_pawn_step_danger(
                 root_state,
                 root_state.current_player_index,
@@ -1832,6 +2059,83 @@ mod tests {
                 .windows(2)
                 .all(|pair| pair[0].visits >= pair[1].visits),
             "Ranked actions must be sorted by aggregate visits"
+        );
+    }
+
+    #[test]
+    fn funnel_shield_bitboard_detection() {
+        use super::is_parallel_funnel_wall;
+        // Corridor flowing vertically through column 4: cells (8,4), (7,4), (6,4), (5,4), (4,4)
+        let mut vert_corridor = 0u128;
+        for r in 4..=8 {
+            vert_corridor |= 1u128 << (r * 9 + 4);
+        }
+
+        // Vertical wall at (5, 4): sits on right edge of column 4 (TL=(5,4), BL=(6,4))
+        assert!(
+            is_parallel_funnel_wall(5, 4, false, vert_corridor),
+            "V wall at (5,4) must be recognized as a parallel funnel shield along col 4"
+        );
+        // Vertical wall at (5, 3): sits on left edge of column 4 (TR=(5,4), BR=(6,4))
+        assert!(
+            is_parallel_funnel_wall(5, 3, false, vert_corridor),
+            "V wall at (5,3) must be recognized as a parallel funnel shield along col 4"
+        );
+        // Horizontal wall at (5, 4): cuts across column 4, NOT a parallel shield!
+        assert!(
+            !is_parallel_funnel_wall(5, 4, true, vert_corridor),
+            "H wall at (5,4) cuts column 4 perpendicularly, cannot be a parallel shield"
+        );
+
+        // Corridor flowing horizontally through row 4: cells (4,0), (4,1), (4,2), (4,3), (4,4)
+        let mut horiz_corridor = 0u128;
+        for c in 0..=4 {
+            horiz_corridor |= 1u128 << (4 * 9 + c);
+        }
+
+        // Horizontal wall at (3, 2): sits on top edge of row 4 (BL=(4,2), BR=(4,3))
+        assert!(
+            is_parallel_funnel_wall(3, 2, true, horiz_corridor),
+            "H wall at (3,2) must be recognized as a parallel funnel shield along row 4"
+        );
+        // Horizontal wall at (4, 2): sits on bottom edge of row 4 (TL=(4,2), TR=(4,3))
+        assert!(
+            is_parallel_funnel_wall(4, 2, true, horiz_corridor),
+            "H wall at (4,2) must be recognized as a parallel funnel shield along row 4"
+        );
+        // Vertical wall at (4, 2): cuts across row 4 perpendicularly!
+        assert!(
+            !is_parallel_funnel_wall(4, 2, false, horiz_corridor),
+            "V wall at (4,2) cuts row 4 perpendicularly, cannot be a parallel shield"
+        );
+    }
+
+    #[test]
+    fn center2_heuristic_rewards_fixes_turn_blind_cliff() {
+        use super::heuristic_rewards;
+        let state = GameState {
+            game_id: "center2-cliff".to_string(),
+            mode: "center2".to_string(),
+            current_player_index: 1, // P1's turn to move!
+            players: vec![
+                player("p1", 5, 4, GoalDirection::Center, 5), // d0 = 1, unshielded!
+                player("p2", 2, 4, GoalDirection::Center, 5), // d1 = 2, holds 5 walls!
+            ],
+            walls: vec![],
+            move_number: 6,
+            status: "IN_PROGRESS".to_string(),
+        };
+        let board = Board::new();
+        let rewards = heuristic_rewards(&state, &board);
+
+        // In the old buggy code, `d0 <= 1.0 && d1 > 1.0` clamped p0_win.max(0.90) blindly!
+        // But it is P1's turn, P1 holds 5 walls, and P0 is completely unshielded!
+        // P1 can drop a horizontal wall right in front of P0 at (4,4)H or (4,3)H!
+        // The fixed evaluator must NOT give P0 an automatic 90% win!
+        assert!(
+            rewards[0] < 0.86,
+            "P0 should NOT receive an automatic 90% win rate when it is P1's turn to drop a blocking wall! Got {}",
+            rewards[0]
         );
     }
 }

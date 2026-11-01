@@ -474,6 +474,7 @@ export interface MatchSetupDraft {
   playerCount?: number;
   difficulty?: string;
   botId?: string | null;
+  botIds?: string[];
   side?: string;
   wallsEach?: number;
   clockId?: string;
@@ -499,6 +500,10 @@ export function sanitizeMatchSetupDraft(raw: unknown): MatchSetupDraft {
     out.difficulty = r.difficulty;
   }
   if (typeof r.botId === 'string' || r.botId === null) out.botId = r.botId;
+  if (Array.isArray(r.botIds)) {
+    const cleaned = r.botIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+    if (cleaned.length > 0) out.botIds = cleaned;
+  }
   if (isSideChoice(r.side)) out.side = r.side;
   if (r.wallsEach === 10 || r.wallsEach === 15 || r.wallsEach === 99) out.wallsEach = r.wallsEach;
   if (typeof r.clockId === 'string' && VALID_CLOCK_IDS.has(r.clockId)) out.clockId = r.clockId;

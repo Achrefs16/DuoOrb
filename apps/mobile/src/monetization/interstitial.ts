@@ -26,8 +26,9 @@ const LOSSES_KEY = '@duoorb:interstitial-losses:v1';
 const LAST_GAME_KEY = '@duoorb:interstitial-last-game:v1';
 const DAY_PREFIX = '@duoorb:interstitial-day:v1:';
 const LAST_KEY = '@duoorb:interstitial-last:v1:';
+const ACCUMULATED_AI_PLAY_KEY = '@duoorb:interstitial-ai-play:v1';
 
-export type AdTransitionTrigger = 'new_match' | 'close_match' | 'room_exit';
+export type AdTransitionTrigger = 'new_match' | 'close_match' | 'room_exit' | 'new_bot';
 
 export interface GameFinishedOutcome {
   userWon: boolean;
@@ -35,6 +36,8 @@ export interface GameFinishedOutcome {
   gameSec: number;
   /** Stable match id; makes recording idempotent across re-renders. */
   gameId?: string;
+  /** Whether the finished game was an offline AI bot match */
+  isAiGame?: boolean;
 }
 
 export interface InterstitialContext {
@@ -49,12 +52,13 @@ export interface InterstitialContext {
   trigger?: AdTransitionTrigger;
 }
 
-interface InterstitialState {
+export interface InterstitialState {
   gamesFinished: number;
   consecutiveLosses: number;
   shownToday: number;
   lastShownAtMs: number | null;
   lastRewardedAtMs: number | null;
+  accumulatedAiPlaySec?: number;
   now: number;
 }
 
@@ -67,25 +71,25 @@ export function shouldShowInterstitial(
   if (ctx.isPremium) return false;
   if (ADS_CONFIG.skipFirstSession && ctx.sessions < 2) return false;
   if (ctx.gameSec < ADS_CONFIG.interstitialMinGameSec) return false;
-
-  const requiredGames = ctx.userWon
-    ? ADS_CONFIG.interstitialMinGames
-    : Math.max(
-        ADS_CONFIG.interstitialMinGames,
-        ADS_CONFIG.interstitialMinGamesAfterLoss
-      );
-  if (state.gamesFinished < requiredGames) return false;
+  // Must have completed at least 2 games before any passive interstitial appears
+  if (state.gamesFinished < 2) return false;
   if (state.shownToday >= ADS_CONFIG.interstitialMaxPerDay) return false;
 
   const trigger = ctx.trigger ?? 'close_match';
+
+  // AI Mode "New Bot" loop protection: requires 240s of accumulated active playtime
+  if (trigger === 'new_bot') {
+    const aiPlay = state.accumulatedAiPlaySec ?? 0;
+    if (aiPlay < ADS_CONFIG.interstitialAiAccumulatedPlaySec) return false;
+  }
+
   if (!ctx.userWon) {
-    // Tilt protection: after two losses in a row, stay completely quiet.
-    if (state.consecutiveLosses > ADS_CONFIG.maxConsecutiveLossesForAd) return false;
-    // Leaving after a loss is the worst possible moment for an ad.
-    if (trigger === 'close_match') return false;
-    // A post-loss ad is only acceptable when the player is already choosing
-    // to invest in another real match.
-    if (ctx.gameSec < 45) return false;
+    // Tilt protection: NEVER show on exit/close/leave after a loss
+    if (trigger === 'close_match' || trigger === 'room_exit') return false;
+    // On "New Game" continue, allow up to 3 consecutive losses
+    if (state.consecutiveLosses > ADS_CONFIG.maxConsecutiveLossesForContinueAd) return false;
+    // A post-loss continue ad is only acceptable when the player invested in a real match
+    if (ctx.gameSec < ADS_CONFIG.interstitialMinLostGameSecForContinue) return false;
   }
 
   if (
@@ -149,6 +153,10 @@ async function readString(key: string): Promise<string | null> {
  * COMPLETED — before the player touches a button. Short aborts neither count
  * nor break a loss streak.
  */
+export async function resetAccumulatedAiPlay(): Promise<void> {
+  await writeNum(ACCUMULATED_AI_PLAY_KEY, 0);
+}
+
 export async function recordGameFinished(
   outcome: GameFinishedOutcome
 ): Promise<void> {
@@ -170,6 +178,11 @@ export async function recordGameFinished(
       : (await readNum(LOSSES_KEY)) + 1;
     await writeNum(GAMES_KEY, gamesFinished);
     await writeNum(LOSSES_KEY, consecutiveLosses);
+
+    if (outcome.isAiGame) {
+      const currentAiPlay = await readNum(ACCUMULATED_AI_PLAY_KEY);
+      await writeNum(ACCUMULATED_AI_PLAY_KEY, currentAiPlay + outcome.gameSec);
+    }
   } catch {
     // Recording is advisory; an ad decision must never crash a result screen.
   }
@@ -198,6 +211,7 @@ export async function showInterstitialIfDue(
       shownToday: await readNum(dayKey(now)),
       lastShownAtMs: (await readNum(LAST_KEY)) || null,
       lastRewardedAtMs: lastRewardedShownAt(),
+      accumulatedAiPlaySec: await readNum(ACCUMULATED_AI_PLAY_KEY),
       now,
     };
     if (!shouldShowInterstitial(ctx, state)) return false;
@@ -206,6 +220,7 @@ export async function showInterstitialIfDue(
     try {
       await AsyncStorage.setItem(dayKey(now), JSON.stringify(state.shownToday + 1));
       await AsyncStorage.setItem(LAST_KEY, JSON.stringify(now));
+      await writeNum(ACCUMULATED_AI_PLAY_KEY, 0);
     } catch {
       // Count hygiene must never break the flow.
     }

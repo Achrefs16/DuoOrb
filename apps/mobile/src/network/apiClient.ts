@@ -36,6 +36,8 @@ export interface UserMeDto {
   /** Premium entitlement (server truth; absent on old servers = free tier). */
   isPremium?: boolean;
   premiumExpiresAt?: string | null;
+  isCancelled?: boolean;
+  willRenew?: boolean;
   botStars?: BotStarMap;
 }
 

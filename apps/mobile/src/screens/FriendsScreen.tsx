@@ -30,7 +30,6 @@ import { NetworkError, actionMessage, kindOf, loadMessage, sectionKind, type Err
 import { useConnectivity } from '../network/useConnectivity';
 import { socketManager } from '../network/socket';
 import { FriendsSkeleton } from '../components/Skeleton';
-import { AdBanner } from '../components/AdBanner';
 import { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 import { KeyboardShift } from '../components/KeyboardShift';
 import { sheetSlideStyle, useSheetSlide } from '../components/sheetAnimation';
@@ -531,9 +530,6 @@ export const FriendsScreen: React.FC<FriendsScreenProps> = ({
                   </TouchableOpacity>
                 </View>
               )}
-
-              {/* Ad slot: bottom of the list, below all actions. */}
-              <AdBanner placement="list" />
 
             </View>
           )}

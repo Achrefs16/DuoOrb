@@ -1,7 +1,7 @@
 use crate::board::Board;
 use crate::neural::{map_index_to_action, NeuralPrediction, ACTION_SPACE};
 use crate::pathfinding::shortest_distance;
-use crate::types::{GameAction, GameState, GoalDirection, Orientation};
+use crate::types::{GameAction, GameState, GoalDirection};
 
 #[derive(Debug, Clone)]
 pub struct AdaptedPrediction {
@@ -24,9 +24,8 @@ pub fn adapt_prediction(state: &GameState, raw: &NeuralPrediction) -> AdaptedPre
     let mode = state.mode.as_str();
 
     match mode {
-        "center2" | "center3" => adapt_center_rush(state, raw),
+        "center2" | "center3" | "4p" => adapt_center_rush(state, raw),
         m if m.starts_with("race") => adapt_race_mode(state, raw),
-        "4p" => adapt_four_player(state, raw),
         _ => adapt_classic_2p(state, raw),
     }
 }
@@ -112,16 +111,16 @@ fn adapt_center_rush(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredic
 
     let cur_dist = shortest_distance(mover.position, GoalDirection::Center, &board, &state.mode);
 
-    // 1. Adjust the 8 pawn move candidates (indices 0..8)
+    // Adjust the 8 pawn move candidates (indices 0..8)
     for action_idx in 0..8 {
         if let Some(GameAction::Move { to }) = map_index_to_action(state, action_idx, is_p2) {
             let next_dist = shortest_distance(to, GoalDirection::Center, &board, &state.mode);
             if next_dist < cur_dist {
-                // Moving closer to center: moderate boost
-                probs[action_idx] *= 1.35;
+                // Moving closer to center: boost prior x2.5
+                probs[action_idx] *= 2.5;
             } else if next_dist == cur_dist {
                 // Lateral move around obstacle: maintain prior
-                probs[action_idx] *= 0.9;
+                probs[action_idx] *= 1.0;
             } else {
                 // Moving away from center: heavily damp prior
                 probs[action_idx] *= 0.15;
@@ -129,6 +128,13 @@ fn adapt_center_rush(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredic
         }
     }
 
+    // Boost tactical wall priors for Center Rush
+    boost_variant_wall_priors(state, &mut probs, mover_idx, is_p2);
+
+    // Re-normalize probabilities so they sum to 1.0
+    normalize_probs(&mut probs);
+
+    // Re-anchor value: blend neural positional control with center-distance race delta
     let min_opp_dist = state
         .players
         .iter()
@@ -137,57 +143,6 @@ fn adapt_center_rush(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredic
         .map(|(_, p)| shortest_distance(p.position, GoalDirection::Center, &board, &state.mode))
         .min()
         .unwrap_or(8);
-
-    // 2. Adjust wall candidates (indices 8..ACTION_SPACE):
-    // In Center Rush, walls that block opponents from the center while keeping our path open are high priority!
-    if mover.walls_remaining > 0 {
-        for action_idx in 8..ACTION_SPACE {
-            if let Some(GameAction::PlaceWall { wall }) = map_index_to_action(state, action_idx, is_p2) {
-                let is_h = wall.orientation == Orientation::H;
-                if !board.can_place_wall_geometry(wall.row as u8, wall.col as u8, is_h) {
-                    probs[action_idx] = 0.0;
-                    continue;
-                }
-                let mut test_board = board;
-                test_board.place_wall_raw(wall.row as u8, wall.col as u8, is_h);
-
-                let my_new_dist = shortest_distance(mover.position, GoalDirection::Center, &test_board, &state.mode);
-                if my_new_dist < 0 || my_new_dist > cur_dist {
-                    // Do not delay oneself to the center
-                    probs[action_idx] *= 0.1;
-                    continue;
-                }
-
-                let mut min_opp_new_dist = i32::MAX;
-                let mut all_opps_valid = true;
-                for (i, p) in state.players.iter().enumerate() {
-                    if i != mover_idx && p.status != "FINISHED" {
-                        let d = shortest_distance(p.position, GoalDirection::Center, &test_board, &state.mode);
-                        if d < 0 {
-                            all_opps_valid = false;
-                            break;
-                        }
-                        if d < min_opp_new_dist {
-                            min_opp_new_dist = d;
-                        }
-                    }
-                }
-                if !all_opps_valid {
-                    probs[action_idx] = 0.0;
-                    continue;
-                }
-
-                let opp_delay = min_opp_new_dist - min_opp_dist;
-                if opp_delay >= 1 {
-                    // Delays opponent from center and leaves mover's own path 100% open
-                    probs[action_idx] = (probs[action_idx] * 2.5 + 0.12 * (opp_delay as f32)).max(0.08);
-                }
-            }
-        }
-    }
-
-    // Re-normalize probabilities so they sum to 1.0
-    normalize_probs(&mut probs);
 
     let race_delta = ((min_opp_dist - cur_dist) as f32) / 8.0;
     let adapted_value = (0.4 * raw.value + 0.6 * race_delta).clamp(-1.0, 1.0);
@@ -202,8 +157,7 @@ fn adapt_center_rush(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredic
 
 /// Adapt prediction for Race Mode (race2, race3, race4):
 /// - Players share the same goal direction.
-/// - Tactical walls that block opponent's sprint lane while keeping mover's own lane open receive a strong prior.
-/// - Pawn moves advancing toward the shared goal line receive a balanced boost.
+/// - Pawn moves advancing toward the shared goal line receive a boost.
 /// - Value re-anchored on race delta.
 fn adapt_race_mode(state: &GameState, raw: &NeuralPrediction) -> AdaptedPrediction {
     let mut probs = raw.policy_probs.clone();
@@ -222,74 +176,19 @@ fn adapt_race_mode(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredicti
 
     let cur_dist = shortest_distance(mover.position, mover.goal_direction, &board, &state.mode);
 
-    // 1. Pawn moves (indices 0..8)
     for action_idx in 0..8 {
         if let Some(GameAction::Move { to }) = map_index_to_action(state, action_idx, is_p2) {
             let next_dist = shortest_distance(to, mover.goal_direction, &board, &state.mode);
             if next_dist < cur_dist {
-                probs[action_idx] *= 1.35;
+                probs[action_idx] *= 2.0;
             } else if next_dist > cur_dist {
-                probs[action_idx] *= 0.15;
+                probs[action_idx] *= 0.2;
             }
         }
     }
 
-    let min_opp_dist = state
-        .players
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i != mover_idx)
-        .map(|(_, p)| shortest_distance(p.position, p.goal_direction, &board, &state.mode))
-        .min()
-        .unwrap_or(8);
-
-    // 2. Tactical walls (indices 8..ACTION_SPACE):
-    // In Race mode, closing on opponents and opening one's own path requires dropping walls across opponent lanes!
-    if mover.walls_remaining > 0 {
-        for action_idx in 8..ACTION_SPACE {
-            if let Some(GameAction::PlaceWall { wall }) = map_index_to_action(state, action_idx, is_p2) {
-                let is_h = wall.orientation == Orientation::H;
-                if !board.can_place_wall_geometry(wall.row as u8, wall.col as u8, is_h) {
-                    probs[action_idx] = 0.0;
-                    continue;
-                }
-                let mut test_board = board;
-                test_board.place_wall_raw(wall.row as u8, wall.col as u8, is_h);
-
-                let my_new_dist = shortest_distance(mover.position, mover.goal_direction, &test_board, &state.mode);
-                if my_new_dist < 0 || my_new_dist > cur_dist {
-                    // Do not block oneself
-                    probs[action_idx] *= 0.1;
-                    continue;
-                }
-
-                let mut min_opp_new_dist = i32::MAX;
-                let mut all_opps_valid = true;
-                for (i, p) in state.players.iter().enumerate() {
-                    if i != mover_idx && p.status != "FINISHED" {
-                        let d = shortest_distance(p.position, p.goal_direction, &test_board, &state.mode);
-                        if d < 0 {
-                            all_opps_valid = false;
-                            break;
-                        }
-                        if d < min_opp_new_dist {
-                            min_opp_new_dist = d;
-                        }
-                    }
-                }
-                if !all_opps_valid {
-                    probs[action_idx] = 0.0;
-                    continue;
-                }
-
-                let opp_delay = min_opp_new_dist - min_opp_dist;
-                if opp_delay >= 1 {
-                    // Delays opponent's sprint and keeps mover's own lane 100% open
-                    probs[action_idx] = (probs[action_idx] * 2.5 + 0.12 * (opp_delay as f32)).max(0.08);
-                }
-            }
-        }
-    }
+    // Boost tactical wall priors for Race Mode
+    boost_variant_wall_priors(state, &mut probs, mover_idx, is_p2);
 
     normalize_probs(&mut probs);
 
@@ -315,6 +214,7 @@ fn adapt_race_mode(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredicti
 
 /// Adapt prediction for 4-Player FFA:
 /// - Evaluates threat matrix across all 3 opponents simultaneously.
+#[allow(dead_code)]
 fn adapt_four_player(state: &GameState, raw: &NeuralPrediction) -> AdaptedPrediction {
     let board = Board::from_walls(&state.walls);
     let mover_idx = state.current_player_index;
@@ -349,11 +249,133 @@ fn adapt_four_player(state: &GameState, raw: &NeuralPrediction) -> AdaptedPredic
     let race_delta = ((min_rival_dist - mover_dist) as f32) / 8.0;
     let adapted_value = (0.5 * raw.value + 0.5 * race_delta + threat_penalty).clamp(-1.0, 1.0);
 
-    let logits = raw.policy_logits.clone();
+    let mut probs = raw.policy_probs.clone();
+    boost_variant_wall_priors(state, &mut probs, mover_idx, false);
+    normalize_probs(&mut probs);
+    let logits = logits_from_probs(&probs);
+
     AdaptedPrediction {
         policy_logits: logits,
-        policy_probs: raw.policy_probs.clone(),
+        policy_probs: probs,
         value: adapted_value,
+    }
+}
+
+/// Boosts wall candidate probabilities for tactical delay, counter-walls, and funnel shields
+/// in variant modes (Center Rush, Race Mode, 4-Player FFA).
+fn boost_variant_wall_priors(
+    state: &GameState,
+    probs: &mut [f32],
+    mover_idx: usize,
+    is_p2: bool,
+) {
+    let mover = match state.players.get(mover_idx) {
+        Some(m) if m.walls_remaining > 0 => m,
+        _ => return,
+    };
+
+    let board = Board::from_walls(&state.walls);
+    let edge_masks = crate::pathfinding::EdgeMasks::from_board(&board);
+    let mover_goal = crate::pathfinding::GoalMask::from_goal_and_mode(mover.goal_direction, &state.mode);
+    let (mover_dist, mover_corridor) = edge_masks.shortest_path_corridor(
+        mover.position.row as u8,
+        mover.position.col as u8,
+        mover_goal,
+    );
+
+    if mover_dist < 0 {
+        return;
+    }
+
+    for action_idx in 8..ACTION_SPACE.min(probs.len()) {
+        if let Some(GameAction::PlaceWall { wall }) = map_index_to_action(state, action_idx, is_p2) {
+            let r = wall.row as u8;
+            let c = wall.col as u8;
+            let is_h = wall.orientation == crate::types::Orientation::H;
+
+            if !board.can_place_wall_geometry(r, c, is_h) {
+                probs[action_idx] = 0.0;
+                continue;
+            }
+
+            let mut spec_board = board;
+            spec_board.place_wall_raw(r, c, is_h);
+            let spec_masks = crate::pathfinding::EdgeMasks::from_board(&spec_board);
+
+            let my_after = spec_masks.shortest_distance(
+                mover.position.row as u8,
+                mover.position.col as u8,
+                mover_goal,
+            );
+            if my_after < 0 {
+                probs[action_idx] = 0.0;
+                continue;
+            }
+
+            let my_delta = (my_after - mover_dist).max(0);
+
+            let mut min_opp_dist = i32::MAX;
+            for (i, opp) in state.players.iter().enumerate() {
+                if i != mover_idx && opp.status != "FINISHED" {
+                    let opp_g = crate::pathfinding::GoalMask::from_goal_and_mode(opp.goal_direction, &state.mode);
+                    let opp_base = edge_masks.shortest_distance(opp.position.row as u8, opp.position.col as u8, opp_g);
+                    if opp_base >= 0 && opp_base < min_opp_dist {
+                        min_opp_dist = opp_base;
+                    }
+                }
+            }
+
+            let mut max_opp_delta = i32::MIN;
+            let mut opp_has_path = true;
+            for (i, opp) in state.players.iter().enumerate() {
+                if i == mover_idx || opp.status == "FINISHED" {
+                    continue;
+                }
+                let opp_g = crate::pathfinding::GoalMask::from_goal_and_mode(opp.goal_direction, &state.mode);
+                let opp_base = edge_masks.shortest_distance(opp.position.row as u8, opp.position.col as u8, opp_g);
+                let opp_after = spec_masks.shortest_distance(opp.position.row as u8, opp.position.col as u8, opp_g);
+                if opp_after < 0 {
+                    opp_has_path = false;
+                    break;
+                }
+                // Only consider an opponent if they are a genuine race contender (not a distant trailer):
+                let is_contender = opp_base <= mover_dist + 1 || opp_base <= 3 || opp_base == min_opp_dist;
+                if is_contender {
+                    let delta = opp_after - opp_base;
+                    if delta > max_opp_delta {
+                        max_opp_delta = delta;
+                    }
+                }
+            }
+
+            if !opp_has_path {
+                probs[action_idx] = 0.0;
+                continue;
+            }
+
+            let is_shield = crate::mcts::is_parallel_funnel_wall(r, c, is_h, mover_corridor);
+
+            // Sprint finish: when mover is <= 2 steps from goal and ahead of rivals,
+            // prioritize sprinting to the goal and damp non-emergency walls.
+            let is_sprint_finish = mover_dist <= 2 && mover_dist <= min_opp_dist;
+
+            if is_sprint_finish {
+                // If a rival is 1 step from winning, emergency block is still allowed
+                if min_opp_dist <= 1 && max_opp_delta >= 1 && my_delta == 0 {
+                    probs[action_idx] = (probs[action_idx] * 2.5).max(0.04);
+                } else {
+                    probs[action_idx] *= 0.15;
+                }
+            } else if max_opp_delta >= 2 && my_delta == 0 {
+                probs[action_idx] = (probs[action_idx] * 3.5).max(0.04);
+            } else if max_opp_delta >= 1 && my_delta == 0 {
+                probs[action_idx] = (probs[action_idx] * 2.0).max(0.02);
+            } else if is_shield && my_delta == 0 {
+                probs[action_idx] = (probs[action_idx] * 2.2).max(0.025);
+            } else if my_delta > 0 && max_opp_delta <= 0 {
+                probs[action_idx] *= 0.05;
+            }
+        }
     }
 }
 

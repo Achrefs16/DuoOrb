@@ -42,6 +42,7 @@ describe('match setup drafts', () => {
         playerCount: 4,
         difficulty: 'hard',
         botId: 'nox',
+        botIds: ['nox', 'pip', 'elias'],
         side: 'random',
         wallsEach: 99,
         clockId: 'rapid-5-0',
@@ -52,9 +53,20 @@ describe('match setup drafts', () => {
       playerCount: 4,
       difficulty: 'hard',
       botId: 'nox',
+      botIds: ['nox', 'pip', 'elias'],
       side: 'random',
       wallsEach: 99,
       clockId: 'rapid-5-0',
+    });
+  });
+
+  it('sanitizes botIds by dropping non-strings and empty strings', () => {
+    expect(
+      sanitizeMatchSetupDraft({
+        botIds: ['nox', '', null, 123, 'pip'],
+      })
+    ).toEqual({
+      botIds: ['nox', 'pip'],
     });
   });
 
@@ -67,9 +79,9 @@ describe('match setup drafts', () => {
   });
 
   it('round-trips per entry kind', () => {
-    saveMatchSetupDraft('ai', { botId: 'nox', difficulty: 'hard' });
+    saveMatchSetupDraft('ai', { botId: 'nox', botIds: ['nox', 'pip'], difficulty: 'hard', clockId: 'no-timer' });
     saveMatchSetupDraft('local', { side: 'red' });
-    expect(getMatchSetupDraft('ai')).toEqual({ botId: 'nox', difficulty: 'hard' });
+    expect(getMatchSetupDraft('ai')).toEqual({ botId: 'nox', botIds: ['nox', 'pip'], difficulty: 'hard', clockId: 'no-timer' });
     expect(getMatchSetupDraft('local')).toEqual({ side: 'red' });
     expect(getMatchSetupDraft('online')).toEqual({});
   });

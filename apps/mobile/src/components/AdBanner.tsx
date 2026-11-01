@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Dimensions, StyleSheet, View } from 'react-native';
+import { Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { isPremiumActive, usePremium } from '../monetization/premium';
-import { ensureSessionRecorded, shouldShowBanner } from '../monetization/realAds';
+import { ensureSessionRecorded, getCompletedGamesCount, shouldShowBanner } from '../monetization/realAds';
 import { getBannerLib } from '../monetization/adsNative';
 import { adUnitId } from '../monetization/adIds';
+import { THEME, useStyles } from '../theme';
+
+const DIAMOND_IMG = require('../../assets/dimand.png');
 
 /**
  * Reserved banner slot (MONETIZATION.md P6, O1–O3 revised).
@@ -16,23 +19,34 @@ import { adUnitId } from '../monetization/adIds';
  *   shift. The reserve matches the tallest creative the slot can serve.
  * - Premium / first session / SDK missing / load failure → null (no space,
  *   decided before layout — nothing to shift).
+ * - GameOverModal uses `keepReservedSpaceOnFail={true}`: if AdMob fails or has
+ *   no fill, it keeps the exact 150px height as a subtle Premium card so the
+ *   vertically centered modal card never jumps downward by 75px.
  *
  * Formats:
- * - home/list: large anchored adaptive (full-width strip; replaces the
- *   deprecated ANCHORED_ADAPTIVE_BANNER).
+ * - home/list: large anchored adaptive (full-width strip).
  * - modal: inline adaptive sized to the result card (taller, full card
- *   width) — eligible for richer creatives (incl. video) where AdMob has
- *   them. Still a banner: no interstitial ships (O3 revised).
+ *   width) — eligible for richer creatives (incl. video).
  */
 
 interface AdBannerProps {
   /** Surface identity (analytics + future per-placement tuning). */
   placement: 'home' | 'list' | 'modal' | 'lobby' | 'setup';
+  /** If true, keeps the reserved height on ad load failure instead of collapsing */
+  keepReservedSpaceOnFail?: boolean;
+  /** Optional callback to open the Premium paywall */
+  onOpenPremium?: () => void;
 }
 
-export const AdBanner: React.FC<AdBannerProps> = ({ placement }) => {
+export const AdBanner: React.FC<AdBannerProps> = ({
+  placement,
+  keepReservedSpaceOnFail = false,
+  onOpenPremium,
+}) => {
+  const styles = useStyles(createStyles);
   const premium = usePremium();
   const [sessions, setSessions] = useState(0);
+  const [completedGames, setCompletedGames] = useState<number | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   // Platform-boundary handle (web resolves the .web.ts stub → null, so this
   // file never touches the native SDK and Metro never bundles it for web).
@@ -40,9 +54,14 @@ export const AdBanner: React.FC<AdBannerProps> = ({ placement }) => {
 
   useEffect(() => {
     let on = true;
-    void ensureSessionRecorded().then((n) => {
-      if (on) setSessions(n);
-    });
+    void Promise.all([ensureSessionRecorded(), getCompletedGamesCount()]).then(
+      ([n, games]) => {
+        if (on) {
+          setSessions(n);
+          setCompletedGames(games);
+        }
+      }
+    );
     return () => {
       on = false;
     };
@@ -51,7 +70,9 @@ export const AdBanner: React.FC<AdBannerProps> = ({ placement }) => {
   const show = shouldShowBanner({
     isPremium: isPremiumActive(premium),
     sessions,
+    completedGames,
     loadFailed: failed,
+    keepReservedSpaceOnFail,
   });
   if (!show || !lib) return null;
 
@@ -62,6 +83,23 @@ export const AdBanner: React.FC<AdBannerProps> = ({ placement }) => {
     // never bleed past the modal edge on narrow phones.
     const screenWidth = Dimensions.get('window').width;
     const width = Math.max(200, Math.min(292, screenWidth - 88));
+
+    if (failed && keepReservedSpaceOnFail) {
+      return (
+        <TouchableOpacity
+          style={[styles.slot, styles.modalFallbackCard, { width, height: MODAL_RESERVE_HEIGHT }]}
+          activeOpacity={onOpenPremium ? 0.8 : 1}
+          onPress={onOpenPremium}
+          disabled={!onOpenPremium}
+          accessibilityLabel="Go Premium — Remove Ads"
+        >
+          <Image source={DIAMOND_IMG} style={{ width: 28, height: 28, marginBottom: 6 }} resizeMode="contain" />
+          <Text style={styles.fallbackTitle}>DuoOrb Premium</Text>
+          <Text style={styles.fallbackSub}>Ad-free play, unlimited analysis & all bots</Text>
+        </TouchableOpacity>
+      );
+    }
+
     return (
       <View
         style={[styles.slot, { minHeight: MODAL_RESERVE_HEIGHT }]}
@@ -77,6 +115,9 @@ export const AdBanner: React.FC<AdBannerProps> = ({ placement }) => {
       </View>
     );
   }
+
+  if (failed) return null;
+
   return (
     <View
       style={styles.slot}
@@ -97,11 +138,36 @@ const RESERVE_HEIGHT = 56;
 // clamped card width, capped for small screens.
 const MODAL_RESERVE_HEIGHT = 150;
 
-const styles = StyleSheet.create({
-  slot: {
-    minHeight: RESERVE_HEIGHT,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+const createStyles = () =>
+  StyleSheet.create({
+    slot: {
+      minHeight: RESERVE_HEIGHT,
+      width: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalFallbackCard: {
+      backgroundColor: THEME.colors.surfaceContainerLow,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: THEME.colors.outlineVariant,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    fallbackTitle: {
+      fontFamily: THEME.fonts.bold,
+      color: THEME.colors.textPrimary,
+      fontSize: 14,
+      fontWeight: '700',
+      marginBottom: 2,
+      textAlign: 'center',
+    },
+    fallbackSub: {
+      fontFamily: THEME.fonts.medium,
+      color: THEME.colors.textSecondary,
+      fontSize: 11,
+      textAlign: 'center',
+    },
+  });

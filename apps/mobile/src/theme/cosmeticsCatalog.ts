@@ -353,10 +353,12 @@ function subscribeCosmetics(fn: () => void): () => void {
 }
 
 export function getBallSkinId(): string {
+  if (!isPremiumActive()) return 'classic';
   return activeBallSkinId;
 }
 
 export function getWallSkinId(): string {
+  if (!isPremiumActive()) return 'classic';
   return activeWallSkinId;
 }
 
@@ -366,12 +368,14 @@ export function syncCosmeticsToServer(): void {
     const raw = socketManager?.getSocket?.();
     if (raw) {
       const isPremium = isPremiumActive();
+      const ballSkinId = isPremium ? activeBallSkinId : 'classic';
+      const wallSkinId = isPremium ? activeWallSkinId : 'classic';
       try {
         const rawAuth = (raw as any).auth ?? {};
         (raw as any).auth = {
           ...rawAuth,
-          ballSkinId: activeBallSkinId,
-          wallSkinId: activeWallSkinId,
+          ballSkinId,
+          wallSkinId,
           isPremium,
         };
       } catch {
@@ -379,8 +383,8 @@ export function syncCosmeticsToServer(): void {
       }
       if (raw.connected) {
         raw.emit('cosmetics:equip', {
-          ballSkinId: activeBallSkinId,
-          wallSkinId: activeWallSkinId,
+          ballSkinId,
+          wallSkinId,
           isPremium,
         });
       }
@@ -439,6 +443,27 @@ export function useEquippedWallSkin(): CosmeticSkin | null {
 
 try {
   subscribePremium(() => {
+    if (!isPremiumActive()) {
+      // Auto-demote cosmetics when premium expires or is canceled
+      let changed = false;
+      if (activeBallSkinId !== 'classic') {
+        activeBallSkinId = 'classic';
+        changed = true;
+      }
+      if (activeWallSkinId !== 'classic') {
+        activeWallSkinId = 'classic';
+        changed = true;
+      }
+      if (changed) {
+        emitCosmeticsChange();
+        try {
+          const { saveSettings } = require('../storage/gameStorage');
+          void saveSettings({ ballSkinId: 'classic', wallSkinId: 'classic' });
+        } catch {
+          // Non-fatal
+        }
+      }
+    }
     syncCosmeticsToServer();
   });
 } catch {

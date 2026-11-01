@@ -35,6 +35,8 @@ interface RewardSheetProps {
   onClose: () => void;
   /** Copy variant: analysis unlock (default), offline Undo, offline Hint, unified assist, or locked bot pass. */
   variant?: 'analysis' | 'undo' | 'hint' | 'assist' | 'bot';
+  /** Target bot name if unlocking a bot with an ad. */
+  botName?: string;
   /** Whether the user has reached the max rewarded ad limit for this match */
   watchLimitReached?: boolean;
 }
@@ -47,6 +49,7 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
   onPremium,
   onClose,
   variant = 'analysis',
+  botName,
   watchLimitReached = false,
 }) => {
   const styles = useStyles(createStyles);
@@ -58,15 +61,16 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
   const isHint = variant === 'hint';
   const isAssist = variant === 'assist';
   const isBot = variant === 'bot';
+  const resolvedBotName = botName || t('bots.defaultBotName');
 
   const title = isHint
     ? t('hintSheet.title')
     : isUndo
       ? t('undoSheet.title')
       : isAssist
-        ? 'Match Assists'
+        ? t('reward.matchAssistsTitle')
         : isBot
-          ? t('bots.unlockBotTitle')
+          ? t('bots.unlockBotTitle', { name: resolvedBotName })
           : t('reward.title');
 
   const headerIcon = isHint
@@ -130,7 +134,7 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
       : isAssist
         ? t('hintSheet.watchSub')
         : isBot
-          ? t('bots.watchToUnlockSub')
+          ? t('bots.watchToUnlockSub', { name: resolvedBotName })
           : t('reward.watchOneReviewSub');
 
   const getErrorCopy = (err: string): string => {
@@ -169,7 +173,7 @@ export const RewardSheet: React.FC<RewardSheetProps> = ({
                 disabled={busy}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 accessibilityRole="button"
-                accessibilityLabel="Close"
+                accessibilityLabel={t('common.closeA11y')}
               >
                 <OrbIcon name="x" size={22} color={THEME.colors.textSecondary} />
               </TouchableOpacity>

@@ -3,6 +3,7 @@ import {
   __resetAdsNativeForTests,
   __setAdsSdkForTests,
   buildAdRequestConfiguration,
+  ensureAdsReady,
   preloadInterstitial,
   showInterstitial,
 } from './adsNative';
@@ -58,6 +59,7 @@ function makeFakeSdk() {
       getConsentInfo: vi.fn(async () => ({})),
       loadAndShowConsentFormIfRequired: vi.fn(async () => {}),
     },
+    MobileAds: () => ({ setRequestConfiguration, initialize }),
     mobileAds: () => ({ setRequestConfiguration, initialize }),
     InterstitialAd: FakeInterstitialAd,
     AdEventType: { LOADED: 'LOADED', ERROR: 'ERROR', CLOSED: 'CLOSED' },
@@ -113,5 +115,21 @@ describe('AdMob video configuration', () => {
 
   it('cold show warms then presents without a long stall', async () => {
     expect(await showInterstitial()).toBe(true);
+  });
+
+  it('initializes successfully when SDK provides MobileAds (capital M) or default export', async () => {
+    __resetAdsNativeForTests();
+    const initSdk = {
+      MaxAdContentRating: { G: 'G', T: 'T' },
+      MobileAds: () => ({
+        setRequestConfiguration: vi.fn(),
+        initialize: vi.fn(async () => {}),
+      }),
+      AdsConsent: {
+        requestInfoUpdate: vi.fn(async () => {}),
+      },
+    };
+    __setAdsSdkForTests(initSdk);
+    expect(await ensureAdsReady()).toBe(true);
   });
 });

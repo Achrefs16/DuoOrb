@@ -138,55 +138,43 @@ function pump(): void {
         return;
       }
 
-      // 2. Classic 2P Search (STRICTLY WASM AlphaZero ONNX — NEVER runs JavaScript)
-      const isClassic2P = request.state.mode === '2p';
+      // 2. High-Performance WebAssembly Pure-Rust Engine (AlphaZero + MCTS + Tactical Solver)
       const wasm = await getWasmEngine();
+      const botPreset = request.botId || (request.profile?.difficulty === 'easy' ? 'martin' : 'achref');
 
-      if (isClassic2P) {
-        if (!wasm) {
-          throw new Error('WebAssembly AlphaZero ONNX engine failed to initialize');
-        }
-
+      if (wasm) {
         if (request.isHint) {
           const hint = runWasmHint(wasm, request.state);
           if (hint && hint.bestAction) {
-            console.log(`[WebWorker AI] 🧠 Hint generated via WASM AlphaZero ONNX:`, hint.bestAction);
+            console.log(`[WebWorker AI] 🧠 Hint generated via WASM:`, hint.bestAction);
             response = { type: 'result', id: request.id, action: hint.bestAction, hint, engine: 'wasm-onnx' };
             activeId = null;
             scope.postMessage(response);
             pump();
             return;
           }
-          throw new Error('WASM AlphaZero engine returned null hint');
+          if (request.state.mode === '2p') {
+            throw new Error('WASM AlphaZero engine returned null hint');
+          }
+        } else {
+          const action = runWasmBot(wasm, request.state, botPreset, request.seed);
+          if (action) {
+            console.log(`[WebWorker AI] 🧠 ${botPreset} move generated via WASM (${request.state.mode}):`, action);
+            response = { type: 'result', id: request.id, action, engine: 'wasm-onnx' };
+            activeId = null;
+            scope.postMessage(response);
+            pump();
+            return;
+          }
+          if (request.state.mode === '2p') {
+            throw new Error(`WASM AlphaZero engine returned null action for ${botPreset}`);
+          }
         }
-
-        const botPreset = request.botId || (request.profile?.difficulty === 'easy' ? 'martin' : 'achref');
-        const action = runWasmBot(wasm, request.state, botPreset, request.seed);
-        if (action) {
-          console.log(`[WebWorker AI] 🧠 ${botPreset} move generated via WASM AlphaZero ONNX:`, action);
-          response = { type: 'result', id: request.id, action, engine: 'wasm-onnx' };
-          activeId = null;
-          scope.postMessage(response);
-          pump();
-          return;
-        }
-
-        throw new Error(`WASM AlphaZero engine returned null action for ${botPreset}`);
-      } else if (wasm && !request.isHint) {
-        // Multi-player and variant modes ('4p', 'center2', 'center3', 'race2', 'race3', 'race4') via Rust WASM
-        const botPreset = request.botId || (request.profile?.difficulty === 'easy' ? 'martin' : 'achref');
-        const action = runWasmBot(wasm, request.state, botPreset, request.seed);
-        if (action) {
-          console.log(`[WebWorker AI] 🧠 ${botPreset} (${request.state.mode}) move generated via WASM:`, action);
-          response = { type: 'result', id: request.id, action, engine: 'wasm-onnx' };
-          activeId = null;
-          scope.postMessage(response);
-          pump();
-          return;
-        }
+      } else if (request.state.mode === '2p') {
+        throw new Error('WebAssembly AlphaZero ONNX engine failed to initialize');
       }
 
-      // 3. Fallback: Handcrafted multi-agent heuristic engine in @duoorb/game-core
+      // 3. Fallback to JavaScript @duoorb/game-core (only if WASM is unavailable in variant modes)
       const baseProfile =
         request.profile ??
         (request.botId ? botById(request.botId)?.profile : undefined) ??

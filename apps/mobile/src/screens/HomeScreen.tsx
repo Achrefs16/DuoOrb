@@ -96,6 +96,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     return Math.round(n * Math.min(1.12, Math.max(0.86, winWidth / 375)));
   };
 
+  // Dynamic responsive sizing: adjusts board size, row gap, and row padding based on screen height
+  // so tall modern screens spread naturally and fill the viewport, while compact screens stay slim.
+  const { boardSize, rowGap, rowPadding } = useMemo(() => {
+    if (winHeight < 700) {
+      return { boardSize: rs(96), rowGap: 8, rowPadding: 2 };
+    }
+    if (winHeight < 780) {
+      return { boardSize: rs(104), rowGap: 12, rowPadding: 3 };
+    }
+    if (winHeight < 860) {
+      return { boardSize: rs(112), rowGap: 15, rowPadding: 4 };
+    }
+    return { boardSize: rs(118), rowGap: 18, rowPadding: 5 };
+  }, [winHeight, winWidth, contentWidth, isTablet]);
+
   const handleLayout = (e: LayoutChangeEvent) => {
     if (Platform.OS === 'web') {
       const w = Math.round(e.nativeEvent.layout.width);
@@ -177,10 +192,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               activeOpacity={0.8}
               onPress={onOpenInstallPrompt}
               accessibilityRole="button"
-              accessibilityLabel="Install App"
+              accessibilityLabel={t('home.installAppA11y')}
             >
               <OrbIcon name="download" size={13} color={THEME.colors.primary} />
-              <Text style={styles.installPillText}>Install</Text>
+              <Text style={styles.installPillText}>{t('home.installPill')}</Text>
             </TouchableOpacity>
           )}
 
@@ -204,30 +219,50 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         style={styles.scrollArea}
         contentContainerStyle={[
           styles.content,
-          { paddingBottom: BOTTOM_NAV_HEIGHT + 74 + insets.bottom },
+          {
+            paddingBottom: BOTTOM_NAV_HEIGHT + 74 + insets.bottom,
+            gap: rowGap,
+          },
         ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Row 1: Play Online */}
         <TouchableOpacity
-          style={styles.featureRow}
+          style={[styles.featureRow, { paddingVertical: rowPadding }]}
           activeOpacity={0.7}
           onPress={guarded(() =>
             runWhenOnline(() => onOpenCustomOnline())
           )}
         >
-          <MiniBoardPreview preset="online1v1" size={rs(114)} />
+          <MiniBoardPreview preset="online1v1" size={boardSize} />
           <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Play Online</Text>
+            <Text style={styles.rowTitle}>{t('home.cardPlayOnlineTitle')}</Text>
             <Text style={styles.rowSubtitle} numberOfLines={1}>
-              Classic 3+0 vs Random
+              {t('home.cardPlayOnlineSub')}
             </Text>
           </View>
         </TouchableOpacity>
 
-        {/* Row 2: Play a Bot */}
+        {/* Row 2: Rooms */}
         <TouchableOpacity
-          style={styles.featureRow}
+          style={[styles.featureRow, { paddingVertical: rowPadding }]}
+          activeOpacity={0.7}
+          onPress={guarded(() =>
+            runWhenOnline(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'public'))
+          )}
+        >
+          <MiniBoardPreview preset="friendsRoom" size={boardSize} />
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>{t('home.cardRoomsTitle')}</Text>
+            <Text style={styles.rowSubtitle} numberOfLines={1}>
+              {t('home.cardRoomsSub')}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Row 3: Play a Bot */}
+        <TouchableOpacity
+          style={[styles.featureRow, { paddingVertical: rowPadding }]}
           activeOpacity={0.7}
           onPress={guarded(() => {
             if (onSelectBotsTab) {
@@ -237,43 +272,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             }
           })}
         >
-          <MiniBoardPreview preset="botMatch" size={rs(114)} />
+          <MiniBoardPreview preset="botMatch" size={boardSize} />
           <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Play a Bot</Text>
+            <Text style={styles.rowTitle}>{t('home.cardPlayBotTitle')}</Text>
             <Text style={styles.rowSubtitle} numberOfLines={1}>
-              Martin · Friendly (800 ELO)
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Row 3: Rooms */}
-        <TouchableOpacity
-          style={styles.featureRow}
-          activeOpacity={0.7}
-          onPress={guarded(() =>
-            runWhenOnline(() => onOpenOnline(DEFAULT_TIME_CONTROL, 'public'))
-          )}
-        >
-          <MiniBoardPreview preset="friendsRoom" size={rs(114)} />
-          <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Rooms</Text>
-            <Text style={styles.rowSubtitle} numberOfLines={1}>
-              Public rooms & play with friends
+              {t('home.cardPlayBotSub')}
             </Text>
           </View>
         </TouchableOpacity>
 
         {/* Row 4: Pass & Play */}
         <TouchableOpacity
-          style={styles.featureRow}
+          style={[styles.featureRow, { paddingVertical: rowPadding }]}
           activeOpacity={0.7}
           onPress={guarded(() => onOpenSetup('local'))}
         >
-          <MiniBoardPreview preset="local4p" size={rs(114)} />
+          <MiniBoardPreview preset="local4p" size={boardSize} />
           <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Pass & Play</Text>
+            <Text style={styles.rowTitle}>{t('home.cardPassPlayTitle')}</Text>
             <Text style={styles.rowSubtitle} numberOfLines={1}>
-              2–4 players on one device
+              {t('home.cardPassPlaySub')}
             </Text>
           </View>
         </TouchableOpacity>
@@ -291,7 +309,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             runWhenOnline(() => onOpenCustomOnline())
           )}
         >
-          <Text style={styles.stickyPlayButtonText}>Play</Text>
+          <Text style={styles.stickyPlayButtonText}>{t('home.stickyPlay')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -397,14 +415,14 @@ const createStyles = () =>
       maxWidth: 580,
       width: '100%',
       alignSelf: 'center',
-      gap: 16,
+      gap: 10,
     },
     // Pure flat row directly on canvas — NO CARDS, NO BORDERS, NO SHADOWS
     featureRow: {
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: 'transparent',
-      paddingVertical: 4,
+      paddingVertical: 2,
     },
     rowInfo: {
       flex: 1,

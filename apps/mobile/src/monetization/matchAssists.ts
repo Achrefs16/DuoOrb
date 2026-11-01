@@ -21,16 +21,16 @@ export type AssistKind = 'hint' | 'undo';
 export const FREE_STARTING_ASSISTS = 1;
 export const FREE_STARTING_HINTS = 1;
 export const FREE_STARTING_UNDOS = 1;
-export const PREMIUM_STARTING_ASSISTS = 5;
-export const PREMIUM_STARTING_HINTS = 5;
-export const PREMIUM_STARTING_UNDOS = 5;
+export const PREMIUM_STARTING_ASSISTS = 3;
+export const PREMIUM_STARTING_HINTS = 3;
+export const PREMIUM_STARTING_UNDOS = 3;
 export const REFILL_ASSISTS_GRANT = 2;
 export const MAX_AD_REFILLS_PER_MATCH = 2;
 
 export interface MatchAssistsState {
-  /** Remaining hint tokens available in the current match */
+  /** Remaining hint tokens available in the current match (3 for premium, 1 for free) */
   hintsRemaining: number;
-  /** Remaining undo tokens available in the current match */
+  /** Remaining undo tokens available in the current match (3 for premium, 1 for free) */
   undosRemaining: number;
   /** Back-compat alias for hintsRemaining */
   remaining: number;
@@ -47,7 +47,7 @@ export interface MatchAssistsState {
 }
 
 /**
- * Initialize a fresh divided assists pool (1 Hint + 1 Undo for Free; 9 + 9 for Premium) at the start of a match.
+ * Initialize a fresh divided assists pool (1 Hint + 1 Undo for Free; 3 Hints + 3 Undos for Premium) at the start of a match.
  */
 export function createMatchAssists(isPremium: boolean): MatchAssistsState {
   const startHints = isPremium ? PREMIUM_STARTING_HINTS : FREE_STARTING_HINTS;
@@ -76,6 +76,7 @@ export function canUseAssist(
 
 /**
  * Consume 1 Hint or 1 Undo token independently.
+ * Evaluates both free and premium pools against their match caps, and tracks total `used` for stars.
  */
 export function consumeAssist(
   state: MatchAssistsState,

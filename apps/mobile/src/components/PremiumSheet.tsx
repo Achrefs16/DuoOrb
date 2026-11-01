@@ -41,6 +41,7 @@ const DIAMOND_IMG = require('../../assets/dimand.png');
 
 const BULLETS = [
   'No ads, anywhere',
+  'Unlock all bots & personalities',
   'Unlimited game analysis',
   'Exclusive cosmetics & styles',
   'Exclusive diamond badge on your name',
@@ -93,6 +94,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
 
   const bullets = [
     t('premium.bulletAds'),
+    t('premium.bulletBots'),
     t('premium.bulletAnalysis'),
     t('premium.bulletMidnight'),
     t('premium.bulletCrown'),
@@ -185,7 +187,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
       await signInWithGoogle();
       // Identity flips via session effect → the watcher above closes the card.
     } catch {
-      setLinkError('Sign-in failed — check your connection and try again.');
+      setLinkError(t('premium.signInError'));
       setLinking(false);
     }
   };
@@ -221,7 +223,7 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
           {Platform.OS === 'web' ? (
             <View style={styles.webContainer}>
               <Text style={styles.webNotice}>
-                DuoOrb Premium is managed through Google Play on Android. If you already have an active subscription, sign in with your Google account to enjoy ad-free play, exclusive styles, and unlimited analysis across all devices.
+                {t('premium.webNotice')}
               </Text>
               {!linked && (
                 <TouchableOpacity
@@ -257,6 +259,11 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
                 <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
               ) : (
                 <View style={styles.plans}>
+                  {plans.some((p) => p.trialLine) && (
+                    <View style={styles.trialPill}>
+                      <Text style={styles.trialPillText}>{t('premium.trialBanner')}</Text>
+                    </View>
+                  )}
                   {plans.map((p) => (
                     <TouchableOpacity
                       key={p.id}
@@ -266,10 +273,17 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
                       accessibilityLabel={`${p.title}, ${p.priceLine}`}
                     >
                       <View style={styles.planMeta}>
-                        <Text style={styles.planTitle}>
-                          {p.title}
-                          {p.featured ? ` · ${t('premium.bestValue')}` : ''}
-                        </Text>
+                        <View style={styles.planTitleRow}>
+                          <Text style={styles.planTitle}>
+                            {p.title}
+                            {p.featured ? ` · ${t('premium.bestValue')}` : ''}
+                          </Text>
+                          {p.trialLine ? (
+                            <View style={styles.planTrialBadge}>
+                              <Text style={styles.planTrialBadgeText}>{t('premium.trialBadge')}</Text>
+                            </View>
+                          ) : null}
+                        </View>
                         <Text style={styles.planPrice}>{p.priceLine}</Text>
                         {p.trialLine ? (
                           <Text style={styles.planTrial}>{p.trialLine}</Text>
@@ -337,13 +351,23 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
                     onPress={handleBuy}
                     disabled={buying || !activePlan}
                     accessibilityRole="button"
-                    accessibilityLabel={canBuy ? t('premium.continue') : t('premium.availableSoon')}
+                    accessibilityLabel={
+                      canBuy
+                        ? activePlan?.trialLine
+                          ? t('premium.startFreeTrial')
+                          : t('premium.continue')
+                        : t('premium.availableSoon')
+                    }
                   >
                     {buying ? (
                       <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                       <Text style={styles.buyText}>
-                        {canBuy ? t('premium.continue') : t('premium.availableSoon')}
+                        {canBuy
+                          ? activePlan?.trialLine
+                            ? t('premium.startFreeTrial')
+                            : t('premium.continue')
+                          : t('premium.availableSoon')}
                       </Text>
                     )}
                   </TouchableOpacity>
@@ -465,6 +489,23 @@ const createStyles = () => StyleSheet.create({
   plans: {
     gap: 10,
   },
+  trialPill: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    alignSelf: 'center',
+    marginBottom: 2,
+  },
+  trialPillText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#92400E',
+    textAlign: 'center',
+  },
   planRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -482,6 +523,25 @@ const createStyles = () => StyleSheet.create({
   planMeta: {
     flex: 1,
     gap: 2,
+  },
+  planTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  planTrialBadge: {
+    backgroundColor: '#059669',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+  },
+  planTrialBadgeText: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
   },
   planTitle: {
     fontFamily: THEME.fonts.bold,

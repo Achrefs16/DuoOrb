@@ -20,11 +20,8 @@ import { THEME, useStyles } from '../theme';
 import { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  TIME_CONTROLS,
-  TimeControl,
   NO_TIMER_CONTROL,
-  formatTimeControlDisplay,
-  getTimeControl,
+  type TimeControl,
 } from '../timeControls';
 import { MatchOptionsPicker } from '../components/MatchOptionsPicker';
 import { resolveMode } from '../matchModes';
@@ -74,7 +71,7 @@ export interface BotMatchConfig {
   botId: string;
   botIds?: string[];
   side: SideChoice;
-  clock: TimeControl;
+  clock?: TimeControl;
   mode: GameMode;
   wallsEach: number;
 }
@@ -115,21 +112,34 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
   const [optionsOpen, setOptionsOpen] = useState<boolean>(false);
   const [sidePickerOpen, setSidePickerOpen] = useState<boolean>(false);
 
-  const [clock, setClock] = useState<TimeControl>(
-    draft.clockId === 'no-timer'
-      ? NO_TIMER_CONTROL
-      : draft.clockId
-      ? getTimeControl(draft.clockId)
-      : NO_TIMER_CONTROL
-  );
-
   const effectivePlayerCount: PlayerCount = modeSel === 'classic' ? 2 : playerCount;
   const availableSides = sidesForCount(effectivePlayerCount);
   const sideOptions: SideChoice[] = [...availableSides, 'random'];
   const neededBots = Math.max(1, effectivePlayerCount - 1);
+
+  const draftValidIds = (
+    Array.isArray(draft.botIds) && draft.botIds.length > 0
+      ? draft.botIds
+      : draft.botId
+      ? [draft.botId]
+      : ['martin']
+  ).filter((id): id is string => typeof id === 'string' && Boolean(botById(id)));
+
+  const initialUniqueBotIds = Array.from(new Set(draftValidIds));
+  if (initialUniqueBotIds.length === 0) {
+    initialUniqueBotIds.push('martin');
+  }
+
+  const preferredBotsRef = useRef<string[]>(initialUniqueBotIds);
+
   const [selectedBotIds, setSelectedBotIds] = useState<string[]>(() => {
-    const initial = draft.botId && botById(draft.botId) ? draft.botId : 'martin';
-    return [initial];
+    const chosen = [...initialUniqueBotIds];
+    if (chosen.length < neededBots) {
+      const remaining = BOT_ROSTER.filter((b) => !chosen.includes(b.id));
+      const toAdd = remaining.slice(0, neededBots - chosen.length).map((b) => b.id);
+      chosen.push(...toAdd);
+    }
+    return chosen.slice(0, neededBots);
   });
 
   // Re-sync selected bots when effectivePlayerCount / neededBots changes
@@ -137,9 +147,15 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
     setSelectedBotIds((prev) => {
       const valid = prev.filter((id) => botById(id));
       if (valid.length >= neededBots) return valid.slice(0, neededBots);
-      const remaining = BOT_ROSTER.filter((b) => !valid.includes(b.id));
-      const toAdd = remaining.slice(0, neededBots - valid.length).map((b) => b.id);
-      return [...valid, ...toAdd].slice(0, neededBots);
+      const pool = preferredBotsRef.current.filter((id) => botById(id));
+      const poolAdd = pool.filter((id) => !valid.includes(id));
+      const combined = [...valid, ...poolAdd];
+      if (combined.length >= neededBots) {
+        return combined.slice(0, neededBots);
+      }
+      const remaining = BOT_ROSTER.filter((b) => !combined.includes(b.id));
+      const toAdd = remaining.slice(0, neededBots - combined.length).map((b) => b.id);
+      return [...combined, ...toAdd].slice(0, neededBots);
     });
   }, [neededBots]);
 
@@ -167,6 +183,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
   const [botRewardOpen, setBotRewardOpen] = useState(false);
   const [botRewardBusy, setBotRewardBusy] = useState(false);
   const [botRewardError, setBotRewardError] = useState<string | null>(null);
+  const [targetBotNameToUnlock, setTargetBotNameToUnlock] = useState<string | undefined>();
   const [premiumSheetOpen, setPremiumSheetOpen] = useState(false);
   const pendingConfigRef = useRef<BotMatchConfig | null>(null);
   const targetBotToUnlockRef = useRef<string | null>(null);
@@ -182,7 +199,8 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
   );
 
   const [focusedBotId, setFocusedBotId] = useState<string>(() => {
-    return draft.botId && botById(draft.botId) ? draft.botId : 'martin';
+    const candidate = draft.botId ?? draft.botIds?.[0];
+    return candidate && botById(candidate) ? candidate : initialUniqueBotIds[0] || 'martin';
   });
 
   const selectedBotId = selectedBotIds[0] || 'martin';
@@ -196,19 +214,31 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
 
     if (neededBots === 1) {
       setSelectedBotIds([botId]);
+      preferredBotsRef.current = [
+        botId,
+        ...preferredBotsRef.current.filter((id) => id !== botId),
+      ];
       onSelectBot?.(botId);
       return;
     }
     if (selectedBotIds.includes(botId)) {
       if (selectedBotIds.length > 1) {
-        setSelectedBotIds(selectedBotIds.filter((id) => id !== botId));
+        const next = selectedBotIds.filter((id) => id !== botId);
+        setSelectedBotIds(next);
+        preferredBotsRef.current = preferredBotsRef.current.filter((id) => id !== botId);
       }
     } else {
+      let next: string[];
       if (selectedBotIds.length < neededBots) {
-        setSelectedBotIds([...selectedBotIds, botId]);
+        next = [...selectedBotIds, botId];
       } else {
-        setSelectedBotIds([...selectedBotIds.slice(1), botId]);
+        next = [...selectedBotIds.slice(1), botId];
       }
+      setSelectedBotIds(next);
+      preferredBotsRef.current = [
+        ...next,
+        ...preferredBotsRef.current.filter((id) => !next.includes(id)),
+      ];
     }
     onSelectBot?.(botId);
   };
@@ -227,16 +257,29 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
   }, []);
 
   useEffect(() => {
+    const botsToSave =
+      preferredBotsRef.current.length >= selectedBotIds.length
+        ? preferredBotsRef.current
+        : selectedBotIds;
     saveMatchSetupDraft('ai', {
       mode: modeSel,
       playerCount,
       difficulty: selectedBot.profile.difficulty,
       botId: selectedBotId,
+      botIds: botsToSave,
       side,
       wallsEach: walls,
-      clockId: clock.id,
+      clockId: 'no-timer',
     });
-  }, [selectedBotId, side, clock, modeSel, playerCount, walls, selectedBot]);
+  }, [
+    selectedBotId,
+    selectedBotIds,
+    side,
+    modeSel,
+    playerCount,
+    walls,
+    selectedBot,
+  ]);
 
   // Categorize bots by tier
   const beginnerBots = BOT_ROSTER.filter((b) => b.tier === 'beginner');
@@ -245,19 +288,24 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
   const grandmasterBots = BOT_ROSTER.filter((b) => b.tier === 'grandmaster');
 
   const BOT_TIERS = [
-    { key: 'beginner', title: 'Beginner', bots: beginnerBots },
-    { key: 'intermediate', title: 'Intermediate', bots: intermediateBots },
-    { key: 'master', title: 'Master', bots: masterBots },
-    { key: 'grandmaster', title: 'Grandmaster', bots: grandmasterBots },
+    { key: 'beginner', title: t('bots.tierBeginner'), bots: beginnerBots },
+    { key: 'intermediate', title: t('bots.tierIntermediate'), bots: intermediateBots },
+    { key: 'master', title: t('bots.tierMaster'), bots: masterBots },
+    { key: 'grandmaster', title: t('bots.tierGrandmaster'), bots: grandmasterBots },
   ];
 
   const modeName =
     modeSel === 'classic'
-      ? 'Classic'
+      ? t('setup.classic')
       : modeSel === 'center'
-      ? 'Center Rush'
-      : 'Race';
-  const timeLabel = formatTimeControlDisplay(clock);
+      ? t('setup.modeCenterRush')
+      : t('setup.modeRace');
+  const wallsLabel =
+    walls === 99
+      ? t('setup.wallsUnlimited')
+      : walls === 15
+      ? t('setup.wallsCount15')
+      : t('setup.wallsCount10');
 
   const handlePlayerCountChange = (count: PlayerCount) => {
     setPlayerCount(count);
@@ -273,15 +321,32 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
     );
     let finalBotIds = [...selectedBotIds].slice(0, neededBots);
     if (finalBotIds.length < neededBots) {
-      const remaining = BOT_ROSTER.filter((b) => !finalBotIds.includes(b.id));
-      const toAdd = remaining.slice(0, neededBots - finalBotIds.length).map((b) => b.id);
-      finalBotIds = [...finalBotIds, ...toAdd].slice(0, neededBots);
+      const pool = preferredBotsRef.current.filter((id) => botById(id));
+      const poolAdd = pool.filter((id) => !finalBotIds.includes(id));
+      const combined = [...finalBotIds, ...poolAdd];
+      const remaining = BOT_ROSTER.filter((b) => !combined.includes(b.id));
+      const toAdd = remaining.slice(0, neededBots - combined.length).map((b) => b.id);
+      finalBotIds = [...combined, ...toAdd].slice(0, neededBots);
     }
+    preferredBotsRef.current = [
+      ...finalBotIds,
+      ...preferredBotsRef.current.filter((id) => !finalBotIds.includes(id)),
+    ];
+    saveMatchSetupDraft('ai', {
+      mode: modeSel,
+      playerCount,
+      difficulty: selectedBot.profile.difficulty,
+      botId: finalBotIds[0],
+      botIds: preferredBotsRef.current,
+      side,
+      wallsEach: walls,
+      clockId: 'no-timer',
+    });
     const config: BotMatchConfig = {
       botId: finalBotIds[0],
       botIds: finalBotIds,
       side: isSideAvailable(side, effectivePlayerCount) ? side : 'random',
-      clock,
+      clock: NO_TIMER_CONTROL,
       mode: resolvedMode,
       wallsEach: walls,
     };
@@ -294,6 +359,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
         return;
       }
       targetBotToUnlockRef.current = lockedBot.id;
+      setTargetBotNameToUnlock(lockedBot.name);
       pendingConfigRef.current = config;
       setBotRewardError(null);
       setBotRewardOpen(true);
@@ -334,7 +400,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             onPress={() => setOptionsOpen(false)}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             style={styles.backBtn}
-            accessibilityLabel="Go back"
+            accessibilityLabel={t('common.goBackA11y')}
           >
             <OrbIcon name="arrow-left" size={24} color={THEME.colors.textPrimary} />
           </TouchableOpacity>
@@ -346,7 +412,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
               color={THEME.colors.primary}
               style={{ marginRight: 8 }}
             />
-            <Text style={styles.headerTitle}>Time & Options</Text>
+            <Text style={styles.headerTitle}>{t('game.optionsTitle')}</Text>
           </View>
 
           <View style={{ width: 40 }} />
@@ -372,8 +438,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             onPlayerCountChange={handlePlayerCountChange}
             walls={walls}
             onWallsChange={setWalls}
-            clock={clock}
-            onClockChange={setClock}
+            hideClock
           />
 
           <TouchableOpacity
@@ -381,7 +446,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             activeOpacity={0.88}
             onPress={() => setOptionsOpen(false)}
           >
-            <Text style={styles.doneBtnText}>Done</Text>
+            <Text style={styles.doneBtnText}>{t('common.done')}</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -401,7 +466,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
               color={THEME.colors.primary}
               style={{ marginRight: 8 }}
             />
-            <Text style={styles.headerTitle}>Bots</Text>
+            <Text style={styles.headerTitle}>{t('bots.headerTitle')}</Text>
           </View>
         </View>
 
@@ -414,7 +479,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
               <Text style={styles.speechText} numberOfLines={3}>
                 {displayBot.quote ||
                   displayBot.dialogue?.greetings?.[0] ||
-                  `Hi, I'm ${displayBot.name}! Let's play!`}
+                  t('bots.defaultGreeting', { name: displayBot.name })}
               </Text>
             </View>
           </View>
@@ -526,7 +591,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             style={styles.optionsBtn}
             activeOpacity={0.8}
             onPress={() => setOptionsOpen(true)}
-            accessibilityLabel="Open options"
+            accessibilityLabel={t('bots.openOptionsA11y')}
           >
             <View style={styles.optionsBtnContent}>
               <OrbIcon
@@ -541,7 +606,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
                 minimumFontScale={0.75}
                 ellipsizeMode="tail"
               >
-                {timeLabel} · {modeName}
+                {modeName} · {wallsLabel}
               </Text>
             </View>
             <OrbIcon
@@ -560,7 +625,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             accessibilityLabel={`${t('setup.yourSide')}: ${
               side === 'random' ? t('setup.random') : t(SIDE_LABEL_KEYS[side])
             }`}
-            accessibilityHint="Opens the side picker"
+            accessibilityHint={t('bots.sidePickerHint')}
           >
             {side === 'random' ? (
               <View style={styles.sideRandomChipOrb}>
@@ -592,9 +657,9 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
           <Text style={styles.stickyPlayButtonText}>
             {isLocked(displayBot)
               ? getBotAccessType(displayBot.id) === 'premium_only'
-                ? 'Unlock with Premium'
-                : 'Unlock Bot'
-              : 'Play'}
+                ? t('bots.unlockWithPremium')
+                : t('bots.unlockBot')
+              : t('home.play')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -611,7 +676,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
             activeOpacity={1}
             onPress={() => setSidePickerOpen(false)}
             accessibilityRole="button"
-            accessibilityLabel="Close side picker"
+            accessibilityLabel={t('bots.closeSidePickerA11y')}
           />
           <View
             style={[
@@ -628,7 +693,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
                 onPress={() => setSidePickerOpen(false)}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityRole="button"
-                accessibilityLabel="Close side picker"
+                accessibilityLabel={t('bots.closeSidePickerA11y')}
               >
                 <OrbIcon name="x" size={18} color={THEME.colors.textMuted} />
               </TouchableOpacity>
@@ -700,6 +765,7 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
         busy={botRewardBusy}
         error={botRewardError}
         variant="bot"
+        botName={targetBotNameToUnlock}
         onWatch={handleWatchBotAd}
         onPremium={() => {
           setBotRewardOpen(false);
@@ -717,7 +783,6 @@ export const BotsScreen: React.FC<BotsScreenProps> = ({
         onClose={() => setPremiumSheetOpen(false)}
         onDone={() => {
           setPremiumSheetOpen(false);
-          void refreshPremium();
         }}
       />
     </View>

@@ -18,7 +18,6 @@ import { useConnectivity } from '../network/useConnectivity';
 import { GuestGate } from '../components/GuestGate';
 import { PremiumBadge } from '../components/PremiumBadge';
 import { usePremium, isPremiumActive } from '../monetization/premium';
-import { AdBanner } from '../components/AdBanner';
 import { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 import { NoConnectionSection } from '../components/NoConnection';
 import { kindOf, sectionKind, type ErrorKind } from '../network/errors';
@@ -408,8 +407,6 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
                 >
                   <Text style={styles.backToTopText}>{t('leaderboard.backToTop')}</Text>
                 </TouchableOpacity>
-                {/* Ad slot (P6, O2): below the pager, never above a button. */}
-                <AdBanner placement="list" />
               </>
             ) : (
               <View style={styles.footer}>
@@ -433,8 +430,6 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
                     </TouchableOpacity>
                   )
                 )}
-                {/* Ad slot (P6, O2): below the pager, never above a button. */}
-                <AdBanner placement="list" />
               </View>
             )
           }

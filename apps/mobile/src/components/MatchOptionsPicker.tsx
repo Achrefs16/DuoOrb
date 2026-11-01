@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { OrbIcon } from './OrbIcon';
 import { THEME, useStyles } from '../theme';
+import { useTranslation } from '../i18n';
 import {
   NO_TIMER_CONTROL,
   TimeControl,
@@ -54,8 +55,9 @@ export interface MatchOptionsPickerProps {
   onPlayerCountChange: (count: PlayerCountChoice) => void;
   walls: WallsChoice;
   onWallsChange: (walls: WallsChoice) => void;
-  clock: TimeControl;
-  onClockChange: (clock: TimeControl) => void;
+  clock?: TimeControl;
+  onClockChange?: (clock: TimeControl) => void;
+  hideClock?: boolean;
   style?: object;
 }
 
@@ -68,9 +70,11 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
   onWallsChange,
   clock,
   onClockChange,
+  hideClock = false,
   style,
 }) => {
   const styles = useStyles(createStyles);
+  const { t } = useTranslation();
 
   return (
     <View style={[styles.container, style]}>
@@ -82,14 +86,14 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
             size={16}
             color={THEME.colors.textSecondary}
           />
-          <Text style={styles.optionCatTitle}>Match Mode</Text>
+          <Text style={styles.optionCatTitle}>{t('setup.matchMode')}</Text>
         </View>
         <View style={styles.threeColGrid}>
           {(
             [
-              { id: 'classic', label: 'Classic 1v1' },
-              { id: 'center', label: 'Center Rush' },
-              { id: 'race', label: 'Race' },
+              { id: 'classic', label: t('setup.modeClassic1v1') },
+              { id: 'center', label: t('setup.modeCenterRush') },
+              { id: 'race', label: t('setup.modeRace') },
             ] as const
           ).map((m) => (
             <OptionTile
@@ -108,13 +112,13 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
         <View style={styles.optionsSection}>
           <View style={styles.optionCatHeader}>
             <OrbIcon name="users" size={16} color={THEME.colors.textSecondary} />
-            <Text style={styles.optionCatTitle}>Player Count</Text>
+            <Text style={styles.optionCatTitle}>{t('setup.playerCountTitle')}</Text>
           </View>
           <View style={styles.threeColGrid}>
             {([2, 3, 4] as const).map((cnt) => (
               <OptionTile
                 key={cnt}
-                label={`${cnt} Players`}
+                label={t('setup.playerCount', { count: cnt })}
                 selected={playerCount === cnt}
                 onPress={() => onPlayerCountChange(cnt)}
                 styles={styles}
@@ -132,14 +136,14 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
             size={16}
             color={THEME.colors.textSecondary}
           />
-          <Text style={styles.optionCatTitle}>Walls</Text>
+          <Text style={styles.optionCatTitle}>{t('setup.wallsTitle')}</Text>
         </View>
         <View style={styles.threeColGrid}>
           {(
             [
-              { val: 10, label: '10 Walls' },
-              { val: 15, label: '15 Walls' },
-              { val: 99, label: 'Unlimited' },
+              { val: 10, label: t('setup.wallsCount10') },
+              { val: 15, label: t('setup.wallsCount15') },
+              { val: 99, label: t('setup.wallsUnlimited') },
             ] as const
           ).map((w) => (
             <OptionTile
@@ -154,58 +158,62 @@ export const MatchOptionsPicker: React.FC<MatchOptionsPickerProps> = ({
       </View>
 
       {/* 4. Time Controls */}
-      {/* Bullet */}
-      <View style={styles.optionsSection}>
-        <View style={styles.optionCatHeader}>
-          <OrbIcon name="zap" size={16} color={THEME.colors.textSecondary} />
-          <Text style={styles.optionCatTitle}>Bullet</Text>
-        </View>
-        <View style={styles.twoColGrid}>
-          <OptionTile
-            label="1 min"
-            selected={clock.id === 'bullet-1-0'}
-            onPress={() => onClockChange(getTimeControl('bullet-1-0'))}
-            styles={styles}
-          />
-          <OptionTile
-            label="1 + 1"
-            selected={clock.id === 'bullet-1-1'}
-            onPress={() => onClockChange(getTimeControl('bullet-1-1'))}
-            styles={styles}
-          />
-        </View>
-      </View>
+      {!hideClock && clock && onClockChange && (
+        <>
+          {/* Bullet */}
+          <View style={styles.optionsSection}>
+            <View style={styles.optionCatHeader}>
+              <OrbIcon name="zap" size={16} color={THEME.colors.textSecondary} />
+              <Text style={styles.optionCatTitle}>{t('setup.clockBullet')}</Text>
+            </View>
+            <View style={styles.twoColGrid}>
+              <OptionTile
+                label={t('setup.clock1min')}
+                selected={clock.id === 'bullet-1-0'}
+                onPress={() => onClockChange(getTimeControl('bullet-1-0'))}
+                styles={styles}
+              />
+              <OptionTile
+                label={t('setup.clock1plus1')}
+                selected={clock.id === 'bullet-1-1'}
+                onPress={() => onClockChange(getTimeControl('bullet-1-1'))}
+                styles={styles}
+              />
+            </View>
+          </View>
 
-      {/* Rapid */}
-      <View style={styles.optionsSection}>
-        <View style={styles.optionCatHeader}>
-          <OrbIcon name="clock" size={16} color={THEME.colors.textSecondary} />
-          <Text style={styles.optionCatTitle}>Rapid</Text>
-        </View>
-        <View style={styles.twoColGrid}>
-          <OptionTile
-            label="3 min"
-            selected={clock.id === 'rapid-3-0'}
-            onPress={() => onClockChange(getTimeControl('rapid-3-0'))}
-            styles={styles}
-          />
-          <OptionTile
-            label="5 min"
-            selected={clock.id === 'rapid-5-0'}
-            onPress={() => onClockChange(getTimeControl('rapid-5-0'))}
-            styles={styles}
-          />
-        </View>
-      </View>
+          {/* Rapid */}
+          <View style={styles.optionsSection}>
+            <View style={styles.optionCatHeader}>
+              <OrbIcon name="clock" size={16} color={THEME.colors.textSecondary} />
+              <Text style={styles.optionCatTitle}>{t('setup.clockRapid')}</Text>
+            </View>
+            <View style={styles.twoColGrid}>
+              <OptionTile
+                label={t('setup.clock3min')}
+                selected={clock.id === 'rapid-3-0'}
+                onPress={() => onClockChange(getTimeControl('rapid-3-0'))}
+                styles={styles}
+              />
+              <OptionTile
+                label={t('setup.clock5min')}
+                selected={clock.id === 'rapid-5-0'}
+                onPress={() => onClockChange(getTimeControl('rapid-5-0'))}
+                styles={styles}
+              />
+            </View>
+          </View>
 
-      {/* No Timer at the bottom */}
-      <OptionTile
-        fullWidth
-        label="No Timer"
-        selected={clock.id === 'no-timer'}
-        onPress={() => onClockChange(NO_TIMER_CONTROL)}
-        styles={styles}
-      />
+          {/* No Timer at the bottom */}
+          <OptionTile
+            fullWidth
+            label={t('setup.clockNoTimer')}
+            selected={clock.id === 'no-timer'}
+            onPress={() => onClockChange(NO_TIMER_CONTROL)}
+            styles={styles}
+          />
+        </>
+      )}
     </View>
   );
 };

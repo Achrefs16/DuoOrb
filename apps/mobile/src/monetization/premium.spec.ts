@@ -5,6 +5,7 @@ import {
   hydratePremiumCache,
   ingestMe,
   isPremiumActive,
+  recordLocalPurchase,
   refreshPremium,
 } from './premium';
 
@@ -137,5 +138,34 @@ describe('premium state', () => {
         loading: false,
       })
     ).toBe(true);
+  });
+
+  it('protects recent local purchase with grace shield against premature false /me', () => {
+    recordLocalPurchase();
+    expect(isPremiumActive()).toBe(true);
+
+    // In-flight webhook delay: /me returns false 100ms later
+    const s = ingestMe({ isPremium: false });
+    // Still active because grace period shield is active
+    expect(s.isPremium).toBe(true);
+    expect(isPremiumActive(s)).toBe(true);
+  });
+
+  it('ingests and caches isCancelled and willRenew states', async () => {
+    const expires = new Date(Date.now() + 7 * 86400000).toISOString();
+    const s = ingestMe({
+      isPremium: true,
+      premiumExpiresAt: expires,
+      isCancelled: true,
+      willRenew: false,
+    });
+    expect(s.isCancelled).toBe(true);
+    expect(s.willRenew).toBe(false);
+
+    __resetPremiumForTests();
+    const cached = await hydratePremiumCache();
+    expect(cached.isCancelled).toBe(true);
+    expect(cached.willRenew).toBe(false);
+    expect(isPremiumActive(cached)).toBe(true);
   });
 });

@@ -613,7 +613,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (type === 'ai') preloadRewarded('assist');
   }, [type, state.gameId]);
 
-  const isUntimed = isUntimedTimeControl(timeControl);
+  const isUntimed = type === 'ai' || isUntimedTimeControl(timeControl);
 
   const [timers, setTimers] = useState<Record<string, number>>(() => {
     if (isUntimed) return {};
@@ -740,6 +740,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     preloadSounds();
     void playGameStartSound();
   }, []);
+  const optimisticMoveSoundCountRef = useRef(0);
+  const optimisticWallSoundCountRef = useRef(0);
   const historyLenRef = useRef(state.history.length);
   // Last-known orb positions, so a jump (a move covering more than one
   // cell) can be told apart from a plain step. Refreshed every run.
@@ -766,15 +768,27 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             len === historyLenRef.current + 1 &&
             !!from &&
             Math.abs(from.row - last.action.to.row) + Math.abs(from.col - last.action.to.col) > 1;
-          if (jumped) {
-            void playJumpSound();
+          const myId = online.myPlayerId ?? state.players[humanIdx]?.id ?? null;
+          if (myId && last.playerId === myId) {
+            if (optimisticMoveSoundCountRef.current > 0) {
+              optimisticMoveSoundCountRef.current -= 1;
+            } else {
+              if (jumped) void playJumpSound();
+              else void playOwnMoveSound();
+            }
           } else {
-            const myId = online.myPlayerId ?? state.players[humanIdx]?.id ?? null;
-            if (myId && last.playerId === myId) void playOwnMoveSound();
+            if (jumped) void playJumpSound();
             else void playOpponentMoveSound();
           }
         }
-      } else if (last?.action.type === 'PLACE_WALL') void playWallSound();
+      } else if (last?.action.type === 'PLACE_WALL') {
+        const myId = online.myPlayerId ?? state.players[humanIdx]?.id ?? null;
+        if (myId && last.playerId === myId && optimisticWallSoundCountRef.current > 0) {
+          optimisticWallSoundCountRef.current -= 1;
+        } else {
+          void playWallSound();
+        }
+      }
     }
     historyLenRef.current = len;
     const next: Record<string, { row: number; col: number }> = {};
@@ -1152,7 +1166,18 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         ? { type: 'MOVE' as const, to: head.to }
         : { type: 'PLACE_WALL' as const, wall: head.wall };
     if (type === 'online') {
-      online.sendAction(action);
+      const sent = online.sendAction(action);
+      if (sent) {
+        if (action.type === 'MOVE') {
+          const jumped = Math.abs(currentPlayer.position.row - action.to.row) + Math.abs(currentPlayer.position.col - action.to.col) > 1;
+          if (jumped) void playJumpSound();
+          else void playOwnMoveSound();
+          optimisticMoveSoundCountRef.current += 1;
+        } else {
+          void playWallSound();
+          optimisticWallSoundCountRef.current += 1;
+        }
+      }
       setPremoveQueue((prev) => prev.slice(1));
       return;
     }
@@ -1264,6 +1289,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           userWon: effectiveWon,
           gameSec,
           gameId: state.gameId,
+          isAiGame: type === 'ai',
         });
       }
       const record: SavedGameRecord = {
@@ -1310,7 +1336,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           void api.claimAchievement('mode-center-first').then((res) => {
             if (res.newlyEarned) {
               void playNotifySound();
-              toast.show(`New Achievement — ${res.newlyEarned.name}`, undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
+              toast.show(t('game.newAchievement', { name: res.newlyEarned.name }), undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
             }
           }).catch(() => {});
         }
@@ -1318,7 +1344,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           void api.claimAchievement('mode-race-first').then((res) => {
             if (res.newlyEarned) {
               void playNotifySound();
-              toast.show(`New Achievement — ${res.newlyEarned.name}`, undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
+              toast.show(t('game.newAchievement', { name: res.newlyEarned.name }), undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
             }
           }).catch(() => {});
         }
@@ -1326,7 +1352,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           void api.claimAchievement('mode-walls-99').then((res) => {
             if (res.newlyEarned) {
               void playNotifySound();
-              toast.show(`New Achievement — ${res.newlyEarned.name}`, undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
+              toast.show(t('game.newAchievement', { name: res.newlyEarned.name }), undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
             }
           }).catch(() => {});
         }
@@ -1334,7 +1360,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           void api.claimAchievement('mode-multi-podium').then((res) => {
             if (res.newlyEarned) {
               void playNotifySound();
-              toast.show(`New Achievement — ${res.newlyEarned.name}`, undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
+              toast.show(t('game.newAchievement', { name: res.newlyEarned.name }), undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
             }
           }).catch(() => {});
         }
@@ -1342,7 +1368,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           void api.claimAchievement('social-friend-duel').then((res) => {
             if (res.newlyEarned) {
               void playNotifySound();
-              toast.show(`New Achievement — ${res.newlyEarned.name}`, undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
+              toast.show(t('game.newAchievement', { name: res.newlyEarned.name }), undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
             }
           }).catch(() => {});
         }
@@ -1481,7 +1507,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       // here means our move is still in flight — the tap is simply dropped
       // rather than queued, because queueing it would replay a stale turn.
       setHintAction(null);
-      onlineSendAction(action);
+      const sent = onlineSendAction(action);
+      if (sent) {
+        const jumped = Math.abs(currentPlayer.position.row - target.row) + Math.abs(currentPlayer.position.col - target.col) > 1;
+        if (jumped) void playJumpSound();
+        else void playOwnMoveSound();
+        optimisticMoveSoundCountRef.current += 1;
+      }
       return;
     }
     setHintAction(null);
@@ -1601,7 +1633,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       // action while one is unconfirmed, so a fast wall-then-move cannot slip
       // two actions past the server's one-in-flight assumption.
       setHintAction(null);
-      online.sendAction(action);
+      const sent = online.sendAction(action);
+      if (sent) {
+        void playWallSound();
+        optimisticWallSoundCountRef.current += 1;
+      }
       return;
     }
     setHintAction(null);
@@ -1803,12 +1839,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     : false;
 
   /**
-   * Single post-match video decision. New Match and Close Match share it so a
+   * Single post-match video decision. New Match, Close Match and New Bot share it so a
    * player can never see two interstitials for one result. Rematch never
    * calls it. Navigation happens after the decision either way.
    */
   const maybeShowPostMatchVideoAd = useCallback(
-    async (trigger: 'new_match' | 'close_match') => {
+    async (trigger: 'new_match' | 'close_match' | 'new_bot') => {
       if (!isCompleted || interstitialFiredRef.current) return;
       interstitialFiredRef.current = true;
       const gameSec = Math.max(
@@ -1871,12 +1907,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (!undoAvailable) return;
     if (type === 'ai') {
       if (assistsState.undosRemaining <= 0) {
-        if (!canRefillAssists(assistsState, 'undo')) {
-          return;
+        if (!assistsState.isPremium && canRefillAssists(assistsState, 'undo')) {
+          setPendingAssistAction('undo');
+          setAssistError(null);
+          setAssistSheetOpen(true);
         }
-        setPendingAssistAction('undo');
-        setAssistError(null);
-        setAssistSheetOpen(true);
         return;
       }
       if (assistsState.used === 0) {
@@ -2129,12 +2164,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
     if (type === 'ai') {
       if (assistsState.hintsRemaining <= 0) {
-        if (!canRefillAssists(assistsState, 'hint')) {
-          return;
+        if (!assistsState.isPremium && canRefillAssists(assistsState, 'hint')) {
+          setPendingAssistAction('hint');
+          setAssistError(null);
+          setAssistSheetOpen(true);
         }
-        setPendingAssistAction('hint');
-        setAssistError(null);
-        setAssistSheetOpen(true);
         return;
       }
       // Immediately trigger star loss animation directly on click
@@ -2448,6 +2482,8 @@ useEffect(() => {
   if (type !== 'online' || !online.actionError) return;
   if (lastActionErrorNonce.current === online.actionError.nonce) return;
   lastActionErrorNonce.current = online.actionError.nonce;
+  optimisticMoveSoundCountRef.current = Math.max(0, optimisticMoveSoundCountRef.current - 1);
+  optimisticWallSoundCountRef.current = Math.max(0, optimisticWallSoundCountRef.current - 1);
   void playIllegalMoveSound();
 }, [type, online.actionError]);
 
@@ -2704,7 +2740,7 @@ useEffect(() => {
                   const bot = getBotForSeat(seatIdx);
                   const isBotActive = state.currentPlayerIndex === seatIdx;
                   const botBall = playerColor(seatIdx, botPlayer.color);
-                  const botTimer = timers?.[botPlayer.id];
+                  const botTimer = type === 'ai' ? undefined : timers?.[botPlayer.id];
 
                   return (
                     <View
@@ -2750,7 +2786,7 @@ useEffect(() => {
           const botPlayer = state.players.find((_, i) => i !== humanIdx);
           const isBotActive = state.currentPlayerIndex !== humanIdx;
           const botBall = botPlayer ? playerColor(1 - humanIdx, botPlayer.color) : personality.color;
-          const botTimer = botPlayer ? timers?.[botPlayer.id] : undefined;
+          const botTimer = type === 'ai' ? undefined : (botPlayer ? timers?.[botPlayer.id] : undefined);
 
           return (
             <View style={styles.botHeroRow}>
@@ -2768,7 +2804,7 @@ useEffect(() => {
                     style={styles.botSpeechBubble}
                   >
                     <View style={styles.bubbleTail} />
-                    <Text style={styles.botSpeechText} numberOfLines={3}>
+                    <Text style={styles.botSpeechText} numberOfLines={3} ellipsizeMode="tail">
                       {botDialogue.text}
                     </Text>
                   </TouchableOpacity>
@@ -2880,7 +2916,7 @@ useEffect(() => {
 
               const isHumanActive = state.currentPlayerIndex === humanIdx;
               const humanBall = playerColor(humanIdx, humanPlayer.color);
-              const humanTimer = timers?.[humanPlayer.id];
+              const humanTimer = type === 'ai' ? undefined : timers?.[humanPlayer.id];
 
               return (
                 <View style={styles.humanPlayerRow}>
@@ -2983,7 +3019,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="format-list-bulleted" size={21} color={dockIconColor} />
-              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
+              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>{t('game.dockOptions')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -2992,7 +3028,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="file-document-outline" size={21} color={dockIconColor} />
-              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Summary</Text>
+              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>{t('game.dockSummary')}</Text>
             </TouchableOpacity>
 
             {state.mode === '2p' && (
@@ -3006,7 +3042,7 @@ useEffect(() => {
                 <View style={styles.dockReviewCircle}>
                   <SmoothStar size={12} color="#FFFFFF" />
                 </View>
-                <Text style={[styles.dockLabel, { color: THEME.colors.primary, fontWeight: '700' }]}>Review</Text>
+                <Text style={[styles.dockLabel, { color: THEME.colors.primary, fontWeight: '700' }]}>{t('game.dockReview')}</Text>
               </TouchableOpacity>
             )}
 
@@ -3021,7 +3057,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
-              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
+              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>{t('game.dockBack')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3040,7 +3076,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
-              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
+              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>{t('game.dockForward')}</Text>
             </TouchableOpacity>
           </>
         ) : type === 'ai' ? (
@@ -3051,7 +3087,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="format-list-bulleted" size={21} color={dockIconColor} />
-              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
+              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>{t('game.dockOptions')}</Text>
             </TouchableOpacity>
 
             {/* Hint Button */}
@@ -3094,7 +3130,7 @@ useEffect(() => {
                     </View>
                   )}
                   <Text style={[styles.dockLabel, { color: isExhausted ? dockDisabledColor : hintAction ? '#10B981' : dockLabelColor }]}>
-                    {hintLoading ? 'Thinking' : 'Hint'}
+                    {hintLoading ? t('hud.reconnecting') : 'Hint'}
                   </Text>
                 </TouchableOpacity>
               );
@@ -3136,7 +3172,7 @@ useEffect(() => {
                     )}
                   </View>
                   <Text style={[styles.dockLabel, { color: isDisabled ? dockDisabledColor : dockLabelColor }]}>
-                    Undo
+                    {t('game.undo')}
                   </Text>
                 </TouchableOpacity>
               );
@@ -3153,7 +3189,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
-              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
+              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>{t('game.dockBack')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3172,7 +3208,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
-              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
+              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>{t('game.dockForward')}</Text>
             </TouchableOpacity>
           </>
         ) : type === 'online' ? (
@@ -3183,7 +3219,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="format-list-bulleted" size={21} color={dockIconColor} />
-              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
+              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>{t('game.dockOptions')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3192,7 +3228,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="message-text-outline" size={21} color={chatTrayOpen ? THEME.colors.primary : dockIconColor} />
-              <Text style={[styles.dockLabel, { color: chatTrayOpen ? THEME.colors.primary : dockLabelColor }]}>Chat</Text>
+              <Text style={[styles.dockLabel, { color: chatTrayOpen ? THEME.colors.primary : dockLabelColor }]}>{t('game.dockChat')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3206,7 +3242,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
-              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
+              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>{t('game.dockBack')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3225,7 +3261,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
-              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
+              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>{t('game.dockForward')}</Text>
             </TouchableOpacity>
           </>
         ) : (
@@ -3236,7 +3272,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="format-list-bulleted" size={21} color={dockIconColor} />
-              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>Options</Text>
+              <Text style={[styles.dockLabel, { color: dockLabelColor }]}>{t('game.dockOptions')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3250,7 +3286,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="chevron-left" size={21} color={(viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockIconColor} />
-              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>Back</Text>
+              <Text style={[styles.dockLabel, { color: (viewingStep ?? totalSteps) <= 0 ? dockDisabledColor : dockLabelColor }]}>{t('game.dockBack')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -3269,7 +3305,7 @@ useEffect(() => {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <OrbIcon name="chevron-right" size={21} color={viewingStep === null ? dockDisabledColor : dockIconColor} />
-              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>Forward</Text>
+              <Text style={[styles.dockLabel, { color: viewingStep === null ? dockDisabledColor : dockLabelColor }]}>{t('game.dockForward')}</Text>
             </TouchableOpacity>
           </>
         )}
@@ -3316,7 +3352,7 @@ useEffect(() => {
         <SafeAreaView style={styles.optionsOverlay} edges={['top', 'bottom']}>
           <View style={styles.optionsCard}>
             <View style={styles.optionsHeader}>
-              <Text style={styles.optionsTitle}>Match Options</Text>
+              <Text style={styles.optionsTitle}>{t('game.optionsTitle')}</Text>
               <TouchableOpacity onPress={() => setOptionsOpen(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <OrbIcon name="x" size={20} color={THEME.colors.textSecondary} />
               </TouchableOpacity>
@@ -3335,7 +3371,7 @@ useEffect(() => {
                     >
                       <View style={styles.optionRowLeft}>
                         <OrbIcon name="refresh-cw" size={20} color={THEME.colors.primary} />
-                        <Text style={[styles.optionRowText, { color: THEME.colors.primary }]}>Rematch</Text>
+                        <Text style={[styles.optionRowText, { color: THEME.colors.primary }]}>{t('gameover.rematch')}</Text>
                       </View>
                       <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
@@ -3353,7 +3389,7 @@ useEffect(() => {
                     >
                       <View style={styles.optionRowLeft}>
                         <OrbIcon name="robot-outline" size={20} color={THEME.colors.textPrimary} />
-                        <Text style={styles.optionRowText}>Play vs Different Bot</Text>
+                        <Text style={styles.optionRowText}>{t('game.playDifferentBot')}</Text>
                       </View>
                       <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
@@ -3367,7 +3403,7 @@ useEffect(() => {
                     >
                       <View style={styles.optionRowLeft}>
                         <OrbIcon name="log-out" size={20} color={THEME.colors.textSecondary} />
-                        <Text style={styles.optionRowText}>Exit Match</Text>
+                        <Text style={styles.optionRowText}>{t('game.exitMatch')}</Text>
                       </View>
                       <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
@@ -3383,7 +3419,7 @@ useEffect(() => {
                     >
                       <View style={styles.optionRowLeft}>
                         <OrbIcon name="rotate-ccw" size={20} color={THEME.colors.textPrimary} />
-                        <Text style={styles.optionRowText}>Restart</Text>
+                        <Text style={styles.optionRowText}>{t('game.restart')}</Text>
                       </View>
                       <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
@@ -3398,7 +3434,7 @@ useEffect(() => {
                       >
                         <View style={styles.optionRowLeft}>
                           <OrbIcon name="flag" size={20} color={THEME.colors.error} />
-                          <Text style={[styles.optionRowText, { color: THEME.colors.error }]}>Resign Match</Text>
+                          <Text style={[styles.optionRowText, { color: THEME.colors.error }]}>{t('game.resignMatch')}</Text>
                         </View>
                         <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                       </TouchableOpacity>
@@ -3417,7 +3453,7 @@ useEffect(() => {
                     >
                       <View style={styles.optionRowLeft}>
                         <OrbIcon name="robot-outline" size={20} color={THEME.colors.textPrimary} />
-                        <Text style={styles.optionRowText}>Play vs Different Bot</Text>
+                        <Text style={styles.optionRowText}>{t('game.playDifferentBot')}</Text>
                       </View>
                       <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
@@ -3431,7 +3467,7 @@ useEffect(() => {
                     >
                       <View style={styles.optionRowLeft}>
                         <OrbIcon name="log-out" size={20} color={THEME.colors.textSecondary} />
-                        <Text style={styles.optionRowText}>Exit to Menu</Text>
+                        <Text style={styles.optionRowText}>{t('game.exitToMenu')}</Text>
                       </View>
                       <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
@@ -3450,7 +3486,7 @@ useEffect(() => {
                       >
                         <View style={styles.optionRowLeft}>
                           <OrbIcon name="refresh-cw" size={20} color={THEME.colors.primary} />
-                          <Text style={[styles.optionRowText, { color: THEME.colors.primary }]}>Rematch</Text>
+                          <Text style={[styles.optionRowText, { color: THEME.colors.primary }]}>{t('gameover.rematch')}</Text>
                         </View>
                         <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                       </TouchableOpacity>
@@ -3464,7 +3500,7 @@ useEffect(() => {
                       >
                         <View style={styles.optionRowLeft}>
                           <OrbIcon name="play" size={20} color={THEME.colors.textPrimary} />
-                          <Text style={styles.optionRowText}>New Game</Text>
+                          <Text style={styles.optionRowText}>{t('gameover.newGame')}</Text>
                         </View>
                         <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                       </TouchableOpacity>
@@ -3481,7 +3517,7 @@ useEffect(() => {
                     >
                       <View style={styles.optionRowLeft}>
                         <OrbIcon name="refresh-cw" size={20} color={THEME.colors.textPrimary} />
-                        <Text style={styles.optionRowText}>Restart Match</Text>
+                        <Text style={styles.optionRowText}>{t('game.restartMatch')}</Text>
                       </View>
                       <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
@@ -3497,7 +3533,7 @@ useEffect(() => {
                     >
                       <View style={styles.optionRowLeft}>
                         <OrbIcon name="flag" size={20} color={THEME.colors.error} />
-                        <Text style={[styles.optionRowText, { color: THEME.colors.error }]}>Resign Match</Text>
+                        <Text style={[styles.optionRowText, { color: THEME.colors.error }]}>{t('game.resignMatch')}</Text>
                       </View>
                       <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                     </TouchableOpacity>
@@ -3512,7 +3548,7 @@ useEffect(() => {
                   >
                     <View style={styles.optionRowLeft}>
                       <OrbIcon name="log-out" size={20} color={THEME.colors.textSecondary} />
-                      <Text style={styles.optionRowText}>{isCompleted ? 'Exit Match' : 'Exit to Menu'}</Text>
+                      <Text style={styles.optionRowText}>{isCompleted ? t('game.exitMatch') : t('game.exitToMenu')}</Text>
                     </View>
                     <OrbIcon name="chevron-right" size={18} color={THEME.colors.textMuted} />
                   </TouchableOpacity>
@@ -3674,7 +3710,7 @@ useEffect(() => {
         onNewGame={() => {
           setShowGameOver(false);
           if (type === 'ai' && onSelectBots) {
-            onSelectBots();
+            void maybeShowPostMatchVideoAd('new_bot').finally(onSelectBots);
           } else {
             void maybeShowPostMatchVideoAd('new_match').finally(onNewGame);
           }
@@ -3750,7 +3786,6 @@ useEffect(() => {
         onClose={() => setPremiumOpen(false)}
         onDone={() => {
           setPremiumOpen(false);
-          void refreshPremium();
         }}
       />
 
@@ -3878,7 +3913,9 @@ const createStyles = () => StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     gap: 8,
-    minHeight: 66,
+    height: 70,
+    minHeight: 70,
+    maxHeight: 70,
   },
   botAvatarWrap: {
     alignItems: 'center',
@@ -3890,14 +3927,16 @@ const createStyles = () => StyleSheet.create({
     minWidth: 0,
     marginHorizontal: 4,
     justifyContent: 'center',
+    maxHeight: 58,
   },
   botSpeechBubble: {
     width: '100%',
+    maxHeight: 58,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.08)',
-    paddingVertical: 6,
+    paddingVertical: 4,
     paddingHorizontal: 10,
     position: 'relative',
     justifyContent: 'center',
@@ -3919,7 +3958,7 @@ const createStyles = () => StyleSheet.create({
   botSpeechText: {
     fontFamily: THEME.fonts.medium,
     fontSize: 11,
-    lineHeight: 14.5,
+    lineHeight: 14,
     color: '#161512',
     flexShrink: 1,
   },

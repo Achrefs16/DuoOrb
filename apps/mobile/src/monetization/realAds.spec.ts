@@ -35,7 +35,7 @@ vi.mock('../network/apiClient', () => ({
  * suppression, failure collapse, and graceful absence of the native SDK.
  */
 describe('banner visibility', () => {
-  it('hides for premium, session zero, and load failure; shows for active sessions', () => {
+  it('hides for premium, session zero, and load failure; shows for active sessions with games threshold', () => {
     expect(
       shouldShowBanner({ isPremium: true, sessions: 9, loadFailed: false })
     ).toBe(false);
@@ -45,6 +45,17 @@ describe('banner visibility', () => {
     expect(
       shouldShowBanner({ isPremium: false, sessions: 5, loadFailed: true })
     ).toBe(false);
+    // keepReservedSpaceOnFail keeps visibility for fallback card
+    expect(
+      shouldShowBanner({ isPremium: false, sessions: 5, loadFailed: true, keepReservedSpaceOnFail: true })
+    ).toBe(true);
+    // completedGames gate: hides under 2 games, shows at 2+
+    expect(
+      shouldShowBanner({ isPremium: false, sessions: 2, completedGames: 1, loadFailed: false })
+    ).toBe(false);
+    expect(
+      shouldShowBanner({ isPremium: false, sessions: 2, completedGames: 2, loadFailed: false })
+    ).toBe(true);
     expect(
       shouldShowBanner({ isPremium: false, sessions: 1, loadFailed: false })
     ).toBe(true);

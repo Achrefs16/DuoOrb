@@ -86,6 +86,8 @@ model Profile {
   /// "revenuecat" | "grant" — where the current entitlement came from.
   premiumSource     String?
   premiumUpdatedAt  DateTime?
+  isCancelled       Boolean   @default(false)
+  willRenew         Boolean   @default(true)
   botStars          Json?
   createdAt DateTime @default(now())
   updatedAt   DateTime @updatedAt

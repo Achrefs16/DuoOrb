@@ -677,10 +677,6 @@ fn wall_style_bias(
         score += 0.045;
     }
 
-    if (state.mode.starts_with("race") || state.mode.starts_with("center")) && rival_distance <= 3.0 {
-        score += 0.04;
-    }
-
     score += wall_prob_bias * 0.05;
     score
 }
@@ -770,8 +766,9 @@ pub fn select_bot_action(
     let mut rng = Prng::new(seed ^ 0x9E3779B97F4A7C15);
 
     // MILO: Pure AlphaZero ONNX Engine (100% Sigma Quoridor trained neural policy)
-    // Runs pure AlphaZero MCTS with neural value lookahead simulations.
-    if profile.id == "milo" {
+    // Runs pure AlphaZero MCTS with neural value lookahead simulations strictly for Classic 2P.
+    // In variant modes (Center Rush, Race, 4P), Milo plays via the high-Elo tactical hybrid engine without AlphaZero ONNX.
+    if profile.id == "milo" && state.mode == "2p" {
         if let Some(evaluator) = crate::hybrid::get_global_evaluator() {
             let sims = profile.simulations.max(1);
             if sims <= 1 {
@@ -891,29 +888,54 @@ pub fn select_bot_action(
     // Apply personality style biases (wall preferences, sprint biases, opening styles)
     let is_opening = state.move_number <= (state.players.len() as u32 * 2).max(4);
 
+    let board = crate::board::Board::from_walls(&state.walls);
+    let mover_dist = crate::pathfinding::shortest_distance(
+        mover.position,
+        mover.goal_direction,
+        &board,
+        &state.mode,
+    );
+    let is_finish_sprint = (state.mode != "2p") && mover_dist <= 2;
+
     let mut scored_candidates: Vec<(GameAction, f32)> = candidates_for_sampling
         .into_iter()
         .map(|c| {
             let mut score = c.logit * elo_logit_scale;
             match &c.action {
                 GameAction::PlaceWall { wall } => {
-                    let bias = wall_style_bias(
-                        state,
-                        mover,
-                        wall,
-                        is_opening,
-                        profile.wall_style,
-                        profile.opening_style,
-                        profile.wall_prob_bias,
-                    );
-                    score += bias * 25.0;
-                    score += profile.wall_prob_bias * 6.0;
+                    if is_finish_sprint {
+                        score -= 8.0;
+                    } else {
+                        let bias = wall_style_bias(
+                            state,
+                            mover,
+                            wall,
+                            is_opening,
+                            profile.wall_style,
+                            profile.opening_style,
+                            profile.wall_prob_bias,
+                        );
+                        score += bias * 25.0;
+                        score += profile.wall_prob_bias * 6.0;
+                    }
                 }
                 GameAction::Move { to } => {
-                    let bias = opening_move_bias(*to, is_opening, profile.opening_style, mover);
-                    score += bias * 25.0;
-                    // Negative wall_prob_bias means pawn preference (sprint)
-                    score -= profile.wall_prob_bias * 6.0;
+                    if is_finish_sprint {
+                        let next_d = crate::pathfinding::shortest_distance(
+                            *to,
+                            mover.goal_direction,
+                            &board,
+                            &state.mode,
+                        );
+                        if next_d < mover_dist {
+                            score += 6.0;
+                        }
+                    } else {
+                        let bias = opening_move_bias(*to, is_opening, profile.opening_style, mover);
+                        score += bias * 25.0;
+                        // Negative wall_prob_bias means pawn preference (sprint)
+                        score -= profile.wall_prob_bias * 6.0;
+                    }
                 }
                 _ => {}
             }
@@ -1114,6 +1136,250 @@ mod tests {
                 to,
                 CellCoord { row: 4, col: 4 },
                 "Achref must NOT zombie walk into the corridor trap at (4,4)!"
+            );
+        }
+    }
+
+    #[test]
+    fn test_milo_plays_legal_actions_in_center_rush_and_race_without_onnx() {
+        let milo = get_bot_preset("milo");
+
+        // 1. Center Rush 2P
+        let center2_state = GameState {
+            game_id: "center2-test".to_string(),
+            mode: "center2".to_string(),
+            current_player_index: 0,
+            players: vec![
+                PlayerState {
+                    id: "milo".to_string(),
+                    index: 0,
+                    display_name: "Milo".to_string(),
+                    position: CellCoord { row: 8, col: 4 },
+                    walls_remaining: 10,
+                    goal_direction: GoalDirection::Center,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "rival".to_string(),
+                    index: 1,
+                    display_name: "Rival".to_string(),
+                    position: CellCoord { row: 0, col: 4 },
+                    walls_remaining: 10,
+                    goal_direction: GoalDirection::Center,
+                    status: "ACTIVE".to_string(),
+                },
+            ],
+            walls: vec![],
+            move_number: 0,
+            status: "IN_PROGRESS".to_string(),
+        };
+        let c2_action = select_bot_action(&center2_state, &milo, 100);
+        assert!(is_legal_action(&center2_state, &c2_action));
+
+        // 2. Center Rush 3P (multiplayer)
+        let center3_state = GameState {
+            game_id: "center3-test".to_string(),
+            mode: "center3".to_string(),
+            current_player_index: 0,
+            players: vec![
+                PlayerState {
+                    id: "milo".to_string(),
+                    index: 0,
+                    display_name: "Milo".to_string(),
+                    position: CellCoord { row: 8, col: 4 },
+                    walls_remaining: 6,
+                    goal_direction: GoalDirection::Center,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "p2".to_string(),
+                    index: 1,
+                    display_name: "P2".to_string(),
+                    position: CellCoord { row: 0, col: 4 },
+                    walls_remaining: 6,
+                    goal_direction: GoalDirection::Center,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "p3".to_string(),
+                    index: 2,
+                    display_name: "P3".to_string(),
+                    position: CellCoord { row: 4, col: 0 },
+                    walls_remaining: 6,
+                    goal_direction: GoalDirection::Center,
+                    status: "ACTIVE".to_string(),
+                },
+            ],
+            walls: vec![],
+            move_number: 0,
+            status: "IN_PROGRESS".to_string(),
+        };
+        let c3_action = select_bot_action(&center3_state, &milo, 101);
+        assert!(is_legal_action(&center3_state, &c3_action));
+
+        // 3. Race Mode 2P
+        let race2_state = GameState {
+            game_id: "race2-test".to_string(),
+            mode: "race2".to_string(),
+            current_player_index: 0,
+            players: vec![
+                PlayerState {
+                    id: "milo".to_string(),
+                    index: 0,
+                    display_name: "Milo".to_string(),
+                    position: CellCoord { row: 8, col: 2 },
+                    walls_remaining: 10,
+                    goal_direction: GoalDirection::Top,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "rival".to_string(),
+                    index: 1,
+                    display_name: "Rival".to_string(),
+                    position: CellCoord { row: 8, col: 6 },
+                    walls_remaining: 10,
+                    goal_direction: GoalDirection::Top,
+                    status: "ACTIVE".to_string(),
+                },
+            ],
+            walls: vec![],
+            move_number: 0,
+            status: "IN_PROGRESS".to_string(),
+        };
+        let race_action = select_bot_action(&race2_state, &milo, 102);
+        assert!(is_legal_action(&race2_state, &race_action));
+    }
+
+    #[test]
+    fn test_center_rush_4p_recognizes_center_goal_and_converts_immediate_win() {
+        use crate::pathfinding::is_goal_cell;
+        // Verify (4,4) is recognized as goal cell in 4p mode
+        assert!(is_goal_cell(CellCoord { row: 4, col: 4 }, GoalDirection::Top, "4p"));
+        assert!(is_goal_cell(CellCoord { row: 4, col: 4 }, GoalDirection::Bottom, "4p"));
+        assert!(is_goal_cell(CellCoord { row: 4, col: 4 }, GoalDirection::Left, "4p"));
+        assert!(is_goal_cell(CellCoord { row: 4, col: 4 }, GoalDirection::Right, "4p"));
+
+        // Setup 4P game where player 0 is at (5, 4), 1 step from (4, 4)
+        let state = GameState {
+            game_id: "center-4p-win".to_string(),
+            mode: "4p".to_string(),
+            current_player_index: 0,
+            players: vec![
+                PlayerState {
+                    id: "p1".to_string(),
+                    index: 0,
+                    display_name: "P1".to_string(),
+                    position: CellCoord { row: 5, col: 4 },
+                    walls_remaining: 5,
+                    goal_direction: GoalDirection::Top,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "p2".to_string(),
+                    index: 1,
+                    display_name: "P2".to_string(),
+                    position: CellCoord { row: 2, col: 4 },
+                    walls_remaining: 5,
+                    goal_direction: GoalDirection::Bottom,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "p3".to_string(),
+                    index: 2,
+                    display_name: "P3".to_string(),
+                    position: CellCoord { row: 4, col: 2 },
+                    walls_remaining: 5,
+                    goal_direction: GoalDirection::Right,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "p4".to_string(),
+                    index: 3,
+                    display_name: "P4".to_string(),
+                    position: CellCoord { row: 4, col: 7 },
+                    walls_remaining: 5,
+                    goal_direction: GoalDirection::Left,
+                    status: "ACTIVE".to_string(),
+                },
+            ],
+            walls: vec![],
+            move_number: 10,
+            status: "IN_PROGRESS".to_string(),
+        };
+
+        let achref = get_bot_preset("achref");
+        let action = select_bot_action(&state, &achref, 42);
+        assert_eq!(
+            action,
+            GameAction::Move {
+                to: CellCoord { row: 4, col: 4 }
+            },
+            "Bot at (5,4) in 4P Center Rush must take the immediate winning step to (4,4)!"
+        );
+    }
+
+    #[test]
+    fn test_center_rush_advances_instead_of_walling_distant_player() {
+        // Setup 4P game: Bot is at (6, 4) (dist 2 to center).
+        // P2 is at (2, 4) (dist 2).
+        // P3 is at (4, 1) (dist 3).
+        // P4 is at (4, 8) (dist 4, far away).
+        let state = GameState {
+            game_id: "center-sprint".to_string(),
+            mode: "4p".to_string(),
+            current_player_index: 0,
+            players: vec![
+                PlayerState {
+                    id: "bot".to_string(),
+                    index: 0,
+                    display_name: "Bot".to_string(),
+                    position: CellCoord { row: 6, col: 4 },
+                    walls_remaining: 5,
+                    goal_direction: GoalDirection::Top,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "p2".to_string(),
+                    index: 1,
+                    display_name: "P2".to_string(),
+                    position: CellCoord { row: 2, col: 4 },
+                    walls_remaining: 5,
+                    goal_direction: GoalDirection::Bottom,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "p3".to_string(),
+                    index: 2,
+                    display_name: "P3".to_string(),
+                    position: CellCoord { row: 4, col: 1 },
+                    walls_remaining: 5,
+                    goal_direction: GoalDirection::Right,
+                    status: "ACTIVE".to_string(),
+                },
+                PlayerState {
+                    id: "p4".to_string(),
+                    index: 3,
+                    display_name: "P4".to_string(),
+                    position: CellCoord { row: 4, col: 8 },
+                    walls_remaining: 5,
+                    goal_direction: GoalDirection::Left,
+                    status: "ACTIVE".to_string(),
+                },
+            ],
+            walls: vec![],
+            move_number: 4,
+            status: "IN_PROGRESS".to_string(),
+        };
+
+        let bot = get_bot_preset("viktor");
+        let action = select_bot_action(&state, &bot, 123);
+        // Bot should advance towards center (5, 4) or place a defensive funnel/block against P2,
+        // NEVER place a random wall against distant P4 at col 8!
+        if let GameAction::PlaceWall { wall } = &action {
+            assert!(
+                wall.col < 7,
+                "Bot should not place a wall all the way at col 7/8 against distant P4! Action: {:?}",
+                action
             );
         }
     }

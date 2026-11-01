@@ -42,6 +42,8 @@ export class BillingController {
       id: evt.id,
       type: evt.type,
       appUserId: evt.app_user_id,
+      originalAppUserId: evt.original_app_user_id,
+      aliases: evt.aliases,
       productId: evt.product_id,
       expiresAtMs: evt.expiration_at_ms,
       occurredAtMs: evt.event_timestamp_ms,

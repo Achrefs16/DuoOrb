@@ -1,7 +1,7 @@
 import Purchases from 'react-native-purchases';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { getIdentity } from '../network/auth';
-import { ingestMe, refreshPremium } from './premium';
+import { ingestMe, recordLocalPurchase, refreshPremium } from './premium';
 import { track } from './analytics';
 
 /**
@@ -70,26 +70,107 @@ function publicKey(): string {
 
 let configuredKey: string | null = null;
 let configuredUser: string | null = null;
+let listenerRegistered = false;
+
+export async function initializePurchases(userId?: string): Promise<void> {
+  const key = publicKey();
+  if (!key) return;
+  try {
+    const identity = getIdentity();
+    const appUserID = userId ?? identity?.userId ?? 'anonymous';
+    if (configuredKey !== key) {
+      Purchases.configure({ apiKey: key, appUserID });
+      configuredKey = key;
+      configuredUser = appUserID;
+    } else if (configuredUser !== appUserID && appUserID !== 'anonymous') {
+      await Purchases.logIn(appUserID);
+      configuredUser = appUserID;
+    }
+
+    if (!listenerRegistered && typeof Purchases.addCustomerInfoUpdateListener === 'function') {
+      listenerRegistered = true;
+      Purchases.addCustomerInfoUpdateListener((customerInfo) => {
+        const entitlement = customerInfo?.entitlements?.active?.[ENTITLEMENT_ID];
+        if (entitlement) {
+          ingestMe({
+            isPremium: true,
+            premiumExpiresAt: entitlement.expirationDate ?? null,
+            isCancelled: entitlement.willRenew === false,
+            willRenew: entitlement.willRenew !== false,
+          });
+        }
+      });
+    }
+  } catch {
+    // Non-fatal
+  }
+}
 
 async function ensureConfigured(): Promise<string> {
   const key = publicKey();
   if (!key) throw codedError('not-configured', 'Purchases not configured yet.');
   const identity = getIdentity();
-  // RevenueCat App User ID = DuoOrb userId (server webhooks key off it).
-  // Guests never reach here (guest guard below) — fall back safely anyway.
   const appUserID = identity?.userId ?? 'anonymous';
   if (configuredKey !== key) {
-    // First configure per key (once per launch, normally).
     Purchases.configure({ apiKey: key, appUserID });
     configuredKey = key;
     configuredUser = appUserID;
   } else if (configuredUser !== appUserID) {
-    // Account switch (sign-out/in, guest link): re-identifying RE-configures
-    // the SDK and corrupts the customer mapping — logIn() is the switch path.
     await Purchases.logIn(appUserID);
     configuredUser = appUserID;
   }
   return appUserID;
+}
+
+function detectFreeTrial(pkg: PurchasesPackage): { hasTrial: boolean; trialLine: string | null } {
+  const product = pkg.product;
+  const base = pkg.identifier === '$rc_monthly' ? `${product.priceString}/mo` : `${product.priceString}/yr`;
+
+  // 1. Google Play defaultOption pricing phase (freePhase where price is 0)
+  const defaultOpt = (product as any)?.defaultOption;
+  const freePhase = defaultOpt?.freePhase;
+  if (freePhase) {
+    const period = freePhase.billingPeriod;
+    const isWeekOr7D =
+      period?.iso8601 === 'P1W' ||
+      period?.iso8601 === 'P7D' ||
+      (period?.unit === 'DAY' && period?.value === 7) ||
+      (period?.unit === 'WEEK' && period?.value === 1);
+    const label = isWeekOr7D
+      ? `7-day free trial, then ${base}`
+      : `${period?.value ?? 7}-${String(period?.unit ?? 'day').toLowerCase()} free trial, then ${base}`;
+    return { hasTrial: true, trialLine: label };
+  }
+
+  // 2. introPrice (iOS or legacy Android)
+  const intro = product.introPrice;
+  if (intro) {
+    if (intro.price === 0) {
+      const isWeekOr7D =
+        (intro.periodUnit === 'DAY' && intro.periodNumberOfUnits === 7) ||
+        (intro.periodUnit === 'WEEK' && intro.periodNumberOfUnits === 1) ||
+        intro.period === 'P7D' ||
+        intro.period === 'P1W';
+      const label = isWeekOr7D
+        ? `7-day free trial, then ${base}`
+        : `${intro.periodNumberOfUnits || 7}-${String(intro.periodUnit || 'day').toLowerCase()} free trial, then ${base}`;
+      return { hasTrial: true, trialLine: label };
+    }
+    // If intro has a price > 0, it is a paid introductory promo, not a free trial.
+    return { hasTrial: false, trialLine: null };
+  }
+
+  // If defaultOption was provided by Google Play but has no free phase, there is no trial.
+  if (defaultOpt) {
+    return { hasTrial: false, trialLine: null };
+  }
+
+  // 3. Guaranteed Play Store trial fallback for configured DuoOrb packages when phase data is unavailable
+  if (pkg.identifier === '$rc_monthly' || pkg.identifier === '$rc_annual') {
+    return { hasTrial: true, trialLine: `7-day free trial, then ${base}` };
+  }
+
+  return { hasTrial: false, trialLine: null };
 }
 
 function planFromPackage(
@@ -102,21 +183,14 @@ function planFromPackage(
   const intro = product.introPrice;
   const base =
     id === 'monthly' ? `${product.priceString}/mo` : `${product.priceString}/yr`;
-  // Free trials surface as a 7-DAY intro period; paid promos (P0.8 $2.99 /
-  // $19.99 windows) surface with their own price + ISO period instead.
-  const isFreeWeekTrial =
-    intro != null &&
-    intro.price === 0 &&
-    intro.periodUnit === 'DAY' &&
-    intro.periodNumberOfUnits === 7;
-  const priceLine = intro
-    ? `${intro.priceString} ${intro.period} intro, then ${base}`
-    : base;
-  const trialLine = isFreeWeekTrial
-    ? `7-day free trial, then ${base}`
-    : intro
-      ? `Intro offer: ${intro.priceString}, then ${base}`
-      : null;
+
+  const { hasTrial, trialLine } = detectFreeTrial(pkg);
+
+  const priceLine =
+    !hasTrial && intro && intro.price > 0
+      ? `${intro.priceString} ${intro.period} intro, then ${base}`
+      : base;
+
   return { id, title, priceLine, trialLine, featured, rcPackage: pkg };
 }
 
@@ -177,17 +251,11 @@ export async function purchasePlan(plan: PremiumPlan): Promise<PurchaseOutcome> 
     const { customerInfo } = await Purchases.purchasePackage(plan.rcPackage);
     const entitlement = customerInfo.entitlements.active[ENTITLEMENT_ID];
     if (entitlement) {
-      // Store truth lands before the server webhook. Paint Premium now and
-      // let the asynchronous /me sync reconcile expiry moments later.
-      ingestMe({
-        isPremium: true,
-        premiumExpiresAt: entitlement.expirationDate ?? null,
-      });
+      // Store truth lands before the server webhook. Protect with local purchase grace
+      // so early /me polling does not overwrite isPremium back to false.
+      recordLocalPurchase(entitlement.expirationDate ?? null);
       track('purchase_completed', { plan: plan.id });
       if (plan.trialLine) track('trial_started', { plan: plan.id });
-      // M1: the webhook usually lands seconds AFTER the receipt validates.
-      // Sync now (fast when it already landed) and once more after a beat —
-      // fire-and-forget so the sheet closes instantly either way.
       void syncPremiumAfterPurchase();
       return { status: 'done' };
     }
@@ -215,10 +283,7 @@ export async function restorePremium(): Promise<PurchaseOutcome> {
     const customerInfo = await Purchases.restorePurchases();
     const entitlement = customerInfo.entitlements.active[ENTITLEMENT_ID];
     if (entitlement) {
-      ingestMe({
-        isPremium: true,
-        premiumExpiresAt: entitlement.expirationDate ?? null,
-      });
+      recordLocalPurchase(entitlement.expirationDate ?? null);
       track('restored', {});
       void syncPremiumAfterPurchase();
       return { status: 'done' };
@@ -245,23 +310,22 @@ function codedError(code: string, message: string): Error {
 }
 
 /**
- * Post-purchase entitlement sync (M1): refresh now, and once more after a
- * beat for the webhook lag. Never throws, never blocks the caller.
+ * Post-purchase entitlement sync (M1): wait for webhook arrival lag before polling /me.
+ * Never throws, never blocks the caller.
  */
-const RESYNC_DELAY_MS = 8000;
-
 async function syncPremiumAfterPurchase(): Promise<void> {
+  // Give webhook time to hit server before querying /me
+  await new Promise((resolve) => setTimeout(resolve, 3000));
   try {
     await refreshPremium();
   } catch {
-    // First sync is best-effort; the delayed pass decides nothing either —
-    // every later /me reconciles anyway.
+    // First sync is best-effort
   }
-  await new Promise((resolve) => setTimeout(resolve, RESYNC_DELAY_MS));
+  await new Promise((resolve) => setTimeout(resolve, 5000));
   try {
     await refreshPremium();
   } catch {
-    // Same: silent. The next boot/refresh/foreground picks it up.
+    // Second sync is best-effort
   }
 }
 
@@ -269,4 +333,5 @@ async function syncPremiumAfterPurchase(): Promise<void> {
 export function __resetOffersForTests(): void {
   configuredKey = null;
   configuredUser = null;
+  listenerRegistered = false;
 }

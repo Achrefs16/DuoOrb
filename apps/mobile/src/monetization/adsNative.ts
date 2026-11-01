@@ -80,10 +80,12 @@ export function ensureAdsReady(): Promise<boolean> {
           // Consent flow is best-effort: a failure here must not block ads
           // where consent isn't required (the UMP backend decides).
         }
-        sdk
-          .mobileAds()
-          .setRequestConfiguration(buildAdRequestConfiguration(sdk));
-        await sdk.mobileAds().initialize();
+        const getMobileAds = sdk.MobileAds ?? sdk.default ?? sdk.mobileAds;
+        const mobileAds = typeof getMobileAds === 'function' ? getMobileAds() : getMobileAds;
+        if (mobileAds) {
+          await mobileAds.setRequestConfiguration?.(buildAdRequestConfiguration(sdk));
+          await mobileAds.initialize?.();
+        }
         return true;
       } catch {
         return false;

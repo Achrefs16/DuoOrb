@@ -456,7 +456,7 @@ export const OnlineSelfBar: React.FC<OnlineSelfBarProps> = ({
       {reactions && reactions.length > 0 && (
         <ReactionDock
           items={reactions}
-          side="top"
+          side="bottom"
           onDone={onReactionDone ?? (() => {})}
           surface={surface}
         />

@@ -20,7 +20,7 @@ import { runWhenOnline } from '../components/NoConnection';
 import { BlockedUsers } from '../components/BlockedUsers';
 import { UserSettings } from '../storage/gameStorage';
 import { useSession } from '../network/session';
-import { isPremiumActive, refreshPremium, setDevPremiumOverride, usePremium } from '../monetization/premium';
+import { isPremiumActive, refreshPremium, usePremium } from '../monetization/premium';
 import { PremiumBadge, PREMIUM_GOLD } from '../components/PremiumBadge';
 import { PremiumSheet } from '../components/PremiumSheet';
 import { BOARD_SKINS, type BoardSkinId } from '../theme/boardTheme';
@@ -479,7 +479,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <View style={styles.settingText}>
                 <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.getPremium')}</Text>
                 <Text style={[styles.settingDesc, styles.premiumDesc]}>
-                  {t('settings.getPremiumDesc', { price: '$3.99' })}
+                  {t('settings.getPremiumDescTrial', { price: '$3.99' })}
                 </Text>
               </View>
               <OrbIcon name="chevron-right" size={14} color="#3A2A00" />
@@ -498,35 +498,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <OrbIcon name="settings" size={15} color={PREMIUM_GOLD} />
                 </View>
                 <View style={styles.settingText}>
-                  <Text style={[styles.settingTitle, styles.premiumTitle]}>{t('settings.manageSub')}</Text>
+                  <Text style={[styles.settingTitle, styles.premiumTitle]}>
+                    {premiumState.isCancelled ? t('settings.subCancelledTitle') : t('settings.manageSub')}
+                  </Text>
                   <Text style={[styles.settingDesc, styles.premiumDesc]}>
-                    {t('settings.manageSubDesc')}
+                    {premiumState.isCancelled
+                      ? t('settings.subCancelledDesc', {
+                          date: premiumState.premiumExpiresAt
+                            ? new Date(premiumState.premiumExpiresAt).toLocaleDateString()
+                            : '',
+                        })
+                      : t('settings.manageSubDesc')}
                   </Text>
                 </View>
                 <OrbIcon name="external-link" size={14} color="#3A2A00" />
               </TouchableOpacity>
             </>
           )}
-          <View style={[styles.divider, styles.premiumDivider]} />
-          <View style={styles.settingRow}>
-            <View style={[styles.settingIconBox, styles.premiumIconBox]}>
-              <OrbIcon name="sliders" size={15} color={PREMIUM_GOLD} />
-            </View>
-            <View style={styles.settingText}>
-              <Text style={[styles.settingTitle, styles.premiumTitle]}>Developer: Diamond Active</Text>
-              <Text style={[styles.settingDesc, styles.premiumDesc]}>
-                Toggle to preview diamond badge & perks
-              </Text>
-            </View>
-            <Switch
-              value={isPremiumMember}
-              onValueChange={(val) => {
-                setDevPremiumOverride(val);
-              }}
-              trackColor={{ false: 'rgba(0,0,0,0.25)', true: THEME.colors.primary }}
-              thumbColor={isPremiumMember ? '#FFFFFF' : '#E0E0E0'}
-            />
-          </View>
         </LinearGradient>
 
         <PremiumSheet
@@ -535,7 +523,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           onClose={() => setPremiumOpen(false)}
           onDone={() => {
             setPremiumOpen(false);
-            void refreshPremium();
           }}
         />
 
@@ -644,7 +631,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <Text style={styles.inputPrefix}>@</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="yourname"
+                  placeholder={t('settings.displayNamePlaceholder')}
                   placeholderTextColor={THEME.colors.textMuted}
                   value={usernameDraft}
                   onChangeText={(t) => {
@@ -738,18 +725,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
         {/* Tutorial & Rules */}
         <View style={styles.card}>
-          <Text style={styles.sectionLabel}>TUTORIAL & RULES</Text>
+          <Text style={styles.sectionLabel}>{t('settings.tutorialAndRules')}</Text>
           <TouchableOpacity
             style={styles.settingRow}
             onPress={onOpenTutorial}
             accessibilityRole="button"
-            accessibilityLabel="Interactive Tutorial"
+            accessibilityLabel={t('settings.interactiveTutorial')}
           >
             <View style={styles.settingIconBox}>
               <OrbIcon name="play-circle" size={16} color={THEME.colors.primary} />
             </View>
             <View style={styles.settingText}>
-              <Text style={styles.settingTitle}>Interactive Tutorial</Text>
+              <Text style={styles.settingTitle}>{t('settings.interactiveTutorial')}</Text>
               <Text style={styles.settingDesc}>
                 Replay the 4 guided tactical scenarios with the 3D pointing hand
               </Text>

@@ -8,6 +8,7 @@ import { getIdentity, subscribeIdentity } from './auth';
 import { isTokenFresh } from './tokenFreshness';
 import { getBallSkinId, getWallSkinId, syncCosmeticsToServer } from '../theme/cosmeticsCatalog';
 import { isPremiumActive } from '../monetization/premium';
+import { t } from '../i18n';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
 
@@ -621,7 +622,7 @@ class SocketManager {
     s.on('session:superseded', () => {
       console.warn('[socket] superseded: same account connected elsewhere, standing down');
       void import('../components/AppToast')
-        .then((m) => m.toast.show('Signed in on another device. This session disconnected.'))
+        .then((m) => m.toast.show(t('errors.sessionSuperseded')))
         .catch(() => {});
       this.disconnect();
     });
@@ -661,8 +662,8 @@ class SocketManager {
           .then((m) =>
             m.toast.show(
               getIdentity()?.isGuest === false
-                ? 'Session expired, sign in again.'
-                : 'Session expired. Restart to play again.'
+                ? t('errors.sessionExpired')
+                : t('errors.guestSessionExpired')
             )
           )
           .catch(() => {});
@@ -886,8 +887,8 @@ class SocketManager {
         .then((m) =>
           m.toast.show(
             getIdentity()?.isGuest === false
-              ? 'Session expired, sign in again.'
-              : 'Session expired. Restart to play again.'
+              ? t('errors.sessionExpired')
+              : t('errors.guestSessionExpired')
           )
         )
         .catch(() => {});
