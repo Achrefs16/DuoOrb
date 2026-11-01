@@ -16,7 +16,7 @@ export interface AppVersionResponse {
 export class VersionController {
   @Get()
   getVersion(): AppVersionResponse {
-    const latestVersionCode = Number(process.env.LATEST_VERSION_CODE || 17);
+    const latestVersionCode = Number(process.env.LATEST_VERSION_CODE || 18);
     const minSupportedVersionCode = Number(
       process.env.MIN_SUPPORTED_VERSION_CODE || 15
     );
