@@ -30,6 +30,8 @@ interface WallTrayProps {
    * to produce a vertical wall.
    */
   swapVisuals?: boolean;
+  /** Logical orientation highlighted by in-game hint ('H' | 'V' | null). */
+  hintedOrientation?: Orientation | null;
   onDragStart: (orientation: Orientation, pageX: number, pageY: number) => void;
   onDragMove: (pageX: number, pageY: number) => void;
   onDragEnd: (pageX: number, pageY: number) => void;
@@ -40,6 +42,7 @@ interface PieceProps {
   color: string;
   held: boolean;
   disabled?: boolean;
+  isHinted?: boolean;
   barW: number;
   barH: number;
   touchW: number;
@@ -55,6 +58,7 @@ const WallPiece: React.FC<PieceProps> = ({
   color,
   held,
   disabled,
+  isHinted = false,
   barW,
   barH,
   touchW,
@@ -118,6 +122,15 @@ const WallPiece: React.FC<PieceProps> = ({
         styles.pieceSlot,
         { width: touchW, height: touchH },
         disabled && styles.pieceDisabled,
+        isHinted && {
+          borderColor: '#F59E0B',
+          borderWidth: 2,
+          backgroundColor: 'rgba(245, 158, 11, 0.20)',
+          shadowColor: '#F59E0B',
+          shadowOpacity: 0.5,
+          shadowRadius: 8,
+          elevation: 4,
+        },
       ]}
       accessibilityLabel={`Drag ${label.toLowerCase()} wall`}
     >
@@ -171,6 +184,7 @@ export const WallTray: React.FC<WallTrayProps> = ({
   held,
   disabled,
   swapVisuals = false,
+  hintedOrientation = null,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -195,6 +209,7 @@ export const WallTray: React.FC<WallTrayProps> = ({
           color={color}
           held={held === 'H'}
           disabled={inactive}
+          isHinted={hintedOrientation === 'H'}
           barW={(swapVisuals ? 14 : 42) * s}
           barH={(swapVisuals ? 42 : 14) * s}
           touchW={slotW}
@@ -216,6 +231,7 @@ export const WallTray: React.FC<WallTrayProps> = ({
           color={color}
           held={held === 'V'}
           disabled={inactive}
+          isHinted={hintedOrientation === 'V'}
           barW={(swapVisuals ? 42 : 14) * s}
           barH={(swapVisuals ? 14 : 42) * s}
           touchW={slotW}

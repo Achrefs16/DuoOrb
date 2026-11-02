@@ -6,10 +6,10 @@
  * - 100% disabled in Online Ranked / Quick Match (competitive integrity).
  *
  * Rules:
- * - Free tier: starts with 1 Free Hint + 1 Free Undo per match (tracked separately).
- *   Can watch a rewarded video ad for +2 Hints (when out of hints) or +2 Undos (when out of undos),
+ * - Free tier: starts with 2 Free Hints + 1 Free Undo per match (tracked separately).
+ *   Can watch a rewarded video ad for +3 Hints (when out of hints) or +3 Undos (when out of undos),
  *   up to MAX_AD_REFILLS_PER_MATCH per category.
- * - Premium tier: starts with 5 Hints + 5 Undos per match.
+ * - Premium tier: starts with 6 Hints + 4 Undos per match.
  * - Star rating synergy:
  *   0 assists used = 3 Stars ⭐️⭐️⭐️
  *   1 assist used  = 2 Stars ⭐️⭐️
@@ -18,19 +18,19 @@
 
 export type AssistKind = 'hint' | 'undo';
 
-export const FREE_STARTING_ASSISTS = 1;
-export const FREE_STARTING_HINTS = 1;
+export const FREE_STARTING_ASSISTS = 2;
+export const FREE_STARTING_HINTS = 2;
 export const FREE_STARTING_UNDOS = 1;
-export const PREMIUM_STARTING_ASSISTS = 3;
-export const PREMIUM_STARTING_HINTS = 3;
-export const PREMIUM_STARTING_UNDOS = 3;
-export const REFILL_ASSISTS_GRANT = 2;
+export const PREMIUM_STARTING_ASSISTS = 6;
+export const PREMIUM_STARTING_HINTS = 6;
+export const PREMIUM_STARTING_UNDOS = 4;
+export const REFILL_ASSISTS_GRANT = 3;
 export const MAX_AD_REFILLS_PER_MATCH = 1;
 
 export interface MatchAssistsState {
-  /** Remaining hint tokens available in the current match (3 for premium, 1 for free) */
+  /** Remaining hint tokens available in the current match (6 for premium, 2 for free) */
   hintsRemaining: number;
-  /** Remaining undo tokens available in the current match (3 for premium, 1 for free) */
+  /** Remaining undo tokens available in the current match (4 for premium, 1 for free) */
   undosRemaining: number;
   /** Back-compat alias for hintsRemaining */
   remaining: number;
@@ -47,7 +47,7 @@ export interface MatchAssistsState {
 }
 
 /**
- * Initialize a fresh divided assists pool (1 Hint + 1 Undo for Free; 3 Hints + 3 Undos for Premium) at the start of a match.
+ * Initialize a fresh divided assists pool (2 Hints + 1 Undo for Free; 6 Hints + 4 Undos for Premium) at the start of a match.
  */
 export function createMatchAssists(isPremium: boolean): MatchAssistsState {
   const startHints = isPremium ? PREMIUM_STARTING_HINTS : FREE_STARTING_HINTS;
@@ -76,15 +76,18 @@ export function canUseAssist(
 
 /**
  * Consume 1 Hint or 1 Undo token independently.
- * Evaluates both free and premium pools against their match caps, and tracks total `used` for stars.
+ * Evaluates both free and premium pools against their match caps, and optionally tracks total `used` for stars.
+ * Successive hints (revealing exact move on the same turn) consume a hint token but pass `countStarLoss: false`.
  */
 export function consumeAssist(
   state: MatchAssistsState,
-  kind: AssistKind = 'hint'
+  kind: AssistKind = 'hint',
+  options?: { countStarLoss?: boolean }
 ): {
   next: MatchAssistsState;
   ok: boolean;
 } {
+  const countStars = options?.countStarLoss ?? true;
   if (kind === 'undo') {
     if (state.undosRemaining <= 0) {
       return { next: state, ok: false };
@@ -94,7 +97,7 @@ export function consumeAssist(
       next: {
         ...state,
         undosRemaining: nextUndos,
-        used: state.used + 1,
+        used: countStars ? state.used + 1 : state.used,
       },
       ok: true,
     };
@@ -109,7 +112,7 @@ export function consumeAssist(
       ...state,
       hintsRemaining: nextHints,
       remaining: nextHints,
-      used: state.used + 1,
+      used: countStars ? state.used + 1 : state.used,
     },
     ok: true,
   };

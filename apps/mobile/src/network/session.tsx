@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { Platform } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import type { User } from '../lib/supabase';
@@ -195,6 +196,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           let serverNames: ServerProfile | null = null;
           let profileError: unknown = null;
           try {
+            const net = await NetInfo.fetch().catch(() => null);
+            const isOffline = net && (net.isConnected === false || net.isInternetReachable === false);
+            if (isOffline && sameUser && cachedNames?.username) {
+              setProfile({
+                username: cachedNames.username,
+                displayName: cachedNames.displayName,
+              });
+              setBootError(null);
+              setStatus('ready');
+              return;
+            }
             serverNames = await fetchProfile(supabaseSession.access_token);
           } catch (e) {
             profileError = e;
@@ -226,9 +238,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
         const outcome = await restoreSession({
           getStoredRefreshToken: () => getIdentity()?.refreshToken ?? null,
-          refreshGuestSession,
+          refreshGuestSession: (token) => refreshGuestSession(token, 3500),
           fetchProfile,
           isDeadSession: isDeadSessionError,
+          isOffline: async () => {
+            try {
+              const net = await NetInfo.fetch();
+              return net.isConnected === false || net.isInternetReachable === false;
+            } catch {
+              return false;
+            }
+          },
         });
         if (cancelled) return;
 

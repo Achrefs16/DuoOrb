@@ -367,7 +367,8 @@ export async function createGuestSession(): Promise<GuestCredentialsDto> {
  * the old ones stop working immediately.
  */
 export async function refreshGuestSession(
-  refreshToken: string
+  refreshToken: string,
+  timeoutMs = 15000
 ): Promise<GuestCredentialsDto> {
   let res: Response;
   try {
@@ -378,7 +379,7 @@ export async function refreshGuestSession(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
       },
-      15000
+      timeoutMs
     );
   } catch (e) {
     throw toNetworkError(e);

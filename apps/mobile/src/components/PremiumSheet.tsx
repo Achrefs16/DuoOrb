@@ -229,12 +229,13 @@ export const PremiumSheet: React.FC<PremiumSheetProps> = ({
                 <Text style={styles.successSubtitle}>{t('premium.successSubtitle')}</Text>
 
                 <TouchableOpacity
-                  style={styles.buyButton}
+                  style={styles.successButton}
                   onPress={handleSuccessDone}
                   accessibilityRole="button"
                   accessibilityLabel={t('premium.letsPlay')}
+                  activeOpacity={0.85}
                 >
-                  <Text style={styles.buyText}>{t('premium.letsPlay')}</Text>
+                  <Text style={styles.successButtonText}>{t('premium.letsPlay')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -575,6 +576,24 @@ const createStyles = () => StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 8,
   },
+  successButton: {
+    alignSelf: 'stretch',
+    height: 52,
+    backgroundColor: THEME.colors.primary,
+    borderRadius: 10,
+    borderBottomWidth: 4,
+    borderBottomColor: THEME.colors.primaryBevel,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  successButtonText: {
+    fontFamily: THEME.fonts.extraBold,
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
   bullets: {
     gap: 8,
   },
@@ -718,31 +737,37 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     backgroundColor: THEME.colors.primary,
-    borderRadius: 12,
-    paddingVertical: 13,
+    borderRadius: 10,
+    borderBottomWidth: 3.5,
+    borderBottomColor: THEME.colors.primaryBevel,
+    height: 48,
     paddingHorizontal: 20,
     alignSelf: 'stretch',
   },
   linkButtonText: {
-    fontFamily: THEME.fonts.bold,
+    fontFamily: THEME.fonts.extraBold,
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
   },
   buyButton: {
+    height: 54,
     backgroundColor: THEME.colors.primary,
-    borderRadius: 16,
-    paddingVertical: 16,
+    borderRadius: 10,
+    borderBottomWidth: 4,
+    borderBottomColor: THEME.colors.primaryBevel,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   buyButtonBusy: {
     opacity: 0.75,
   },
   buyText: {
-    fontFamily: THEME.fonts.bold,
+    fontFamily: THEME.fonts.extraBold,
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '800',
+    letterSpacing: 0.2,
   },
   error: {
     fontFamily: THEME.fonts.medium,

@@ -55,6 +55,8 @@ interface GameBoardProps {
   queuedWalls?: Array<{ qi: number; wall: WallCoord; color: string }>;
   onQueuedWallPress?: (qi: number) => void;
   onCellPress?: (cell: CellCoord) => void;
+  /** Stage 1 Hint: highlights active player's ball with an amber halo pulse. */
+  hintBall?: boolean;
   /** Actual analyzed move: from/to cells or wall, one restrained color. */
   moveMark?: { from?: CellCoord; to?: CellCoord; wall?: WallCoord; color: string; solid?: boolean } | null;
   /** Engine's preferred alternative: ghost wall or hollow target ring. */
@@ -285,6 +287,7 @@ const GameBoardView: React.FC<GameBoardProps> = ({
   queuedWalls = [],
   onQueuedWallPress,
   onCellPress,
+  hintBall = false,
   moveMark = null,
   altMark = null,
   badgeMark = null,
@@ -909,6 +912,22 @@ const GameBoardView: React.FC<GameBoardProps> = ({
                     height: orbDiameter * 0.55,
                     borderRadius: 999,
                     backgroundColor: 'rgba(0, 0, 0, 0.30)',
+                  }}
+                />
+              )}
+              {/* Stage 1 Hint: glowing amber pulse halo indicating ball move */}
+              {hintBall && isActive && (
+                <Animated.View
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    width: orbDiameter + 14,
+                    height: orbDiameter + 14,
+                    borderRadius: 999,
+                    borderWidth: 2.5,
+                    borderColor: '#F59E0B',
+                    backgroundColor: 'rgba(245, 158, 11, 0.20)',
+                    transform: [{ scale: turnPulse }],
                   }}
                 />
               )}

@@ -238,6 +238,8 @@ export interface ClientToServerEvents {
     ack?: (res: { ok: boolean; code?: string; message?: string }) => void
   ) => void;
   'game:rematch': (payload: { gameId: string }) => void;
+  'game:rematchCancel': (payload: { gameId: string }) => void;
+  'game:leavePostGame': (payload: { gameId: string }) => void;
   /**
    * Explicit rematch decline. Without it a dismissed offer lived out its full
    * server TTL while the offeror waited — the decline lets the other side
@@ -351,6 +353,10 @@ export interface ServerToClientEvents {
   'game:rematchOffered': (payload: { gameId: string; fromUserId: string }) => void;
   /** Someone dismissed the rematch offer: stop waiting, stay on the result. */
   'game:rematchDeclined': (payload: { gameId: string; byUserId: string }) => void;
+  /** Sender cancelled their rematch offer: recipient dismisses the prompt. */
+  'game:rematchCancelled': (payload: { gameId: string; byUserId: string }) => void;
+  /** Opponent left the post-game room: rematch is no longer available. */
+  'game:opponentLeft': (payload: { gameId: string; userId: string }) => void;
   /** Relay of another seat's quick reaction. Ephemeral: render and forget. */
   'game:reaction': (payload: { gameId: string; reaction: string; fromUserId: string }) => void;
   'room:state': (room: RoomDto) => void;

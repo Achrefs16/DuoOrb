@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, BackHandler, Linking, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, AppState, BackHandler, Image, Linking, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { TextStyle, ViewStyle } from 'react-native';
 
 function parseRoomCodeFromUrl(url: string): string | null {
@@ -211,7 +211,7 @@ export default function App() {
   // History/Profile entries open the bare match page (board + step
   // controls, no analysis); the win/lose modal opens full review.
   const [reviewBare, setReviewBare] = useState(false);
-  const [setupKind, setSetupKind] = useState<'ai' | 'local' | 'challenge' | 'online'>('ai');
+  const [setupKind, setSetupKind] = useState<'ai' | 'local' | 'challenge'>('ai');
   const [challengeTarget, setChallengeTarget] = useState<{ id: string; username: string } | null>(null);
   const [onlineEntry, setOnlineEntry] = useState<{
     clock: TimeControl;
@@ -301,14 +301,7 @@ export default function App() {
         dismissTo('PLAY', null);
         return;
       }
-      if (gameConfig.onlineSource === 'custom') {
-        // Custom Online Match closes back to its configuration page.
-        setSetupKind('online');
-        setChallengeTarget(null);
-        dismissTo(currentTab, 'SETUP');
-        return;
-      }
-      // Quick Match closes to the home page.
+      // Quick / online matches close to the home page.
       dismissTo('PLAY', null);
       return;
     }
@@ -557,20 +550,29 @@ export default function App() {
     }
   }, []);
 
+  const [sessionReady, setSessionReady] = useState(false);
+  const [splashTimeout, setSplashTimeout] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setSplashElapsed(true), SPLASH_MIN_MS);
-    return () => clearTimeout(t);
+    const timeoutTimer = setTimeout(() => setSplashTimeout(true), 3500);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(timeoutTimer);
+    };
   }, []);
 
   useEffect(() => {
     hydrateIdentity().finally(() => setIdentityReady(true));
   }, []);
 
-  // Release the single native splash exactly once, when fonts, identity and
-  // the minimum display time are all satisfied. The main tree (gates, tabs)
-  // renders underneath from the first frame, so there is never a blank flash
-  // and the logo appears exactly once.
-  const booted = (Platform.OS === 'web' || fontsLoaded) && identityReady && splashElapsed;
+  // Release the single native splash exactly once, when fonts, identity,
+  // minimum display time and session readiness (or safety ceiling) are satisfied.
+  // The main tree (gates, tabs) renders underneath, so there is never a blank flash.
+  const booted =
+    (Platform.OS === 'web' || fontsLoaded) &&
+    identityReady &&
+    splashElapsed &&
+    (sessionReady || splashTimeout);
   useEffect(() => {
     if (booted) {
       void SplashScreen.hideAsync().catch(() => {});
@@ -742,7 +744,7 @@ export default function App() {
     navigate(currentTab, 'ONLINE');
   };
 
-  const handleOpenSetup = (kind: 'ai' | 'local' | 'online') => {
+  const handleOpenSetup = (kind: 'ai' | 'local') => {
     setSetupKind(kind);
     setChallengeTarget(null);
     navigate(currentTab, 'SETUP');
@@ -1110,7 +1112,7 @@ export default function App() {
       <SystemChrome />
       <SessionProvider>
         {settingsLoaded ? (
-        <SessionGate onUsernameDone={handleUsernameCompleted}>
+        <SessionGate onReady={() => setSessionReady(true)} onUsernameDone={handleUsernameCompleted}>
           {/* Authenticated-only side effects: nothing here runs before a
               canonical identity exists. */}
           <SessionEffects onFriendRequests={setFriendRequestsCount} onOnlineCount={setOnlineCount} />
@@ -1252,6 +1254,10 @@ export default function App() {
                 setSubScreen(null);
                 setCurrentTab('BOTS');
               }}
+              onPlayOnline={() => {
+                setSubScreen(null);
+                handleOpenOnline(DEFAULT_TIME_CONTROL, 'quick');
+              }}
               onConfirm={(sel) => {
                 if (sel.vsType === 'challenge' && challengeTarget) {
                   challenge.sendChallenge(challengeTarget.id, challengeTarget.username, {
@@ -1265,20 +1271,6 @@ export default function App() {
                 }
                 if (sel.vsType === 'challenge') {
                   goBack();
-                  return;
-                }
-                // Custom Online Match: configured ranked matchmaking,
-                // matched only against the same mode/time/walls queue.
-                if (sel.vsType === 'online') {
-                  setOnlineEntry({
-                    clock: sel.clock,
-                    view: 'quick',
-                    inviteName: null,
-                    autoMatch: { mode: sel.mode, clock: sel.clock, wallsEach: sel.wallsEach },
-                    autoRoom: null,
-                    initialRoom: null,
-                  });
-                  navigate(currentTab, 'ONLINE');
                   return;
                 }
                 handleStartGame({
@@ -1509,7 +1501,13 @@ export default function App() {
         </View>
         </SessionGate>
         ) : (
-        <View style={styles.bootBlank} />
+        <View style={[styles.bootBlank, styles.bootCenter]}>
+          <Image
+            source={require('./assets/splash-400.png')}
+            style={styles.bootLogo}
+            resizeMode="contain"
+          />
+        </View>
         )}
       </SessionProvider>
       <AppToast />
@@ -1576,9 +1574,14 @@ const SystemChrome: React.FC = () => {
  * Nothing else in the tree decides whether the user is signed in, so there is
  * exactly one place where "is there a session?" is answered.
  */
-const SessionGate: React.FC<{ children: React.ReactNode; onUsernameDone?: () => void }> = ({
+const SessionGate: React.FC<{
+  children: React.ReactNode;
+  onUsernameDone?: () => void;
+  onReady?: () => void;
+}> = ({
   children,
   onUsernameDone,
+  onReady,
 }) => {
   const { status, bootError, retryBoot } = useSession();
   const identity = useIdentity();
@@ -1587,6 +1590,13 @@ const SessionGate: React.FC<{ children: React.ReactNode; onUsernameDone?: () => 
   // the previous account's answer. Null while unread for the current user.
   const [record, setRecord] = useState<{ userId: string; done: boolean } | null>(null);
   const userId = identity?.userId ?? null;
+
+  // Signal session resolution to parent so native splash can drop cleanly.
+  useEffect(() => {
+    if (status === 'ready' || status === 'anonymous' || bootError !== null) {
+      onReady?.();
+    }
+  }, [status, bootError, onReady]);
 
   // The completion flag lives on device and reads async; re-read whenever the
   // session or account flips, so a fresh sign-in re-enters the gate.
@@ -1613,7 +1623,18 @@ const SessionGate: React.FC<{ children: React.ReactNode; onUsernameDone?: () => 
   if (status === 'restoring') {
     // Boot failed reaching the server (a stored session exists but is
     // unreachable): retry section, never the Welcome page.
-    if (!bootError) return <View style={styles.bootBlank} />;
+    if (!bootError) {
+      return (
+        <View style={[styles.bootBlank, styles.bootCenter]}>
+          <Image
+            source={require('./assets/splash-400.png')}
+            style={styles.bootLogo}
+            resizeMode="contain"
+          />
+          <ActivityIndicator size="small" color={THEME.colors.primary} style={styles.bootSpinner} />
+        </View>
+      );
+    }
     return (
       <View style={[styles.bootBlank, styles.bootErrorWrap]}>
         <NoConnectionSection
@@ -1628,10 +1649,18 @@ const SessionGate: React.FC<{ children: React.ReactNode; onUsernameDone?: () => 
   if (status === 'anonymous') return <OnboardingFlow />;
   const onboardingDone =
     status === 'ready' && userId && record?.userId === userId ? record.done : null;
-  // Static same-background frame while the device flag loads. The logo lives
-  // only on the native splash (already gone or going) — a second splash
-  // instance here is what made it blink out and fade back in.
-  if (onboardingDone === null) return <View style={styles.bootBlank} />;
+  // Static same-background frame while the device flag loads.
+  if (onboardingDone === null) {
+    return (
+      <View style={[styles.bootBlank, styles.bootCenter]}>
+        <Image
+          source={require('./assets/splash-400.png')}
+          style={styles.bootLogo}
+          resizeMode="contain"
+        />
+      </View>
+    );
+  }
   if (
     identity &&
     isGeneratedUsername(identity.username, identity.userId) &&
@@ -1770,6 +1799,17 @@ const styles = StyleSheet.create({
   bootBlank: {
     flex: 1,
     backgroundColor: THEME.colors.background,
+  },
+  bootCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bootLogo: {
+    width: 120,
+    height: 120,
+  },
+  bootSpinner: {
+    marginTop: 24,
   },
   bootErrorWrap: {
     justifyContent: 'center',

@@ -182,6 +182,7 @@ onAfkWarning?: (gameId: string, payload: { playerId: string; afkEndsAt: number; 
    */
   disconnectGenerations: Record<string, number>;
   rematchOffers: Set<string>;            // userIds who offered/accepted rematch
+  activePostGameUsers: Set<string>;      // userIds currently present in post-game room
   isRanked: boolean;
   timeControlMinutes: number;
   wallsEach: number;
@@ -534,6 +535,7 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
       disconnectedUsers: {},
       disconnectGenerations: {},
       rematchOffers: new Set(),
+      activePostGameUsers: new Set(params.users.map((u) => u.userId)),
       isRanked: params.isRanked,
       timeControlMinutes: params.timeControlMinutes,
       wallsEach: params.wallsEach ?? startingWallsForMode(params.mode),
@@ -848,6 +850,7 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
         disconnectedUsers: {},
       disconnectGenerations: {},
         rematchOffers: new Set(),
+        activePostGameUsers: new Set(),
         isRanked: row.isRanked,
         timeControlMinutes: row.timeControlMinutes,
         wallsEach,
@@ -1444,7 +1447,11 @@ public async recoverInProgressGames(hooks: {
   public leaveGame(gameId: string, userId: string): { left: true; forfeited: boolean; recorded?: RecordedAction; ended?: GameEndedDto; finished?: { playerId: string; userId: string; place: number } } | { left: false; error: string } {
     const game = this.games.get(gameId);
     if (!game) return { left: false, error: 'Game not found.' };
-    if (game.state.status !== 'IN_PROGRESS') return { left: true, forfeited: false };
+    if (game.state.status !== 'IN_PROGRESS') {
+      game.activePostGameUsers.delete(userId);
+      game.rematchOffers.clear();
+      return { left: true, forfeited: false };
+    }
 
     const senderPlayerId = game.userPlayerIds[userId];
     if (!senderPlayerId) return { left: false, error: 'User is not a player in this game.' };
@@ -1452,12 +1459,41 @@ public async recoverInProgressGames(hooks: {
     const seat = game.state.players.find((p) => p.id === senderPlayerId);
     if (seat && seat.status === 'FINISHED') {
       game.leftUserIds.add(userId);
+      game.activePostGameUsers.delete(userId);
       return { left: true, forfeited: false };
     }
 
     const res = this.processAction(gameId, userId, { type: 'RESIGN' });
     if (!res.success) return { left: false, error: res.error.message };
+    game.activePostGameUsers.delete(userId);
     return { left: true, forfeited: true, recorded: res.recorded, ended: res.ended, finished: res.finished };
+  }
+
+  /**
+   * Explicit rematch cancel. Removes the canceller from the offer set;
+   * the gateway notifies the waiting seats so the recipient dismisses the prompt.
+   */
+  public cancelRematch(gameId: string, userId: string): boolean {
+    const game = this.games.get(gameId);
+    if (!game) return false;
+    if (game.state.status !== 'COMPLETED') return false;
+    if (game.userPlayerIds[userId] === undefined) return false;
+    game.rematchOffers.delete(userId);
+    return true;
+  }
+
+  /**
+   * Explicitly leave the post-game room. Removes userId from activePostGameUsers
+   * and clears any active rematch offers.
+   */
+  public leavePostGame(gameId: string, userId: string): { left: boolean; error?: string } {
+    const game = this.games.get(gameId);
+    if (!game) return { left: false, error: 'Game not found.' };
+    if (game.userPlayerIds[userId] === undefined) return { left: false, error: 'Not a player in this game.' };
+
+    game.activePostGameUsers.delete(userId);
+    game.rematchOffers.clear();
+    return { left: true };
   }
 
   /**
@@ -1485,6 +1521,13 @@ public async recoverInProgressGames(hooks: {
 
     const senderPlayerId = game.userPlayerIds[userId];
     if (!senderPlayerId) return { offered: false, error: 'Not a player in this game.' };
+
+    // Reject offer if any opponent is no longer in the post-game room
+    for (const otherUserId of Object.keys(game.userPlayerIds)) {
+      if (otherUserId !== userId && !game.activePostGameUsers.has(otherUserId)) {
+        return { offered: false, error: 'OPPONENT_LEFT' };
+      }
+    }
 
     game.rematchOffers.add(userId);
 
@@ -2020,6 +2063,14 @@ public async recoverInProgressGames(hooks: {
     game.disconnectGraceEndsAt = {};
     game.disconnectGenerations = {};
     this.clearAfkTimers(game);
+
+    // Initialize activePostGameUsers with all players who are currently connected and haven't left
+    game.activePostGameUsers = new Set();
+    for (const uId of Object.keys(game.userPlayerIds)) {
+      if (!game.leftUserIds.has(uId) && !game.disconnectedUsers[uId]) {
+        game.activePostGameUsers.add(uId);
+      }
+    }
 
     // Schedule in-memory TTL cleanup after 15 minutes
     const ttl = setTimeout(() => {

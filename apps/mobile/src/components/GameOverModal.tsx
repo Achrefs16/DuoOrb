@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Modal,
   StyleSheet,
@@ -60,6 +61,12 @@ export interface GameOverModalProps {
   onReturnToRoom?: () => void;
   onLeaveRoom?: () => void;
   onRematch: () => void;
+  rematchSent?: boolean;
+  opponentLeft?: boolean;
+  rematchIncoming?: boolean;
+  onCancelRematch?: () => void;
+  onAcceptRematch?: () => void;
+  onDeclineRematch?: () => void;
   showNewGame?: boolean;
   onNewGame: () => void;
   onReplay: () => void;
@@ -180,6 +187,12 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onReturnToRoom,
   onLeaveRoom,
   onRematch,
+  rematchSent = false,
+  opponentLeft = false,
+  rematchIncoming = false,
+  onCancelRematch,
+  onAcceptRematch,
+  onDeclineRematch,
   showNewGame = false,
   onNewGame,
   onReplay,
@@ -557,13 +570,65 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={styles.gameReviewBtn}
-              activeOpacity={0.88}
-              onPress={type === 'ai' ? (onRematch ?? onNewGame) : onRematch}
+              style={[
+                styles.gameReviewBtn,
+                type === 'online' && opponentLeft && styles.secondaryBtnDisabled,
+              ]}
+              activeOpacity={type === 'online' && opponentLeft ? 1 : 0.88}
+              disabled={type === 'online' && opponentLeft}
+              onPress={
+                type === 'ai'
+                  ? (onRematch ?? onNewGame)
+                  : rematchSent
+                  ? (onCancelRematch ?? onRematch)
+                  : onRematch
+              }
             >
-              <OrbIcon name="rotate-ccw" size={17} color="#FFFFFF" />
-              <Text style={styles.gameReviewText}>{t('gameover.btnPlayAgain')}</Text>
+              {rematchSent ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <OrbIcon
+                  name={type === 'online' && opponentLeft ? 'slash' : 'rotate-ccw'}
+                  size={17}
+                  color="#FFFFFF"
+                />
+              )}
+              <Text style={styles.gameReviewText}>
+                {type === 'online' && opponentLeft
+                  ? t('gameover.opponentLeft')
+                  : rematchSent
+                  ? t('gameover.cancelRematch')
+                  : t('gameover.btnPlayAgain')}
+              </Text>
             </TouchableOpacity>
+          )}
+
+          {/* Incoming Rematch Banner: Prominently show Accept & Decline */}
+          {type === 'online' && rematchIncoming && !opponentLeft && (
+            <View style={styles.incomingRematchBanner}>
+              <View style={styles.incomingRematchInfo}>
+                <OrbIcon name="rotate-ccw" size={16} color={THEME.colors.primary} />
+                <Text style={styles.incomingRematchTitle}>{t('game.rematchOffered')}</Text>
+              </View>
+              <View style={styles.incomingRematchActions}>
+                <TouchableOpacity
+                  style={styles.incomingDeclineBtn}
+                  activeOpacity={0.75}
+                  onPress={onDeclineRematch}
+                >
+                  <OrbIcon name="x" size={14} color={THEME.colors.textSecondary} />
+                  <Text style={styles.incomingDeclineText}>{t('game.decline')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.incomingAcceptBtn}
+                  activeOpacity={0.85}
+                  onPress={onAcceptRematch ?? onRematch}
+                >
+                  <OrbIcon name="check" size={14} color="#FFFFFF" />
+                  <Text style={styles.incomingAcceptText}>{t('game.accept')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           )}
 
           {/* 2-Column Secondary Tactile Buttons */}
@@ -622,12 +687,38 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             ) : type === 'online' ? (
               <>
                 <TouchableOpacity
-                  style={styles.secondaryBtn}
-                  activeOpacity={0.75}
-                  onPress={onRematch}
+                  style={[
+                    styles.secondaryBtn,
+                    opponentLeft && styles.secondaryBtnDisabled,
+                    rematchSent && styles.secondaryBtnWaiting,
+                  ]}
+                  activeOpacity={opponentLeft ? 1 : 0.75}
+                  disabled={opponentLeft}
+                  onPress={rematchSent ? (onCancelRematch ?? onRematch) : onRematch}
                 >
-                  <OrbIcon name="rotate-ccw" size={15} color={THEME.colors.textPrimary} />
-                  <Text style={styles.secondaryBtnText}>{t('gameover.btnRematch')}</Text>
+                  {rematchSent ? (
+                    <ActivityIndicator size="small" color={THEME.colors.primary} />
+                  ) : (
+                    <OrbIcon
+                      name={opponentLeft ? 'slash' : 'rotate-ccw'}
+                      size={15}
+                      color={opponentLeft ? THEME.colors.textMuted : THEME.colors.textPrimary}
+                    />
+                  )}
+                  <Text
+                    style={[
+                      styles.secondaryBtnText,
+                      opponentLeft && styles.secondaryBtnTextDisabled,
+                      rematchSent && styles.secondaryBtnTextWaiting,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {opponentLeft
+                      ? t('gameover.opponentLeft')
+                      : rematchSent
+                      ? t('gameover.cancelRematch')
+                      : t('gameover.btnRematch')}
+                  </Text>
                 </TouchableOpacity>
 
                 {showNewGame ? (
@@ -937,10 +1028,10 @@ const createStyles = () => StyleSheet.create({
   },
   gameReviewBtn: {
     width: '100%',
-    height: 48,
+    height: 50,
     backgroundColor: THEME.colors.primary,
     borderBottomWidth: 4,
-    borderBottomColor: '#4E8C2F',
+    borderBottomColor: THEME.colors.primaryBevel,
     borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -974,11 +1065,81 @@ const createStyles = () => StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
   },
+  secondaryBtnDisabled: {
+    opacity: 0.45,
+  },
+  secondaryBtnWaiting: {
+    borderColor: THEME.colors.primary,
+    borderWidth: 1,
+  },
   secondaryBtnText: {
     fontFamily: THEME.fonts.bold,
     fontSize: 14,
     fontWeight: '700',
     color: THEME.colors.onSurface,
+  },
+  secondaryBtnTextDisabled: {
+    color: THEME.colors.textMuted,
+  },
+  secondaryBtnTextWaiting: {
+    color: THEME.colors.primary,
+  },
+  incomingRematchBanner: {
+    width: '100%',
+    backgroundColor: THEME.colors.surfaceContainerLow,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: THEME.colors.primary,
+  },
+  incomingRematchInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  incomingRematchTitle: {
+    fontFamily: THEME.fonts.bold,
+    fontSize: 13,
+    color: THEME.colors.textPrimary,
+  },
+  incomingRematchActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  incomingDeclineBtn: {
+    flex: 1,
+    height: 36,
+    backgroundColor: THEME.colors.surfaceMuted,
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  incomingDeclineText: {
+    fontFamily: THEME.fonts.semiBold,
+    fontSize: 12,
+    color: THEME.colors.textSecondaryStrong,
+  },
+  incomingAcceptBtn: {
+    flex: 1,
+    height: 38,
+    backgroundColor: THEME.colors.primary,
+    borderRadius: 8,
+    borderBottomWidth: 2.5,
+    borderBottomColor: THEME.colors.primaryBevel,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  incomingAcceptText: {
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   viewProfileBtn: {
     flexDirection: 'row',

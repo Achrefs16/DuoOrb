@@ -1185,16 +1185,19 @@ const createStyles = () => StyleSheet.create({
   },
   primaryButton: {
     flex: 1,
+    height: 48,
     backgroundColor: THEME.colors.primary,
-    paddingVertical: 13,
-    borderRadius: 12,
+    borderRadius: 10,
+    borderBottomWidth: 3.5,
+    borderBottomColor: THEME.colors.primaryBevel,
     alignItems: 'center',
     justifyContent: 'center',
   },
   primaryButtonText: {
-    fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
-    fontSize: 14,
+    fontFamily: THEME.fonts.extraBold,
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
   },
   secondaryButton: {
     flex: 1,
@@ -1251,6 +1254,8 @@ const createStyles = () => StyleSheet.create({
   authButtonPrimary: {
     backgroundColor: THEME.colors.primary,
     borderColor: THEME.colors.primary,
+    borderBottomWidth: 3,
+    borderBottomColor: THEME.colors.primaryBevel,
   },
   authButtonText: {
     fontFamily: THEME.fonts.bold,
@@ -1258,9 +1263,10 @@ const createStyles = () => StyleSheet.create({
     color: THEME.colors.textPrimary,
   },
   authButtonPrimaryText: {
-    fontFamily: THEME.fonts.bold,
-    fontSize: 13,
-    color: THEME.colors.onPrimary,
+    fontFamily: THEME.fonts.extraBold,
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   disabled: {
     opacity: 0.35,

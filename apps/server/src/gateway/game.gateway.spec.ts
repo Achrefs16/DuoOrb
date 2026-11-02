@@ -1002,6 +1002,94 @@ describe('GameGateway sweep liveness (F3)', () => {
       if (game) for (const t of game.afkTimers.values()) clearTimeout(t);
     }
   });
+
+  it('cancel removes sender offer and broadcasts rematchCancelled', () => {
+    const { gateway } = makeGateway();
+    const gw = gateway as any;
+    const f = fakeServer('gold-cancel');
+    gw.server = f.server;
+    const R = { rating: 1500, rd: 350, vol: 0.06 };
+    gw.gameService.createGame({
+      gameId: 'gold-cancel',
+      mode: '2p' as const,
+      users: [
+        { userId: 'uA', displayName: 'A', rating: R },
+        { userId: 'uB', displayName: 'B', rating: R },
+      ],
+      timeControlMinutes: 3,
+      isRanked: true,
+    });
+    try {
+      const game = gw.gameService.getGame('gold-cancel');
+      game.state.status = 'COMPLETED';
+      game.rematchOffers.add('uA');
+      gw.socketUserMap.set('sock-A', { userId: 'uA', displayName: 'A', rating: 1500, verified: true });
+
+      gw.handleRematchCancel({ id: 'sock-A', handshake: { query: {} } } as any, { gameId: 'gold-cancel' });
+
+      expect(game.rematchOffers.has('uA')).toBe(false);
+      const cancelled = f.emits.filter((e: { event: string }) => e.event === 'game:rematchCancelled');
+      expect(cancelled).toHaveLength(1);
+      expect(cancelled[0].payload).toMatchObject({ gameId: 'gold-cancel', byUserId: 'uA' });
+    } finally {
+      const game = gw.gameService.getGame('gold-cancel');
+      if (game?.timerInterval) clearInterval(game.timerInterval);
+      if (game?.quorumTimeout) clearTimeout(game.quorumTimeout);
+      if (game?.flagTimeout) clearTimeout(game.flagTimeout);
+      if (game) for (const t of game.afkTimers.values()) clearTimeout(t);
+    }
+  });
+
+  it('leavePostGame notifies opponent and blocks subsequent rematch offers', () => {
+    const { gateway } = makeGateway();
+    const gw = gateway as any;
+    const f = fakeServer('gold-leave');
+    gw.server = f.server;
+    const R = { rating: 1500, rd: 350, vol: 0.06 };
+    gw.gameService.createGame({
+      gameId: 'gold-leave',
+      mode: '2p' as const,
+      users: [
+        { userId: 'uA', displayName: 'A', rating: R },
+        { userId: 'uB', displayName: 'B', rating: R },
+      ],
+      timeControlMinutes: 3,
+      isRanked: true,
+    });
+    try {
+      const game = gw.gameService.getGame('gold-leave');
+      game.state.status = 'COMPLETED';
+      gw.socketUserMap.set('sock-B', { userId: 'uB', displayName: 'B', rating: 1500, verified: true });
+      const clientB = { id: 'sock-B', handshake: { query: {} }, leave: () => {} };
+
+      gw.handleLeavePostGame(clientB as any, { gameId: 'gold-leave' });
+
+      expect(game.activePostGameUsers.has('uB')).toBe(false);
+      const leftEmits = f.emits.filter((e: { event: string }) => e.event === 'game:opponentLeft');
+      expect(leftEmits).toHaveLength(1);
+      expect(leftEmits[0].payload).toMatchObject({ gameId: 'gold-leave', userId: 'uB' });
+
+      // uA now tries to offer rematch
+      gw.socketUserMap.set('sock-A', { userId: 'uA', displayName: 'A', rating: 1500, verified: true });
+      const emittedErrors: any[] = [];
+      const clientA = {
+        id: 'sock-A',
+        handshake: { query: {} },
+        emit: (ev: string, data: any) => emittedErrors.push({ ev, data }),
+        to: () => ({ emit: () => {} }),
+      };
+      gw.handleRematch(clientA as any, { gameId: 'gold-leave' });
+
+      expect(emittedErrors.some((e) => e.ev === 'game:opponentLeft')).toBe(true);
+      expect(emittedErrors.some((e) => e.ev === 'game:error' && e.data.code === 'OPPONENT_LEFT')).toBe(true);
+    } finally {
+      const game = gw.gameService.getGame('gold-leave');
+      if (game?.timerInterval) clearInterval(game.timerInterval);
+      if (game?.quorumTimeout) clearTimeout(game.quorumTimeout);
+      if (game?.flagTimeout) clearTimeout(game.flagTimeout);
+      if (game) for (const t of game.afkTimers.values()) clearTimeout(t);
+    }
+  });
 });
 
 /**

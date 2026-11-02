@@ -47,7 +47,7 @@ export interface RestoreDeps {
   /** Reads the persisted refresh token. Must read memory, not a sync shim. */
   getStoredRefreshToken: () => string | null;
   /** Exchanges a refresh token for a fresh pair. */
-  refreshGuestSession: (refreshToken: string) => Promise<GuestCredentials>;
+  refreshGuestSession: (refreshToken: string, timeoutMs?: number) => Promise<GuestCredentials>;
   /** The authenticated `/me` read. */
   fetchProfile: (accessToken: string) => Promise<ServerProfile>;
   /**
@@ -56,6 +56,8 @@ export interface RestoreDeps {
    * and must not destroy a session that is merely unreachable right now.
    */
   isDeadSession: (error: unknown) => boolean;
+  /** Fast offline check: avoids waiting for timeout when known offline. */
+  isOffline?: () => boolean | Promise<boolean>;
 }
 
 /**
@@ -83,6 +85,19 @@ export async function restoreSession(deps: RestoreDeps): Promise<RestoreOutcome>
       return { status: 'restored', identity: existing, profileLoaded: false };
     }
     return { status: 'anonymous', reason: 'no-session' };
+  }
+
+  // Fast offline check: if we already have an existing session in storage and
+  // the device is offline, skip the network round-trip and boot straight into the cached identity.
+  if (existing && deps.isOffline) {
+    try {
+      const offline = await deps.isOffline();
+      if (offline) {
+        return { status: 'restored', identity: existing, profileLoaded: false };
+      }
+    } catch {
+      // ignore
+    }
   }
 
   try {

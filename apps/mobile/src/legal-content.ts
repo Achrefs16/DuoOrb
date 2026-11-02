@@ -39,7 +39,7 @@ export const LEGAL_DOCS: Record<LegalKind, LegalDoc> = {
       },
       {
         heading: 'How we use it',
-        body: 'Sign-in and player identity, gameplay and matchmaking, leaderboards and ratings, friends/challenges/rooms, syncing equipped cosmetics and bot progress, Premium entitlement (unlocking no-ads, unlimited analysis, all 39 bots, all 16 cosmetic sets, 9 Hints & 9 Undos per bot match, and the subscriber diamond badge), safety (rate limiting, replay detection, cheat validation) and support. Post-game engine match review is computed locally on your device. Free players see banner/interstitial ads and may optionally watch rewarded video ads for extra Hints, Undos, ad-tier Bot unlocks or extra Match Reviews; Premium members see no ads. Never sold, never shared with data brokers.',
+        body: 'Sign-in and player identity, gameplay and matchmaking, leaderboards and ratings, friends/challenges/rooms, syncing equipped cosmetics and bot progress, Premium entitlement (unlocking no-ads, unlimited analysis, all 39 bots, all 16 cosmetic sets, 6 Hints & 4 Undos per bot match, and the subscriber diamond badge), safety (rate limiting, replay detection, cheat validation) and support. Post-game engine match review is computed locally on your device. Free players see banner/interstitial ads and may optionally watch rewarded video ads for extra Hints, Undos, ad-tier Bot unlocks or extra Match Reviews; Premium members see no ads. Never sold, never shared with data brokers.',
       },
       {
         heading: 'Sharing',
@@ -86,7 +86,7 @@ export const LEGAL_DOCS: Record<LegalKind, LegalDoc> = {
       },
       {
         heading: 'Premium subscriptions',
-        body: 'DuoOrb Premium ($3.99/month or $24.99/year, prices vary by country) removes all ads and unlocks unlimited Engine Match Analysis, all 39 AI Bots, all 16 Ball & Wall Cosmetic sets, 9 Hints & 9 Undos per bot match, and the subscriber Diamond badge. Both plans start with a 7-day free trial, then bill automatically each period until cancelled. Billing is handled entirely by Google Play: we never see payment details. Cancel anytime in Settings > Premium > Manage subscription (or Play Store > Payments & subscriptions); access continues until the end of the paid period. Refunds follow Google Play policy. Promotional prices, if offered, renew at the standard rate stated at purchase. Guests must save with Google before purchasing so Premium attaches to an account.',
+        body: 'DuoOrb Premium ($3.99/month or $24.99/year, prices vary by country) removes all ads and unlocks unlimited Engine Match Analysis, all 39 AI Bots, all 16 Ball & Wall Cosmetic sets, 6 Hints & 4 Undos per bot match, and the subscriber Diamond badge. Both plans start with a 7-day free trial, then bill automatically each period until cancelled. Billing is handled entirely by Google Play: we never see payment details. Cancel anytime in Settings > Premium > Manage subscription (or Play Store > Payments & subscriptions); access continues until the end of the paid period. Refunds follow Google Play policy. Promotional prices, if offered, renew at the standard rate stated at purchase. Guests must save with Google before purchasing so Premium attaches to an account.',
       },
       {
         heading: 'Availability & termination',

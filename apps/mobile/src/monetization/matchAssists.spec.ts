@@ -13,11 +13,11 @@ import {
 } from './matchAssists';
 
 describe('matchAssists economy (divided hints & undos)', () => {
-  it('initializes free tier with 1 hint and 1 undo separately', () => {
+  it('initializes free tier with 2 hints and 1 undo separately', () => {
     const s = createMatchAssists(false);
     expect(s.hintsRemaining).toBe(FREE_STARTING_HINTS);
     expect(s.undosRemaining).toBe(FREE_STARTING_UNDOS);
-    expect(s.hintsRemaining).toBe(1);
+    expect(s.hintsRemaining).toBe(2);
     expect(s.undosRemaining).toBe(1);
     expect(s.used).toBe(0);
     expect(s.hintRefillsUsed).toBe(0);
@@ -28,12 +28,12 @@ describe('matchAssists economy (divided hints & undos)', () => {
     expect(willForfeitThreeStars(s)).toBe(true);
   });
 
-  it('initializes premium tier with 3 hints and 3 undos (zero ads, firm match cap)', () => {
+  it('initializes premium tier with 6 hints and 4 undos (zero ads, firm match cap)', () => {
     const s = createMatchAssists(true);
     expect(s.hintsRemaining).toBe(PREMIUM_STARTING_HINTS);
     expect(s.undosRemaining).toBe(PREMIUM_STARTING_UNDOS);
-    expect(s.hintsRemaining).toBe(3);
-    expect(s.undosRemaining).toBe(3);
+    expect(s.hintsRemaining).toBe(6);
+    expect(s.undosRemaining).toBe(4);
     expect(s.used).toBe(0);
     expect(s.isPremium).toBe(true);
     expect(canUseAssist(s, 'hint')).toBe(true);
@@ -45,14 +45,22 @@ describe('matchAssists economy (divided hints & undos)', () => {
   it('consumes hints and undos independently while tracking total used for stars', () => {
     let s = createMatchAssists(false);
 
-    // Spend 1 hint -> hintsRemaining becomes 0, undosRemaining stays 1
-    const stepHint = consumeAssist(s, 'hint');
-    expect(stepHint.ok).toBe(true);
-    s = stepHint.next;
-    expect(s.hintsRemaining).toBe(0);
+    // Spend first hint -> hintsRemaining becomes 1, undosRemaining stays 1
+    const stepHint1 = consumeAssist(s, 'hint');
+    expect(stepHint1.ok).toBe(true);
+    s = stepHint1.next;
+    expect(s.hintsRemaining).toBe(1);
     expect(s.undosRemaining).toBe(1);
     expect(s.used).toBe(1);
     expect(willForfeitThreeStars(s)).toBe(false);
+
+    // Spend second hint -> hintsRemaining becomes 0, undosRemaining stays 1
+    const stepHint2 = consumeAssist(s, 'hint');
+    expect(stepHint2.ok).toBe(true);
+    s = stepHint2.next;
+    expect(s.hintsRemaining).toBe(0);
+    expect(s.undosRemaining).toBe(1);
+    expect(s.used).toBe(2);
 
     // Cannot consume another hint without refilling
     expect(consumeAssist(s, 'hint').ok).toBe(false);
@@ -61,29 +69,30 @@ describe('matchAssists economy (divided hints & undos)', () => {
     expect(stepUndo.ok).toBe(true);
     s = stepUndo.next;
     expect(s.undosRemaining).toBe(0);
-    expect(s.used).toBe(2);
+    expect(s.used).toBe(3);
   });
 
-  it('handles rewarded ad refills independently for hints (+2) and undos (+2) up to 1 refill per match', () => {
+  it('handles rewarded ad refills independently for hints (+3) and undos (+3) up to 1 refill per match', () => {
     let s = createMatchAssists(false);
+    s = consumeAssist(s, 'hint').next;
     s = consumeAssist(s, 'hint').next;
     expect(s.hintsRemaining).toBe(0);
     expect(canRefillAssists(s, 'hint')).toBe(true);
 
-    // Watch ad for more hints (+2 hints) -> brings total to 3 hints consumed/available in match
+    // Watch ad for more hints (+3 hints) -> brings total to 5 hints consumed/available in match
     s = refillAssists(s, 'hint');
-    expect(s.hintsRemaining).toBe(2);
+    expect(s.hintsRemaining).toBe(3);
     expect(s.hintRefillsUsed).toBe(1);
     expect(s.undoRefillsUsed).toBe(0);
     // 1 refill used -> cannot refill hints again in this match
     expect(canRefillAssists(s, 'hint')).toBe(false);
 
-    // Undo refills are still available independently (+2 undos)
+    // Undo refills are still available independently (+3 undos)
     expect(canRefillAssists(s, 'undo')).toBe(true);
     s = consumeAssist(s, 'undo').next;
     expect(s.undosRemaining).toBe(0);
     s = refillAssists(s, 'undo');
-    expect(s.undosRemaining).toBe(2);
+    expect(s.undosRemaining).toBe(3);
     expect(s.undoRefillsUsed).toBe(1);
     // 1 undo refill used -> cannot refill undos again in this match
     expect(canRefillAssists(s, 'undo')).toBe(false);
@@ -94,41 +103,49 @@ describe('matchAssists economy (divided hints & undos)', () => {
     expect(canRefillAssists(s, 'hint')).toBe(false);
     expect(canRefillAssists(s, 'undo')).toBe(false);
 
-    // Consume first hint
-    expect(canUseAssist(s, 'hint')).toBe(true);
-    s = consumeAssist(s, 'hint').next;
-    expect(s.hintsRemaining).toBe(2);
-    expect(s.used).toBe(1);
-
-    // Consume second hint
-    expect(canUseAssist(s, 'hint')).toBe(true);
-    s = consumeAssist(s, 'hint').next;
-    expect(s.hintsRemaining).toBe(1);
-    expect(s.used).toBe(2);
-
-    // Consume third hint
-    expect(canUseAssist(s, 'hint')).toBe(true);
-    s = consumeAssist(s, 'hint').next;
+    // Consume all 6 hints
+    for (let i = 0; i < 6; i++) {
+      expect(canUseAssist(s, 'hint')).toBe(true);
+      s = consumeAssist(s, 'hint').next;
+    }
     expect(s.hintsRemaining).toBe(0);
-    expect(s.used).toBe(3);
+    expect(s.used).toBe(6);
 
-    // Cannot consume a 4th hint; stays at 0 and rejects
+    // Cannot consume a 7th hint; stays at 0 and rejects
     expect(canUseAssist(s, 'hint')).toBe(false);
     const failHint = consumeAssist(s, 'hint');
     expect(failHint.ok).toBe(false);
     expect(canRefillAssists(s, 'hint')).toBe(false);
 
-    // Can still consume the 3 undos independently
-    expect(canUseAssist(s, 'undo')).toBe(true);
-    s = consumeAssist(s, 'undo').next;
-    expect(s.undosRemaining).toBe(2);
-    s = consumeAssist(s, 'undo').next;
-    expect(s.undosRemaining).toBe(1);
-    s = consumeAssist(s, 'undo').next;
+    // Can still consume the 4 undos independently
+    for (let i = 0; i < 4; i++) {
+      expect(canUseAssist(s, 'undo')).toBe(true);
+      s = consumeAssist(s, 'undo').next;
+    }
     expect(s.undosRemaining).toBe(0);
     expect(canUseAssist(s, 'undo')).toBe(false);
     expect(consumeAssist(s, 'undo').ok).toBe(false);
     expect(canRefillAssists(s, 'undo')).toBe(false);
-    expect(s.used).toBe(6);
+    expect(s.used).toBe(10);
+  });
+
+  it('consumes a hint token for successive reveal without penalizing stars (countStarLoss: false)', () => {
+    let s = createMatchAssists(false); // starts with 2 hints
+    expect(s.hintsRemaining).toBe(2);
+    expect(s.used).toBe(0);
+
+    // Action 1: Category clue consumes 1 hint and incurs star penalty
+    s = consumeAssist(s, 'hint', { countStarLoss: true }).next;
+    expect(s.hintsRemaining).toBe(1);
+    expect(s.used).toBe(1);
+
+    // Action 2: Exact move reveal consumes 1 hint BUT does not count toward star penalty
+    s = consumeAssist(s, 'hint', { countStarLoss: false }).next;
+    expect(s.hintsRemaining).toBe(0);
+    expect(s.used).toBe(1); // used remains 1 (no extra star lost)!
+
+    // Out of hints -> cannot consume without refill
+    expect(canUseAssist(s, 'hint')).toBe(false);
+    expect(consumeAssist(s, 'hint').ok).toBe(false);
   });
 });

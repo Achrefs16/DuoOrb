@@ -130,6 +130,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   private socketUserMap = new Map<string, SocketUserInfo>(); // socketId -> SocketUserInfo
   private userSocketMap = new Map<string, string>();         // userId -> socketId
   private activeGameUserMap = new Map<string, string>();     // userId -> gameId
+  private postGameUserMap = new Map<string, string>();       // userId -> gameId (completed games awaiting rematch/exit)
   /**
    * Monotonic per-user connection generations. A stale socket's disconnect
    * must never tear down a session that a newer transport already owns —
@@ -543,6 +544,10 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       this.activeGameUserMap.set(newId, this.activeGameUserMap.get(prevId)!);
       this.activeGameUserMap.delete(prevId);
     }
+    if (this.postGameUserMap.get(prevId)) {
+      this.postGameUserMap.set(newId, this.postGameUserMap.get(prevId)!);
+      this.postGameUserMap.delete(prevId);
+    }
     // Drop stale routing to the old id (M10): same-socket adopt, or a dead
     // previous socket that must never address a ghost connection again.
     if (!prevSocket || prevSocketId === client.id) {
@@ -763,6 +768,12 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
           this.scheduleOpponentDisconnect(gameId, userId, res, others);
         }
       }
+    }
+
+    // Check if user is in a completed game's post-game room
+    const postGameId = this.postGameUserMap.get(userId);
+    if (postGameId) {
+      this.leavePostGameInternal(postGameId, userId);
     }
 
     this.socketUserMap.delete(socketId);
@@ -1403,6 +1414,10 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       return { success: true, resumed: true };
     }
     if (busyGameId) this.activeGameUserMap.delete(user.userId);
+    const prevPostGameId = this.postGameUserMap.get(user.userId);
+    if (prevPostGameId) {
+      this.leavePostGameInternal(prevPostGameId, user.userId);
+    }
     this.matchmakingService.addToQueue({
       userId: user.userId,
       displayName: user.displayName,
@@ -1784,6 +1799,9 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     }
     const game = this.gameService.getGame(payload.gameId);
     if (!game || game.state.status !== 'IN_PROGRESS') {
+      if (game && game.state.status === 'COMPLETED' && game.userPlayerIds[user.userId]) {
+        this.leavePostGameInternal(payload.gameId, user.userId, client);
+      }
       ack?.({ ok: true });
       return;
     }
@@ -2155,6 +2173,9 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       if (result.newGameParams) {
         // All seats accepted! Create new game and notify players
         const params = result.newGameParams;
+        for (const u of params.users) {
+          this.postGameUserMap.delete(u.userId);
+        }
         // Re-read every seat's live rating for the new rating period.
         // `offerRematch` can only fire once the previous game COMPLETED, but it
         // carries that game's PRE-match snapshot — seeding the rematch with it
@@ -2193,7 +2214,52 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
           fromUserId: user.userId,
         });
       }
+    } else {
+      if (result.error === 'OPPONENT_LEFT') {
+        client.emit('game:opponentLeft', {
+          gameId: payload.gameId,
+          userId: '',
+        });
+      }
+      client.emit('game:error', {
+        code: (result.error === 'OPPONENT_LEFT' ? 'OPPONENT_LEFT' : 'UNKNOWN_ACTION') as any,
+        message: result.error,
+      });
     }
+  }
+
+  @SubscribeMessage('game:rematchCancel')
+  handleRematchCancel(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { gameId: string }
+  ) {
+    const user = this.getUser(client);
+    if (!user.verified) return;
+    if (!this.gameService.cancelRematch(payload.gameId, user.userId)) return;
+    this.server.to(payload.gameId).emit('game:rematchCancelled', {
+      gameId: payload.gameId,
+      byUserId: user.userId,
+    });
+  }
+
+  @SubscribeMessage('game:leavePostGame')
+  handleLeavePostGame(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { gameId: string }
+  ) {
+    const user = this.getUser(client);
+    if (!user.verified) return;
+    this.leavePostGameInternal(payload.gameId, user.userId, client);
+  }
+
+  private leavePostGameInternal(gameId: string, userId: string, client?: Socket): void {
+    this.postGameUserMap.delete(userId);
+    this.gameService.leavePostGame(gameId, userId);
+    this.server.to(gameId).emit('game:opponentLeft', {
+      gameId,
+      userId,
+    });
+    client?.leave(gameId);
   }
 
   @SubscribeMessage('game:rematchDecline')
@@ -2489,6 +2555,9 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     if (finishedGame) {
       for (const userId of Object.keys(finishedGame.userPlayerIds ?? {})) {
         this.cancelOpponentDisconnect(gameId, userId);
+        if (finishedGame.activePostGameUsers?.has(userId)) {
+          this.postGameUserMap.set(userId, gameId);
+        }
       }
     }
     try {

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, BackHandler, Image, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 
-'react-native';
+import { ActivityIndicator, Animated, BackHandler, Image, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from
+  'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AIDifficulty,
@@ -50,7 +50,7 @@ import { SavedGameRecord, loadOnlineGameSnapshot, recordBotVictoryStars, saveGam
 import { THEME, hexToRgba, playerColor, useStyles, useTheme, wallPreviewColor } from '../theme';
 import { CLOCK_ENABLED, DEFAULT_TIME_CONTROL, TimeControl, effectiveIncrement, isUntimedTimeControl } from '../timeControls';
 import { useOnlineGame } from '../network/useOnlineGame';
-import { useQuickReactions, groupReactionsBySeat } from '../network/useQuickReactions';import { ReactionDock, ReactionTray } from '../components/QuickReactions';
+import { useQuickReactions, groupReactionsBySeat } from '../network/useQuickReactions'; import { ReactionDock, ReactionTray } from '../components/QuickReactions';
 import type { ReactionKind } from '../network/useQuickReactions';
 import { WallDragGhostProvider } from '../components/WallDragGhost';
 import { SkinBackdrop } from '../components/SkinBackdrop';
@@ -172,8 +172,8 @@ function playerNamesFor(
   const namesList = Array.isArray(aiNames)
     ? aiNames
     : aiNames
-    ? [aiNames]
-    : [];
+      ? [aiNames]
+      : [];
 
   if (type === 'ai') {
     if (mode === '2p') {
@@ -370,6 +370,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [soundMuted, setSoundMuted] = useState(false);
   const [chatTrayOpen, setChatTrayOpen] = useState(false);
   const [hintAction, setHintAction] = useState<GameAction | null>(null);
+  const [hintStage, setHintStage] = useState<'none' | 'category' | 'exact'>('none');
   const [hintLoading, setHintLoading] = useState(false);
   const hintReqIdRef = useRef(0);
 
@@ -497,25 +498,25 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // set so contrast holds). Undefined = app theme owns the cards.
   const hudSurface =
     skin.hudCard &&
-    skin.hudBorder &&
-    skin.hudInk &&
-    skin.hudSubInk &&
-    skin.hudChip &&
-    (skin.id === 'tactileDark' || THEME.mode !== 'dark')
+      skin.hudBorder &&
+      skin.hudInk &&
+      skin.hudSubInk &&
+      skin.hudChip &&
+      (skin.id === 'tactileDark' || THEME.mode !== 'dark')
       ? {
-          card: skin.hudCard,
-          border: skin.hudBorder,
-          ink: skin.hudInk,
-          subInk: skin.hudSubInk,
-          chip: skin.hudChip,
-        }
+        card: skin.hudCard,
+        border: skin.hudBorder,
+        ink: skin.hudInk,
+        subInk: skin.hudSubInk,
+        chip: skin.hudChip,
+      }
       : undefined;
   const [rewardOpen, setRewardOpen] = useState(false);
   const [rewardBusy, setRewardBusy] = useState(false);
   const [rewardError, setRewardError] = useState<string | null>(null);
   // Match Assists Economy (Hints & Undos "Lives" system):
-  // Free: 1 hint + 1 undo per match + rewarded ad refill (+2, max 2 ads per match)
-  // Premium: 5 hints + 5 undos per match
+  // Free: 2 hints + 1 undo per match + rewarded ad refill (+3, max 1 ad per category)
+  // Premium: 6 hints + 4 undos per match
   // `assistsUsedRef` drives 3-star bot mastery (0 assists = 3 stars).
   const [assistsState, setAssistsState] = useState<MatchAssistsState>(() =>
     createMatchAssists(isPremiumActive(premiumState))
@@ -631,8 +632,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     isUntimed
       ? {}
       : Object.fromEntries(
-          initialState.players.map((p) => [p.id, timeControl.minutes * 60_000])
-        )
+        initialState.players.map((p) => [p.id, timeControl.minutes * 60_000])
+      )
   );
   const lastClockTickAtRef = useRef<number>(0);
   const clockTimeoutRef = useRef(false);
@@ -697,8 +698,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // Walking away from a live online game resigns it (server no-ops
-  // finished games) so no ghost seat blocks rematch/challenge/queue.
+  // Walking away from a live online game resigns it; leaving a completed
+  // match clears post-game presence so the opponent is immediately notified.
   useEffect(() => {
     if (type !== 'online' || !onlineGameId) return;
     return () => {
@@ -708,6 +709,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           socketManager.getSocket().emit('game:leave', { gameId: onlineGameId });
         } catch {
           // offline — server grace path covers it
+        }
+      } else if (live && live.status === 'COMPLETED') {
+        try {
+          socketManager.getSocket().emit('game:leavePostGame', { gameId: onlineGameId });
+        } catch {
+          // offline
         }
       }
     };
@@ -723,10 +730,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           .then((lock: any) => {
             sentinel = lock;
           })
-          .catch(() => {});
+          .catch(() => { });
       }
       return () => {
-        sentinel?.release?.().catch(() => {});
+        sentinel?.release?.().catch(() => { });
       };
     }
   }, [state.status]);
@@ -822,11 +829,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         effectiveWidth,
         anchorW > 0 ? anchorW : Number.POSITIVE_INFINITY,
         windowHeight -
-          topH -
-          bottomH -
-          BOTTOM_DOCK_HEIGHT -
-          insets.bottom -
-          12
+        topH -
+        bottomH -
+        BOTTOM_DOCK_HEIGHT -
+        insets.bottom -
+        12
       )
     )
   );
@@ -919,8 +926,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       showSel
         ? [...selHints, ...queuedTos]
         : humanTurn && currentPlayer && !moveInFlight
-        ? getLegalMoves(state, currentPlayer.id)
-        : EMPTY_CELL_LIST,
+          ? getLegalMoves(state, currentPlayer.id)
+          : EMPTY_CELL_LIST,
     [showSel, selHints, queuedTos, humanTurn, currentPlayer, state, moveInFlight]
   );
   // Dots show for the first pick only; afterwards the queue runs blind on
@@ -1220,6 +1227,21 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setRematchSent(false);
   }, [type, online.rematchDeclinedNonce]);
 
+  // The other side cancelled their rematch offer: dismiss incoming prompt
+  const lastRematchCancelledRef = useRef(0);
+  useEffect(() => {
+    if (type !== 'online' || online.rematchCancelledNonce === 0) return;
+    if (lastRematchCancelledRef.current === online.rematchCancelledNonce) return;
+    lastRematchCancelledRef.current = online.rematchCancelledNonce;
+    setRematchIncomingDismissed(true);
+  }, [type, online.rematchCancelledNonce]);
+
+  // Opponent left post-game: clear waiting state immediately
+  useEffect(() => {
+    if (type !== 'online' || !online.opponentLeft) return;
+    setRematchSent(false);
+  }, [type, online.opponentLeft]);
+
   useEffect(() => {
     if (type === 'online' && online.rematchGameId && onRematchAccepted) {
       const nextId = online.rematchGameId;
@@ -1244,8 +1266,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         type === 'ai'
           ? state.players[humanIdx]?.id
           : type === 'online'
-          ? online.myPlayerId
-          : state.players[0]?.id;
+            ? online.myPlayerId
+            : state.players[0]?.id;
       const effectiveWon =
         type === 'local'
           ? true
@@ -1258,10 +1280,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         const foes = state.players.filter((p) => p.id !== humanSeatId);
         const oppDist = foes.length
           ? Math.min(
-              ...foes.map((p) =>
-                getShortestDistance(p.position, p.goalDirection, state.walls, state.mode)
-              )
+            ...foes.map((p) =>
+              getShortestDistance(p.position, p.goalDirection, state.walls, state.mode)
             )
+          )
           : 0;
         const stars = computeBotStars(assistsUsedRef.current);
         setBotStarsEarned(stars);
@@ -1310,8 +1332,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         incrementSeconds: isUntimed
           ? 0
           : timeControl
-          ? effectiveIncrement(timeControl, incrementEnabled ?? true)
-          : undefined,
+            ? effectiveIncrement(timeControl, incrementEnabled ?? true)
+            : undefined,
         botId: personality?.id,
         botName: personality?.name,
         botRating: personality?.elo,
@@ -1338,7 +1360,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               void playNotifySound();
               toast.show(t('game.newAchievement', { name: res.newlyEarned.name }), undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
             }
-          }).catch(() => {});
+          }).catch(() => { });
         }
         if (state.mode.startsWith('race')) {
           void api.claimAchievement('mode-race-first').then((res) => {
@@ -1346,7 +1368,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               void playNotifySound();
               toast.show(t('game.newAchievement', { name: res.newlyEarned.name }), undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
             }
-          }).catch(() => {});
+          }).catch(() => { });
         }
         if (wallsEach === 99) {
           void api.claimAchievement('mode-walls-99').then((res) => {
@@ -1354,7 +1376,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               void playNotifySound();
               toast.show(t('game.newAchievement', { name: res.newlyEarned.name }), undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
             }
-          }).catch(() => {});
+          }).catch(() => { });
         }
         if (state.players.length >= 4) {
           void api.claimAchievement('mode-multi-podium').then((res) => {
@@ -1362,7 +1384,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               void playNotifySound();
               toast.show(t('game.newAchievement', { name: res.newlyEarned.name }), undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
             }
-          }).catch(() => {});
+          }).catch(() => { });
         }
         if (onlineSource === 'room') {
           void api.claimAchievement('social-friend-duel').then((res) => {
@@ -1370,7 +1392,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               void playNotifySound();
               toast.show(t('game.newAchievement', { name: res.newlyEarned.name }), undefined, <AchievementMedal icon={res.newlyEarned.icon} tier={res.newlyEarned.tier} size={30} />);
             }
-          }).catch(() => {});
+          }).catch(() => { });
         }
       }
 
@@ -1444,85 +1466,87 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // target handling didn't change (e.g. clock ticks).
   const handleCellPress = useCallback(
     (target: CellCoord) => {
-    if (state.status !== 'IN_PROGRESS') return;
-    // Premove queueing on the AI's turn: own orb selects, a dot appends a
-    // step (chained from the last one when extended), tapping a ring drops
-    // that step. Strictly your own orb — never the AI's.
-    if (canPremove && myOrb) {
-      if (target.row === myOrb.position.row && target.col === myOrb.position.col) {
-        // One tap undoes everything: a non-empty queue clears outright,
-        // otherwise the tap just toggles selection.
-        if (premoveQueue.length > 0) {
-          setPremoveQueue([]);
-          setPremoveSel(null);
-        } else {
-          setPremoveSel((prev) => (prev === myOrb.id ? null : myOrb.id));
-        }
-        return;
-      }
-      if (
-        showSel &&
-        myOrb &&
-        selFrom &&
-        selHints.some((m) => m.row === target.row && m.col === target.col)
-      ) {
-        // Tapping an already-queued step truncates the chain there.
-        const dupIdx = premoveQueue.findIndex(
-          (s) => s.kind === 'move' && s.to.row === target.row && s.to.col === target.col
-        );
-        if (dupIdx >= 0) {
-          setPremoveQueue((prev) => prev.slice(0, dupIdx));
+      if (state.status !== 'IN_PROGRESS') return;
+      // Premove queueing on the AI's turn: own orb selects, a dot appends a
+      // step (chained from the last one when extended), tapping a ring drops
+      // that step. Strictly your own orb — never the AI's.
+      if (canPremove && myOrb) {
+        if (target.row === myOrb.position.row && target.col === myOrb.position.col) {
+          // One tap undoes everything: a non-empty queue clears outright,
+          // otherwise the tap just toggles selection.
+          if (premoveQueue.length > 0) {
+            setPremoveQueue([]);
+            setPremoveSel(null);
+          } else {
+            setPremoveSel((prev) => (prev === myOrb.id ? null : myOrb.id));
+          }
           return;
         }
-        const step = {
-          kind: 'move' as const,
-          from: { ...selFrom },
-          to: target,
-        };
-        // Chain up to 5 — selection stays so the next tap extends the route.
-        setPremoveQueue((prev) => (prev.length >= 5 ? prev : [...prev, step]));
-        return;
-      }
-      const queuedIdx = premoveQueue.findIndex(
-        (s) => s.kind === 'move' && s.to.row === target.row && s.to.col === target.col
-      );
-      if (queuedIdx >= 0) {
-        setPremoveQueue((prev) => prev.filter((_, i) => i !== queuedIdx));
-      }
-      return;
-    }
-    if (!humanTurn || !currentPlayer) return;
-    const action = { type: 'MOVE' as const, to: target };
-    if (type === 'online') {
-      if (onlineConnStatus !== 'connected') {
-        setPremoveQueue((prev) =>
-          prev.length >= 5 ? prev : [...prev, { kind: 'move' as const, from: { ...currentPlayer.position }, to: target }]
+        if (
+          showSel &&
+          myOrb &&
+          selFrom &&
+          selHints.some((m) => m.row === target.row && m.col === target.col)
+        ) {
+          // Tapping an already-queued step truncates the chain there.
+          const dupIdx = premoveQueue.findIndex(
+            (s) => s.kind === 'move' && s.to.row === target.row && s.to.col === target.col
+          );
+          if (dupIdx >= 0) {
+            setPremoveQueue((prev) => prev.slice(0, dupIdx));
+            return;
+          }
+          const step = {
+            kind: 'move' as const,
+            from: { ...selFrom },
+            to: target,
+          };
+          // Chain up to 5 — selection stays so the next tap extends the route.
+          setPremoveQueue((prev) => (prev.length >= 5 ? prev : [...prev, step]));
+          return;
+        }
+        const queuedIdx = premoveQueue.findIndex(
+          (s) => s.kind === 'move' && s.to.row === target.row && s.to.col === target.col
         );
+        if (queuedIdx >= 0) {
+          setPremoveQueue((prev) => prev.filter((_, i) => i !== queuedIdx));
+        }
         return;
       }
-      // Optimistic, but only for the move that was actually accepted for
-      // sending: the hook applies it to the DERIVED board (never to
-      // confirmed state), refuses a second action while one is unconfirmed,
-      // and keeps a predicted goal from reading as a finished game. A refusal
-      // here means our move is still in flight — the tap is simply dropped
-      // rather than queued, because queueing it would replay a stale turn.
-      setHintAction(null);
-      const sent = onlineSendAction(action);
-      if (sent) {
-        const jumped = Math.abs(currentPlayer.position.row - target.row) + Math.abs(currentPlayer.position.col - target.col) > 1;
-        if (jumped) void playJumpSound();
-        else void playOwnMoveSound();
-        optimisticMoveSoundCountRef.current += 1;
+      if (!humanTurn || !currentPlayer) return;
+      const action = { type: 'MOVE' as const, to: target };
+      if (type === 'online') {
+        if (onlineConnStatus !== 'connected') {
+          setPremoveQueue((prev) =>
+            prev.length >= 5 ? prev : [...prev, { kind: 'move' as const, from: { ...currentPlayer.position }, to: target }]
+          );
+          return;
+        }
+        // Optimistic, but only for the move that was actually accepted for
+        // sending: the hook applies it to the DERIVED board (never to
+        // confirmed state), refuses a second action while one is unconfirmed,
+        // and keeps a predicted goal from reading as a finished game. A refusal
+        // here means our move is still in flight — the tap is simply dropped
+        // rather than queued, because queueing it would replay a stale turn.
+        setHintAction(null);
+        setHintStage('none');
+        const sent = onlineSendAction(action);
+        if (sent) {
+          const jumped = Math.abs(currentPlayer.position.row - target.row) + Math.abs(currentPlayer.position.col - target.col) > 1;
+          if (jumped) void playJumpSound();
+          else void playOwnMoveSound();
+          optimisticMoveSoundCountRef.current += 1;
+        }
+        return;
       }
-      return;
-    }
-    setHintAction(null);
-    const result = applyAction(state, action);
-    if (result.success) {
-      setState(result.state);
-      creditIncrement(currentPlayer.id, action);
-    }
-  }, [
+      setHintAction(null);
+      setHintStage('none');
+      const result = applyAction(state, action);
+      if (result.success) {
+        setState(result.state);
+        creditIncrement(currentPlayer.id, action);
+      }
+    }, [
     state,
     canPremove,
     myOrb,
@@ -1633,6 +1657,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       // action while one is unconfirmed, so a fast wall-then-move cannot slip
       // two actions past the server's one-in-flight assumption.
       setHintAction(null);
+      setHintStage('none');
       const sent = online.sendAction(action);
       if (sent) {
         void playWallSound();
@@ -1641,6 +1666,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       return;
     }
     setHintAction(null);
+    setHintStage('none');
     const result = applyAction(state, action);
     if (result.success) {
       setState(result.state);
@@ -1686,6 +1712,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const handleRematch = () => {
     if (type === 'online') {
+      if (online.opponentLeft) return;
       online.offerRematch();
       setRematchSent(true);
       return;
@@ -1759,6 +1786,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // THIS finished game — state.gameId is fresh per mount and per rematch, so
   // every completed game gates separately while re-opens stay free (E13).
   const openReview = useCallback(() => {
+    if (type === 'online') {
+      online.leavePostGame();
+    }
     setRewardOpen(false);
     setShowGameOver(false);
     onAnalyze(
@@ -1772,7 +1802,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       undefined,
       seatPremium
     );
-  }, [initialState, state.history, state.gameId, seatIdx, onAnalyze, seatPremium]);
+  }, [type, online, initialState, state.history, state.gameId, seatIdx, onAnalyze, seatPremium]);
 
   const handleAnalyzePress = useCallback(async () => {
     setShowGameOver(false);
@@ -1895,6 +1925,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       const next = { ...rewound, history: live.history.slice(0, targetStep) };
       setState(next);
       stateRef.current = next;
+      setHintAction(null);
+      setHintStage('none');
       setPremoveQueue([]);
       setPremoveSel(null);
       return true;
@@ -2014,50 +2046,54 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   // note on creditIncrement): back routing must see fresh props.
   const leaveFinishedAndHome = useCallback(
     () => {
-    if (type === 'online' && onlineGameId) {
-      try {
-        socketManager.getSocket().emit('game:leave', { gameId: onlineGameId });
-      } catch {
-        // offline — nothing to free server-side
+      if (type === 'online' && onlineGameId) {
+        online.leavePostGame();
+        try {
+          socketManager.getSocket().emit('game:leave', { gameId: onlineGameId });
+        } catch {
+          // offline — nothing to free server-side
+        }
       }
-    }
-    if (type === 'online' && onlineSource === 'room' && onLeaveRoom) {
-      onLeaveRoom();
-      return;
-    }
-    onHome();
-  }, [type, onlineGameId, onlineSource, onLeaveRoom, onHome]);
+      if (type === 'online' && onlineSource === 'room' && onLeaveRoom) {
+        onLeaveRoom();
+        return;
+      }
+      onHome();
+    }, [type, onlineGameId, onlineSource, onLeaveRoom, onHome]);
 
   const handleBackPress = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization
     () => {
-    // Failed join: never seated, so there is nothing to resign — Back frees
-    // the dead screen directly. (The join failure itself shows on your card.)
-    if (type === 'online' && online.joinError) {
-      leaveFinishedAndHome();
-      return;
-    }
-    // Seat never resolved: there is no seat to resign with, so Back must not
-    // offer the resign dialog — it frees the unplayable screen directly.
-    if (type === 'online' && online.gameState && !online.myPlayerId) {
-      leaveFinishedAndHome();
-      return;
-    }
-    // Ongoing or completed AI/local games directly exit without resign dialog.
-    if (isCompleted || type === 'local' || type === 'ai' || myAiFinished) {
-      if (isCompleted) {
-        void maybeShowPostMatchVideoAd('close_match').finally(onHome);
-      } else {
-        onHome();
+      // Failed join: never seated, so there is nothing to resign — Back frees
+      // the dead screen directly. (The join failure itself shows on your card.)
+      if (type === 'online' && online.joinError) {
+        leaveFinishedAndHome();
+        return;
       }
-      return;
-    }
-    if (mySeatFinished) {
-      leaveFinishedAndHome();
-      return;
-    }
-    setResignOpen(true);
-  }, [isCompleted, type, myAiFinished, onHome, mySeatFinished, leaveFinishedAndHome, maybeShowPostMatchVideoAd, online.joinError, online.gameState, online.myPlayerId]);
+      // Seat never resolved: there is no seat to resign with, so Back must not
+      // offer the resign dialog — it frees the unplayable screen directly.
+      if (type === 'online' && online.gameState && !online.myPlayerId) {
+        leaveFinishedAndHome();
+        return;
+      }
+      // Ongoing or completed AI/local games directly exit without resign dialog.
+      if (isCompleted || type === 'local' || type === 'ai' || myAiFinished) {
+        if (isCompleted) {
+          if (type === 'online') {
+            online.leavePostGame();
+          }
+          void maybeShowPostMatchVideoAd('close_match').finally(onHome);
+        } else {
+          onHome();
+        }
+        return;
+      }
+      if (mySeatFinished) {
+        leaveFinishedAndHome();
+        return;
+      }
+      setResignOpen(true);
+    }, [isCompleted, type, myAiFinished, onHome, mySeatFinished, leaveFinishedAndHome, maybeShowPostMatchVideoAd, online.joinError, online.gameState, online.myPlayerId]);
 
   // ---- In-match replay (finished games only) ----
   // Reconstructs the opening position from the mode + final names, then
@@ -2130,6 +2166,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
       if (hintReqIdRef.current === currentReqId && action) {
         setHintAction(action);
+        setHintStage('category');
         void playNotifySound();
       }
     } catch {
@@ -2148,6 +2185,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             }
           }
           setHintAction({ type: 'MOVE', to: bestMove });
+          setHintStage('category');
           void playNotifySound();
         }
       }
@@ -2162,6 +2200,30 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (!humanTurn || !currentPlayer || state.status !== 'IN_PROGRESS' || hintLoading) {
       return;
     }
+
+    // Successive hint on same turn (Stage 2: Reveal exact best move):
+    // Consumes 1 hint token, but DOES NOT lose a star!
+    if (hintStage === 'category' && hintAction) {
+      if (type === 'ai') {
+        if (assistsState.hintsRemaining <= 0) {
+          if (!assistsState.isPremium && canRefillAssists(assistsState, 'hint')) {
+            setPendingAssistAction('hint');
+            setAssistError(null);
+            setAssistSheetOpen(true);
+          }
+          return;
+        }
+        setAssistsState((prev) => consumeAssist(prev, 'hint', { countStarLoss: false }).next);
+      }
+      setHintStage('exact');
+      void playNotifySound();
+      return;
+    }
+
+    if (hintStage === 'exact') {
+      return;
+    }
+
     if (type === 'ai') {
       if (assistsState.hintsRemaining <= 0) {
         if (!assistsState.isPremium && canRefillAssists(assistsState, 'hint')) {
@@ -2186,7 +2248,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setTimeout(() => {
       void executeHint();
     }, 16);
-  }, [humanTurn, currentPlayer, state.status, hintLoading, type, assistsState, executeHint]);
+  }, [humanTurn, currentPlayer, state.status, hintLoading, hintStage, hintAction, type, assistsState, executeHint]);
 
   const handleAssistWatch = useCallback(async () => {
     const kind = pendingAssistAction ?? 'hint';
@@ -2201,6 +2263,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       setPendingAssistAction(null);
       if (pending === 'hint') {
         setTimeout(() => {
+          if (hintStage === 'category' && hintAction) {
+            setAssistsState((prev) => consumeAssist(prev, 'hint', { countStarLoss: false }).next);
+            setHintStage('exact');
+            void playNotifySound();
+            return;
+          }
           if (assistsUsedRef.current === 0) {
             setLostStarIndex(2);
             setStarFeedbackTrigger((k) => k + 1);
@@ -2208,7 +2276,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             setLostStarIndex(1);
             setStarFeedbackTrigger((k) => k + 1);
           }
-          setAssistsState((prev) => consumeAssist(prev, 'hint').next);
+          setAssistsState((prev) => consumeAssist(prev, 'hint', { countStarLoss: true }).next);
           assistsUsedRef.current += 1;
           void executeHint();
         }, 150);
@@ -2235,28 +2303,31 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   useEffect(() => {
     hintReqIdRef.current++;
     setHintAction(null);
+    setHintStage('none');
     setHintLoading(false);
   }, [state.history.length]);
 
+  const HINT_COLOR = '#F59E0B';
+
   const hintMark = useMemo(() => {
-    if (!humanTurn || !hintAction) return null;
+    if (!humanTurn || !hintAction || hintStage !== 'exact') return null;
     if (hintAction.type === 'MOVE') {
       return {
         from: currentPlayer?.position,
         to: hintAction.to,
-        color: '#10B981',
+        color: HINT_COLOR,
         solid: false,
       };
     }
     if (hintAction.type === 'PLACE_WALL') {
       return {
         wall: hintAction.wall,
-        color: '#10B981',
+        color: HINT_COLOR,
         solid: false,
       };
     }
     return null;
-  }, [humanTurn, hintAction, currentPlayer?.position]);
+  }, [humanTurn, hintAction, hintStage, currentPlayer?.position]);
 
   const enterReplay = () => {
     setShowGameOver(false);
@@ -2267,9 +2338,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const exitReplay = useCallback(
     // eslint-disable-next-line react-hooks/preserve-manual-memoization
     () => {
-    setReplaying(false);
-    setViewingStep(null);
-  }, []);
+      setReplaying(false);
+      setViewingStep(null);
+    }, []);
 
   // Hardware back: dismiss the topmost overlay first (result modal, resign
   // overlay first (result modal, resign confirm, place modal, incoming
@@ -2372,10 +2443,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const bottomStripState: GameState | null =
     bottomPlayers.length > 0
       ? {
-          ...state,
-          players: bottomPlayers,
-          currentPlayerIndex: bottomPlayers.findIndex((p) => p.id === activeId),
-        }
+        ...state,
+        players: bottomPlayers,
+        currentPlayerIndex: bottomPlayers.findIndex((p) => p.id === activeId),
+      }
       : null;
 
   // Board ratings are shown only when real. There is no client-side source
@@ -2399,126 +2470,126 @@ export const GameScreen: React.FC<GameScreenProps> = ({
  *
  * Empty for local/AI play: there is no socket state to report.
  */
-const onlineSeatStatus = useMemo<Record<string, SeatStatus>>(() => {
-  if (type !== 'online') return {};
-  const map: Record<string, SeatStatus> = {};
-  const ownSeat = online.myPlayerId;
-  // Every away seat gets its own countdown — on a 3P/4P table two seats can
-  // be away at once, and each card counts down its own window.
-  for (const grace of Object.values(online.opponentGrace)) {
-    const seat = grace.playerId ?? null;
-    // playerId is always sent for online matches; an entry without one names
-    // no card, so it is skipped rather than pinned on the wrong seat.
-    // `mine` names the consequence on the card of the player racing the
-    // deadline (I3): everyone else reads the neutral condition.
-    if (seat) {
-      map[seat] = { kind: 'disconnected', secondsLeft: grace.seconds, mine: seat === ownSeat };
+  const onlineSeatStatus = useMemo<Record<string, SeatStatus>>(() => {
+    if (type !== 'online') return {};
+    const map: Record<string, SeatStatus> = {};
+    const ownSeat = online.myPlayerId;
+    // Every away seat gets its own countdown — on a 3P/4P table two seats can
+    // be away at once, and each card counts down its own window.
+    for (const grace of Object.values(online.opponentGrace)) {
+      const seat = grace.playerId ?? null;
+      // playerId is always sent for online matches; an entry without one names
+      // no card, so it is skipped rather than pinned on the wrong seat.
+      // `mine` names the consequence on the card of the player racing the
+      // deadline (I3): everyone else reads the neutral condition.
+      if (seat) {
+        map[seat] = { kind: 'disconnected', secondsLeft: grace.seconds, mine: seat === ownSeat };
+      }
     }
-  }
-  if (online.afkWarning) {
-    const seat = online.afkWarning.playerId ?? online.myPlayerId;
-    if (seat) {
-      map[seat] = { kind: 'afk', secondsLeft: online.afkWarning.secondsRemaining, mine: seat === ownSeat };
+    if (online.afkWarning) {
+      const seat = online.afkWarning.playerId ?? online.myPlayerId;
+      if (seat) {
+        map[seat] = { kind: 'afk', secondsLeft: online.afkWarning.secondsRemaining, mine: seat === ownSeat };
+      }
     }
-  }
-  // Own transport state, on the player's own card only — and only when no
-  // server-driven state already owns that seat. Just the two states that
-  // need no other UI: a dropped socket and a failed join. (A move in flight
-  // and a rejected move stay off the card — the board locks while sending,
-  // and a rejection is a sound, not a status.)
-  if (ownSeat && !map[ownSeat]) {
-    if (online.joinError) {
-      map[ownSeat] = { kind: 'rejected', message: online.joinError };
-    } else if (online.connStatus === 'reconnecting' || online.connStatus === 'disconnected') {
-      map[ownSeat] = {
-        kind: 'reconnecting',
-        pendingCount: online.pendingCount,
-        // A known-dead OS link reads as offline, not as a dropped socket.
-        offline: online.linkDown,
-      };
+    // Own transport state, on the player's own card only — and only when no
+    // server-driven state already owns that seat. Just the two states that
+    // need no other UI: a dropped socket and a failed join. (A move in flight
+    // and a rejected move stay off the card — the board locks while sending,
+    // and a rejection is a sound, not a status.)
+    if (ownSeat && !map[ownSeat]) {
+      if (online.joinError) {
+        map[ownSeat] = { kind: 'rejected', message: online.joinError };
+      } else if (online.connStatus === 'reconnecting' || online.connStatus === 'disconnected') {
+        map[ownSeat] = {
+          kind: 'reconnecting',
+          pendingCount: online.pendingCount,
+          // A known-dead OS link reads as offline, not as a dropped socket.
+          offline: online.linkDown,
+        };
+      }
     }
-  }
-  return map;
-}, [
-  type,
-  online.opponentGrace,
-  online.afkWarning,
-  online.myPlayerId,
-  online.joinError,
-  online.connStatus,
-  online.linkDown,
-  online.pendingCount,
-]);
+    return map;
+  }, [
+    type,
+    online.opponentGrace,
+    online.afkWarning,
+    online.myPlayerId,
+    online.joinError,
+    online.connStatus,
+    online.linkDown,
+    online.pendingCount,
+  ]);
 
-// Reactions, attributed to the sender's card: invert the sync's seat→
-// account map once, group incoming by seat. Unresolvable items (engine
-// banter with no sender, left seats) keep the legacy top-strip dock below —
-// never dropped, never pinned on the wrong card.
-const groupedReactions = useMemo(() => {
-  if (type !== 'online') return { bySeat: {}, fallback: [] };
-  const userIdToSeat: Record<string, string> = {};
-  for (const [seatId, userId] of Object.entries(online.playerUserIds ?? {})) {
-    userIdToSeat[userId] = seatId;
-  }
-  return groupReactionsBySeat(reactions.incoming, userIdToSeat);
-}, [type, reactions.incoming, online.playerUserIds]);
-
-
-
-// Seat miss: sync arrived but neither your id nor name matches a seat
-// (changed identity mid-flow). Never silently play as someone else — the
-// seat resolves as soon as the ids line up, and Back frees the screen
-// meanwhile (see handleBackPress). The rejoin pump lives in useOnlineGame
-// (single owner: same cooldown + attempt budget as every other rejoin path),
-// so this screen only READS the seat state. No banner: there is no seat to
-// hang an indicator on until the resync lands.
-// (No effect here by design — see the hook's seat-miss pump.)
-
-// A server-rejected move is sound-only: the board already rolled the move
-// back, so the illegal-move click is the instant feedback (this matches the
-// local illegal paths below, which never toast either).
-const lastActionErrorNonce = useRef<number | null>(null);
-useEffect(() => {
-  if (type !== 'online' || !online.actionError) return;
-  if (lastActionErrorNonce.current === online.actionError.nonce) return;
-  lastActionErrorNonce.current = online.actionError.nonce;
-  optimisticMoveSoundCountRef.current = Math.max(0, optimisticMoveSoundCountRef.current - 1);
-  optimisticWallSoundCountRef.current = Math.max(0, optimisticWallSoundCountRef.current - 1);
-  void playIllegalMoveSound();
-}, [type, online.actionError]);
-
-// Grace/AFK arming is soundless by default — yet the addressee is by
-// definition not looking (away, idle, backgrounded). One notify chime per
-// newly-away seat / fresh warning; the card countdown carries the rest.
-const seenGraceKeysRef = useRef<Set<string>>(new Set());
-const seenAfkKeyRef = useRef<string | null>(null);
-useEffect(() => {
-  if (type !== 'online') return;
-  const keys = Object.keys(online.opponentGrace);
-  const fresh = keys.filter((k) => !seenGraceKeysRef.current.has(k));
-  seenGraceKeysRef.current = new Set(keys);
-  const afkKey = online.afkWarning
-    ? `${online.afkWarning.playerId ?? ''}:${online.afkWarning.afkEndsAt}`
-    : null;
-  const afkFresh = afkKey !== null && afkKey !== seenAfkKeyRef.current;
-  seenAfkKeyRef.current = afkKey;
-  if (fresh.length > 0 || afkFresh) void playNotifySound();
-}, [type, online.opponentGrace, online.afkWarning]);
-
-// A queued move the transport discarded after the board showed it: rolled
-// back by the hook already, announced here with words (no illegal-move
-// click — the move was never illegal, just never sent).
-const lastDropNonce = useRef<number | null>(null);
-useEffect(() => {
-  if (type !== 'online' || !online.dropNotice) return;
-  if (lastDropNonce.current === online.dropNotice.nonce) return;
-  lastDropNonce.current = online.dropNotice.nonce;
-  toast.show(online.dropNotice.message);
-}, [type, online.dropNotice]);
+  // Reactions, attributed to the sender's card: invert the sync's seat→
+  // account map once, group incoming by seat. Unresolvable items (engine
+  // banter with no sender, left seats) keep the legacy top-strip dock below —
+  // never dropped, never pinned on the wrong card.
+  const groupedReactions = useMemo(() => {
+    if (type !== 'online') return { bySeat: {}, fallback: [] };
+    const userIdToSeat: Record<string, string> = {};
+    for (const [seatId, userId] of Object.entries(online.playerUserIds ?? {})) {
+      userIdToSeat[userId] = seatId;
+    }
+    return groupReactionsBySeat(reactions.incoming, userIdToSeat);
+  }, [type, reactions.incoming, online.playerUserIds]);
 
 
 
-// ratings at all and PlayerStrip hides the pills instead of showing fiction.
+  // Seat miss: sync arrived but neither your id nor name matches a seat
+  // (changed identity mid-flow). Never silently play as someone else — the
+  // seat resolves as soon as the ids line up, and Back frees the screen
+  // meanwhile (see handleBackPress). The rejoin pump lives in useOnlineGame
+  // (single owner: same cooldown + attempt budget as every other rejoin path),
+  // so this screen only READS the seat state. No banner: there is no seat to
+  // hang an indicator on until the resync lands.
+  // (No effect here by design — see the hook's seat-miss pump.)
+
+  // A server-rejected move is sound-only: the board already rolled the move
+  // back, so the illegal-move click is the instant feedback (this matches the
+  // local illegal paths below, which never toast either).
+  const lastActionErrorNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (type !== 'online' || !online.actionError) return;
+    if (lastActionErrorNonce.current === online.actionError.nonce) return;
+    lastActionErrorNonce.current = online.actionError.nonce;
+    optimisticMoveSoundCountRef.current = Math.max(0, optimisticMoveSoundCountRef.current - 1);
+    optimisticWallSoundCountRef.current = Math.max(0, optimisticWallSoundCountRef.current - 1);
+    void playIllegalMoveSound();
+  }, [type, online.actionError]);
+
+  // Grace/AFK arming is soundless by default — yet the addressee is by
+  // definition not looking (away, idle, backgrounded). One notify chime per
+  // newly-away seat / fresh warning; the card countdown carries the rest.
+  const seenGraceKeysRef = useRef<Set<string>>(new Set());
+  const seenAfkKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (type !== 'online') return;
+    const keys = Object.keys(online.opponentGrace);
+    const fresh = keys.filter((k) => !seenGraceKeysRef.current.has(k));
+    seenGraceKeysRef.current = new Set(keys);
+    const afkKey = online.afkWarning
+      ? `${online.afkWarning.playerId ?? ''}:${online.afkWarning.afkEndsAt}`
+      : null;
+    const afkFresh = afkKey !== null && afkKey !== seenAfkKeyRef.current;
+    seenAfkKeyRef.current = afkKey;
+    if (fresh.length > 0 || afkFresh) void playNotifySound();
+  }, [type, online.opponentGrace, online.afkWarning]);
+
+  // A queued move the transport discarded after the board showed it: rolled
+  // back by the hook already, announced here with words (no illegal-move
+  // click — the move was never illegal, just never sent).
+  const lastDropNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (type !== 'online' || !online.dropNotice) return;
+    if (lastDropNonce.current === online.dropNotice.nonce) return;
+    lastDropNonce.current = online.dropNotice.nonce;
+    toast.show(online.dropNotice.message);
+  }, [type, online.dropNotice]);
+
+
+
+  // ratings at all and PlayerStrip hides the pills instead of showing fiction.
 
   // A board seat id ('p2') is not a user id. The server sends the seat ->
   // account map with every sync, so this is the one lookup that turns a
@@ -2683,166 +2754,166 @@ useEffect(() => {
           setTopH((prev) => (Math.abs(prev - height) > 1 ? height : prev));
         }}
       >
-      {/* Chess.com top header: Back, title, and settings/connection */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={handleBackPress}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityLabel="Go back"
-        >
-          <OrbIcon name="chevron-left" size={24} color={THEME.colors.textPrimary} />
-        </TouchableOpacity>
+        {/* Chess.com top header: Back, title, and settings/connection */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={handleBackPress}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Go back"
+          >
+            <OrbIcon name="chevron-left" size={24} color={THEME.colors.textPrimary} />
+          </TouchableOpacity>
 
-        <View style={styles.headerCenterBrand}>
-          <DuoOrbLogo size={26} inset={0.04} />
-          <Text style={styles.headerTitle}>
-            DuoOrb
-          </Text>
+          <View style={styles.headerCenterBrand}>
+            <DuoOrbLogo size={26} inset={0.04} />
+            <Text style={styles.headerTitle}>
+              DuoOrb
+            </Text>
+          </View>
+
+          <View style={styles.headerRight}>
+            {type === 'online' ? (
+              <View style={styles.connStatusWrap}>
+                <OrbIcon
+                  name={online.connStatus === 'connected' ? 'wifi' : 'wifi-off'}
+                  size={18}
+                  color={online.connStatus === 'connected' ? THEME.colors.tertiary : THEME.colors.error}
+                />
+              </View>
+            ) : (
+              <View style={{ width: 20 }} />
+            )}
+          </View>
         </View>
 
-        <View style={styles.headerRight}>
-          {type === 'online' ? (
-            <View style={styles.connStatusWrap}>
-              <OrbIcon
-                name={online.connStatus === 'connected' ? 'wifi' : 'wifi-off'}
-                size={18}
-                color={online.connStatus === 'connected' ? THEME.colors.tertiary : THEME.colors.error}
+        {/* Opponent Zone: Bot Cutout + Speech Bubble + Top Right Stats for AI, or PlayerStrip for online/local */}
+        <View style={styles.sideWrap}>
+          {reactionsVisible && (
+            <ReactionDock items={groupedReactions.fallback} side="top" onDone={reactions.dismiss} surface={hudSurface} />
+          )}
+          {type === 'ai' && personality ? (
+            (() => {
+              if (state.players.length > 2) {
+                // Multi-bot opponent zone (>2P match vs bots): avatar/name then
+                // the standard wall + clock stack.
+                const botSeats = state.players
+                  .map((p, i) => ({ player: p, index: i }))
+                  .filter((x) => x.index !== humanIdx);
+
+                return (
+                  <View
+                    style={[
+                      styles.multiBotHeroRow,
+                      compactMatchStats && styles.multiBotHeroRowCompact,
+                    ]}
+                  >
+                    {botSeats.map(({ player: botPlayer, index: seatIdx }) => {
+                      const bot = getBotForSeat(seatIdx);
+                      const isBotActive = state.currentPlayerIndex === seatIdx;
+                      const botBall = playerColor(seatIdx, botPlayer.color);
+                      const botTimer = type === 'ai' ? undefined : timers?.[botPlayer.id];
+
+                      return (
+                        <View
+                          key={botPlayer.id}
+                          style={[
+                            styles.multiBotCol,
+                            compactMatchStats && styles.multiBotColCompact,
+                          ]}
+                        >
+                          {/* Avatar on top */}
+                          <View style={styles.multiBotAvatarWrap}>
+                            <BotAvatar
+                              avatarKey={bot?.avatarKey ?? 'martin'}
+                              color={botBall}
+                              size={compactMatchStats ? 36 : 46}
+                              noBg
+                            />
+                          </View>
+                          <Text
+                            style={[
+                              styles.multiBotName,
+                              compactMatchStats && styles.multiBotNameCompact,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {bot?.name ?? botPlayer.displayName}
+                          </Text>
+
+                          <MatchStats
+                            wallsRemaining={botPlayer.wallsRemaining}
+                            timeLeft={botTimer}
+                            ball={botBall}
+                            isActive={isBotActive}
+                            compact={compactMatchStats}
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              }
+
+              const botPlayer = state.players.find((_, i) => i !== humanIdx);
+              const isBotActive = state.currentPlayerIndex !== humanIdx;
+              const botBall = botPlayer ? playerColor(1 - humanIdx, botPlayer.color) : personality.color;
+              const botTimer = type === 'ai' ? undefined : (botPlayer ? timers?.[botPlayer.id] : undefined);
+
+              return (
+                <View style={styles.botHeroRow}>
+                  {/* Bot cutout on left */}
+                  <View style={styles.botAvatarWrap}>
+                    <BotAvatar avatarKey={personality.avatarKey} color={botBall} size={58} noBg />
+                  </View>
+
+                  {/* Bot Speech Bubble in center */}
+                  {botDialogue.text ? (
+                    <View style={styles.botSpeechBubbleWrap}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={botDialogue.dismiss}
+                        style={styles.botSpeechBubble}
+                      >
+                        <View style={styles.bubbleTail} />
+                        <Text style={styles.botSpeechText} numberOfLines={3} ellipsizeMode="tail">
+                          {botDialogue.text}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={{ flex: 1 }} />
+                  )}
+
+                  {/* Bot stats on top right: standard wall + clock stack */}
+                  {botPlayer && (
+                    <MatchStats
+                      wallsRemaining={botPlayer.wallsRemaining}
+                      timeLeft={botTimer}
+                      ball={botBall}
+                      isActive={isBotActive}
+                    />
+                  )}
+                </View>
+              );
+            })()
+          ) : (
+            <View pointerEvents={wallDrag ? 'none' : 'auto'}>
+              <OnlineOpponentRow
+                players={topList}
+                compact={isMultiplayer}
+                compactStats={compactMatchStats}
+                timers={timers}
+                activeId={activeId}
+                seatStatus={onlineSeatStatus}
+                seatPremium={seatPremium}
+                reactionsBySeat={groupedReactions.bySeat}
+                onReactionDone={reactions.dismiss}
+                onPressPlayer={type === 'online' ? handleOpponentPress : undefined}
+                surface={hudSurface}
               />
             </View>
-          ) : (
-            <View style={{ width: 20 }} />
           )}
         </View>
-      </View>
-
-      {/* Opponent Zone: Bot Cutout + Speech Bubble + Top Right Stats for AI, or PlayerStrip for online/local */}
-      <View style={styles.sideWrap}>
-      {reactionsVisible && (
-        <ReactionDock items={groupedReactions.fallback} side="top" onDone={reactions.dismiss} surface={hudSurface} />
-      )}
-      {type === 'ai' && personality ? (
-        (() => {
-          if (state.players.length > 2) {
-            // Multi-bot opponent zone (>2P match vs bots): avatar/name then
-            // the standard wall + clock stack.
-            const botSeats = state.players
-              .map((p, i) => ({ player: p, index: i }))
-              .filter((x) => x.index !== humanIdx);
-
-            return (
-              <View
-                style={[
-                  styles.multiBotHeroRow,
-                  compactMatchStats && styles.multiBotHeroRowCompact,
-                ]}
-              >
-                {botSeats.map(({ player: botPlayer, index: seatIdx }) => {
-                  const bot = getBotForSeat(seatIdx);
-                  const isBotActive = state.currentPlayerIndex === seatIdx;
-                  const botBall = playerColor(seatIdx, botPlayer.color);
-                  const botTimer = type === 'ai' ? undefined : timers?.[botPlayer.id];
-
-                  return (
-                    <View
-                      key={botPlayer.id}
-                      style={[
-                        styles.multiBotCol,
-                        compactMatchStats && styles.multiBotColCompact,
-                      ]}
-                    >
-                      {/* Avatar on top */}
-                      <View style={styles.multiBotAvatarWrap}>
-                        <BotAvatar
-                          avatarKey={bot?.avatarKey ?? 'martin'}
-                          color={botBall}
-                          size={compactMatchStats ? 36 : 46}
-                          noBg
-                        />
-                      </View>
-                      <Text
-                        style={[
-                          styles.multiBotName,
-                          compactMatchStats && styles.multiBotNameCompact,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {bot?.name ?? botPlayer.displayName}
-                      </Text>
-
-                      <MatchStats
-                        wallsRemaining={botPlayer.wallsRemaining}
-                        timeLeft={botTimer}
-                        ball={botBall}
-                        isActive={isBotActive}
-                        compact={compactMatchStats}
-                      />
-                    </View>
-                  );
-                })}
-              </View>
-            );
-          }
-
-          const botPlayer = state.players.find((_, i) => i !== humanIdx);
-          const isBotActive = state.currentPlayerIndex !== humanIdx;
-          const botBall = botPlayer ? playerColor(1 - humanIdx, botPlayer.color) : personality.color;
-          const botTimer = type === 'ai' ? undefined : (botPlayer ? timers?.[botPlayer.id] : undefined);
-
-          return (
-            <View style={styles.botHeroRow}>
-              {/* Bot cutout on left */}
-              <View style={styles.botAvatarWrap}>
-                <BotAvatar avatarKey={personality.avatarKey} color={botBall} size={58} noBg />
-              </View>
-
-              {/* Bot Speech Bubble in center */}
-              {botDialogue.text ? (
-                <View style={styles.botSpeechBubbleWrap}>
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    onPress={botDialogue.dismiss}
-                    style={styles.botSpeechBubble}
-                  >
-                    <View style={styles.bubbleTail} />
-                    <Text style={styles.botSpeechText} numberOfLines={3} ellipsizeMode="tail">
-                      {botDialogue.text}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={{ flex: 1 }} />
-              )}
-
-              {/* Bot stats on top right: standard wall + clock stack */}
-              {botPlayer && (
-                <MatchStats
-                  wallsRemaining={botPlayer.wallsRemaining}
-                  timeLeft={botTimer}
-                  ball={botBall}
-                  isActive={isBotActive}
-                />
-              )}
-            </View>
-          );
-        })()
-      ) : (
-        <View pointerEvents={wallDrag ? 'none' : 'auto'}>
-          <OnlineOpponentRow
-            players={topList}
-            compact={isMultiplayer}
-            compactStats={compactMatchStats}
-            timers={timers}
-            activeId={activeId}
-            seatStatus={onlineSeatStatus}
-            seatPremium={seatPremium}
-            reactionsBySeat={groupedReactions.bySeat}
-            onReactionDone={reactions.dismiss}
-            onPressPlayer={type === 'online' ? handleOpponentPress : undefined}
-            surface={hudSurface}
-          />
-        </View>
-      )}
-      </View>
       </View>
 
       {/* Board + bottom packed with zero gaps, sized to fit the screen. */}
@@ -2850,9 +2921,9 @@ useEffect(() => {
         style={[
           styles.boardWrap,
           type === 'online' &&
-            online.inputLocked &&
-            online.connStatus !== 'connected' &&
-            styles.boardDimmed,
+          online.inputLocked &&
+          online.connStatus !== 'connected' &&
+          styles.boardDimmed,
         ]}
       >
         <View
@@ -2872,32 +2943,33 @@ useEffect(() => {
               transform: [{ rotate: `${rotationTargetDeg}deg` }],
             }}
           >
-          <WallDragGhostProvider value={dragGhostValue}>
-            <GameBoard
-            state={displayState}
-            localPlayerIndex={activeHumanIdx}
-            playerCosmetics={type === 'online' ? online.playerCosmetics : undefined}
-            legalMoves={viewingStep !== null ? EMPTY_CELL_LIST : legalMoves}
-            previewWall={null}
-            selectedCell={viewingStep !== null ? null : selectedCellMemo}
-            interactive={
-              (humanTurn || canPremove) &&
-              !wallDrag &&
-              viewingStep === null &&
-              !(type === 'online' && online.inputLocked)
-            }
-            moveMark={hintMark}
-            moveHintColor={wallDrag ? trayColor : hintColor}
-            premoveMarks={viewingStep !== null ? EMPTY_PREMOVE_MARKS : premoveMarks}
-            hideDots={hideDots}
-            queuedWalls={viewingStep !== null ? EMPTY_QUEUED_WALLS : queuedWallEntries}
-            onQueuedWallPress={canPremove && viewingStep === null ? handleQueuedWallPress : undefined}
-            size={measuredBoardSize}
-            rotationDeg={rotationTargetDeg}
-            onCellPress={viewingStep !== null ? undefined : handleCellPress}
-            onMetricsChange={handleMetricsChange}
-          />
-          </WallDragGhostProvider>
+            <WallDragGhostProvider value={dragGhostValue}>
+              <GameBoard
+                state={displayState}
+                localPlayerIndex={activeHumanIdx}
+                playerCosmetics={type === 'online' ? online.playerCosmetics : undefined}
+                legalMoves={viewingStep !== null ? EMPTY_CELL_LIST : legalMoves}
+                previewWall={null}
+                selectedCell={viewingStep !== null ? null : selectedCellMemo}
+                interactive={
+                  (humanTurn || canPremove) &&
+                  !wallDrag &&
+                  viewingStep === null &&
+                  !(type === 'online' && online.inputLocked)
+                }
+                hintBall={hintStage === 'category' && hintAction?.type === 'MOVE'}
+                moveMark={hintMark}
+                moveHintColor={wallDrag ? trayColor : hintColor}
+                premoveMarks={viewingStep !== null ? EMPTY_PREMOVE_MARKS : premoveMarks}
+                hideDots={hideDots}
+                queuedWalls={viewingStep !== null ? EMPTY_QUEUED_WALLS : queuedWallEntries}
+                onQueuedWallPress={canPremove && viewingStep === null ? handleQueuedWallPress : undefined}
+                size={measuredBoardSize}
+                rotationDeg={rotationTargetDeg}
+                onCellPress={viewingStep !== null ? undefined : handleCellPress}
+                onMetricsChange={handleMetricsChange}
+              />
+            </WallDragGhostProvider>
           </Animated.View>
         </View>
 
@@ -2981,16 +3053,21 @@ useEffect(() => {
                 />
               )}
               {trayPlayer && (
-              <WallTray
-                color={trayColor}
-                count={trayPlayer.wallsRemaining}
-                held={wallDrag?.orientation ?? null}
-                disabled={!(humanTurn || (canPremove && queueOn)) || viewingStep !== null}
-                swapVisuals={swapWallVisuals}
-                onDragStart={handleTrayStart}
-                onDragMove={handleTrayMove}
-                onDragEnd={handleTrayEnd}
-              />
+                <WallTray
+                  color={trayColor}
+                  count={trayPlayer.wallsRemaining}
+                  held={wallDrag?.orientation ?? null}
+                  disabled={!(humanTurn || (canPremove && queueOn)) || viewingStep !== null}
+                  swapVisuals={swapWallVisuals}
+                  hintedOrientation={
+                    hintStage === 'category' && hintAction?.type === 'PLACE_WALL'
+                      ? hintAction.wall.orientation
+                      : null
+                  }
+                  onDragStart={handleTrayStart}
+                  onDragMove={handleTrayMove}
+                  onDragEnd={handleTrayEnd}
+                />
               )}
             </View>
           )}
@@ -3096,6 +3173,9 @@ useEffect(() => {
               const hasHints = !isAiMatch || assistsState.hintsRemaining > 0;
               const canRefill = isAiMatch && canRefillAssists(assistsState, 'hint');
               const isExhausted = isAiMatch && !hasHints && !canRefill;
+              const isCategory = hintStage === 'category';
+              const isRevealed = hintStage === 'exact';
+              const isHintActive = isCategory || isRevealed;
               const isDisabled = !humanTurn || hintLoading || isExhausted;
 
               return (
@@ -3106,13 +3186,13 @@ useEffect(() => {
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   {hintLoading ? (
-                    <ActivityIndicator size="small" color="#10B981" style={{ height: 21 }} />
+                    <ActivityIndicator size="small" color={HINT_COLOR} style={{ height: 21 }} />
                   ) : (
                     <View style={styles.dockIconBadgeWrap}>
                       <OrbIcon
-                        name={hintAction ? 'lightbulb-on' : 'lightbulb-on-outline'}
+                        name={isHintActive ? 'lightbulb-on' : 'lightbulb-on-outline'}
                         size={21}
-                        color={isExhausted ? dockDisabledColor : hintAction ? '#10B981' : dockIconColor}
+                        color={isExhausted ? dockDisabledColor : isHintActive ? HINT_COLOR : dockIconColor}
                       />
                       {isAiMatch && (
                         <View
@@ -3129,8 +3209,8 @@ useEffect(() => {
                       )}
                     </View>
                   )}
-                  <Text style={[styles.dockLabel, { color: isExhausted ? dockDisabledColor : hintAction ? '#10B981' : dockLabelColor }]}>
-                    {hintLoading ? t('hud.reconnecting') : 'Hint'}
+                  <Text style={[styles.dockLabel, { color: isExhausted ? dockDisabledColor : isHintActive ? HINT_COLOR : dockLabelColor }]}>
+                    {hintLoading ? t('hud.reconnecting') : isCategory ? t('tryAgain.revealBest') : 'Hint'}
                   </Text>
                 </TouchableOpacity>
               );
@@ -3576,13 +3656,13 @@ useEffect(() => {
                 skin.wallRadius === 'capsule'
                   ? Math.min(chipStyle.width, chipStyle.height) / 2
                   : typeof skin.wallRadius === 'number'
-                  ? skin.wallRadius
-                  : Math.min(chipStyle.width, chipStyle.height) / 2,
+                    ? skin.wallRadius
+                    : Math.min(chipStyle.width, chipStyle.height) / 2,
               backgroundColor: customWall
                 ? 'transparent'
                 : skin.wallStyle === 'neutral' && skin.neutralWall
-                ? skin.neutralWall
-                : trayColor,
+                  ? skin.neutralWall
+                  : trayColor,
             },
           ]}
         >
@@ -3675,8 +3755,8 @@ useEffect(() => {
           isMultiplayer
             ? undefined
             : type === 'ai'
-            ? personality?.name ?? `AI - ${aiDifficulty.charAt(0).toUpperCase()}${aiDifficulty.slice(1)}`
-            : topList[0]?.displayName || 'Opponent'
+              ? personality?.name ?? `AI - ${aiDifficulty.charAt(0).toUpperCase()}${aiDifficulty.slice(1)}`
+              : topList[0]?.displayName || 'Opponent'
         }
         isWinner={userWon}
         botStarsEarned={type === 'ai' ? botStarsEarned : null}
@@ -3685,8 +3765,8 @@ useEffect(() => {
           type === 'online'
             ? online.myPlayerId
             : type === 'ai'
-            ? state.players[humanIdx]?.id ?? null
-            : null
+              ? state.players[humanIdx]?.id ?? null
+              : null
         }
         isRoom={type === 'online' && onlineSource === 'room'}
         onReturnToRoom={() => {
@@ -3706,8 +3786,26 @@ useEffect(() => {
           }
         }}
         onRematch={handleRematch}
+        rematchSent={rematchSent}
+        opponentLeft={Boolean(online.opponentLeft)}
+        rematchIncoming={Boolean(online.rematchOffered && !rematchIncomingDismissed)}
+        onCancelRematch={() => {
+          online.cancelRematch();
+          setRematchSent(false);
+        }}
+        onAcceptRematch={() => {
+          setRematchIncomingDismissed(true);
+          handleRematch();
+        }}
+        onDeclineRematch={() => {
+          online.declineRematch();
+          setRematchIncomingDismissed(true);
+        }}
         showNewGame={(type === 'online' && onlineSource !== 'room') || type === 'ai'}
         onNewGame={() => {
+          if (type === 'online') {
+            online.leavePostGame();
+          }
           setShowGameOver(false);
           if (type === 'ai' && onSelectBots) {
             void maybeShowPostMatchVideoAd('new_bot').finally(onSelectBots);
@@ -3722,13 +3820,19 @@ useEffect(() => {
         onViewOpponentProfile={
           opponentAccountForResult
             ? () => {
-                setShowGameOver(false);
-                setProfilePlayer(opponentAccountForResult);
+              if (type === 'online') {
+                online.leavePostGame();
               }
+              setShowGameOver(false);
+              setProfilePlayer(opponentAccountForResult);
+            }
             : undefined
         }
         onAnalyze={handleAnalyzePress}
         onHome={() => {
+          if (type === 'online') {
+            online.leavePostGame();
+          }
           setShowGameOver(false);
           void maybeShowPostMatchVideoAd('close_match').finally(onHome);
         }}
@@ -3789,24 +3893,29 @@ useEffect(() => {
         }}
       />
 
-      {/* Rematch toast rendered as its own Modal so it floats above the
-          win/lose result modal, anchored to the bottom like the room invite. */}
-      <Modal
-        visible={
-          type === 'online' &&
-          state.status === 'COMPLETED' &&
-          ((online.rematchOffered && !rematchIncomingDismissed) || rematchSent)
-        }        transparent
-        animationType="none"
-      >
-        <SafeAreaView style={styles.rematchToastOverlay} edges={['top', 'bottom']} pointerEvents="box-none">
-          <View style={styles.rematchToast}>
-            <OrbIcon name="rotate-ccw" size={18} color={THEME.colors.primary} />
-            <Text style={styles.rematchToastText}>
-              {online.rematchOffered && !rematchIncomingDismissed
-                ? t('game.rematchOffered')
-                : t('game.waitingOpponent')}
-            </Text>
+      {/* Non-blocking floating rematch pill when GameOverModal is dismissed to browse board */}
+      {type === 'online' &&
+        state.status === 'COMPLETED' &&
+        !showGameOver &&
+        ((online.rematchOffered && !rematchIncomingDismissed) || rematchSent || online.opponentLeft) && (
+          <SafeAreaView style={styles.rematchToastOverlay} edges={['bottom']} pointerEvents="box-none">
+            <View style={styles.rematchToast}>
+              {rematchSent && !online.opponentLeft ? (
+                <ActivityIndicator size="small" color={THEME.colors.primary} />
+              ) : (
+                <OrbIcon
+                  name={online.opponentLeft ? 'slash' : 'rotate-ccw'}
+                  size={18}
+                  color={online.opponentLeft ? THEME.colors.textMuted : THEME.colors.primary}
+                />
+              )}
+              <Text style={styles.rematchToastText} numberOfLines={1}>
+                {online.opponentLeft
+                  ? t('gameover.opponentLeft')
+                  : online.rematchOffered && !rematchIncomingDismissed
+                    ? t('game.rematchOffered')
+                    : t('game.waitingOpponent')}
+              </Text>
               {online.rematchOffered && !rematchIncomingDismissed && (
                 <>
                   <TouchableOpacity
@@ -3818,20 +3927,31 @@ useEffect(() => {
                   >
                     <Text style={styles.rematchDeclineText}>{t('game.decline')}</Text>
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.rematchAcceptBtn}
+                    onPress={() => {
+                      setRematchIncomingDismissed(true);
+                      handleRematch();
+                    }}
+                  >
+                    <Text style={styles.rematchAcceptText}>{t('game.accept')}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+              {rematchSent && !online.opponentLeft && (
                 <TouchableOpacity
-                  style={styles.rematchAcceptBtn}
+                  style={styles.rematchDeclineBtn}
                   onPress={() => {
-                    setRematchIncomingDismissed(true);
-                    handleRematch();
+                    online.cancelRematch();
+                    setRematchSent(false);
                   }}
                 >
-                  <Text style={styles.rematchAcceptText}>{t('game.accept')}</Text>
+                  <Text style={styles.rematchDeclineText}>{t('common.cancel')}</Text>
                 </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </SafeAreaView>
-      </Modal>
+              )}
+            </View>
+          </SafeAreaView>
+        )}
 
       {/* Opponent profile as an overlay Modal: keeps live game mounted while
           rendering on its own native platform window above all game HUD elements,
@@ -3847,9 +3967,9 @@ useEffect(() => {
               userId={profilePlayer.userId}
               initialUsername={profilePlayer.username}
               onBack={() => setProfilePlayer(null)}
-              onChallenge={() => {}}
-              onSelectGame={() => {}}
-              onAnalyzeGame={() => {}}
+              onChallenge={() => { }}
+              onSelectGame={() => { }}
+              onAnalyzeGame={() => { }}
               inGame
             />
           )}
@@ -4333,16 +4453,19 @@ const createStyles = () => StyleSheet.create({
   },
   finishPrimary: {
     width: '100%',
-    paddingVertical: 12,
-    borderRadius: 8,
+    height: 48,
+    borderRadius: 10,
     backgroundColor: THEME.colors.primary,
+    borderBottomWidth: 3.5,
+    borderBottomColor: THEME.colors.primaryBevel,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   finishPrimaryText: {
-    fontFamily: THEME.fonts.bold,
-    color: THEME.colors.onPrimary,
-    fontSize: 14,
-    fontWeight: '700',
+    fontFamily: THEME.fonts.extraBold,
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
   },
   finishSecondary: {
     width: '100%',
@@ -4493,7 +4616,10 @@ const createStyles = () => StyleSheet.create({
     gap: 12,
   },
   rematchToastOverlay: {
-    flex: 1,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     justifyContent: 'flex-end',
     padding: 12,
     paddingBottom: 28,
@@ -4516,8 +4642,15 @@ const createStyles = () => StyleSheet.create({
   rematchToastText: { flex: 1, fontFamily: THEME.fonts.semiBold, fontSize: 13, color: THEME.colors.inverseLabel },
   rematchDeclineBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.surfaceMuted },
   rematchDeclineText: { fontFamily: THEME.fonts.semiBold, fontSize: 12, color: THEME.colors.textSecondaryStrong },
-  rematchAcceptBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: THEME.colors.primary },
-  rematchAcceptText: { fontFamily: THEME.fonts.bold, fontSize: 12, color: THEME.colors.onPrimary },
+  rematchAcceptBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: THEME.colors.primary,
+    borderBottomWidth: 2.5,
+    borderBottomColor: THEME.colors.primaryBevel,
+  },
+  rematchAcceptText: { fontFamily: THEME.fonts.extraBold, fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
   // Blocking join/seat states: full-screen, input-eating, above the board
   // but below native modals (render order). A spinner for waits, an icon
   // for terminal failures — never a playable-looking board underneath.

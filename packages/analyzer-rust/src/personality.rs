@@ -722,6 +722,7 @@ fn is_immediate_win(state: &GameState, mover_idx: usize, action: &GameAction) ->
     false
 }
 
+/// Checks whether a pawn move increases shortest distance to goal (backward or into a dead end).
 fn is_backward_pawn_move(state: &GameState, mover_idx: usize, action: &GameAction) -> bool {
     if let GameAction::Move { to } = action {
         if let Some(player) = state.players.get(mover_idx) {
@@ -738,20 +739,75 @@ fn is_backward_pawn_move(state: &GameState, mover_idx: usize, action: &GameActio
                 &board,
                 &state.mode,
             );
-            return next_dist > cur_dist;
+            return next_dist < 0 || next_dist > cur_dist;
         }
     }
     false
 }
 
+/// Checks whether a wall placement actually delays at least one active opponent by >= 1 step
+/// while keeping paths open for all players (Quoridor golden rule).
+fn wall_delays_opponent(state: &GameState, mover_idx: usize, wall: &WallCoord) -> bool {
+    if wall.row < 0 || wall.row >= 8 || wall.col < 0 || wall.col >= 8 {
+        return false;
+    }
+    let board = crate::board::Board::from_walls(&state.walls);
+    let is_h = wall.orientation == Orientation::H;
+    if !board.can_place_wall_geometry(wall.row as u8, wall.col as u8, is_h) {
+        return false;
+    }
+    let mut spec_board = board;
+    spec_board.place_wall_raw(wall.row as u8, wall.col as u8, is_h);
+
+    // Mover must retain a valid path
+    if let Some(mover) = state.players.get(mover_idx) {
+        let my_d = crate::pathfinding::shortest_distance(
+            mover.position,
+            mover.goal_direction,
+            &spec_board,
+            &state.mode,
+        );
+        if my_d < 0 {
+            return false;
+        }
+    }
+
+    let mut delays_someone = false;
+    for (idx, opp) in state.players.iter().enumerate() {
+        if idx == mover_idx || opp.status == "FINISHED" {
+            continue;
+        }
+        let cur_d = crate::pathfinding::shortest_distance(
+            opp.position,
+            opp.goal_direction,
+            &board,
+            &state.mode,
+        );
+        let new_d = crate::pathfinding::shortest_distance(
+            opp.position,
+            opp.goal_direction,
+            &spec_board,
+            &state.mode,
+        );
+        if new_d < 0 {
+            return false;
+        }
+        if new_d > cur_d {
+            delays_someone = true;
+        }
+    }
+    delays_someone
+}
+
 /// The Master Personality Decision Function:
 /// 1. Finds ranked legal actions from the hybrid engine (up to 20 candidates).
-/// 2. If immediate winning move exists, plays it.
-/// 3. Filters out backward pawn moves when forward/lateral options or walls exist.
-/// 4. Dominance Gate: If Move #1 is dominant (gap >= 0.06 or prob >= 0.65), plays Move #1.
-/// 5. Calibrated In-Character Blunders: Beginners sample from Ranks 2..6 of the Top-20 pool.
-/// 6. Dynamic Near-Optimal Selection: Bots sample among close moves (within variety_window)
-///    shaped by personality styles (wall bias, sprint bias, opening styles).
+/// 2. If immediate winning move exists, plays it 100% of the time (ALL bots).
+/// 3. Prunes backward/dead-end pawn moves and 0-delay useless walls.
+/// 4. Dominance Gate & Critical Defense: forced blocks and high leads respected.
+/// 5. Finish sprint: when within 2 steps of winning, sprint to goal without hesitation.
+/// 6. Calibrated Human-Like Blunders: beginners make natural human errors (e.g. pawn tunnel-vision
+///    or secondary sensible moves), NEVER choosing dead ends, backward moves, or useless walls.
+/// 7. Dynamic Near-Optimal Selection: Bots sample among close moves shaped by personality styles.
 pub fn select_bot_action(
     state: &GameState,
     profile: &BotPersonalityConfig,
@@ -766,8 +822,7 @@ pub fn select_bot_action(
     let mut rng = Prng::new(seed ^ 0x9E3779B97F4A7C15);
 
     // MILO: Pure AlphaZero ONNX Engine (100% Sigma Quoridor trained neural policy)
-    // Runs pure AlphaZero MCTS with neural value lookahead simulations strictly for Classic 2P.
-    // In variant modes (Center Rush, Race, 4P), Milo plays via the high-Elo tactical hybrid engine without AlphaZero ONNX.
+    // UNTOUCHED: strictly preserved as requested
     if profile.id == "milo" && state.mode == "2p" {
         if let Some(evaluator) = crate::hybrid::get_global_evaluator() {
             let sims = profile.simulations.max(1);
@@ -784,9 +839,8 @@ pub fn select_bot_action(
     }
 
     // 1. Collect ranked candidates from hybrid engine (AlphaZero priors + MCTS).
-    // The tactical 8-ply minimax solver is ONLY enabled for 2000+ Elo bots (Torstein, Viktor, Diego, Achref, Milo).
-    // Beginners and lower intermediates rely on their own search so they can naturally miss non-trivial blocks!
-    let use_solver = profile.elo >= 2000;
+    // Tactical minimax solver enabled for Masters & Grandmasters (Elo >= 1700).
+    let use_solver = profile.elo >= 1700;
     let ranked = find_ranked_hybrid_actions(
         state,
         profile.simulations,
@@ -800,74 +854,159 @@ pub fn select_bot_action(
         return GameAction::Resign;
     }
 
-    // 2. Check immediate win conversion
+    // 2. Immediate Win Conversion:
+    // ALL bots (even beginner Dad Martin & Barnaby) convert 100% of immediate winning moves!
+    // Never allow a blunder roll to throw away an instant win when 1 step from victory!
     for c in &ranked {
         if is_immediate_win(state, mover_idx, &c.action) {
-            // High-Elo bots (>=1200) NEVER drop an immediate win
-            if profile.elo >= 1200 {
-                return c.action.clone();
-            }
-            // Beginners (e.g. dad Martin) take the win unless blunder roll succeeds
-            if rng.next_f64() >= (profile.blunder_rate as f64) {
-                return c.action.clone();
+            return c.action.clone();
+        }
+    }
+
+    let board = crate::board::Board::from_walls(&state.walls);
+    let mover_dist = crate::pathfinding::shortest_distance(
+        mover.position,
+        mover.goal_direction,
+        &board,
+        &state.mode,
+    );
+
+    // Check if an active opponent is 1 step from winning (critical defense emergency)
+    let mut critical_opp_at_1 = false;
+    for (idx, opp) in state.players.iter().enumerate() {
+        if idx != mover_idx && opp.status == "ACTIVE" {
+            let opp_d = crate::pathfinding::shortest_distance(
+                opp.position,
+                opp.goal_direction,
+                &board,
+                &state.mode,
+            );
+            if opp_d == 1 {
+                critical_opp_at_1 = true;
+                break;
             }
         }
     }
 
-    // 3. Shuffling filter for beginner bots on open boards:
-    // Only beginners (Elo < 1200) on wide open boards (walls <= 1) have backward pawn retreats pruned
-    // to prevent repetitive back-and-forth shuffling. Masters and Grandmasters retain full freedom to retreat tactically.
-    let filter_backward = profile.elo < 1200 && state.walls.len() <= 1;
-    let has_non_backward = ranked
-        .iter()
-        .any(|c| !is_backward_pawn_move(state, mover_idx, &c.action));
+    // 3. Rational Candidate Filter:
+    // a) Anti-Dead-End & Anti-Backward: Prune pawn steps where next_dist > mover_dist (closed pockets/retreats).
+    // b) Anti-Useless-Wall: Prune wall placements that do not delay any active opponent.
+    let has_sensible_pawn = ranked.iter().any(|c| {
+        if let GameAction::Move { .. } = &c.action {
+            !is_backward_pawn_move(state, mover_idx, &c.action)
+        } else {
+            false
+        }
+    });
 
-    let valid_pool: Vec<crate::hybrid::HybridRankedAction> = if filter_backward && has_non_backward {
-        ranked
-            .into_iter()
-            .filter(|c| !is_backward_pawn_move(state, mover_idx, &c.action))
-            .collect()
+    let filtered_candidates: Vec<crate::hybrid::HybridRankedAction> = ranked
+        .into_iter()
+        .filter(|c| match &c.action {
+            GameAction::Move { .. } => {
+                if has_sensible_pawn {
+                    !is_backward_pawn_move(state, mover_idx, &c.action)
+                } else {
+                    true
+                }
+            }
+            GameAction::PlaceWall { wall } => {
+                wall_delays_opponent(state, mover_idx, wall)
+            }
+            _ => true,
+        })
+        .collect();
+
+    let valid_pool = if !filtered_candidates.is_empty() {
+        filtered_candidates
     } else {
-        ranked
+        // Fallback: collect all legal pawn moves if everything was filtered
+        let legal_coords = crate::rules::get_legal_moves(state, &mover.id, &board);
+        legal_coords
+            .into_iter()
+            .map(|to| crate::hybrid::HybridRankedAction {
+                action: GameAction::Move { to },
+                prob: 0.5,
+                logit: 0.0,
+                q: 0.5,
+                is_wall: false,
+            })
+            .collect()
     };
 
     if valid_pool.is_empty() {
         return GameAction::Resign;
     }
 
-    // 4. Dominance Gate:
-    // When Move #1 has a decisive lead over Move #2, it is a tactical necessity
-    // (e.g. forced defensive block or race conversion).
+    // 4. Dominance Gate & Critical Defense:
+    // When Move #1 has a decisive lead over Move #2, it is tactically forced.
+    // - Masters & Grandmasters (Elo >= 1700) ALWAYS play Move #1 when dominant.
+    // - Intermediates & above (Elo >= 1200) NEVER drop a critical block when opponent is 1 step from win!
     let top_q = valid_pool[0].q;
     let top_prob = valid_pool[0].prob;
     let second_q = if valid_pool.len() > 1 { valid_pool[1].q } else { 0.0 };
     let q_gap = top_q - second_q;
 
     let is_dominant = q_gap >= 0.06 || top_prob >= 0.65;
-    if is_dominant && profile.elo >= 2000 {
+    if is_dominant && profile.elo >= 1700 {
+        return valid_pool[0].action.clone();
+    }
+    if critical_opp_at_1 && profile.elo >= 1200 && valid_pool[0].is_wall {
         return valid_pool[0].action.clone();
     }
 
-    // 5. Calibrated Blunder Sampling (for lower-tier bots):
-    // Blunders are selected from Rank min..max of the Top-20 candidate pool.
-    // This produces realistic human inaccuracies rather than suicidal wall placements!
-    let is_blundering = profile.blunder_rate > 0.0 && rng.next_f64() < (profile.blunder_rate as f64);
-    if is_blundering && valid_pool.len() > 1 {
-        let min_idx = profile.blunder_rank_min.min(valid_pool.len() - 1);
-        let max_idx = profile.blunder_rank_max.min(valid_pool.len() - 1);
-        if min_idx <= max_idx && min_idx > 0 {
-            let span = max_idx - min_idx + 1;
-            let blunder_pick = min_idx + ((rng.next_u64() as usize) % span);
-            let action = valid_pool[blunder_pick].action.clone();
-            if is_legal_action(state, &action) {
-                return action;
+    // 5. Finish Sprint Guarantee:
+    // In ALL modes (including Classical 2P), when within 2 steps of winning, sprint to goal!
+    // Never allow placing walls or shuffling when 1-2 steps away from winning!
+    let is_finish_sprint = mover_dist <= 2;
+    if is_finish_sprint {
+        if let Some(sprint_move) = valid_pool.iter().find(|c| {
+            if let GameAction::Move { to } = &c.action {
+                let d = crate::pathfinding::shortest_distance(*to, mover.goal_direction, &board, &state.mode);
+                d < mover_dist
+            } else {
+                false
             }
+        }) {
+            return sprint_move.action.clone();
         }
     }
 
-    // 6. Dynamic Candidate Pool Selection (Personality-Shaped):
+    // 6. Calibrated Human-Like Blunder Sampling:
+    // Blunders now sample among sensible suboptimal alternatives (e.g. pawn tunnel-vision or secondary wall/move),
+    // NEVER dipping into discarded garbage, dead ends, or 0-delay walls!
+    let is_blundering = profile.blunder_rate > 0.0 && rng.next_f64() < (profile.blunder_rate as f64);
+    if is_blundering && valid_pool.len() > 1 {
+        // Human Blunder Type 1: Pawn Tunnel Vision
+        // If the best move was a defensive wall, beginners frequently neglect the wall and sprint their pawn!
+        let best_is_wall = valid_pool[0].is_wall;
+        let advancing_pawn = valid_pool.iter().find(|c| {
+            if let GameAction::Move { to } = &c.action {
+                let d = crate::pathfinding::shortest_distance(*to, mover.goal_direction, &board, &state.mode);
+                d < mover_dist
+            } else {
+                false
+            }
+        });
+
+        if best_is_wall && advancing_pawn.is_some() && rng.next_f64() < 0.50 {
+            return advancing_pawn.unwrap().action.clone();
+        }
+
+        // Human Blunder Type 2: Suboptimal Choice among Sensible Alternatives (Ranks 1..3 of valid_pool)
+        let max_suboptimal = valid_pool.len() - 1;
+        let min_pick = 1.min(max_suboptimal);
+        let max_pick = 3.min(max_suboptimal);
+        let span = max_pick - min_pick + 1;
+        let blunder_pick = min_pick + ((rng.next_u64() as usize) % span);
+        let action = valid_pool[blunder_pick].action.clone();
+        if is_legal_action(state, &action) {
+            return action;
+        }
+    }
+
+    // 7. Dynamic Candidate Pool Selection (Personality-Shaped):
     // For high-Elo bots (Elo >= 1400), filter strictly to candidates within the variety window of Move #1.
-    // For lower-tier bots (Elo < 1400), expand pool to top 5 candidates so they aren't frozen to Move #1!
+    // For lower-tier bots (Elo < 1400), bound candidate pool to top sensible candidates close to Move #1.
     let candidates_for_sampling: Vec<&crate::hybrid::HybridRankedAction> = if profile.elo >= 1400 {
         let variety_threshold = profile.variety_window.max(0.025);
         let pool: Vec<_> = valid_pool
@@ -879,7 +1018,17 @@ pub fn select_bot_action(
         }
         pool
     } else {
-        valid_pool.iter().take(5).collect()
+        let max_q_gap = 0.20;
+        let pool: Vec<_> = valid_pool
+            .iter()
+            .take(4)
+            .filter(|c| (top_q - c.q) <= max_q_gap)
+            .collect();
+        if pool.is_empty() {
+            vec![&valid_pool[0]]
+        } else {
+            pool
+        }
     };
 
     // Scale down MCTS visit logit gap for beginners so Candidate #0 doesn't have a 99% monopoly:
@@ -887,15 +1036,6 @@ pub fn select_bot_action(
 
     // Apply personality style biases (wall preferences, sprint biases, opening styles)
     let is_opening = state.move_number <= (state.players.len() as u32 * 2).max(4);
-
-    let board = crate::board::Board::from_walls(&state.walls);
-    let mover_dist = crate::pathfinding::shortest_distance(
-        mover.position,
-        mover.goal_direction,
-        &board,
-        &state.mode,
-    );
-    let is_finish_sprint = (state.mode != "2p") && mover_dist <= 2;
 
     let mut scored_candidates: Vec<(GameAction, f32)> = candidates_for_sampling
         .into_iter()
@@ -1381,6 +1521,166 @@ mod tests {
                 "Bot should not place a wall all the way at col 7/8 against distant P4! Action: {:?}",
                 action
             );
+        }
+    }
+
+    #[test]
+    fn test_beginner_martin_always_takes_immediate_win() {
+        let mut state = make_test_state();
+        // Martin (P1, row 7, goal Bottom row 8)
+        state.players[0].position = CellCoord { row: 7, col: 4 };
+        state.players[0].walls_remaining = 5;
+        let martin = get_bot_preset("martin");
+
+        // Across 50 seeds, Martin must ALWAYS take the win (row 8), never blunder or drop a wall!
+        for seed in 1..=50 {
+            let action = select_bot_action(&state, &martin, seed);
+            assert!(
+                matches!(action, GameAction::Move { to } if to.row == 8),
+                "Seed {}: Martin must convert 100% of immediate wins to row 8, got {:?}",
+                seed,
+                action
+            );
+        }
+    }
+
+    #[test]
+    fn test_bot_never_enters_dead_end_corridor() {
+        let mut state = make_test_state();
+        // Bot (Player 0) at (4, 4), heading to row 8 (Bottom)
+        state.players[0].position = CellCoord { row: 4, col: 4 };
+        state.players[0].walls_remaining = 0; // Pawn moves only
+        state.players[1].position = CellCoord { row: 8, col: 0 };
+        state.players[1].walls_remaining = 0;
+
+        // Walls create a cul-de-sac at (5, 4):
+        // Horizontal wall below at (5, 4) blocks moving south from row 5
+        // Vertical walls at (4, 3) and (4, 4) flank col 4
+        // Stepping to (5, 4) enters a dead-end pocket!
+        // Moving laterally to (4, 3) or (4, 5) is the open path.
+        state.walls = vec![
+            WallCoord { row: 5, col: 4, orientation: Orientation::H },
+            WallCoord { row: 4, col: 3, orientation: Orientation::V },
+            WallCoord { row: 4, col: 4, orientation: Orientation::V },
+        ];
+
+        let martin = get_bot_preset("martin");
+        let elias = get_bot_preset("elias");
+
+        for seed in 1..=20 {
+            let act_m = select_bot_action(&state, &martin, seed);
+            if let GameAction::Move { to } = act_m {
+                assert_ne!(
+                    to,
+                    CellCoord { row: 5, col: 4 },
+                    "Seed {}: Martin must NEVER step forward into dead-end cul-de-sac at (5,4)!",
+                    seed
+                );
+            }
+
+            let act_e = select_bot_action(&state, &elias, seed);
+            if let GameAction::Move { to } = act_e {
+                assert_ne!(
+                    to,
+                    CellCoord { row: 5, col: 4 },
+                    "Seed {}: Elias must NEVER step forward into dead-end cul-de-sac at (5,4)!",
+                    seed
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_bot_never_places_zero_delay_useless_wall() {
+        let mut state = make_test_state();
+        // Classical 2P: Player 0 at (3, 4), Player 1 at (5, 4)
+        state.players[0].position = CellCoord { row: 3, col: 4 };
+        state.players[0].walls_remaining = 5;
+        state.players[1].position = CellCoord { row: 5, col: 4 };
+        state.players[1].walls_remaining = 5;
+        state.walls = vec![];
+
+        let martin = get_bot_preset("martin");
+        for seed in 1..=30 {
+            let act = select_bot_action(&state, &martin, seed);
+            if let GameAction::PlaceWall { wall } = act {
+                assert!(
+                    wall_delays_opponent(&state, 0, &wall),
+                    "Seed {}: Martin must NEVER place a useless wall with 0 delay! Wall: {:?}",
+                    seed,
+                    wall
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_classical_2p_sprints_to_goal_without_walls_or_shuffling() {
+        let mut state = make_test_state();
+        // Player 0 at (6, 4) heading to row 8 (dist 2) in classical 2p
+        state.players[0].position = CellCoord { row: 6, col: 4 };
+        state.players[0].walls_remaining = 8;
+        state.players[1].position = CellCoord { row: 2, col: 4 };
+        state.players[1].walls_remaining = 8;
+        state.walls = vec![];
+
+        let martin = get_bot_preset("martin");
+        let marcus = get_bot_preset("marcus");
+
+        for seed in 1..=20 {
+            let act_m = select_bot_action(&state, &martin, seed);
+            assert!(
+                matches!(act_m, GameAction::Move { to } if to.row > 6),
+                "Seed {}: Martin must sprint toward goal (row > 6) when 2 steps away, got {:?}",
+                seed,
+                act_m
+            );
+
+            let act_arc = select_bot_action(&state, &marcus, seed);
+            assert!(
+                matches!(act_arc, GameAction::Move { to } if to.row > 6),
+                "Seed {}: Marcus must sprint toward goal (row > 6) when 2 steps away, got {:?}",
+                seed,
+                act_arc
+            );
+        }
+    }
+
+    #[test]
+    fn test_master_marcus_blocks_immediate_opponent_win() {
+        let mut state = make_test_state();
+        // Player 0 (Marcus, Master) at (5, 4), goal row 8 (dist 3)
+        // Player 1 (Opponent) at (1, 4), goal row 0 (dist 1!)
+        state.players[0].position = CellCoord { row: 5, col: 4 };
+        state.players[0].walls_remaining = 5;
+        state.players[1].position = CellCoord { row: 1, col: 4 };
+        state.players[1].walls_remaining = 5;
+        state.players[1].goal_direction = GoalDirection::Top;
+        state.walls = vec![];
+
+        let marcus = get_bot_preset("marcus");
+        for seed in 1..=20 {
+            let act = select_bot_action(&state, &marcus, seed);
+            // Marcus MUST play a blocking wall that prevents P2 from winning immediately!
+            if let GameAction::PlaceWall { wall } = &act {
+                let board = crate::board::Board::from_walls(&state.walls);
+                let mut spec = board;
+                spec.place_wall_raw(wall.row as u8, wall.col as u8, wall.orientation == Orientation::H);
+                let opp_d = crate::pathfinding::shortest_distance(
+                    state.players[1].position,
+                    state.players[1].goal_direction,
+                    &spec,
+                    &state.mode,
+                );
+                assert!(
+                    opp_d > 1,
+                    "Seed {}: Marcus must block opponent 1 step from win! Resulting dist: {}",
+                    seed,
+                    opp_d
+                );
+            } else {
+                panic!("Seed {}: Marcus must place a wall to block opponent! Got {:?}", seed, act);
+            }
         }
     }
 }

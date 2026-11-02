@@ -94,11 +94,18 @@ function enqueueWrite(op: () => Promise<unknown>): void {
   );
 }
 
+const STORAGE_READ_TIMEOUT_MS = 2500;
+
 async function readPersisted(): Promise<PersistedIdentity | null> {
   try {
     const raw = hasWebStorage()
       ? window.localStorage.getItem(IDENTITY_STORAGE_KEY)
-      : await AsyncStorage.getItem(IDENTITY_STORAGE_KEY);
+      : await Promise.race([
+          AsyncStorage.getItem(IDENTITY_STORAGE_KEY),
+          new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error('AsyncStorage read timeout')), STORAGE_READ_TIMEOUT_MS)
+          ),
+        ]);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     return isValidPersisted(parsed) ? parsed : null;

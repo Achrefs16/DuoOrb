@@ -55,7 +55,13 @@ const hasWebStorage = () => {
 export async function hasCompletedOnboarding(): Promise<boolean> {
   try {
     if (hasWebStorage()) return webGet(ONBOARDING_KEY) === '1';
-    return (await AsyncStorage.getItem(ONBOARDING_KEY)) === '1';
+    const val = await Promise.race([
+      AsyncStorage.getItem(ONBOARDING_KEY),
+      new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error('AsyncStorage read timeout')), 2500)
+      ),
+    ]);
+    return val === '1';
   } catch {
     // Treat an unreadable store as "not onboarded" so the flow still runs.
     return false;

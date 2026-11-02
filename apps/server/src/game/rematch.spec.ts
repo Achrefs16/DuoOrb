@@ -103,4 +103,38 @@ describe('rematch seats every player, not just p1/p2', () => {
       error: 'Game still in progress.',
     });
   });
+
+  it('cancelRematch removes user from rematchOffers', () => {
+    const svc = new AuthoritativeGameService(undefined as any);
+    makeGame(svc, 'rm-cancel', '2p', ['A', 'B']);
+    expect(svc.offerRematch('rm-cancel', 'u1')).toEqual({ offered: true });
+    const g = svc.getGame('rm-cancel')!;
+    expect(g.rematchOffers.has('u1')).toBe(true);
+
+    expect(svc.cancelRematch('rm-cancel', 'u1')).toBe(true);
+    expect(g.rematchOffers.has('u1')).toBe(false);
+  });
+
+  it('rejects offer with OPPONENT_LEFT if opponent left the post-game room', () => {
+    const svc = new AuthoritativeGameService(undefined as any);
+    makeGame(svc, 'rm-left', '2p', ['A', 'B']);
+    expect(svc.leavePostGame('rm-left', 'u2')).toEqual({ left: true });
+
+    // Player A now tries to offer rematch
+    expect(svc.offerRematch('rm-left', 'u1')).toEqual({
+      offered: false,
+      error: 'OPPONENT_LEFT',
+    });
+  });
+
+  it('leavePostGame clears existing rematch offers', () => {
+    const svc = new AuthoritativeGameService(undefined as any);
+    makeGame(svc, 'rm-clear', '2p', ['A', 'B']);
+    svc.offerRematch('rm-clear', 'u1');
+    const g = svc.getGame('rm-clear')!;
+    expect(g.rematchOffers.has('u1')).toBe(true);
+
+    svc.leavePostGame('rm-clear', 'u2');
+    expect(g.rematchOffers.size).toBe(0);
+  });
 });

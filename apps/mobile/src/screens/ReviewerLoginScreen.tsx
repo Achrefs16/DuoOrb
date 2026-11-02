@@ -308,8 +308,10 @@ const createStyles = () =>
     },
     submitButton: {
       backgroundColor: THEME.colors.primary,
-      height: 48,
-      borderRadius: 14,
+      height: 50,
+      borderRadius: 10,
+      borderBottomWidth: 3.5,
+      borderBottomColor: THEME.colors.primaryBevel,
       justifyContent: 'center',
       alignItems: 'center',
       marginTop: 8,
@@ -318,8 +320,9 @@ const createStyles = () =>
       opacity: 0.6,
     },
     submitButtonText: {
-      fontSize: 15,
-      fontWeight: '600',
+      fontFamily: THEME.fonts.extraBold,
+      fontSize: 16,
+      fontWeight: '800',
       color: '#FFFFFF',
     },
     disclaimerText: {

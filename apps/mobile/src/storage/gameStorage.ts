@@ -200,7 +200,12 @@ const syncNativeCache: Record<string, string> = {};
 async function hydrateNativeCache(keys: string[]): Promise<void> {
   if (hasWebStorage()) return;
   try {
-    const entries = await AsyncStorage.multiGet(keys);
+    const entries = await Promise.race([
+      AsyncStorage.multiGet(keys),
+      new Promise<readonly [string, string | null][]>((_, reject) =>
+        setTimeout(() => reject(new Error('AsyncStorage multiGet timeout')), 2500)
+      ),
+    ]);
     for (const [key, value] of entries) {
       if (value !== null) syncNativeCache[key] = value;
     }

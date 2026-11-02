@@ -179,6 +179,32 @@ describe('restoreSession', () => {
     expect(auth.getIdentity()?.userId).toBe('u_offline');
     expect(server.calls.create).toBe(0);
   });
+
+  it('fast offline: skips network refresh when isOffline indicates no connection', async () => {
+    const server = makeServer();
+    await auth.hydrateIdentity();
+    auth.setIdentity({
+      userId: 'u_offline_fast',
+      username: 'player_u_fast',
+      displayName: 'FastOfflinePlayer',
+      accessToken: 'access-u_fast',
+      refreshToken: 'refresh-u_fast',
+      isGuest: true,
+    });
+
+    const deps = {
+      ...depsFor(server),
+      isOffline: () => true,
+    };
+
+    const outcome = await restore.restoreSession(deps);
+
+    expect(outcome.status).toBe('restored');
+    expect(auth.getIdentity()?.userId).toBe('u_offline_fast');
+    // Verifies that network refresh was completely bypassed:
+    expect(server.calls.refresh).toBe(0);
+    expect(server.calls.me).toBe(0);
+  });
 });
 
 describe('createGuestIdentity', () => {

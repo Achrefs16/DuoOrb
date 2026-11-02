@@ -40,7 +40,7 @@ type WallsChoice = 10 | 15 | 99;
 
 export interface MatchSetupPageSelection {
   mode: GameMode;
-  vsType: 'ai' | 'local' | 'challenge' | 'online';
+  vsType: 'ai' | 'local' | 'challenge';
   clock: TimeControl;
   difficulty: AIDifficulty;
   botId: string | null;
@@ -50,7 +50,7 @@ export interface MatchSetupPageSelection {
 }
 
 interface MatchSetupScreenProps {
-  initialKind: 'ai' | 'local' | 'challenge' | 'online';
+  initialKind: 'ai' | 'local' | 'challenge';
   challengeName?: string;
   initialClock?: TimeControl;
   initialDifficulty?: AIDifficulty;
@@ -58,6 +58,7 @@ interface MatchSetupScreenProps {
   onLockedBot?: () => void;
   onOpenRooms?: () => void;
   onSelectBotsTab?: () => void;
+  onPlayOnline?: () => void;
   onConfirm: (selection: MatchSetupPageSelection) => void;
   onBack: () => void;
 }
@@ -70,6 +71,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
   onLockedBot,
   onOpenRooms,
   onSelectBotsTab,
+  onPlayOnline,
   onConfirm,
   onBack,
 }) => {
@@ -77,9 +79,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
-  const [vsType, setVsType] = useState<'ai' | 'local' | 'challenge' | 'online'>(
-    initialKind
-  );
+  const [vsType] = useState<'ai' | 'local' | 'challenge'>(initialKind);
   const [optionsOpen, setOptionsOpen] = useState<boolean>(false);
 
   // Load last-used picks from draft
@@ -148,8 +148,7 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
         wallsEach: walls,
       });
 
-    if (vsType === 'online') runWhenOnline(confirm);
-    else confirm();
+    confirm();
   };
 
   // Human readable labels
@@ -274,27 +273,16 @@ export const MatchSetupScreen: React.FC<MatchSetupScreenProps> = ({
               <TouchableOpacity
                 style={styles.secondaryRowBtn}
                 activeOpacity={0.8}
-                onPress={() =>
-                  setVsType(vsType === 'online' ? 'local' : 'online')
-                }
+                onPress={() => {
+                  runWhenOnline(() => onPlayOnline?.());
+                }}
               >
                 <OrbIcon
-                  name={vsType === 'online' ? 'smartphone' : 'globe'}
+                  name="globe"
                   size={20}
                   color={THEME.colors.textSecondary}
                 />
-                <Text style={styles.secRowText}>
-                  {vsType === 'online' ? t('setup.passAndPlay') : t('setup.playOnline')}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.chevronExpandBtn}
-                activeOpacity={0.8}
-                onPress={() => setOptionsOpen(true)}
-                accessibilityLabel={t('setup.moreOptionsA11y')}
-              >
-                <OrbIcon name="chevron-down" size={22} color={THEME.colors.textMuted} />
+                <Text style={styles.secRowText}>{t('setup.playOnline')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -458,15 +446,6 @@ const createStyles = () =>
       fontSize: 16,
       fontWeight: '700',
       color: THEME.colors.textPrimary,
-    },
-    chevronExpandBtn: {
-      height: 44,
-      backgroundColor: THEME.colors.surfaceMuted,
-      borderRadius: 10,
-      borderBottomWidth: 3,
-      borderBottomColor: THEME.colors.secondaryBevel,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
     quickPlayerSection: {
       gap: 6,

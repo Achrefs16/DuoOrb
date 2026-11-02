@@ -282,6 +282,8 @@ const [opponentGrace, setOpponentGrace] = useState<Record<string, OpponentGrace>
   const [rematchOffered, setRematchOffered] = useState<boolean>(false);
   const [rematchOfferNonce, setRematchOfferNonce] = useState<number>(0);
   const [rematchDeclinedNonce, setRematchDeclinedNonce] = useState<number>(0);
+  const [rematchCancelledNonce, setRematchCancelledNonce] = useState<number>(0);
+  const [opponentLeft, setOpponentLeft] = useState<boolean>(false);
   const [rematchGameId, setRematchGameId] = useState<string | null>(null);
   const rematchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [gameEndedResult, setGameEndedResult] = useState<GameEndedDto | null>(null);
@@ -841,6 +843,11 @@ setOpponentGrace({});
   const handleError = useCallback(
     (error: GameError) => {
       console.warn('Game error from server:', error);
+      if (error.code === 'OPPONENT_LEFT' || error.message === 'OPPONENT_LEFT') {
+        setOpponentLeft(true);
+        setRematchOffered(false);
+        return;
+      }
       if (error.code === 'STALE_SEQUENCE') {
         // Our view of the sequence drifted: pull full truth. The tail rides
         // along with the join so the moves are not lost.
@@ -1214,6 +1221,26 @@ setOpponentGrace({});
       setRematchDeclinedNonce((n) => n + 1);
     };
 
+    const handleRematchCancelled = () => {
+      // Sender cancelled their offer: recipient dismisses the prompt
+      setRematchOffered(false);
+      setRematchCancelledNonce((n) => n + 1);
+      if (rematchTimerRef.current) {
+        clearTimeout(rematchTimerRef.current);
+        rematchTimerRef.current = null;
+      }
+    };
+
+    const handleOpponentLeft = () => {
+      // Opponent left post-game: rematch no longer available
+      setOpponentLeft(true);
+      setRematchOffered(false);
+      if (rematchTimerRef.current) {
+        clearTimeout(rematchTimerRef.current);
+        rematchTimerRef.current = null;
+      }
+    };
+
     const handleFinished = (finished: { gameId: string; playerId: string; userId: string; place: number }) => {
       setLastFinished(finished);
     };
@@ -1228,6 +1255,8 @@ setOpponentGrace({});
     socket.on('game:afkCleared', handleAfkCleared);
     socket.on('game:rematchOffered', handleRematchOffered);
     socket.on('game:rematchDeclined', handleRematchDeclined);
+    socket.on('game:rematchCancelled', handleRematchCancelled);
+    socket.on('game:opponentLeft', handleOpponentLeft);
     socket.on('matchmaking:matched', handleRematchMatched);
     socket.on('game:playerFinished', handleFinished);
     socket.on('game:error', handleError);
@@ -1243,6 +1272,8 @@ setOpponentGrace({});
       socket.off('game:afkCleared', handleAfkCleared);
       socket.off('game:rematchOffered', handleRematchOffered);
       socket.off('game:rematchDeclined', handleRematchDeclined);
+      socket.off('game:rematchCancelled', handleRematchCancelled);
+      socket.off('game:opponentLeft', handleOpponentLeft);
       socket.off('matchmaking:matched', handleRematchMatched);
       socket.off('game:playerFinished', handleFinished);
       socket.off('game:error', handleError);
@@ -1419,6 +1450,28 @@ setOpponentGrace({});
     }
   }, [gameId]);
 
+  /**
+   * Cancel an active rematch offer sent by this user.
+   */
+  const cancelRematch = useCallback(() => {
+    try {
+      socketManager.getSocket().emit('game:rematchCancel', { gameId });
+    } catch {
+      // Ignored
+    }
+  }, [gameId]);
+
+  /**
+   * Explicitly leave the post-game room (e.g. entering analysis, home, or profile).
+   */
+  const leavePostGame = useCallback(() => {
+    try {
+      socketManager.getSocket().emit('game:leavePostGame', { gameId });
+    } catch {
+      // Ignored
+    }
+  }, [gameId]);
+
 return {
     gameState,
     /** Confirmed board + our in-flight moves, for rendering. See above. */
@@ -1445,6 +1498,8 @@ connStatus,
     rematchOffered,
     rematchOfferNonce,
     rematchDeclinedNonce,
+    rematchCancelledNonce,
+    opponentLeft,
     rematchGameId,
     gameEndedResult,
     isSyncing,
@@ -1458,7 +1513,9 @@ connStatus,
     sendAction,
     resign,
     offerRematch,
+    cancelRematch,
     declineRematch,
+    leavePostGame,
     resync: joinGame,
     getSyncClockMs,
   };

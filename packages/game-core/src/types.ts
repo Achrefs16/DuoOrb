@@ -139,7 +139,9 @@ export type GameErrorCode =
    */
   | 'NOT_SEATED'
   /** The player already has a live game they must finish first. */
-  | 'ALREADY_IN_GAME';
+  | 'ALREADY_IN_GAME'
+  /** Rematch offer rejected because opponent has left the post-game room. */
+  | 'OPPONENT_LEFT';
 
 export interface GameError {
   code: GameErrorCode;
