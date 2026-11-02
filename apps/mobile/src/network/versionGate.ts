@@ -35,11 +35,11 @@ export function getInstalledVersion(): { versionCode: number; versionName: strin
   const versionCode =
     Number(expoConfig?.android?.versionCode) ||
     Number(Constants.nativeBuildVersion) ||
-    19;
+    20;
   const versionName =
     expoConfig?.version ||
     Constants.nativeAppVersion ||
-    '1.0.6';
+    '1.0.7';
 
   return { versionCode, versionName };
 }

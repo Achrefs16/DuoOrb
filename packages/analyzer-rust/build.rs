@@ -3,6 +3,7 @@ fn main() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "android" {
         println!("cargo:rustc-cdylib-link-arg=-Wl,-soname,libduoorb_analyzer.so");
+        println!("cargo:rustc-cdylib-link-arg=-Wl,-z,max-page-size=16384");
     } else if target_arch != "wasm32" && target_os != "ios" {
         napi_build::setup();
     }
