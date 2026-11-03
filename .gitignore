@@ -60,6 +60,7 @@ logs/
 # Local scratch & generation assets
 scratch/
 newbotsimages/
+chess.com/
 
 # OS / editor
 .DS_Store
