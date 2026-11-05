@@ -49,48 +49,84 @@ class WebAdSenseProvider implements AdProvider {
     if (playerFn) {
       return new Promise<RewardedResult>((resolve) => {
         let settled = false;
-        const settleOnce = (res: RewardedResult) => {
+        let rewardEarned = false;
+
+        const cleanupAdContainer = () => {
+          try {
+            const container = document.getElementById('applixir-ad-container');
+            if (container) {
+              container.classList.remove('applixir-active');
+              container.style.display = 'none';
+              container.style.pointerEvents = 'none';
+              container.innerHTML = '';
+            }
+            // Remove any residual floating iframes or backdrop elements created by AppLixir
+            const strayElements = document.querySelectorAll(
+              '[id*="applixir"]:not(#applixir-ad-container), [class*="applixir"], iframe[src*="applixir"]'
+            );
+            strayElements.forEach((el) => el.remove());
+          } catch (e) {
+            console.warn('AppLixir cleanup error:', e);
+          }
+        };
+
+        const finishAndResolve = (res: RewardedResult) => {
           if (!settled) {
             settled = true;
+            clearTimeout(safetyTimer);
+            cleanupAdContainer();
+            // Staggered cleanups ensure any animation or late frame teardown doesn't re-lock touch
+            setTimeout(cleanupAdContainer, 100);
+            setTimeout(cleanupAdContainer, 400);
             resolve(res);
           }
         };
 
         // Safety timeout so user is never stuck indefinitely
         const safetyTimer = setTimeout(() => {
-          settleOnce({ earned: true });
+          finishAndResolve({ earned: rewardEarned || true });
         }, 45000);
 
         try {
+          const container = document.getElementById('applixir-ad-container');
+          if (container) {
+            container.classList.add('applixir-active');
+            container.style.display = 'flex';
+            container.style.pointerEvents = 'auto';
+          }
+
           const options = {
             apiKey: '5a4db0c5-0000-4000-8000-5a4db0c50001',
             injectionElementId: 'applixir-ad-container',
             adStatusCallbackFn: (status: any) => {
               const statusType = typeof status === 'object' ? status?.type : status;
               if (statusType === 'complete' || statusType === 'adDone') {
-                clearTimeout(safetyTimer);
-                settleOnce({ earned: true });
+                rewardEarned = true;
+                // Auto-cleanup shortly after complete in case player doesn't dispatch a separate close event
+                setTimeout(() => {
+                  finishAndResolve({ earned: true });
+                }, 1200);
               } else if (
                 statusType === 'close' ||
                 statusType === 'adDismissed' ||
                 statusType === 'userCanceled'
               ) {
-                clearTimeout(safetyTimer);
-                settleOnce({ earned: false, error: 'dismissed' });
+                finishAndResolve({
+                  earned: rewardEarned,
+                  error: rewardEarned ? undefined : 'dismissed',
+                });
               }
             },
             adErrorCallbackFn: (error: any) => {
               console.warn('AppLixir Ad error:', error);
-              clearTimeout(safetyTimer);
               // Graceful fallback if ad blocker prevents playback
-              settleOnce({ earned: true });
+              finishAndResolve({ earned: true });
             },
           };
           playerFn(options);
         } catch (e) {
           console.warn('AppLixir invoke error:', e);
-          clearTimeout(safetyTimer);
-          settleOnce({ earned: true });
+          finishAndResolve({ earned: true });
         }
       });
     }

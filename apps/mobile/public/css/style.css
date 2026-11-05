@@ -1153,19 +1153,29 @@ body.legal h1 {
 }
 
 @media (max-width: 900px) {
-  .grid-3, .grid-2, .hero-split-grid, .diagram-grid-2, .faq-grid {
+
+  .grid-3,
+  .grid-2,
+  .hero-split-grid,
+  .diagram-grid-2,
+  .faq-grid {
     grid-template-columns: 1fr;
   }
 }
 
 /* AppLixir In-Game Rewarded Video Overlay (PWA Web) */
 #applixir-ad-container {
+  display: none !important;
+  pointer-events: none !important;
   position: fixed;
   inset: 0;
-  z-index: 99999;
-  pointer-events: auto;
+  z-index: 999999;
 }
-#applixir-ad-container:empty {
-  display: none;
-  pointer-events: none;
+
+#applixir-ad-container.applixir-active {
+  display: flex !important;
+  pointer-events: auto !important;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.88);
 }
