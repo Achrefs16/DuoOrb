@@ -274,7 +274,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     // marked ABANDONED with reasons — never invented.
     void this.gameService
       .recoverInProgressGames({
-onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
+        onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         onTimeout: (gId, ended, move) => this.emitTimeoutEnded(gId, ended, move),
         onAfkWarning: (gId, payload) => this.server.to(gId).emit('game:afkWarning', payload),
         onForfeit: (gId, ended, finished, move) =>
@@ -387,7 +387,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         authRetryable = err?.authRetryable === true;
         this.logger.warn(
           `No Supabase identity on ${client.id}; staying unverified ` +
-            `(reason=${authReason}, retryable=${authRetryable}): ${err?.message ?? 'unknown'}`
+          `(reason=${authReason}, retryable=${authRetryable}): ${err?.message ?? 'unknown'}`
         );
       }
     }
@@ -407,9 +407,9 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     const queryPrem = client.handshake.query?.isPremium;
     let isPremium = Boolean(
       authPrem === true ||
-        authPrem === 'true' ||
-        queryPrem === 'true' ||
-        (queryPrem as unknown) === true
+      authPrem === 'true' ||
+      queryPrem === 'true' ||
+      (queryPrem as unknown) === true
     );
     // Fetch the universal rating and premium status if DB is available
     if (this.prisma.isConnected && verified) {
@@ -429,8 +429,8 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         if (profileRecord) {
           const dbPremium = Boolean(
             profileRecord.isPremium &&
-              (!profileRecord.premiumExpiresAt ||
-                profileRecord.premiumExpiresAt.getTime() > Date.now())
+            (!profileRecord.premiumExpiresAt ||
+              profileRecord.premiumExpiresAt.getTime() > Date.now())
           );
           if (dbPremium) isPremium = true;
         }
@@ -483,19 +483,19 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         'session:authState',
         verified
           ? {
-              verified: true,
-              userId: effectiveId,
-              connectionEpoch: epoch,
-              activeGameId,
-              reason: 'verified' as const,
-              retryable: false,
-            }
+            verified: true,
+            userId: effectiveId,
+            connectionEpoch: epoch,
+            activeGameId,
+            reason: 'verified' as const,
+            retryable: false,
+          }
           : {
-              verified: false,
-              userId: effectiveId,
-              reason: authReason,
-              retryable: authRetryable,
-            }
+            verified: false,
+            userId: effectiveId,
+            reason: authReason,
+            retryable: authRetryable,
+          }
       );
       if (verified) this.broadcastPresenceCount();
       // Cache the live rating for lobby display: enrichRoom falls back to
@@ -655,7 +655,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       const name = profile.username || profile.displayName;
       const isPremium = Boolean(
         profile.isPremium &&
-          (!profile.premiumExpiresAt || profile.premiumExpiresAt.getTime() > Date.now())
+        (!profile.premiumExpiresAt || profile.premiumExpiresAt.getTime() > Date.now())
       );
       const mapped = this.socketUserMap.get(client.id);
       if (mapped && (mapped.displayName !== name || mapped.isPremium !== isPremium)) {
@@ -1148,8 +1148,8 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     const existingRoom = this.roomService.getRoom(payload.roomId);
     const otherMemberIds = existingRoom
       ? existingRoom.slots
-          .map((s) => s.userId)
-          .filter((id): id is string => Boolean(id && id !== user.userId))
+        .map((s) => s.userId)
+        .filter((id): id is string => Boolean(id && id !== user.userId))
       : [];
     const { room, disbanded } = this.roomService.leaveRoom(
       payload.roomId,
@@ -1301,8 +1301,8 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     const found = payload.roomId
       ? this.roomService.getRoom(payload.roomId)
       : payload.code
-      ? this.roomService.getRoomByCode(payload.code)
-      : undefined;
+        ? this.roomService.getRoomByCode(payload.code)
+        : undefined;
 
     if (!found) return { success: false, error: 'Room not found.' };
     // Membership is required: this must never be a way to watch a lobby you
@@ -1807,7 +1807,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   // -------------------------------------------------------------
 
   private async refreshSeatableBots(): Promise<Set<string>> {
-    if (Date.now() - this.seatableBots.at > 60_000) {
+    if (Date.now() - this.seatableBots.at > 60_000 || this.seatableBots.ids.size === 0) {
       this.seatableBots = { ids: await seatableBotIds(this.prisma), at: Date.now() };
     }
     return this.seatableBots.ids;
@@ -1842,7 +1842,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
   }
 
   private async runBotBackfill(): Promise<void> {
-    if (!this.botBackfill.enabled || !this.prisma.isConnected) return;
+    if (!this.botBackfill.enabled) return;
     const due = this.botBackfill.dueEntries(this.matchmakingService.getQueueSnapshot());
     if (due.length === 0) return;
     const seatable = await this.refreshSeatableBots();
@@ -1877,7 +1877,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         gameId,
         mode: '2p',
         seatUserIds: order,
-        timeControlMinutes: req.timeControlMinutes,
+        timeControlMinutes: req.timeControlMinutes ?? 3,
         incrementSeconds: req.incrementSeconds ?? 0,
         wallsEach: req.wallsEach ?? 10,
         isRanked: true,
@@ -1896,6 +1896,10 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
         rating: u.rating.rating ?? 1500,
         isPremium: false,
       }));
+      this.matchmakingService.removeFromQueue(req.userId);
+      this.logger.log(
+        `Matched waiting player ${req.userId} to bot ${persona.username} (${persona.displayName}) after ${((Date.now() - req.joinedAt) / 1000).toFixed(1)}s`
+      );
       this.server.to(sid!).emit('matchmaking:matched', {
         gameId,
         mode: '2p',
@@ -1978,8 +1982,8 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     const target = low
       ? 200 + Math.random() * 400
       : early
-      ? 450 + Math.random() * 650
-      : 1100 + Math.random() * 2200;
+        ? 450 + Math.random() * 650
+        : 1100 + Math.random() * 2200;
     const wait = Math.max(0, target - (Date.now() - startedAt));
     if (wait > 0) await new Promise<void>((resolve) => setTimeout(resolve, wait));
     if (stale()) return;
@@ -2217,7 +2221,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     if (!existing || !seat) {
       this.logger.warn(
         `game:join rejected (not seated) socket=${client.id} userId=${user.userId} game=${payload.gameId} ` +
-          `known=${existing ? Object.keys(existing.userPlayerIds).join(',') : 'game-not-found'}`
+        `known=${existing ? Object.keys(existing.userPlayerIds).join(',') : 'game-not-found'}`
       );
       client.emit('game:error', {
         code: 'NOT_SEATED',

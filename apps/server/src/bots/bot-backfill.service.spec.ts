@@ -11,7 +11,7 @@ describe('BotBackfillService', () => {
     maxWaitMs: 12000,
   };
 
-  it('correctly detects quick pool requests (2p, 3m, 0 inc, 10 walls)', () => {
+  it('correctly detects eligible 1v1 pool requests', () => {
     const service = new BotBackfillService(config);
     const valid: MatchmakingRequest = {
       userId: 'u1',
@@ -27,9 +27,9 @@ describe('BotBackfillService', () => {
     expect(service.isQuickPool(valid)).toBe(true);
 
     expect(service.isQuickPool({ ...valid, mode: '4p' })).toBe(false);
-    expect(service.isQuickPool({ ...valid, timeControlMinutes: 5 })).toBe(false);
-    expect(service.isQuickPool({ ...valid, incrementSeconds: 2 })).toBe(false);
-    expect(service.isQuickPool({ ...valid, wallsEach: 5 })).toBe(false);
+    expect(service.isQuickPool({ ...valid, timeControlMinutes: 5 })).toBe(true);
+    expect(service.isQuickPool({ ...valid, incrementSeconds: 2 })).toBe(true);
+    expect(service.isQuickPool({ ...valid, wallsEach: 5 })).toBe(true);
   });
 
   it('dueEntries only triggers after the wait threshold is reached', () => {
@@ -89,6 +89,12 @@ describe('BotBackfillService', () => {
   });
 
   it('loadBackfillConfig parses environment variables properly', () => {
+    const defaults = loadBackfillConfig({});
+    expect(defaults.enabled).toBe(true);
+    expect(defaults.percent).toBe(100);
+    expect(defaults.minWaitMs).toBe(5000);
+    expect(defaults.maxWaitMs).toBe(20000);
+
     const parsed = loadBackfillConfig({
       BOT_BACKFILL_ENABLED: 'true',
       BOT_BACKFILL_PERCENT: '50',

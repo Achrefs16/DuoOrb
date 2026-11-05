@@ -60,14 +60,21 @@ export async function ensureBotRoster(prisma: PrismaService): Promise<void> {
   }
 }
 
-/** Personas whose profile row actually exists (safe to seat). */
+/** Personas whose profile row actually exists (safe to seat). Falls back to all roster personas if DB is cold. */
 export async function seatableBotIds(prisma: PrismaService): Promise<Set<string>> {
-  if (!prisma.isConnected) return new Set();
-  const rows = await prisma.profile.findMany({
-    where: { userId: { in: BOT_PERSONAS.map((p) => p.userId) } },
-    select: { userId: true },
-  });
-  return new Set(rows.map((r) => r.userId));
+  if (!prisma.isConnected) return new Set(BOT_PERSONAS.map((p) => p.userId));
+  try {
+    const rows = await prisma.profile.findMany({
+      where: { userId: { in: BOT_PERSONAS.map((p) => p.userId) } },
+      select: { userId: true },
+    });
+    if (rows.length === 0) {
+      return new Set(BOT_PERSONAS.map((p) => p.userId));
+    }
+    return new Set(rows.map((r) => r.userId));
+  } catch {
+    return new Set(BOT_PERSONAS.map((p) => p.userId));
+  }
 }
 
 const MAX_DRIFT = 120;

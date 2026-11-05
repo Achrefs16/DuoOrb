@@ -16,7 +16,7 @@ export function loadBackfillConfig(env: NodeJS.ProcessEnv = process.env): Backfi
     const n = Number(raw);
     return Number.isFinite(n) ? n : fallback;
   };
-  const minWait = Math.max(3000, num(env.BOT_BACKFILL_MIN_WAIT_MS, 8000));
+  const minWait = Math.max(2000, num(env.BOT_BACKFILL_MIN_WAIT_MS, 5000));
   return {
     enabled: env.BOT_BACKFILL_ENABLED !== 'false',
     percent: Math.min(100, Math.max(0, num(env.BOT_BACKFILL_PERCENT, 100))),
@@ -41,20 +41,15 @@ export class BotBackfillService {
   constructor(
     private readonly config: BackfillConfig,
     private readonly rng: () => number = Math.random
-  ) {}
+  ) { }
 
   get enabled(): boolean {
     return this.config.enabled && this.config.percent > 0;
   }
 
-  /** Only the quick 1v1 pool is backfilled: 3 min, no increment, 10 walls. */
+  /** All 1v1 searches (2p) are eligible for bot backfill */
   isQuickPool(req: MatchmakingRequest): boolean {
-    return (
-      req.mode === '2p' &&
-      req.timeControlMinutes === 3 &&
-      (req.incrementSeconds ?? 0) === 0 &&
-      (req.wallsEach ?? 10) === 10
-    );
+    return req.mode === '2p';
   }
 
   /** Searches that have waited past their (randomised) threshold. */
