@@ -16,7 +16,8 @@ import {
 import { achievementByCode } from '../aiwins/achievements.catalog.js';
 import { DEFAULT_INITIAL_RATING, DEFAULT_INITIAL_RD } from '../rating/glicko2.service.js';
 import { AiwinsService } from '../aiwins/aiwins.service.js';
-import { BOT_ID_PREFIX } from '../bots/bot-ids.js';
+import { BOT_ID_PREFIX, isBotUserId } from '../bots/bot-ids.js';
+import { BOT_PERSONAS, personaById } from '../bots/bot-roster.js';
 import { getSimulatedOnlineBaseline } from '../bots/presence-simulator.js';
 
 export type BotStarCount = 1 | 2 | 3;
@@ -328,7 +329,70 @@ export class UsersService {
   }
 
   async getPublicProfile(userIdOrUsername: string) {
+    const bot = isBotUserId(userIdOrUsername)
+      ? personaById(userIdOrUsername)
+      : BOT_PERSONAS.find(
+          (p) =>
+            p.userId === userIdOrUsername ||
+            p.username.toLowerCase() === userIdOrUsername.toLowerCase()
+        );
+
+    const makeBotProfile = (ratingRow?: any) => {
+      const b = bot!;
+      const r = ratingRow?.rating ?? b.targetRating;
+      const gp = ratingRow?.gamesPlayed ?? b.gamesPlayed;
+      const w = ratingRow?.wins ?? b.wins;
+      const l = gp - w;
+      const equipped = (b.equippedBadges ?? []).map((code) => {
+        const ach = achievementByCode(code);
+        return ach ? { ...ach } : null;
+      }).filter(Boolean);
+      const createdAt = new Date(Date.now() - (b.createdAtDaysAgo ?? 90) * 86400000).toISOString();
+
+      return {
+        id: b.userId,
+        username: b.username,
+        displayName: b.displayName,
+        avatarUrl: null,
+        bio: b.bio,
+        isOnline: true,
+        isPlaying: false,
+        isPremium: b.isPremium ?? false,
+        rating1v1: Math.round(r),
+        rating4p: Math.round(r),
+        gamesPlayed: gp,
+        wins: w,
+        losses: l,
+        createdAt,
+        ratings: {
+          CLASSIC_1V1: {
+            rating: Math.round(r),
+            rd: ratingRow?.rd ?? 70,
+            gamesPlayed: gp,
+            wins: w,
+            losses: l,
+            winRate: gp > 0 ? Math.round((w / gp) * 100) : 0,
+          },
+          FOUR_PLAYER: {
+            rating: Math.round(r),
+            rd: ratingRow?.rd ?? 70,
+            gamesPlayed: gp,
+            wins: w,
+            losses: l,
+            winRate: gp > 0 ? Math.round((w / gp) * 100) : 0,
+          },
+        },
+        badges: {
+          equipped,
+          hardWins: Math.floor(w * 0.4),
+          fastestPlies: 16 + (b.targetRating % 10),
+        },
+        botStars: {},
+      };
+    };
+
     if (!this.prisma.isConnected) {
+      if (bot) return makeBotProfile();
       return {
         id: userIdOrUsername,
         username: userIdOrUsername,
@@ -355,6 +419,11 @@ export class UsersService {
     });
 
     if (!profile) {
+      if (bot) {
+        // Fallback to bot persona directly — never 404 a seeded bot
+        const ratingRow = await this.prisma.rating.findUnique({ where: { userId: bot.userId } });
+        return makeBotProfile(ratingRow);
+      }
       throw new NotFoundException('Profile not found.');
     }
 
@@ -374,10 +443,10 @@ export class UsersService {
 
     return {
       id: profile.userId,
-      username: profile.username,
-      displayName: profile.displayName,
+      username: profile.username || bot?.username || profile.username,
+      displayName: profile.displayName || bot?.displayName || profile.displayName,
       avatarUrl: profile.avatarUrl,
-      bio: profile.bio,
+      bio: profile.bio || (bot ? `${bot.displayName} • Quoridor player (${bot.region.toUpperCase()})` : null),
       isOnline: profile.isOnline,
       isPlaying: profile.isPlaying,
       // Badge correctness without write amplification on this hot public

@@ -5,6 +5,7 @@ import {
   getLegalMoves,
   getShortestDistance,
   isGoalCell,
+  isLegalWallPlacement,
   type GameAction,
   type GameState,
   type WallCoord,
@@ -88,10 +89,84 @@ function wallDelaysRival(state: GameState, playerId: string, wall: WallCoord): b
 }
 
 /**
+ * Human-like tactical counter-walling.
+ * When a rival places walls against the bot or starts cutting off paths,
+ * a real human does not just blindly keep walking forward — they find
+ * an effective counter-wall that delays the rival by +2 or more plies.
+ */
+function findTacticalCounterWall(state: GameState, botPlayerId: string): GameAction | null {
+  const me = state.players.find((p) => p.id === botPlayerId);
+  if (!me || me.wallsRemaining <= 0 || state.walls.length === 0) return null;
+  const rival = state.players.find((p) => p.id !== botPlayerId);
+  if (!rival) return null;
+
+  const botDistBefore = distance(state, botPlayerId);
+  const rivalDistBefore = distance(state, rival.id);
+
+  // Focus counter-walls when the rival has walled or is running close/ahead
+  const rRow = rival.position.row;
+  const rCol = rival.position.col;
+  const candidates: { row: number; col: number; orientation: 'H' | 'V' }[] = [];
+
+  // 1. Direct block in front of rival
+  const frontRow = rival.goalDirection === 'TOP' ? rRow - 1 : rRow;
+  if (frontRow >= 0 && frontRow <= 7) {
+    candidates.push({ row: frontRow, col: Math.max(0, rCol - 1), orientation: 'H' });
+    candidates.push({ row: frontRow, col: Math.min(7, rCol), orientation: 'H' });
+  }
+
+  // 2. Vertical corridor traps beside rival
+  const vRow = Math.max(0, Math.min(7, rRow - 1));
+  candidates.push({ row: vRow, col: Math.max(0, rCol - 1), orientation: 'V' });
+  candidates.push({ row: vRow, col: Math.min(7, rCol), orientation: 'V' });
+
+  // 3. Central barrier lines (rows 3, 4, columns 3, 4)
+  for (const c of [3, 4, 2, 5]) {
+    candidates.push({ row: 3, col: c, orientation: 'H' });
+    candidates.push({ row: 4, col: c, orientation: 'H' });
+    candidates.push({ row: c, col: 3, orientation: 'V' });
+    candidates.push({ row: c, col: 4, orientation: 'V' });
+  }
+
+  let bestWall: WallCoord | null = null;
+  let maxNetDelay = 0;
+
+  for (const wall of candidates) {
+    if (wall.row < 0 || wall.row > 7 || wall.col < 0 || wall.col > 7) continue;
+    if (!isLegalWallPlacement(state, botPlayerId, wall)) continue;
+
+    const testWalls: WallCoord[] = [
+      ...state.walls,
+      { ...wall, placedByPlayerId: botPlayerId, sequence: state.history.length + 1 },
+    ];
+    const rivalDistAfter = distance(state, rival.id, testWalls);
+    const botDistAfter = distance(state, botPlayerId, testWalls);
+
+    if (botDistAfter === Infinity || rivalDistAfter === Infinity) continue;
+
+    const delayRival = rivalDistAfter - rivalDistBefore;
+    const delayBot = botDistAfter - botDistBefore;
+    const netDelay = delayRival - delayBot;
+
+    // Must delay rival by at least 2 steps without hurting self worse
+    if (delayRival >= 2 && netDelay > maxNetDelay) {
+      maxNetDelay = netDelay;
+      bestWall = { row: wall.row, col: wall.col, orientation: wall.orientation };
+    }
+  }
+
+  return bestWall
+    ? { type: 'PLACE_WALL', wall: bestWall }
+    : null;
+}
+
+/**
  * The single place a computer opponent's move is decided. Order:
  *   1. an immediate win is always taken,
- *   2. the opening plan (first few own moves) when it fits the position,
- *   3. the game-core engine with the persona's calibrated profile,
+ *   2. obvious pawn sprint (rival has 0 walls or endgame race),
+ *   3. tactical counter-wall if rival is playing aggressive walls,
+ *   4. the opening plan (first few own moves) when position is unblocked,
+ *   5. the game-core engine with the persona's calibrated profile,
  * and the result is sanity-checked so it can never be a retreat while a
  * forward step exists, a wall that delays nobody, or an illegal action.
  */
@@ -118,7 +193,19 @@ export async function chooseBotAction(
     }
   }
 
-  // 2. Opening plan.
+  // 2. Obvious pawn sprint (opponent has 0 walls remaining, or clean endgame rush)
+  const rival = state.players.find((p) => p.id !== botPlayerId);
+  const advancing = bestAdvancingMove(state, botPlayerId);
+  const current = distance(state, botPlayerId);
+  if (rival && rival.wallsRemaining === 0) {
+    const rivalDist = distance(state, rival.id);
+    if (me.wallsRemaining === 0 || current <= rivalDist) {
+      const step = accept(advancing);
+      if (step) return step;
+    }
+  }
+
+  // 3. Opening plan (first few own moves according to signature playstyle).
   if (ctx.openingPlan && ctx.ownMoveIndex < ctx.openingPlan.length) {
     const opened = accept(
       resolveOpeningIntent(state, botPlayerId, ctx.openingPlan[ctx.ownMoveIndex])
@@ -126,7 +213,18 @@ export async function chooseBotAction(
     if (opened) return opened;
   }
 
-  // 3. Engine (Native ONNX AlphaZero when available for ONNX bots or hot-streak promotion, else JS MCTS).
+  // 4. Tactical counter-wall reaction:
+  // If rival is placing walls against the bot, respond strategically like a human player
+  const rivalWallsPlaced = rival ? (state.mode === '2p' ? 10 : 5) - rival.wallsRemaining : 0;
+  if (rival && rivalWallsPlaced > 0 && me.wallsRemaining > 0) {
+    const counter = findTacticalCounterWall(state, botPlayerId);
+    if (counter) {
+      const ok = accept(counter);
+      if (ok) return ok;
+    }
+  }
+
+  // 5. Engine (Native ONNX AlphaZero when available for ONNX bots or hot-streak promotion, else JS MCTS).
   let action: GameAction | null = null;
   const useOnnx = Boolean(ctx.forceMilo || ctx.persona.useOnnx);
   const targetEngineBotId = ctx.forceMilo ? 'milo' : (ctx.persona.engineBotId || 'milo');
@@ -158,9 +256,6 @@ export async function chooseBotAction(
     }
   }
   if (ctx.shouldCancel?.()) return null;
-
-  const current = distance(state, botPlayerId);
-  const advancing = bestAdvancingMove(state, botPlayerId);
 
   if (action?.type === 'MOVE') {
     const next = getShortestDistance(action.to, me.goalDirection, state.walls, state.mode);

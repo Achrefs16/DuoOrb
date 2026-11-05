@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
-import { BOT_ID_PREFIX } from '../bots/bot-ids.js';
+import { BOT_ID_PREFIX, isBotUserId } from '../bots/bot-ids.js';
+import { personaById } from '../bots/bot-roster.js';
 
 @Injectable()
 export class HistoryService {
@@ -82,10 +83,15 @@ export class HistoryService {
               // previously `displayName` returned the auto-generated guest
               // handle here while the match showed the chosen username, so the
               // same opponent appeared under two names.
-              username: opponentPlayer.user.profile?.username ?? 'opponent',
-              displayName:
+              username:
                 opponentPlayer.user.profile?.username ??
+                personaById(opponentPlayer.userId)?.username ??
+                'opponent',
+              displayName:
                 opponentPlayer.user.profile?.displayName ??
+                personaById(opponentPlayer.userId)?.displayName ??
+                opponentPlayer.user.profile?.username ??
+                personaById(opponentPlayer.userId)?.username ??
                 'Opponent',
               avatarUrl: opponentPlayer.user.profile?.avatarUrl,
               ratingBefore: opponentPlayer.ratingBefore,
@@ -162,10 +168,15 @@ export class HistoryService {
         // file — the other is the `opponent` block in getUserHistory — and it
         // was missed the first time, so a match's player list and its summary
         // could disagree.
-        username: p.user.profile?.username ?? `player_${p.userId.slice(0, 6)}`,
-        displayName:
+        username:
           p.user.profile?.username ??
+          personaById(p.userId)?.username ??
+          `player_${p.userId.slice(0, 6)}`,
+        displayName:
           p.user.profile?.displayName ??
+          personaById(p.userId)?.displayName ??
+          p.user.profile?.username ??
+          personaById(p.userId)?.username ??
           `player_${p.userId.slice(0, 6)}`,
         ratingBefore: p.ratingBefore,
         ratingAfter: p.ratingAfter,

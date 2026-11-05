@@ -27,6 +27,18 @@ import { BOT_ID_PREFIX } from './bot-ids.js';
  *   19. Regional / City Shorthand (e.g. lucas_br, felix_de, rahul_delhi, austin_tx)
  *   20. x_Bookends or Double Underscore (e.g. xDragonx, zShadow, void__walker, dark__knight)
  */
+export type BotPlaystyle =
+  | 'rush'
+  | 'shiller'
+  | 'split'
+  | 'flank'
+  | 'evasive'
+  | 'counter'
+  | 'early_wall'
+  | 'reed'
+  | 'gap'
+  | 'tempo';
+
 export interface BotPersona {
   userId: string;
   username: string;
@@ -41,6 +53,16 @@ export interface BotPersona {
   /** Plausible career totals for the seeded rating row. */
   gamesPlayed: number;
   wins: number;
+  /** Distinct signature playstyle giving real visible personality in the opening and midgame. */
+  playstyle: BotPlaystyle;
+  /** Authentic human-sounding profile bio. */
+  bio: string;
+  /** Badges displayed on their public profile showcase. */
+  equippedBadges: string[];
+  /** Whether this persona holds a DuoOrb Pro/Premium subscription badge (~15% of roster). */
+  isPremium: boolean;
+  /** How many days ago this account was registered. */
+  createdAtDaysAgo: number;
 }
 
 export const BOT_MIN_RATING = 900;
@@ -52,6 +74,8 @@ interface PersonaSeedDef {
   displayName: string;
   ratingTier: number; // 0 (weakest ~900) to 1 (strongest ~2100)
   preferOnnx?: boolean;
+  playstyle?: BotPlaystyle;
+  customBio?: string;
 }
 
 // 120 carefully crafted personas across 20 distinct organic naming patterns (6 personas each)
@@ -232,6 +256,80 @@ export function engineBotForRating(rating: number): string {
   return best.id;
 }
 
+const PLAYSTYLES: BotPlaystyle[] = [
+  'early_wall',
+  'reed',
+  'shiller',
+  'split',
+  'flank',
+  'gap',
+  'counter',
+  'evasive',
+  'tempo',
+  'rush',
+];
+
+const PLAYSTYLE_BIOS: Record<BotPlaystyle, string[]> = {
+  early_wall: [
+    'Early-wall aggressive player ⚡ Immediate board pressure from move 1.',
+    'Fast walls, aggressive tempo • Why wait to control the board?',
+    'Opening trap engineer 🚧 Board control starts on the first move.',
+  ],
+  reed: [
+    'Scott Reed opening devotee 🧱 Funneling opponents through the center gap.',
+    'Classical Reed defense • Choking corridors before you cross mid.',
+    'Two walls, one gap • Quoridor tournament geometry enthusiast.',
+  ],
+  shiller: [
+    'Shiller defense specialist 🧱 Board control is everything.',
+    'Patience and solid wall structures • Larry Shiller disciple.',
+    'Strategic vertical divider • Making every corridor count.',
+  ],
+  split: [
+    'Vertical corridor divider ♟️ Splitting the board in two.',
+    'Channeling paths and calculated moves • Road to 2000 Elo.',
+    'Board symmetry breaker • Tactical positioning main.',
+  ],
+  flank: [
+    'Flank trapper • Funneling rivals toward the edges.',
+    'Closing the wings early 🛡️ Corner corridor control.',
+    'Tactics over speed • Never walk into the obvious path.',
+  ],
+  gap: [
+    'Gap opening tactician 🕳️ Tactical openings and calculated corridor trades.',
+    'Baiting moves through deliberate openings • Quoridor theorist.',
+    'Spatial trap designer • Every open gap is an intentional lure.',
+  ],
+  counter: [
+    'Counter-wall punisher ⚔️ Block me, and I block you back.',
+    'Reactive tactician • Punishing aggressive early walls.',
+    'Equalizing wall trades • Think twice before blocking.',
+  ],
+  evasive: [
+    'Sidestep & diagonal maneuvers 🌀 Dodging face-walls.',
+    'Positional patience • Slipping past blocks and traps.',
+    'Finding the third path • Ranked 1v1 enthusiast.',
+  ],
+  tempo: [
+    'Tournament tempo specialist ⏱️ Solid pawn development and midgame timing.',
+    'Clean fundamentals • Saving walls for the decisive turn.',
+    'Pawn economy main • Calculated midgame walling.',
+  ],
+  rush: [
+    'Central pawn rusher ⚡ Always contesting the jump.',
+    'Pawn speed & momentum • Climbing the ranked ladder!',
+    'Direct playstyle • Fast games and quick finishes 🚀',
+  ],
+};
+
+function badgesForRating(rating: number): string[] {
+  if (rating >= 2000) return ['rating-2000', 'rank-100', 'legend'];
+  if (rating >= 1800) return ['rating-1800', 'veteran', 'wins-100'];
+  if (rating >= 1600) return ['rating-1600', 'champion', 'games-100'];
+  if (rating >= 1400) return ['unbreakable', 'games-50', 'wins-25'];
+  return ['first-blood', 'games-10'];
+}
+
 function buildRoster(): BotPersona[] {
   const personas: BotPersona[] = [];
   const regionCounters: Record<BotPersona['region'], number> = {
@@ -257,6 +355,13 @@ function buildRoster(): BotPersona[] {
     const useOnnx = Boolean(def.preferOnnx || targetRating >= 1650);
     const engineBotId = useOnnx ? 'milo' : engineBotForRating(targetRating);
 
+    const playstyle = def.playstyle ?? PLAYSTYLES[index % PLAYSTYLES.length];
+    const bios = PLAYSTYLE_BIOS[playstyle];
+    const bio = def.customBio ?? bios[index % bios.length];
+    const equippedBadges = badgesForRating(targetRating);
+    const isPremium = index % 7 === 0;
+    const createdAtDaysAgo = 45 + ((index * 23) % 320);
+
     personas.push({
       userId,
       username: def.username,
@@ -267,6 +372,11 @@ function buildRoster(): BotPersona[] {
       useOnnx,
       gamesPlayed,
       wins,
+      playstyle,
+      bio,
+      equippedBadges,
+      isPremium,
+      createdAtDaysAgo,
     });
   });
 

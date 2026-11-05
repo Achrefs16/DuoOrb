@@ -14,7 +14,7 @@ import {
 import { Ack } from '@nestjs/websockets/decorators/ack.decorator';
 import { Server, Socket } from 'socket.io';
 import type { ActionAck } from '@duoorb/protocol';
-import { GameAction, GameMode, RecordedAction } from '@duoorb/game-core';
+import { GameAction, GameMode, RecordedAction, getLegalMoves, getShortestDistance } from '@duoorb/game-core';
 import { AuthoritativeGameService } from '../game/authoritative-game.service.js';
 import { AiwinsService } from '../aiwins/aiwins.service.js';
 import { BillingService } from '../billing/billing.service.js';
@@ -261,7 +261,13 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
     if (this.botBackfill.enabled) {
       // Seed (idempotent) and start the seat driver only when backfill is on.
-      void ensureBotRoster(this.prisma);
+      const seedRoster = async () => {
+        const ok = await ensureBotRoster(this.prisma);
+        if (!ok) {
+          setTimeout(() => void seedRoster(), 3000);
+        }
+      };
+      void seedRoster();
       this.botTickInterval = setInterval(() => {
         void this.tickBots();
       }, 400);
@@ -1974,16 +1980,28 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     });
     if (!action || stale()) return;
 
-    // Human-feeling think time. Counts the search itself, and shortens when the
-    // bot's own clock is running low so it never loses on time by "thinking".
+    // Human-feeling think time. Obvious moves (rival has 0 walls, bot distance <= 2,
+    // or forced 1-path corridor) are played at fast human pre-move tempo (180ms - 440ms).
     const remaining = this.gameService.clockSnapshot(game)[botPlayerId] ?? Infinity;
     const low = remaining < 20_000;
+    const rival = game.state.players.find((p) => p.id !== botPlayerId);
+    const botPawn = game.state.players.find((p) => p.id === botPlayerId);
+    const botDist = botPawn
+      ? getShortestDistance(botPawn.position, botPawn.goalDirection, game.state.walls, game.state.mode)
+      : 10;
+    const isObvious =
+      (rival && rival.wallsRemaining === 0) ||
+      botDist <= 2 ||
+      (action.type === 'MOVE' && getLegalMoves(game.state, botPlayerId).length === 1);
+
     const early = ownMoveIndex < 3;
     const target = low
-      ? 200 + Math.random() * 400
-      : early
-        ? 450 + Math.random() * 650
-        : 1100 + Math.random() * 2200;
+      ? 150 + Math.random() * 250
+      : isObvious
+        ? 180 + Math.random() * 260
+        : early
+          ? 350 + Math.random() * 450
+          : 850 + Math.random() * 1400;
     const wait = Math.max(0, target - (Date.now() - startedAt));
     if (wait > 0) await new Promise<void>((resolve) => setTimeout(resolve, wait));
     if (stale()) return;

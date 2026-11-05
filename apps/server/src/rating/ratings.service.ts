@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
 import { GUEST_ID_PREFIX } from '../guest/guest.service.js';
 import { BOT_ID_PREFIX, isBotUserId } from '../bots/bot-ids.js';
+import { personaById } from '../bots/bot-roster.js';
 
 @Injectable()
 export class RatingsService {
@@ -25,12 +26,17 @@ export class RatingsService {
     // Badge-effective premium (P5.2): same no-write rule as public profiles —
     // report the effective value, let /me persist the flip.
     const premiumExpiresAt = r.user.profile?.premiumExpiresAt ?? null;
+    const persona = isBotUserId(r.userId) ? personaById(r.userId) : null;
     return {
       rank,
       userId: r.userId,
-      username: r.user.profile?.username ?? `player_${r.userId.slice(0, 6)}`,
-      displayName: r.user.profile?.displayName ?? 'Player',
-      avatarUrl: r.user.profile?.avatarUrl,
+      username: r.user.profile?.username ?? persona?.username ?? `player_${r.userId.slice(0, 6)}`,
+      displayName:
+        r.user.profile?.displayName ??
+        persona?.displayName ??
+        persona?.username ??
+        'Player',
+      avatarUrl: r.user.profile?.avatarUrl ?? null,
       isPremium:
         (r.user.profile?.isPremium ?? false) &&
         (!premiumExpiresAt || new Date(premiumExpiresAt).getTime() > Date.now()),
@@ -120,13 +126,20 @@ export class RatingsService {
   }
 
   async getRatingHistory(userId: string, _mode = 'UNIVERSAL', limit = 30) {
-    if (!this.prisma.isConnected) return [];
+    if (!this.prisma.isConnected) {
+      if (isBotUserId(userId)) return this.syntheticBotRatingHistory(userId, limit);
+      return [];
+    }
 
     const history = await this.prisma.ratingHistory.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
+
+    if (history.length === 0 && isBotUserId(userId)) {
+      return this.syntheticBotRatingHistory(userId, limit);
+    }
 
     return history.reverse().map((h) => ({
       gameId: h.gameId,
@@ -137,6 +150,46 @@ export class RatingsService {
       algorithmVersion: h.algorithmVersion,
       timestamp: h.createdAt,
     }));
+  }
+
+  private syntheticBotRatingHistory(userId: string, limit = 20) {
+    const persona = personaById(userId);
+    const target = persona ? persona.targetRating : 1500;
+    const count = Math.min(Math.max(limit, 10), 16);
+    const points: {
+      gameId: string;
+      mode: string;
+      ratingBefore: number;
+      ratingAfter: number;
+      delta: number;
+      algorithmVersion: string;
+      timestamp: Date;
+    }[] = [];
+
+    let hash = 0;
+    for (let j = 0; j < userId.length; j++) hash = (hash * 31 + userId.charCodeAt(j)) >>> 0;
+
+    let current = Math.round(target - count * 4.2);
+    const now = Date.now();
+    for (let i = 0; i < count; i++) {
+      const stepHash = (hash + i * 17) % 100;
+      const isWin = stepHash < 62;
+      const delta = isWin ? 12 + (stepHash % 7) : -(10 + (stepHash % 6));
+      const next = i === count - 1 ? target : current + delta;
+      const daysAgo = (count - i) * 1.2;
+      const timestamp = new Date(now - daysAgo * 86400000);
+      points.push({
+        gameId: `game-hist-${userId.slice(0, 8)}-${i + 1}`,
+        mode: 'CLASSIC_1V1',
+        ratingBefore: current,
+        ratingAfter: next,
+        delta: next - current,
+        algorithmVersion: 'G2_UNIFIED_V1',
+        timestamp,
+      });
+      current = next;
+    }
+    return points;
   }
 
   /**

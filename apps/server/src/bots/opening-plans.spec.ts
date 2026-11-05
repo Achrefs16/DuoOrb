@@ -3,9 +3,12 @@ import { createInitialState } from '@duoorb/game-core';
 import {
   OPENING_PLANS,
   STRONG_OPENING_PLANS,
+  PLAYSTYLE_PLANS,
+  CURATED_120_OPENINGS,
   pickOpeningPlan,
   resolveOpeningIntent,
 } from './opening-plans.js';
+import type { BotPlaystyle } from './bot-roster.js';
 
 describe('opening-plans', () => {
   it('generates a robust library of plans (~90 plans)', () => {
@@ -13,7 +16,7 @@ describe('opening-plans', () => {
     expect(OPENING_PLANS.length).toBeLessThan(150);
   });
 
-  it('ensures no plan places a wall before the third own move', () => {
+  it('ensures no plan places a wall before the third own move in general OPENING_PLANS', () => {
     for (const plan of OPENING_PLANS) {
       expect(['WF', 'WR', 'WV']).not.toContain(plan[0]);
       expect(['WF', 'WR', 'WV']).not.toContain(plan[1]);
@@ -85,5 +88,64 @@ describe('opening-plans', () => {
     } else {
       expect(result).toBeNull();
     }
+  });
+
+  it('supports distinct playstyles with signature opening plans', () => {
+    const playstyles: BotPlaystyle[] = [
+      'early_wall',
+      'reed',
+      'shiller',
+      'split',
+      'flank',
+      'gap',
+      'counter',
+      'evasive',
+      'tempo',
+      'rush',
+    ];
+    for (const style of playstyles) {
+      const { plan } = pickOpeningPlan('u1', 'g1', style, []);
+      expect(plan).toBeDefined();
+      expect(plan.length).toBe(5);
+      expect(PLAYSTYLE_PLANS[style]).toContain(plan);
+    }
+  });
+
+  it('contains exactly 120 curated opening plans with 12 variations per playstyle', () => {
+    expect(CURATED_120_OPENINGS.length).toBe(120);
+    const styles = Object.keys(PLAYSTYLE_PLANS) as BotPlaystyle[];
+    expect(styles.length).toBe(10);
+    for (const style of styles) {
+      expect(PLAYSTYLE_PLANS[style].length).toBe(12);
+    }
+  });
+
+  it('picks unique signature plans across bot personas', () => {
+    const plan0 = pickOpeningPlan('u1', 'g1', 'early_wall', [], 'usr_bot_us_001');
+    const plan1 = pickOpeningPlan('u1', 'g1', 'reed', [], 'usr_bot_us_002');
+    expect(plan0.id).toBe(0);
+    expect(plan1.id).toBe(1);
+    expect(plan0.id).not.toBe(plan1.id);
+  });
+
+  it('resolves early strategic opening walls (REED, SPLIT, FLANK) safely without self-harm', () => {
+    const state = createInitialState({
+      mode: '2p',
+      playerIds: ['p1', 'p2'],
+    });
+    // p1 starts at row 8, goal TOP. Turn 1 REED opening:
+    const reedAction = resolveOpeningIntent(state, 'p1', 'REED');
+    expect(reedAction).not.toBeNull();
+    expect(reedAction?.type).toBe('PLACE_WALL');
+
+    // Turn 1 SPLIT opening:
+    const splitAction = resolveOpeningIntent(state, 'p1', 'SPLIT');
+    expect(splitAction).not.toBeNull();
+    expect(splitAction?.type).toBe('PLACE_WALL');
+
+    // Turn 1 FLANK opening:
+    const flankAction = resolveOpeningIntent(state, 'p1', 'FLANK');
+    expect(flankAction).not.toBeNull();
+    expect(flankAction?.type).toBe('PLACE_WALL');
   });
 });

@@ -69,6 +69,22 @@ describe('Bot Roster & Diverse 20-Pattern Naming', () => {
     expect(retrieved?.userId.startsWith(BOT_ID_PREFIX)).toBe(true);
   });
 
+  it('assigns diverse playstyles, authentic bios, and equipped badges', () => {
+    const playstyles = new Set(BOT_PERSONAS.map((p) => p.playstyle));
+    expect(playstyles.has('rush')).toBe(true);
+    expect(playstyles.has('shiller')).toBe(true);
+    expect(playstyles.has('split')).toBe(true);
+    expect(playstyles.has('flank')).toBe(true);
+    expect(playstyles.has('evasive')).toBe(true);
+    expect(playstyles.has('counter')).toBe(true);
+
+    for (const p of BOT_PERSONAS) {
+      expect(p.bio.length).toBeGreaterThan(5);
+      expect(p.equippedBadges.length).toBeGreaterThan(0);
+      expect(p.createdAtDaysAgo).toBeGreaterThan(30);
+    }
+  });
+
   it('restoreBotRatingBand smoothly rubber-bands drifting bot ratings and clamps within ±120', async () => {
     const testBot = BOT_PERSONAS[0];
     let updatedData: any = null;

@@ -5,58 +5,65 @@ import { ensureBotMatchHistory } from './bot-history-seeder.js';
 
 const logger = new Logger('BotSeeder');
 
+let botRosterSeeded = false;
+
 /**
- * Idempotently create the computer-opponent accounts (user + profile +
- * rating). Safe to run on every boot: existing rows are never touched
- * (`skipDuplicates`), so a restart cannot reset a bot's rating or history.
+ * Idempotently create or update the computer-opponent accounts (user + profile + rating).
+ * Safe to run on every boot: profiles and ratings are kept up to date with their personas.
  */
-export async function ensureBotRoster(prisma: PrismaService): Promise<void> {
-  if (!prisma.isConnected) return;
+export async function ensureBotRoster(prisma: PrismaService): Promise<boolean> {
+  if (!prisma.isConnected) return false;
+  if (botRosterSeeded) return true;
   try {
     await prisma.user.createMany({
       data: BOT_PERSONAS.map((p) => ({ id: p.userId })),
       skipDuplicates: true,
     });
-    await prisma.profile.createMany({
-      data: BOT_PERSONAS.map((p) => ({
-        userId: p.userId,
-        username: p.username,
-        displayName: p.displayName,
-      })),
-      skipDuplicates: true,
-    });
-    // Ensure existing bot profiles receive the updated authentic usernames & display names
+    // Ensure every bot persona has an authentic profile in PostgreSQL
     for (const p of BOT_PERSONAS) {
-      await prisma.profile.updateMany({
+      await prisma.profile.upsert({
         where: { userId: p.userId },
-        data: { username: p.username, displayName: p.displayName },
+        create: {
+          userId: p.userId,
+          username: p.username,
+          displayName: p.displayName,
+          bio: p.bio,
+          isPremium: p.isPremium,
+          createdAt: new Date(Date.now() - p.createdAtDaysAgo * 86400000),
+        },
+        update: {
+          username: p.username,
+          displayName: p.displayName,
+          bio: p.bio,
+          isPremium: p.isPremium,
+        },
       });
     }
-    await prisma.rating.createMany({
-      data: BOT_PERSONAS.map((p) => ({
-        userId: p.userId,
-        rating: p.targetRating,
-        rd: 70,
-        vol: 0.06,
-        gamesPlayed: p.gamesPlayed,
-        wins: p.wins,
-        losses: p.gamesPlayed - p.wins,
-      })),
-      skipDuplicates: true,
-    });
-    const profiles = await prisma.profile.count({
-      where: { userId: { in: BOT_PERSONAS.map((p) => p.userId) } },
-    });
-    if (profiles < BOT_PERSONAS.length) {
-      logger.warn(
-        `Only ${profiles}/${BOT_PERSONAS.length} bot profiles exist (username collision?). Missing bots will not be used.`
-      );
+    // Ensure every bot persona has an initial rating row
+    for (const p of BOT_PERSONAS) {
+      await prisma.rating.upsert({
+        where: { userId: p.userId },
+        create: {
+          userId: p.userId,
+          rating: p.targetRating,
+          rd: 70,
+          vol: 0.06,
+          gamesPlayed: p.gamesPlayed,
+          wins: p.wins,
+          losses: p.gamesPlayed - p.wins,
+        },
+        update: {},
+      });
     }
 
     // Seed believable match histories for all bot personas
     await ensureBotMatchHistory(prisma);
+    botRosterSeeded = true;
+    logger.log(`Successfully ensured database records for all ${BOT_PERSONAS.length} bot personas.`);
+    return true;
   } catch (err: any) {
     logger.error(`Bot roster seeding failed: ${err?.message}`);
+    return false;
   }
 }
 

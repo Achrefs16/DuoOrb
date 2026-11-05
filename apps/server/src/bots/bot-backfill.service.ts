@@ -107,8 +107,9 @@ export class BotBackfillService {
     return pickOpeningPlan(
       userId,
       gameId,
-      persona.targetRating >= 1700,
-      this.recentOpenings.get(userId) ?? []
+      persona.playstyle ?? (persona.targetRating >= 1700),
+      this.recentOpenings.get(userId) ?? [],
+      persona.userId
     );
   }
 
