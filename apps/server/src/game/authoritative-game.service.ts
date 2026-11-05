@@ -566,6 +566,11 @@ onClockTick?: (gameId: string, clock: ClockStateDto) => void;
     return this.games.get(gameId);
   }
 
+  /** Ids of every game currently held in memory (live, recovered, or just finished). */
+  public listGameIds(): string[] {
+    return [...this.games.keys()];
+  }
+
   /**
    * Records a seat's first `game:join`. When every seat has joined, the join
    * quorum is reached and the clock starts — from NOW, with full time, so

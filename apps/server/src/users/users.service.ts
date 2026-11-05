@@ -16,6 +16,8 @@ import {
 import { achievementByCode } from '../aiwins/achievements.catalog.js';
 import { DEFAULT_INITIAL_RATING, DEFAULT_INITIAL_RD } from '../rating/glicko2.service.js';
 import { AiwinsService } from '../aiwins/aiwins.service.js';
+import { BOT_ID_PREFIX } from '../bots/bot-ids.js';
+import { getSimulatedOnlineBaseline } from '../bots/presence-simulator.js';
 
 export type BotStarCount = 1 | 2 | 3;
 
@@ -430,19 +432,23 @@ export class UsersService {
    * and are not counted.
    */
   async countOnlineUsers() {
-    if (!this.prisma.isConnected) return { count: 0 };
+    if (!this.prisma.isConnected) return { count: getSimulatedOnlineBaseline() };
     const since = new Date(Date.now() - 5 * 60 * 1000);
-    const count = await this.prisma.profile.count({
-      where: { isOnline: true, updatedAt: { gt: since } },
+    const liveHumans = await this.prisma.profile.count({
+      where: {
+        isOnline: true,
+        updatedAt: { gt: since },
+        userId: { not: { startsWith: BOT_ID_PREFIX } },
+      },
     });
-    return { count };
+    return { count: getSimulatedOnlineBaseline() + liveHumans };
   }
 
   /**
    * Player search. Excludes the searching account: finding yourself in the
    * list is never useful, and the client hides only the CURRENT id, so an
    * orphaned row for the same human would otherwise surface as a second
-   * "player" to add.
+   * "player" to add. Bots are excluded so personas do not flood results.
    */
   async searchUsers(query: string, selfUserId?: string) {
     if (!query || query.trim().length === 0) return [];
@@ -458,6 +464,7 @@ export class UsersService {
             ],
           },
           ...(selfUserId ? [{ NOT: { userId: selfUserId } }] : []),
+          { userId: { not: { startsWith: BOT_ID_PREFIX } } },
         ],
       },
       include: {

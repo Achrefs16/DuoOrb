@@ -1,15 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
 import { GUEST_ID_PREFIX } from '../guest/guest.service.js';
+import { BOT_ID_PREFIX, isBotUserId } from '../bots/bot-ids.js';
 
 @Injectable()
 export class RatingsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Ranked accounts only: guests play rated games and keep their rating
+   * Ranked accounts: guests play rated games and keep their rating
    * (see getMe), but never appear on the board. Guest rows are filtered
-   * here, never deleted.
+   * here, never deleted. Seeded bot personas populate the global leaderboard
+   * alongside real accounts to maintain an active competitive ecosystem.
    */
   private rankedWhere() {
     return {
@@ -79,7 +81,7 @@ export class RatingsService {
    */
   async getMyRank(userId: string) {
     if (!this.prisma.isConnected) return { ranked: false as const, reason: 'UNRANKED' };
-    if (userId.startsWith(GUEST_ID_PREFIX)) {
+    if (userId.startsWith(GUEST_ID_PREFIX) || isBotUserId(userId)) {
       return { ranked: false as const, reason: 'GUEST_EXCLUDED' };
     }
     const where = this.rankedWhere();

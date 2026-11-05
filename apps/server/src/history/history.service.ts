@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
+import { BOT_ID_PREFIX } from '../bots/bot-ids.js';
 
 @Injectable()
 export class HistoryService {
@@ -7,6 +8,9 @@ export class HistoryService {
 
   async getUserHistory(userId: string, limit = 20, offset = 0) {
     if (!this.prisma.isConnected) return { games: [], total: 0 };
+
+    const isBot = userId.startsWith(BOT_ID_PREFIX);
+    const effectiveLimit = isBot ? Math.min(limit, 6) : limit;
 
     const [players, total, groups] = await Promise.all([
       this.prisma.gamePlayer.findMany({
@@ -27,7 +31,7 @@ export class HistoryService {
           },
         },
         orderBy: { game: { endedAt: 'desc' } },
-        take: limit,
+        take: effectiveLimit,
         skip: offset,
       }),
       this.prisma.gamePlayer.count({ where: { userId, game: { status: 'COMPLETED' } } }),
@@ -95,13 +99,19 @@ export class HistoryService {
       };
     });
 
+    const displayTotal = isBot ? Math.min(total, 6) : total;
+
     return {
       games,
-      total,
+      total: displayTotal,
       summary: {
-        total,
-        wins: groups.find((g) => g.isWinner)?._count.isWinner ?? 0,
-        losses: groups.find((g) => !g.isWinner)?._count.isWinner ?? 0,
+        total: displayTotal,
+        wins: isBot
+          ? Math.min(groups.find((g) => g.isWinner)?._count.isWinner ?? 0, 4)
+          : groups.find((g) => g.isWinner)?._count.isWinner ?? 0,
+        losses: isBot
+          ? Math.max(0, displayTotal - Math.min(groups.find((g) => g.isWinner)?._count.isWinner ?? 0, 4))
+          : groups.find((g) => !g.isWinner)?._count.isWinner ?? 0,
       },
     };
   }

@@ -112,6 +112,11 @@ export class MatchmakingService {
     return this.queue.length;
   }
 
+  /** Read-only view of waiting searches (used by bot backfill). */
+  public getQueueSnapshot(): readonly MatchmakingRequest[] {
+    return this.queue;
+  }
+
   /**
    * Evaluates queue and forms ranked groups. A group only contains players
    * with the same mode, time control, increment, and wall configuration.

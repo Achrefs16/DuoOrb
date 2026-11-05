@@ -3897,24 +3897,22 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       {type === 'online' &&
         state.status === 'COMPLETED' &&
         !showGameOver &&
-        ((online.rematchOffered && !rematchIncomingDismissed) || rematchSent || online.opponentLeft) && (
+        ((online.rematchOffered && !rematchIncomingDismissed) || (rematchSent && !online.opponentLeft)) && (
           <SafeAreaView style={styles.rematchToastOverlay} edges={['bottom']} pointerEvents="box-none">
             <View style={styles.rematchToast}>
-              {rematchSent && !online.opponentLeft ? (
+              {rematchSent ? (
                 <ActivityIndicator size="small" color={THEME.colors.primary} />
               ) : (
                 <OrbIcon
-                  name={online.opponentLeft ? 'slash' : 'rotate-ccw'}
+                  name="rotate-ccw"
                   size={18}
-                  color={online.opponentLeft ? THEME.colors.textMuted : THEME.colors.primary}
+                  color={THEME.colors.primary}
                 />
               )}
               <Text style={styles.rematchToastText} numberOfLines={1}>
-                {online.opponentLeft
-                  ? t('gameover.opponentLeft')
-                  : online.rematchOffered && !rematchIncomingDismissed
-                    ? t('game.rematchOffered')
-                    : t('game.waitingOpponent')}
+                {online.rematchOffered && !rematchIncomingDismissed
+                  ? t('game.rematchOffered')
+                  : t('game.waitingOpponent')}
               </Text>
               {online.rematchOffered && !rematchIncomingDismissed && (
                 <>

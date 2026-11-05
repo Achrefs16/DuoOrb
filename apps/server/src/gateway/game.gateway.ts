@@ -33,6 +33,13 @@ import {
   DEFAULT_INITIAL_VOL,
   type GlickoPlayer,
 } from '../rating/glicko2.service.js';
+import { BotBackfillService, loadBackfillConfig } from '../bots/bot-backfill.service.js';
+import { BOT_ID_PREFIX, isBotUserId } from '../bots/bot-ids.js';
+import { personaById } from '../bots/bot-roster.js';
+import { chooseBotAction } from '../bots/bot-move.js';
+import type { OpeningPlan } from '../bots/opening-plans.js';
+import { ensureBotRoster, restoreBotRatingBand, seatableBotIds } from '../bots/bot-seeder.js';
+import { getSimulatedOnlineBaseline } from '../bots/presence-simulator.js';
 
 interface SocketUserInfo {
   userId: string;
@@ -159,6 +166,24 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
    * room be handed back to its lobby when that game finishes. */
   private gameRoomMap = new Map<string, string>();
   private sweepInterval?: NodeJS.Timeout;
+  /**
+   * Computer-opponent backfill (see ../bots). Entirely inert unless
+   * BOT_BACKFILL_ENABLED=true, so shipping this code changes nothing until the
+   * switch is flipped.
+   */
+  private botBackfill = new BotBackfillService(loadBackfillConfig());
+  private botTickInterval?: NodeJS.Timeout;
+  /** Games with a bot turn currently being computed. */
+  private botThinking = new Set<string>();
+  /** Per-game opening plan chosen at creation (re-derived after a restart). */
+  private botPlans = new Map<string, { plan: OpeningPlan; id: number }>();
+  /** Completed bot games: when the post-game housekeeping may run / has run. */
+  private botPostGameAt = new Map<string, number>();
+  private botPostGameDone = new Set<string>();
+  /** Games where the bot opponent is dynamically promoted to Milo due to human hot streak. */
+  private hotStreakGames = new Set<string>();
+  /** Cached set of bot ids whose profile row exists (refreshed lazily). */
+  private seatableBots: { ids: Set<string>; at: number } = { ids: new Set(), at: 0 };
   /** Per-seat ping throttle (gameId:userId → last accepted sample). */
   private pingThrottle = new Map<string, number>();
   /** Last-known live rating per user: lobby fallback when no live socket. */
@@ -207,6 +232,10 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   /** Housekeeping must not outlive the module (tests, HMR, restarts). */
   onModuleDestroy() {
+    if (this.botTickInterval) {
+      clearInterval(this.botTickInterval);
+      this.botTickInterval = undefined;
+    }
     if (this.sweepInterval) {
       clearInterval(this.sweepInterval);
       this.sweepInterval = undefined;
@@ -229,6 +258,16 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       this.sweepInterval.unref();
     }
     this.logger.log('GameGateway initialized with 2s matchmaking sweep loop.');
+
+    if (this.botBackfill.enabled) {
+      // Seed (idempotent) and start the seat driver only when backfill is on.
+      void ensureBotRoster(this.prisma);
+      this.botTickInterval = setInterval(() => {
+        void this.tickBots();
+      }, 400);
+      if (typeof this.botTickInterval.unref === 'function') this.botTickInterval.unref();
+      this.logger.log('Bot backfill ENABLED.');
+    }
 
     // Crash recovery: rebuild every IN_PROGRESS game from Postgres through
     // game-core replay, restart their clocks. Unreconstructable games are
@@ -1758,7 +1797,321 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
           });
       }
     }
+    // Humans always get first claim on each other; only searches still
+    // waiting after the pairing pass are considered for a computer opponent.
+    await this.runBotBackfill();
   }
+
+  // -------------------------------------------------------------
+  // COMPUTER OPPONENTS (backfill)
+  // -------------------------------------------------------------
+
+  private async refreshSeatableBots(): Promise<Set<string>> {
+    if (Date.now() - this.seatableBots.at > 60_000) {
+      this.seatableBots = { ids: await seatableBotIds(this.prisma), at: Date.now() };
+    }
+    return this.seatableBots.ids;
+  }
+
+  /** Bots currently seated in a live game (one persona never plays two people at once). */
+  private busyBotIds(): Set<string> {
+    const busy = new Set<string>();
+    for (const gameId of this.gameService.listGameIds()) {
+      const game = this.gameService.getGame(gameId);
+      if (!game || game.state.status !== 'IN_PROGRESS') continue;
+      for (const userId of Object.keys(game.userPlayerIds)) {
+        if (isBotUserId(userId)) busy.add(userId);
+      }
+    }
+    return busy;
+  }
+
+  private async isHumanOnHotStreak(userId: string): Promise<boolean> {
+    try {
+      if (!this.prisma.isConnected) return false;
+      const recent = await this.prisma.gamePlayer.findMany({
+        where: { userId, game: { status: 'COMPLETED' } },
+        orderBy: { game: { endedAt: 'desc' } },
+        take: 3,
+        select: { isWinner: true },
+      });
+      return recent.length >= 3 && recent.every((r) => r.isWinner);
+    } catch {
+      return false;
+    }
+  }
+
+  private async runBotBackfill(): Promise<void> {
+    if (!this.botBackfill.enabled || !this.prisma.isConnected) return;
+    const due = this.botBackfill.dueEntries(this.matchmakingService.getQueueSnapshot());
+    if (due.length === 0) return;
+    const seatable = await this.refreshSeatableBots();
+    if (seatable.size === 0) return;
+
+    for (const req of [...due]) {
+      // The queue may have changed while we awaited: re-verify everything.
+      const stillQueued = this.matchmakingService
+        .getQueueSnapshot()
+        .some((q) => q.userId === req.userId && q.joinedAt === req.joinedAt);
+      if (!stillQueued) continue;
+      const sid = this.userSocketMap.get(req.userId);
+      const socket = sid ? this.server.sockets.sockets.get(sid) : undefined;
+      if (!socket || socket.connected === false || this.isUserInLiveGame(req.userId)) continue;
+
+      const humanRating = (await this.fullRating(req.userId)).rating;
+      const busy = this.busyBotIds();
+      const persona = this.botBackfill.pickPersona(humanRating, req.userId, (id) =>
+        seatable.has(id) && !busy.has(id)
+      );
+      if (!persona) continue;
+
+      const gameId = `game-ranked-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const isHot = await this.isHumanOnHotStreak(req.userId);
+      if (isHot) {
+        this.hotStreakGames.add(gameId);
+      }
+      const opening = this.botBackfill.openingFor(req.userId, gameId, persona);
+      const order = Math.random() < 0.5 ? [req.userId, persona.userId] : [persona.userId, req.userId];
+
+      const created = await this.createGameChecked({
+        gameId,
+        mode: '2p',
+        seatUserIds: order,
+        timeControlMinutes: req.timeControlMinutes,
+        incrementSeconds: req.incrementSeconds ?? 0,
+        wallsEach: req.wallsEach ?? 10,
+        isRanked: true,
+        botSeatUserIds: [persona.userId],
+      });
+      if (!created.success) {
+        this.logger.warn(`Bot backfill creation failed for ${gameId}: ${created.error}`);
+        continue;
+      }
+      this.botBackfill.remember(req.userId, persona.userId, opening.id);
+      this.botPlans.set(gameId, opening);
+
+      const seats = created.users.map((u) => ({
+        userId: u.userId,
+        displayName: u.displayName,
+        rating: u.rating.rating ?? 1500,
+        isPremium: false,
+      }));
+      this.server.to(sid!).emit('matchmaking:matched', {
+        gameId,
+        mode: '2p',
+        opponents: seats.filter((s) => s.userId !== req.userId),
+      });
+    }
+  }
+
+  /**
+   * Seat driver, every 400ms. Derives everything from live game state (never
+   * from memory that a restart could lose), so recovered games keep working.
+   */
+  private async tickBots(): Promise<void> {
+    for (const gameId of this.gameService.listGameIds()) {
+      const game = this.gameService.getGame(gameId);
+      if (!game) continue;
+      const botUserId = Object.keys(game.userPlayerIds).find(isBotUserId);
+      if (!botUserId) continue;
+      const botPlayerId = game.userPlayerIds[botUserId];
+
+      if (game.state.status !== 'IN_PROGRESS') {
+        this.handleBotPostGame(gameId, botUserId);
+        continue;
+      }
+
+      // A bot never "disconnects": keep its seat joined so the clock quorum
+      // is decided by the human alone.
+      this.gameService.markSeatJoined(gameId, botUserId);
+      if (!game.quorumReached || this.botThinking.has(gameId)) continue;
+      if (game.state.players[game.state.currentPlayerIndex]?.id !== botPlayerId) continue;
+
+      this.botThinking.add(gameId);
+      void this.playBotTurn(gameId, botUserId, botPlayerId).finally(() => {
+        this.botThinking.delete(gameId);
+      });
+    }
+  }
+
+  private async playBotTurn(gameId: string, botUserId: string, botPlayerId: string): Promise<void> {
+    const persona = personaById(botUserId);
+    const game = this.gameService.getGame(gameId);
+    if (!persona || !game) return;
+    const startedAt = Date.now();
+
+    const ownMoveIndex = game.state.history.filter(
+      (h) => h.playerId === botPlayerId && h.action.type !== 'RESIGN'
+    ).length;
+    let opening = this.botPlans.get(gameId);
+    if (!opening) {
+      const humanId = Object.keys(game.userPlayerIds).find((u) => !isBotUserId(u)) ?? gameId;
+      opening = this.botBackfill.openingFor(humanId, gameId, persona);
+      this.botPlans.set(gameId, opening);
+    }
+
+    const stale = (): boolean => {
+      const live = this.gameService.getGame(gameId);
+      return (
+        !live ||
+        live.state.status !== 'IN_PROGRESS' ||
+        live.state.players[live.state.currentPlayerIndex]?.id !== botPlayerId
+      );
+    };
+
+    const action = await chooseBotAction(game.state, {
+      persona,
+      botPlayerId,
+      seed: (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0,
+      ownMoveIndex,
+      openingPlan: opening.plan,
+      shouldCancel: stale,
+      forceMilo: this.hotStreakGames.has(gameId),
+    });
+    if (!action || stale()) return;
+
+    // Human-feeling think time. Counts the search itself, and shortens when the
+    // bot's own clock is running low so it never loses on time by "thinking".
+    const remaining = this.gameService.clockSnapshot(game)[botPlayerId] ?? Infinity;
+    const low = remaining < 20_000;
+    const early = ownMoveIndex < 3;
+    const target = low
+      ? 200 + Math.random() * 400
+      : early
+      ? 450 + Math.random() * 650
+      : 1100 + Math.random() * 2200;
+    const wait = Math.max(0, target - (Date.now() - startedAt));
+    if (wait > 0) await new Promise<void>((resolve) => setTimeout(resolve, wait));
+    if (stale()) return;
+
+    const result = await this.gameService.processAction(gameId, botUserId, action);
+    if (!result.success) {
+      this.logger.warn(`Bot move rejected in ${gameId}: ${result.error.code}`);
+      return;
+    }
+    // Same fan-out as a human move (see handleGameAction), minus the socket ack.
+    this.server.to(gameId).emit('game:afkCleared', { playerId: result.recorded.playerId });
+    this.server.to(gameId).emit('game:actionAccepted', result.recorded);
+    const live = this.gameService.getGame(gameId);
+    if (live && live.state.status === 'IN_PROGRESS' && live.timeControlMinutes > 0 && live.clockStarted) {
+      this.server.to(gameId).emit('game:clock', {
+        activePlayerIndex: live.state.currentPlayerIndex,
+        remainingMs: this.gameService.clockSnapshot(live),
+        serverTimestamp: Date.now(),
+        incrementSeconds: live.incrementSeconds,
+      });
+    }
+    if (result.ended) {
+      await this.endGame(gameId, result.ended);
+    }
+  }
+
+  /**
+   * After a bot game ends:
+   * 1. If human offered a rematch: ~55% chance bot accepts after 2.5-4s, creating a rematch game!
+   *    Otherwise, declines naturally.
+   * 2. If human has NOT offered a rematch: ~35% chance the bot initiates and OFFERS a rematch!
+   * 3. Pulls the bot's rating back into its persona band once persisted.
+   */
+  private handleBotPostGame(gameId: string, botUserId: string): void {
+    const game = this.gameService.getGame(gameId);
+    if (!game) return;
+    const now = Date.now();
+
+    const humanOffered = [...game.rematchOffers].some((u) => !isBotUserId(u));
+    const rematchDecisionKey = `${gameId}:rematch_decided`;
+
+    if (humanOffered && !game.rematchOffers.has(botUserId)) {
+      const key = `${gameId}:rematch_reply`;
+      const seen = this.botPostGameAt.get(key);
+      if (seen === undefined) {
+        this.botPostGameAt.set(key, now);
+      } else if (now - seen > 3000) {
+        this.botPostGameAt.delete(key);
+        // 55% chance the bot accepts the rematch!
+        const shouldAccept = Math.random() < 0.55;
+        if (shouldAccept) {
+          const result = this.gameService.offerRematch(gameId, botUserId);
+          if (result.offered && result.newGameParams) {
+            const params = result.newGameParams;
+            for (const u of params.users) {
+              this.postGameUserMap.delete(u.userId);
+            }
+            const botSeats = params.users.map((u: any) => u.userId).filter(isBotUserId);
+            void this.createGameChecked({
+              gameId: params.gameId,
+              mode: params.mode,
+              seatUserIds: params.users.map((u: any) => u.userId),
+              timeControlMinutes: params.timeControlMinutes,
+              incrementSeconds: params.incrementSeconds,
+              wallsEach: (params as any).wallsEach,
+              isRanked: Boolean(params.isRanked && params.mode === '2p'),
+              botSeatUserIds: botSeats,
+            }).then((created) => {
+              if (created.success) {
+                this.server.to(gameId).emit('matchmaking:matched', { gameId: params.gameId });
+              }
+            });
+          }
+        } else {
+          if (this.gameService.declineRematch(gameId, botUserId)) {
+            this.server.to(gameId).emit('game:rematchDeclined', { gameId, byUserId: botUserId });
+          }
+        }
+      }
+    } else if (!humanOffered && game.rematchOffers.size === 0 && !this.botPostGameAt.has(rematchDecisionKey)) {
+      // Human hasn't offered yet. After 2.5s, the bot can proactively SEND a rematch offer!
+      const initKey = `${gameId}:bot_rematch_init`;
+      const seen = this.botPostGameAt.get(initKey);
+      if (seen === undefined) {
+        this.botPostGameAt.set(initKey, now);
+      } else if (now - seen > 2500) {
+        this.botPostGameAt.delete(initKey);
+        this.botPostGameAt.set(rematchDecisionKey, now);
+        const willOffer = Math.random() < 0.35;
+        if (willOffer && game.state.status === 'COMPLETED') {
+          const offerResult = this.gameService.offerRematch(gameId, botUserId);
+          if (offerResult.offered) {
+            this.server.to(gameId).emit('game:rematchOffered', {
+              gameId,
+              fromUserId: botUserId,
+            });
+          }
+        }
+      }
+    }
+
+    // Post-game "GG" emoji reaction from bot (~35% chance)
+    const ggKey = `${gameId}:bot_gg`;
+    if (!this.botPostGameAt.has(ggKey)) {
+      this.botPostGameAt.set(ggKey, now);
+      if (Math.random() < 0.35) {
+        const botReaction = Math.random() < 0.65 ? 'clap' : 'fire';
+        setTimeout(() => {
+          this.server.to(gameId).emit('game:reaction', {
+            gameId,
+            reaction: botReaction,
+            fromUserId: botUserId,
+          });
+        }, 1200 + Math.floor(Math.random() * 1200));
+      }
+    }
+
+    if (this.botPostGameDone.has(gameId)) return;
+    const firstSeen = this.botPostGameAt.get(gameId);
+    if (firstSeen === undefined) {
+      this.botPostGameAt.set(gameId, now);
+      return;
+    }
+    // Ratings are persisted before the end is announced; give that a moment.
+    if (now - firstSeen > 6000) {
+      this.botPostGameDone.add(gameId);
+      this.botPlans.delete(gameId);
+      this.hotStreakGames.delete(gameId);
+      void restoreBotRatingBand(this.prisma, botUserId);
+    }
+  }
+
 
   // -------------------------------------------------------------
   // GAMEPLAY HANDLERS
@@ -2155,6 +2508,32 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
       if (!oldest.done) this.reactionLastAt.delete(oldest.value);
     }
     client.to(gameId).emit('game:reaction', { gameId, reaction, fromUserId: user.userId });
+
+    // Dynamic bot reaction response
+    const botUserId = Object.keys(existing.userPlayerIds).find((id) => isBotUserId(id));
+    if (botUserId && Math.random() < 0.45) {
+      const reactionMap: Record<string, string[]> = {
+        clap: ['clap', 'fire'],
+        fire: ['fire', 'wow'],
+        wow: ['laugh', 'fire'],
+        angry: ['laugh', 'wow'],
+        laugh: ['laugh', 'clap'],
+        cry: ['clap', 'laugh'],
+      };
+      const candidateList = reactionMap[reaction] ?? ['clap', 'wow', 'fire'];
+      const botReaction = candidateList[Math.floor(Math.random() * candidateList.length)];
+      const delayMs = 1100 + Math.floor(Math.random() * 1500);
+      setTimeout(() => {
+        const live = this.gameService.getGame(gameId);
+        if (live && live.state.status === 'IN_PROGRESS') {
+          this.server.to(gameId).emit('game:reaction', {
+            gameId,
+            reaction: botReaction,
+            fromUserId: botUserId,
+          });
+        }
+      }, delayMs);
+    }
   }
 
   @SubscribeMessage('game:rematch')
@@ -2200,6 +2579,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
           isRanked: Boolean(
             params.isRanked && params.mode === '2p' && params.users?.length === 2
           ),
+          botSeatUserIds: params.users.map((u: any) => u.userId).filter(isBotUserId),
         });
         if (!created.success) {
           client.emit('game:error', { code: 'REMATCH_FAILED', message: created.error });
@@ -2336,9 +2716,14 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     this.lastPresenceBroadcastAt = now;
     this.prisma.profile
       .count({
-        where: { isOnline: true, updatedAt: { gt: new Date(now - 5 * 60 * 1000) } },
+        where: {
+          isOnline: true,
+          updatedAt: { gt: new Date(now - 5 * 60 * 1000) },
+          userId: { not: { startsWith: BOT_ID_PREFIX } },
+        },
       })
-      .then((count) => {
+      .then((liveHumans) => {
+        const count = getSimulatedOnlineBaseline(now) + liveHumans;
         if (count !== this.lastPresenceCount) {
           this.lastPresenceCount = count;
           this.server.emit('presence:count', { count });
@@ -2411,11 +2796,18 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     incrementSeconds?: number;
     wallsEach?: number;
     isRanked: boolean;
+    /**
+     * Seats driven by the server (computer opponents). They have no socket, so
+     * they are exempt from the liveness / busy checks and the join quorum.
+     */
+    botSeatUserIds?: string[];
   }): Promise<
     | { success: true; users: { userId: string; displayName: string; rating: { rating: number; rd: number; vol: number } }[] }
     | { success: false; error: string }
   > {
+    const botSeats = new Set(args.botSeatUserIds ?? []);
     const nameOf = (userId: string): string => {
+      if (botSeats.has(userId)) return personaById(userId)?.displayName ?? 'A player';
       const sid = this.userSocketMap.get(userId);
       return (
         (sid && this.socketUserMap.get(sid)?.displayName) || 'A player'
@@ -2424,6 +2816,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     // 1. Every seat's socket still live — otherwise no ghost game.
     const liveSockets = new Map<string, Socket>();
     const offline = args.seatUserIds.filter((id) => {
+      if (botSeats.has(id)) return false;
       const sid = this.userSocketMap.get(id);
       const s = sid ? this.server.sockets.sockets.get(sid) : undefined;
       if (!s || s.connected === false) return true;
@@ -2438,7 +2831,7 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     }
     // 2. Nobody already in a live game — self included, so a host cannot
     // orphan their own match by starting another (M16).
-    const busy = args.seatUserIds.filter((id) => this.isUserInLiveGame(id));
+    const busy = args.seatUserIds.filter((id) => !botSeats.has(id) && this.isUserInLiveGame(id));
     if (busy.length > 0) {
       return {
         success: false,
@@ -2509,6 +2902,11 @@ onClockTick: (gId, clock) => this.server.to(gId).emit('game:clock', clock),
     });
     this.setGamePlaying(args.gameId, true);
     for (const id of args.seatUserIds) {
+      if (botSeats.has(id)) {
+        // The bot is joined from the start; the human's join starts the clock.
+        this.gameService.markSeatJoined(args.gameId, id);
+        continue;
+      }
       this.activeGameUserMap.set(id, args.gameId);
       liveSockets.get(id)?.join(args.gameId);
     }
