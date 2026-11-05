@@ -26,6 +26,24 @@
     gtag('set', 'ads_data_redaction', true);
     gtag('set', 'url_passthrough', false);
   </script>
+
+  <!-- Google Tag Manager -->
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','GTM-T3GN5BF2');</script>
+  <!-- End Google Tag Manager -->
+
+  <!-- Google Analytics 4 (GA4) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-58JZ1F8JJV"></script>
+  <script>
+    gtag('js', new Date());
+    gtag('config', 'G-58JZ1F8JJV', {
+      send_page_view: true
+    });
+  </script>
+  <!-- End Google Analytics 4 -->
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6057010656402010"
     crossorigin="anonymous"></script>
   <script>
@@ -39,10 +57,20 @@
     });
   </script>
 
+  <!-- PWA Early Install Prompt Capture -->
+  <script>
+    window.__duoorb_pwa_prompt = null;
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      window.__duoorb_pwa_prompt = e;
+      window.dispatchEvent(new CustomEvent('duoorb_pwa_ready'));
+    });
+  </script>
+
   <!-- PWA & Mobile Web Manifest -->
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-  <link rel="stylesheet" href="/css/style.css?v=20261103-dark2" />
+  <link rel="stylesheet" href="/css/style.css?v=20261105-pwa" />
   <meta name="theme-color" content="#121110" />
 
   <!-- iOS PWA / Standalone Support -->
@@ -205,6 +233,11 @@
 </head>
 
 <body>
+  <!-- Google Tag Manager (noscript) -->
+  <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T3GN5BF2"
+  height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+  <!-- End Google Tag Manager (noscript) -->
+
   <!-- Splash screen: hidden by default so visitors experience zero delay (<100ms) -->
   <div id="duoorb-splash" aria-hidden="true">
     <div class="duoorb-splash-inner">
@@ -296,10 +329,6 @@
           </ul>
         </nav>
         <div class="nav-actions">
-          <a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb&utm_source=duoorb_web&utm_medium=nav_header&utm_campaign=google_play"
-            target="_blank" rel="noopener noreferrer" class="nav-cta-link">
-            Get App ↗
-          </a>
           <button id="mobile-nav-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu"
             aria-expanded="false">
             <span></span><span></span><span></span>
@@ -316,6 +345,7 @@
               href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb&utm_source=duoorb_web&utm_medium=nav_drawer&utm_campaign=google_play"
               target="_blank" rel="noopener noreferrer" style="color: var(--orb-emerald);">Download on Google Play ↗</a>
           </li>
+          <li><button type="button" data-ios-modal="nav_drawer" style="background: none; border: none; font: inherit; color: #FFFFFF; padding: 0; cursor: pointer; text-align: left; width: 100%;">Install for iOS / iPhone ↗</button></li>
         </ul>
       </div>
     </header>
@@ -331,7 +361,7 @@
             <p class="lead">Race your orb across the 9×9 grid. Drop walls to trap your rival. Outsmart opponents and
               climb the ranks.</p>
 
-            <!-- Single Primary Action: Official 2022+ Google Play Badge -->
+            <!-- Action Buttons: Google Play (Android) & Direct iOS App Install -->
             <div class="hero-cta-wrap">
               <a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb&utm_source=duoorb_web&utm_medium=landing_page&utm_campaign=hero_cta"
                 target="_blank" rel="noopener noreferrer" class="play-store-badge-btn"
@@ -352,9 +382,19 @@
                   <span class="badge-title">Google Play</span>
                 </div>
               </a>
+
+              <button type="button" class="ios-app-badge-btn" id="hero-ios-trigger" data-ios-modal="hero" aria-label="Install DuoOrb for iOS / iPhone">
+                <svg class="apple-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.07c.64-.78 1.08-1.87.96-2.96-1 .04-2.22.67-2.94 1.49-.58.65-1.09 1.74-.95 2.81 1.12.09 2.22-.56 2.93-1.34z"/>
+                </svg>
+                <div class="badge-text">
+                  <span class="badge-sub">INSTALL FOR</span>
+                  <span class="badge-title">iOS / iPhone</span>
+                </div>
+              </button>
             </div>
 
-            <div class="hero-subtext">Free on Android · 20+ Offline Bots · No in-match ads</div>
+            <div class="hero-subtext">Free on Android &amp; iOS · 20+ Offline Bots · No in-match ads</div>
           </div>
 
           <!-- Authentic In-Game Screenshots: Visible in First Viewport -->
@@ -583,7 +623,7 @@
         <div class="container" style="max-width: 640px;">
           <h2>Ready to duel?</h2>
           <p style="margin: 12px auto 28px;">Download DuoOrb on Google Play and start your first match in seconds.</p>
-          <div style="display: flex; justify-content: center;">
+          <div style="display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 14px;">
             <a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb&utm_source=duoorb_web&utm_medium=footer_cta&utm_campaign=google_play"
               target="_blank" rel="noopener noreferrer" class="play-store-badge-btn"
               aria-label="Get DuoOrb on Google Play">
@@ -603,6 +643,15 @@
                 <span class="badge-title">Google Play</span>
               </div>
             </a>
+            <button type="button" class="ios-app-badge-btn" id="footer-ios-trigger" data-ios-modal="footer" aria-label="Install DuoOrb for iOS / iPhone">
+              <svg class="apple-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.07c.64-.78 1.08-1.87.96-2.96-1 .04-2.22.67-2.94 1.49-.58.65-1.09 1.74-.95 2.81 1.12.09 2.22-.56 2.93-1.34z"/>
+              </svg>
+              <div class="badge-text">
+                <span class="badge-sub">INSTALL FOR</span>
+                <span class="badge-title">iOS / iPhone</span>
+              </div>
+            </button>
           </div>
           <p style="margin-top: 24px; font-size: 14px; color: var(--color-ash-gray);">
             Prefer playing in browser on desktop? <a href="/?play=1" data-duoorb-play="true">Play guest duel in browser
@@ -659,6 +708,62 @@
         </div>
       </div>
     </footer>
+
+    <!-- DuoOrb Custom PWA Install Modal -->
+    <div id="duoorb-ios-modal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="ios-modal-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-header-info">
+            <img src="/icons/icon-192.png" alt="DuoOrb" width="38" height="38" class="modal-app-icon" />
+            <h2 id="ios-modal-title" class="modal-title">Install DuoOrb</h2>
+          </div>
+        </div>
+
+        <p class="modal-desc">
+          Install the app on your device to easily access it anytime. No app store. No download. No hassle.
+        </p>
+
+        <!-- Section A: 1-Click Install Action for Windows & Android (Native Prompt Available) -->
+        <div id="modal-native-actions" style="display: none;">
+          <div style="display: flex; gap: 10px; align-items: center; padding-right: 52px;">
+            <button type="button" class="btn-pill btn-pill-emerald" id="pwa-native-install-btn" style="flex: 1; justify-content: center; height: 42px; font-weight: 700; cursor: pointer;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Install Now
+            </button>
+            <button type="button" class="btn-pill btn-pill-secondary" id="pwa-dismiss-btn" style="height: 42px; padding: 0 16px; cursor: pointer;">
+              Later
+            </button>
+          </div>
+        </div>
+
+        <!-- Section B: Step-by-Step Instruction Cue (For iOS & Fallbacks) -->
+        <div class="modal-steps-simple" id="ios-steps-container">
+          <div class="modal-step-line" id="step-row-1">
+            <span id="step-text-1">1. Tap on</span>
+            <span class="pwa-inline-badge interactive" id="step-badge-1" role="button" tabindex="0" title="Tap to open Share menu">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+                <polyline points="16 6 12 2 8 6"></polyline>
+                <line x1="12" y1="2" x2="12" y2="15"></line>
+              </svg>
+            </span>
+          </div>
+
+          <div class="modal-step-line" id="step-row-2">
+            <span id="step-text-2">2. Select</span>
+            <span class="pwa-inline-badge" id="step-badge-2">Add to Home Screen</span>
+          </div>
+        </div>
+
+        <!-- Floating Circular Close Button at Bottom Right (Matches reference image) -->
+        <button type="button" class="modal-circle-close-btn" id="ios-modal-close" aria-label="Close dialog">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
   </div>
 
   <style>
@@ -697,6 +802,361 @@
 
   <script>
     (function () {
+      // -------------------------------------------------------------
+      // DuoOrb Visitor Attribution & Device Telemetry
+      // -------------------------------------------------------------
+      function getVisitorTelemetry() {
+        var ua = navigator.userAgent || '';
+        var isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        var isAndroid = /Android/i.test(ua);
+        var platform = isIOS ? 'ios' : (isAndroid ? 'android' : 'desktop');
+
+        var browser = 'other';
+        if (isIOS) {
+          if (/CriOS/i.test(ua)) browser = 'ios_chrome';
+          else if (/FxiOS/i.test(ua)) browser = 'ios_firefox';
+          else if (/EdgiOS/i.test(ua)) browser = 'ios_edge';
+          else if (/Safari/i.test(ua)) browser = 'ios_safari';
+          else browser = 'ios_webview';
+        } else if (isAndroid) {
+          if (/SamsungBrowser/i.test(ua)) browser = 'android_samsung';
+          else if (/Chrome/i.test(ua)) browser = 'android_chrome';
+          else if (/Firefox/i.test(ua)) browser = 'android_firefox';
+          else browser = 'android_other';
+        } else {
+          if (/Chrome/i.test(ua) && !/Edg/i.test(ua)) browser = 'desktop_chrome';
+          else if (/Edg/i.test(ua)) browser = 'desktop_edge';
+          else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) browser = 'desktop_safari';
+          else if (/Firefox/i.test(ua)) browser = 'desktop_firefox';
+          else browser = 'desktop_other';
+        }
+
+        var ref = document.referrer || '';
+        var refHost = 'direct';
+        if (ref) {
+          try {
+            refHost = new URL(ref).hostname || 'external';
+          } catch (e) {
+            refHost = 'external';
+          }
+        }
+
+        var utm = {};
+        try {
+          var sp = new URLSearchParams(window.location.search);
+          ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach(function (k) {
+            var v = sp.get(k);
+            if (v) utm[k] = v;
+          });
+        } catch (e) { }
+
+        return {
+          platform: platform,
+          browser: browser,
+          referrer: ref,
+          referrerHost: refHost,
+          utmSource: utm.utm_source || '',
+          utmMedium: utm.utm_medium || '',
+          utmCampaign: utm.utm_campaign || ''
+        };
+      }
+
+      var visitor = getVisitorTelemetry();
+
+      // Configure user properties and log initial visit attribution
+      if (typeof window.gtag === 'function') {
+        window.gtag('set', 'user_properties', {
+          device_platform: visitor.platform,
+          device_browser: visitor.browser,
+          initial_referrer: visitor.referrerHost
+        });
+        window.gtag('event', 'visitor_detected', {
+          event_category: 'traffic',
+          traffic_source: visitor.utmSource || visitor.referrerHost,
+          referrer_domain: visitor.referrerHost,
+          device_platform: visitor.platform,
+          device_browser: visitor.browser,
+          utm_source: visitor.utmSource,
+          utm_medium: visitor.utmMedium,
+          utm_campaign: visitor.utmCampaign
+        });
+      }
+
+      function trackEvent(eventName, params) {
+        var payload = Object.assign({
+          traffic_source: visitor.utmSource || visitor.referrerHost,
+          device_platform: visitor.platform,
+          device_browser: visitor.browser
+        }, params || {});
+
+        if (typeof window.gtag === 'function') {
+          window.gtag('event', eventName, payload);
+        }
+        if (window.dataLayer && Array.isArray(window.dataLayer)) {
+          window.dataLayer.push(Object.assign({ event: eventName }, payload));
+        }
+      }
+
+      // Track clicks across the site
+      document.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest ? e.target.closest('a') : null;
+        if (!a) return;
+        var href = a.getAttribute('href') || '';
+
+        if (href.indexOf('play.google.com') !== -1) {
+          var loc = 'unknown';
+          if (a.closest('.hero-cta-wrap') || a.classList.contains('play-store-badge-btn')) {
+            loc = 'hero';
+          } else if (a.closest('.site-nav-inner') || a.classList.contains('nav-cta-link')) {
+            loc = 'nav_header';
+          } else if (a.closest('.mobile-nav-drawer')) {
+            loc = 'nav_drawer';
+          } else if (a.closest('.site-footer')) {
+            loc = 'footer';
+          } else if (a.closest('.mobile-showcase-actions')) {
+            loc = 'mobile_section';
+          }
+
+          trackEvent('click_google_play', {
+            button_location: loc,
+            target_url: href
+          });
+        } else if (a.hasAttribute('data-duoorb-play') || href.indexOf('play=1') !== -1) {
+          trackEvent('click_play_browser', {
+            button_location: a.closest('.site-nav') ? 'nav' : 'hero_or_content'
+          });
+        } else if (/rules\.html|strategy\.html|bots-and-analysis\.html|about\.html/.test(href)) {
+          trackEvent('click_guide_link', {
+            guide_target: href
+          });
+        }
+      });
+
+      // -------------------------------------------------------------
+      // iOS & PWA Native 1-Click Install Handshake
+      // -------------------------------------------------------------
+      var isCachingStarted = false;
+      var deferredInstallPrompt = window.__duoorb_pwa_prompt || null;
+
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        window.__duoorb_pwa_prompt = e;
+      });
+
+      window.addEventListener('duoorb_pwa_ready', function () {
+        if (window.__duoorb_pwa_prompt) {
+          deferredInstallPrompt = window.__duoorb_pwa_prompt;
+        }
+      });
+
+      function preCacheGameEngine(onProgress, onComplete) {
+        if (isCachingStarted) return;
+        isCachingStarted = true;
+
+        var assets = [
+          '/manifest.json',
+          '/duoorb_analyzer.wasm',
+          '/icons/icon-192.png',
+          '/icons/icon-512.png',
+          '/icons/apple-touch-icon.png'
+        ];
+
+        if (!('caches' in window)) {
+          if (onProgress) onProgress(100);
+          if (onComplete) onComplete();
+          return;
+        }
+
+        caches.open('duoorb-game-engine-v1').then(function (cache) {
+          var loaded = 0;
+          var total = assets.length;
+
+          assets.forEach(function (url) {
+            cache.match(url).then(function (cached) {
+              if (cached) {
+                loaded++;
+                if (onProgress) onProgress(Math.round((loaded / total) * 100));
+                if (loaded === total && onComplete) onComplete();
+              } else {
+                fetch(url, { cache: 'no-cache' }).then(function (res) {
+                  if (res && res.status === 200) {
+                    cache.put(url, res.clone());
+                  }
+                  loaded++;
+                  if (onProgress) onProgress(Math.round((loaded / total) * 100));
+                  if (loaded === total && onComplete) onComplete();
+                }).catch(function () {
+                  loaded++;
+                  if (onProgress) onProgress(Math.round((loaded / total) * 100));
+                  if (loaded === total && onComplete) onComplete();
+                });
+              }
+            });
+          });
+        }).catch(function () {
+          if (onProgress) onProgress(100);
+          if (onComplete) onComplete();
+        });
+      }
+
+      function handleIOSInstall(source) {
+        trackEvent('click_ios_install', {
+          button_location: source || 'unknown',
+          device_platform: visitor.platform,
+          device_browser: visitor.browser
+        });
+
+        // Quiet background engine pre-caching
+        preCacheGameEngine(null, function () {
+          trackEvent('pwa_cache_complete', {
+            device_platform: visitor.platform,
+            device_browser: visitor.browser
+          });
+        });
+
+        openIOSModal(source);
+      }
+
+      function openIOSModal(source) {
+        var modal = document.getElementById('duoorb-ios-modal');
+        if (!modal) return;
+
+        var activePrompt = deferredInstallPrompt || window.__duoorb_pwa_prompt;
+        var nativeActions = document.getElementById('modal-native-actions');
+        var stepsContainer = document.getElementById('ios-steps-container');
+
+        if (activePrompt) {
+          // Native PWA install prompt is ready (Android Chrome / Windows Chrome & Edge)
+          if (nativeActions) nativeActions.style.display = 'block';
+          if (stepsContainer) stepsContainer.style.display = 'none';
+        } else {
+          // iOS or fallback browsers without beforeinstallprompt
+          if (nativeActions) nativeActions.style.display = 'none';
+          if (stepsContainer) stepsContainer.style.display = 'flex';
+
+          var stepText1 = document.getElementById('step-text-1');
+          var stepBadge1 = document.getElementById('step-badge-1');
+          var stepText2 = document.getElementById('step-text-2');
+          var stepBadge2 = document.getElementById('step-badge-2');
+
+          if (visitor.platform === 'ios') {
+            if (visitor.browser === 'ios_chrome') {
+              if (stepText1) stepText1.textContent = '1. Tap on';
+              if (stepBadge1) {
+                stepBadge1.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1.5"></circle><circle cx="19" cy="12" r="1.5"></circle><circle cx="5" cy="12" r="1.5"></circle></svg>';
+                stepBadge1.setAttribute('title', 'Tap to open Chrome menu or Share');
+              }
+              if (stepText2) stepText2.textContent = '2. Select';
+              if (stepBadge2) stepBadge2.textContent = 'Add to Home Screen';
+            } else {
+              if (stepText1) stepText1.textContent = '1. Tap on';
+              if (stepBadge1) {
+                stepBadge1.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>';
+                stepBadge1.setAttribute('title', 'Tap to open Share menu');
+              }
+              if (stepText2) stepText2.textContent = '2. Select';
+              if (stepBadge2) stepBadge2.textContent = 'Add to Home Screen';
+            }
+          } else if (visitor.platform === 'android') {
+            if (stepText1) stepText1.textContent = '1. Tap on';
+            if (stepBadge1) {
+              stepBadge1.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"></circle><circle cx="12" cy="12" r="1.5"></circle><circle cx="12" cy="19" r="1.5"></circle></svg>';
+              stepBadge1.removeAttribute('title');
+            }
+            if (stepText2) stepText2.textContent = '2. Select';
+            if (stepBadge2) stepBadge2.textContent = 'Install app';
+          } else {
+            // Desktop Chrome / Edge / Safari / Brave
+            if (stepText1) stepText1.textContent = '1. Click on';
+            if (stepBadge1) {
+              stepBadge1.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>';
+              stepBadge1.removeAttribute('title');
+            }
+            if (stepText2) stepText2.textContent = '2. Select';
+            if (stepBadge2) stepBadge2.textContent = 'Install DuoOrb';
+          }
+        }
+
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+      }
+
+      function closeIOSModal() {
+        var modal = document.getElementById('duoorb-ios-modal');
+        if (!modal) return;
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+
+      document.addEventListener('click', function (e) {
+        var trigger = e.target && e.target.closest ? e.target.closest('[data-ios-modal]') : null;
+        if (trigger) {
+          e.preventDefault();
+          var loc = trigger.getAttribute('data-ios-modal') || 'unknown';
+          handleIOSInstall(loc);
+          return;
+        }
+
+        var nativeInstallBtn = e.target && e.target.closest ? e.target.closest('#pwa-native-install-btn') : null;
+        if (nativeInstallBtn) {
+          e.preventDefault();
+          var promptToRun = deferredInstallPrompt || window.__duoorb_pwa_prompt;
+          if (promptToRun) {
+            promptToRun.prompt().then(function (choice) {
+              trackEvent('pwa_prompt_choice', { outcome: choice ? choice.outcome : 'unknown' });
+              if (choice && choice.outcome === 'accepted') {
+                closeIOSModal();
+              }
+              deferredInstallPrompt = null;
+              window.__duoorb_pwa_prompt = null;
+            }).catch(function () { });
+          }
+          return;
+        }
+
+        var dismissBtn = e.target && e.target.closest ? e.target.closest('#pwa-dismiss-btn') : null;
+        if (dismissBtn) {
+          e.preventDefault();
+          closeIOSModal();
+          return;
+        }
+
+        var shareTrigger = e.target && e.target.closest ? (e.target.closest('#step-badge-1') || e.target.closest('#step-row-1')) : null;
+        if (shareTrigger && visitor.platform === 'ios' && typeof navigator.share === 'function') {
+          e.preventDefault();
+          navigator.share({
+            title: 'DuoOrb',
+            text: 'Tactical 1v1 Grid Board Game',
+            url: window.location.origin + '/?play=1'
+          }).then(function () {
+            trackEvent('ios_share_sheet_opened', {
+              device_platform: visitor.platform,
+              device_browser: visitor.browser
+            });
+          }).catch(function () { });
+          return;
+        }
+
+        var closeBtn = e.target && e.target.closest ? e.target.closest('#ios-modal-close') : null;
+        if (closeBtn) {
+          e.preventDefault();
+          closeIOSModal();
+          return;
+        }
+
+        var modal = document.getElementById('duoorb-ios-modal');
+        if (modal && e.target === modal) {
+          closeIOSModal();
+        }
+      });
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' || e.keyCode === 27) {
+          closeIOSModal();
+        }
+      });
+
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
           navigator.serviceWorker.register('/sw.js').catch(function () { });

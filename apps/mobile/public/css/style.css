@@ -401,6 +401,216 @@ a:hover {
 }
 
 /* ==========================================================================
+   OFFICIAL IOS PWA INSTALL BADGE (Matches Google Play Badge Exactly)
+   ========================================================================== */
+.ios-app-badge-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  background-color: #000000;
+  color: #FFFFFF !important;
+  border: 2px solid #FFFFFF;
+  border-radius: 14px;
+  padding: 12px 26px;
+  text-decoration: none !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.ios-app-badge-btn:hover {
+  transform: translateY(-2px);
+  background-color: #1a1917;
+  border-color: #FFFFFF;
+}
+
+.ios-app-badge-btn .apple-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+}
+
+.ios-app-badge-btn .badge-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  text-align: left;
+}
+
+.ios-app-badge-btn .badge-sub {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #c4c0b8;
+  text-transform: uppercase;
+}
+
+.ios-app-badge-btn .badge-title {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  color: #ffffff;
+}
+
+/* ==========================================================================
+   DuoOrb iOS App Modal & Direct Pre-Download Interface
+   ========================================================================== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background-color: rgba(10, 9, 8, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.modal-backdrop.open {
+  display: flex;
+  opacity: 1;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 370px;
+  background-color: #181715;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  padding: 22px 22px 24px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.7);
+  transform: translateY(8px);
+  transition: transform 0.2s ease;
+  position: relative;
+}
+
+.modal-backdrop.open .modal-card {
+  transform: translateY(0);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.modal-header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-app-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background-color: #121110;
+  flex-shrink: 0;
+}
+
+.modal-title {
+  font-family: var(--font-sans);
+  font-size: 17px;
+  font-weight: 700;
+  color: #F5F4F0;
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.modal-desc {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #A6A29A;
+  margin: 0 0 16px 0;
+}
+
+.modal-steps-simple {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 52px;
+}
+
+.modal-step-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: #F5F4F0;
+  flex-wrap: wrap;
+}
+
+.pwa-inline-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background-color: #F5F4F0;
+  color: #121110;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  vertical-align: middle;
+}
+
+.pwa-inline-badge svg {
+  stroke: #121110;
+}
+
+.pwa-inline-badge.interactive {
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.pwa-inline-badge.interactive:hover {
+  transform: scale(1.05);
+  background-color: #FFFFFF;
+}
+
+.modal-circle-close-btn {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background-color: #24221f;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #A6A29A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: all 0.15s ease;
+}
+
+.modal-circle-close-btn:hover {
+  background-color: #2e2c28;
+  color: #F5F4F0;
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.06);
+}
+
+/* ==========================================================================
    HERO STAGE: Direct Action & Immediate First Screen Visual Showcase
    ========================================================================== */
 .section-hero {
@@ -420,7 +630,10 @@ a:hover {
 
 .hero-cta-wrap {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
+  align-items: center;
+  gap: 14px;
   margin-top: 8px;
 }
 
@@ -719,7 +932,8 @@ table.editorial-table code {
     font-size: clamp(34px, 9.5vw, 44px);
   }
 
-  .play-store-badge-btn {
+  .play-store-badge-btn,
+  .ios-app-badge-btn {
     width: 100%;
     max-width: 320px;
     justify-content: center;
@@ -819,6 +1033,18 @@ table.editorial-table code {
 .btn-pill-primary:hover {
   background: #E5E4E0;
   border-color: #E5E4E0;
+  transform: translateY(-1px);
+}
+
+.btn-pill-emerald {
+  background: var(--orb-emerald);
+  color: #121110 !important;
+  border: 1px solid var(--orb-emerald);
+}
+
+.btn-pill-emerald:hover {
+  background: #3ec46f;
+  border-color: #3ec46f;
   transform: translateY(-1px);
 }
 
