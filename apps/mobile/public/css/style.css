@@ -1157,3 +1157,15 @@ body.legal h1 {
     grid-template-columns: 1fr;
   }
 }
+
+/* AppLixir In-Game Rewarded Video Overlay (PWA Web) */
+#applixir-ad-container {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  pointer-events: auto;
+}
+#applixir-ad-container:empty {
+  display: none;
+  pointer-events: none;
+}

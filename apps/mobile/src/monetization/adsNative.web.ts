@@ -13,6 +13,7 @@ declare global {
     adsbygoogle?: unknown[];
     adBreak?: (params: Record<string, unknown>) => void;
     adConfig?: (params: Record<string, unknown>) => void;
+    initializeAndOpenPlayer?: (options: Record<string, unknown>) => void;
   }
 }
 
@@ -21,12 +22,80 @@ class WebAdSenseProvider implements AdProvider {
     // Best-effort pre-warm
   }
 
-  showRewarded(placement: RewardedPlacement): Promise<RewardedResult> {
+  async showRewarded(placement: RewardedPlacement): Promise<RewardedResult> {
     if (typeof window === 'undefined') {
-      return Promise.resolve({ earned: false, error: 'unavailable' });
+      return { earned: false, error: 'unavailable' };
     }
 
-    // 1. Google H5 Games Ads API (adBreak) if configured
+    // 1. AppLixir In-Game Rewarded Video Ad (PWA / Web)
+    // Plays video ad overlay directly on the game canvas. Player stays 100% on site!
+    const getAppLixir = (): ((options: Record<string, unknown>) => void) | null => {
+      if (typeof window.initializeAndOpenPlayer === 'function') {
+        return window.initializeAndOpenPlayer;
+      }
+      return null;
+    };
+
+    let playerFn = getAppLixir();
+    // If SDK is still downloading asynchronously, wait briefly
+    if (!playerFn) {
+      for (let i = 0; i < 15; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        playerFn = getAppLixir();
+        if (playerFn) break;
+      }
+    }
+
+    if (playerFn) {
+      return new Promise<RewardedResult>((resolve) => {
+        let settled = false;
+        const settleOnce = (res: RewardedResult) => {
+          if (!settled) {
+            settled = true;
+            resolve(res);
+          }
+        };
+
+        // Safety timeout so user is never stuck indefinitely
+        const safetyTimer = setTimeout(() => {
+          settleOnce({ earned: true });
+        }, 45000);
+
+        try {
+          const options = {
+            apiKey: '5a4db0c5-0000-4000-8000-5a4db0c50001',
+            injectionElementId: 'applixir-ad-container',
+            adStatusCallbackFn: (status: any) => {
+              const statusType = typeof status === 'object' ? status?.type : status;
+              if (statusType === 'complete' || statusType === 'adDone') {
+                clearTimeout(safetyTimer);
+                settleOnce({ earned: true });
+              } else if (
+                statusType === 'close' ||
+                statusType === 'adDismissed' ||
+                statusType === 'userCanceled'
+              ) {
+                clearTimeout(safetyTimer);
+                settleOnce({ earned: false, error: 'dismissed' });
+              }
+            },
+            adErrorCallbackFn: (error: any) => {
+              console.warn('AppLixir Ad error:', error);
+              clearTimeout(safetyTimer);
+              // Graceful fallback if ad blocker prevents playback
+              settleOnce({ earned: true });
+            },
+          };
+          playerFn(options);
+        } catch (e) {
+          console.warn('AppLixir invoke error:', e);
+          clearTimeout(safetyTimer);
+          settleOnce({ earned: true });
+        }
+      });
+    }
+
+    // 2. Google H5 Games Ads API (adBreak) if present and real
     if (typeof window.adBreak === 'function') {
       return new Promise<RewardedResult>((resolve) => {
         let granted = false;
@@ -54,9 +123,8 @@ class WebAdSenseProvider implements AdProvider {
       });
     }
 
-    // 2. Web PWA Monetag Flow:
-    // User requested Analysis, Hints, or Undos: grant reward earned
-    return Promise.resolve({ earned: true });
+    // Graceful fallback if neither SDK is active
+    return { earned: true };
   }
 }
 
