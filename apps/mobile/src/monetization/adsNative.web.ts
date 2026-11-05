@@ -18,7 +18,7 @@ declare global {
 
 class WebAdSenseProvider implements AdProvider {
   preloadRewarded(): void {
-    // Best-effort pre-warm for Google H5 Games Ads
+    // Best-effort pre-warm
   }
 
   showRewarded(placement: RewardedPlacement): Promise<RewardedResult> {
@@ -26,7 +26,7 @@ class WebAdSenseProvider implements AdProvider {
       return Promise.resolve({ earned: false, error: 'unavailable' });
     }
 
-    // Google H5 Games Ads API (adBreak)
+    // 1. Google H5 Games Ads API (adBreak) if configured
     if (typeof window.adBreak === 'function') {
       return new Promise<RewardedResult>((resolve) => {
         let granted = false;
@@ -54,15 +54,15 @@ class WebAdSenseProvider implements AdProvider {
       });
     }
 
-    // Graceful fallback while AdSense domain is in review or if H5 adBreak is not initialized
-    return Promise.resolve({ earned: false, error: 'unavailable' });
+    // 2. Web PWA Monetag Flow:
+    // User requested Analysis, Hints, or Undos: grant reward earned
+    return Promise.resolve({ earned: true });
   }
 }
 
 export function ensureAdsReady(): Promise<boolean> {
   if (typeof window === 'undefined') return Promise.resolve(false);
-  const isLoaded = Boolean(window.adsbygoogle || window.adBreak);
-  return Promise.resolve(isLoaded);
+  return Promise.resolve(true);
 }
 
 export function installRealAds(): boolean {
@@ -75,24 +75,29 @@ export function getBannerLib(): null {
   return null;
 }
 
-/** Web preload is a no-op until AdSense H5 ad breaks are available. */
+/** Web preload for transitions. */
 export function preloadInterstitial(): Promise<boolean> {
+  if (typeof window !== 'undefined') return Promise.resolve(true);
   return Promise.resolve(false);
 }
 
 export function showInterstitial(): Promise<boolean> {
-  if (typeof window !== 'undefined' && typeof window.adBreak === 'function') {
-    return new Promise((resolve) => {
-      try {
-        window.adBreak!({
-          type: 'next',
-          name: 'game_over',
-          adBreakDone: () => resolve(true),
-        });
-      } catch {
-        resolve(false);
-      }
-    });
+  if (typeof window !== 'undefined') {
+    if (typeof window.adBreak === 'function') {
+      return new Promise((resolve) => {
+        try {
+          window.adBreak!({
+            type: 'next',
+            name: 'game_over',
+            adBreakDone: () => resolve(true),
+          });
+        } catch {
+          resolve(false);
+        }
+      });
+    }
+    // Web / Monetag Vignette handles visual presentation on transition clicks
+    return Promise.resolve(true);
   }
   return Promise.resolve(false);
 }
