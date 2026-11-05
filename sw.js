@@ -1,15 +1,3 @@
-// Monetag PWA Integration (Zone: 12196774)
-self.options = {
-    domain: '3nbf4.com',
-    zoneId: 12196774,
-};
-self.lary = '';
-try {
-    importScripts('https://3nbf4.com/act/files/service-worker.min.js?r=sw');
-} catch (e) {
-    // Graceful fallback when offline
-}
-
 // DuoOrb Service Worker (v1.0.0)
 // Lightweight network-first service worker satisfying PWA installability criteria
 // without caching API calls or dynamic multiplayer websocket traffic.

@@ -1176,14 +1176,6 @@
         });
       }
 
-      function loadMonetagGameAds() {
-        if (document.querySelector('script[data-zone="12196908"]')) return;
-        var s = document.createElement('script');
-        s.dataset.zone = '12196908';
-        s.src = 'https://n6wxm.com/vignette.min.js';
-        (document.body || document.documentElement).appendChild(s);
-      }
-
       function showGame() {
         var home = document.getElementById('duoorb-home');
         if (home) {
@@ -1196,7 +1188,6 @@
           document.body.classList.add('duoorb-launching');
         }
         try { history.replaceState({ duoorbPlay: 1 }, '', '/?play=1'); } catch (e) { }
-        loadMonetagGameAds();
       }
 
       var rootObserver = new MutationObserver(function () {

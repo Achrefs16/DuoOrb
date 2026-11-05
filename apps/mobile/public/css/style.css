@@ -1163,19 +1163,31 @@ body.legal h1 {
   }
 }
 
-/* AppLixir In-Game Rewarded Video Overlay (PWA Web) */
+/* AppLixir In-Game Ad Overlay (PWA Web) */
 #applixir-ad-container {
-  display: none !important;
-  pointer-events: none !important;
+  display: none;
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   z-index: 999999;
+  background: rgba(0, 0, 0, 0.92);
 }
 
 #applixir-ad-container.applixir-active {
-  display: flex !important;
-  pointer-events: auto !important;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.88);
+  display: block;
+}
+
+#applixir-ad-container iframe {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 800px !important;
+  max-height: 500px !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  border: none !important;
 }
