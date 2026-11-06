@@ -852,8 +852,14 @@ fn wall_delays_opponent(state: &GameState, mover_idx: usize, wall: &WallCoord) -
         return true;
     }
 
-    // Proactive strategic wall: corridor squeeze or funnel shield with 0 self-delay
-    if my_delay == 0 {
+    // In opening (walls <= 2), candidate walls MUST actively delay an opponent (delays_someone == true).
+    // Never allow a wall in the opening that does not affect anything (delay == 0)!
+    if state.walls.len() <= 2 {
+        return false;
+    }
+
+    // Proactive strategic wall: corridor squeeze or funnel shield with 0 self-delay (only once walls are in play)
+    if my_delay == 0 && !state.walls.is_empty() {
         if squeezes_someone {
             return true;
         }
@@ -919,7 +925,7 @@ pub fn select_bot_action(
         profile.simulations,
         4,
         seed,
-        20,
+        36,
         use_solver,
     );
 
@@ -1020,7 +1026,8 @@ pub fn select_bot_action(
     let q_gap = top_q - second_q;
 
     let is_dominant = q_gap >= 0.06 || top_prob >= 0.65;
-    if is_dominant && profile.elo >= 1700 {
+    let has_strong_persona_bias = profile.wall_prob_bias.abs() > 0.15;
+    if is_dominant && profile.elo >= 1700 && (!has_strong_persona_bias || q_gap >= 0.22) {
         return valid_pool[0].action.clone();
     }
     if critical_opp_at_1 && profile.elo >= 1200 && valid_pool[0].is_wall {
@@ -1078,25 +1085,54 @@ pub fn select_bot_action(
     }
 
     // 7. Dynamic Candidate Pool Selection (Personality-Shaped):
-    // For high-Elo bots (Elo >= 1400), filter strictly to candidates within the variety window of Move #1.
+    // For high-Elo bots (Elo >= 1400), filter candidates within the variety window of Move #1.
     // For lower-tier bots (Elo < 1400), bound candidate pool to top sensible candidates close to Move #1.
     let candidates_for_sampling: Vec<&crate::hybrid::HybridRankedAction> = if profile.elo >= 1400 {
-        let variety_threshold = profile.variety_window.max(0.025);
-        let pool: Vec<_> = valid_pool
+        let variety_threshold = profile.variety_window.max(0.04);
+        let mut pool: Vec<_> = valid_pool
             .iter()
             .filter(|c| (top_q - c.q) <= variety_threshold)
             .collect();
+
+        // If the bot has an aggressive wall bias (wall_prob_bias > 0.05), ensure strong legal walls
+        // are included in the pool so personality bias dynamically explores and samples tactical walls:
+        if profile.wall_prob_bias > 0.05 {
+            let best_wall_q = valid_pool.iter().filter(|c| c.is_wall).map(|c| c.q).fold(0.0f32, f32::max);
+            for w in valid_pool.iter().filter(|c| c.is_wall) {
+                if (top_q - w.q) <= 0.25 && (best_wall_q - w.q) <= 0.12 {
+                    if !pool.iter().any(|existing| existing.action == w.action) {
+                        pool.push(w);
+                    }
+                }
+            }
+        }
+        // If the bot has strong pawn rush bias (wall_prob_bias < -0.05), ensure top pawn move is in pool:
+        if profile.wall_prob_bias < -0.05 && !pool.iter().any(|c| !c.is_wall) {
+            if let Some(best_pawn) = valid_pool.iter().find(|c| !c.is_wall) {
+                if (top_q - best_pawn.q) <= 0.25 {
+                    pool.push(best_pawn);
+                }
+            }
+        }
+
         if pool.len() == 1 {
             return pool[0].action.clone();
         }
         pool
     } else {
         let max_q_gap = 0.20;
-        let pool: Vec<_> = valid_pool
+        let mut pool: Vec<_> = valid_pool
             .iter()
-            .take(4)
+            .take(6)
             .filter(|c| (top_q - c.q) <= max_q_gap)
             .collect();
+        if profile.wall_prob_bias > 0.05 {
+            for w in valid_pool.iter().filter(|c| c.is_wall).take(4) {
+                if (top_q - w.q) <= 0.30 && !pool.iter().any(|existing| existing.action == w.action) {
+                    pool.push(w);
+                }
+            }
+        }
         if pool.is_empty() {
             vec![&valid_pool[0]]
         } else {
@@ -1129,7 +1165,7 @@ pub fn select_bot_action(
                             profile.wall_prob_bias,
                         );
                         score += bias * 25.0;
-                        score += profile.wall_prob_bias * 6.0;
+                        score += profile.wall_prob_bias * 18.0;
                     }
                 }
                 GameAction::Move { to } => {
@@ -1147,7 +1183,7 @@ pub fn select_bot_action(
                         let bias = opening_move_bias(*to, is_opening, profile.opening_style, mover);
                         score += bias * 25.0;
                         // Negative wall_prob_bias means pawn preference (sprint)
-                        score -= profile.wall_prob_bias * 6.0;
+                        score -= profile.wall_prob_bias * 18.0;
                     }
                 }
                 _ => {}

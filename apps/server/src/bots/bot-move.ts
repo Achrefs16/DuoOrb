@@ -10,7 +10,7 @@ import {
   type GameState,
   type WallCoord,
 } from '@duoorb/game-core';
-import { resolveOpeningIntent, type OpeningPlan } from './opening-plans.js';
+import { type OpeningPlan } from './opening-plans.js';
 import type { BotPersona } from './bot-roster.js';
 
 let nativeAnalyzer: any = null;
@@ -223,33 +223,7 @@ export async function chooseBotAction(
     }
   }
 
-  // 3. Signature Opening Plan (moves 0..4 when openingPlan is provided and unblocked)
-  if (ctx.openingPlan && ctx.ownMoveIndex < ctx.openingPlan.length) {
-    const intent = ctx.openingPlan[ctx.ownMoveIndex];
-    if (intent) {
-      const planAction = resolveOpeningIntent(state, botPlayerId, intent);
-      if (planAction) {
-        const validated = accept(planAction);
-        if (validated) {
-          // If it's a wall, verify it does not trap self
-          if (validated.type === 'PLACE_WALL') {
-            const testWalls: WallCoord[] = [
-              ...state.walls,
-              { ...validated.wall, placedByPlayerId: botPlayerId, sequence: state.history.length + 1 },
-            ];
-            const myDistAfter = distance(state, botPlayerId, testWalls);
-            if (myDistAfter !== Infinity) {
-              return validated;
-            }
-          } else {
-            return validated;
-          }
-        }
-      }
-    }
-  }
-
-  // 4. Tactical Counter-Walling against aggressive opponent walling / box construction:
+  // 3. Tactical Counter-Walling against aggressive opponent walling / box construction:
   // When rival is actively spending walls (building a box or corridor trap),
   // a real human player does not keep walking blindly forward into the funnel —
   // they punish the rival's tempo by finding an effective counter-wall that delays
@@ -266,7 +240,7 @@ export async function chooseBotAction(
     }
   }
 
-  // 5. Native Hybrid AI Engine (AlphaZero Neural Priors + Multi-threaded MCTS + Tactical Minimax Solver)
+  // 4. Native Hybrid AI Engine (AlphaZero Neural Priors + Multi-threaded MCTS + Tactical Minimax Solver)
   // Powered by the calibrated 39-bot personality system with distinct styles and parameters.
   let action: GameAction | null = null;
   let fromNativeEngine = false;

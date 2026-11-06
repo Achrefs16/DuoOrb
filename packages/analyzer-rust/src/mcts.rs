@@ -414,9 +414,10 @@ pub fn generate_logical_actions(
                                     continue;
                                 }
 
-                                // Opening wall squandering prevention:
+                                // Opening wall filtering:
                                 // On an open board (walls <= 2 and mover far from goal >= 6),
-                                // only drop casual walls if they are NOT a proactive funnel or corridor squeeze.
+                                // only explore candidate walls that actively delay an opponent (max_opp_delta > 0)
+                                // or form a proactive funnel or corridor squeeze.
                                 let is_opening = state.walls.len() <= 2 && mover_dist >= 6;
                                 if is_opening && max_opp_delta <= 2 && !is_proactive_wall {
                                     continue;
@@ -426,14 +427,13 @@ pub fn generate_logical_actions(
 
                         let corridor_bonus = if touches_corridor || touches_mover_corridor { 0.10 } else { 0.0 };
                         let counter_bonus = if is_defensive_counter { 0.45 } else { 0.0 };
-                        let funnel_bonus = if is_funnel_shield && my_delta == 0 { 0.25 } else { 0.0 };
-                        let squeeze_bonus = if is_corridor_squeeze && my_delta == 0 { 0.15 } else { 0.0 };
+                        let funnel_bonus = if is_funnel_shield && my_delta == 0 && !state.walls.is_empty() { 0.25 } else { 0.0 };
+                        let squeeze_bonus = if is_corridor_squeeze && my_delta == 0 && !state.walls.is_empty() { 0.15 } else { 0.0 };
                         let leader_bonus = if state.mode != "2p" && leader_delta > 0 {
                             (leader_delta as f64) * 0.10
                         } else {
                             0.0
                         };
-
                         let is_sprint_finish = state.mode != "2p" && mover_dist <= 2 && mover_dist <= min_opp_base;
                         let wall_prior = if is_sprint_finish && !is_defensive_counter && min_opp_base > 1 {
                             // Mover is 1-2 steps from winning with race lead: suppress walls so pawn advance dominates

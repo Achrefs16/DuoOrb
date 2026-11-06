@@ -360,54 +360,64 @@ function buildRoster(): BotPersona[] {
 
     switch (playstyle) {
       case 'early_wall':
+        // Hyper-aggressive waller: uses walls heavily from the beginning to choke and trap
         wallStyle = 'horizontal_barricade';
         openingStyle = 'early_fence';
-        wallProbBias = 0.08;
-        break;
-      case 'reed':
-        wallStyle = 'horizontal_barricade';
-        openingStyle = 'early_fence';
-        wallProbBias = 0.06;
-        break;
-      case 'shiller':
-        wallStyle = 'vertical_corridor';
-        openingStyle = 'center_march';
-        wallProbBias = 0.04;
-        break;
-      case 'split':
-        wallStyle = 'vertical_corridor';
-        openingStyle = 'center_march';
-        wallProbBias = 0.05;
+        wallProbBias = 0.50;
         break;
       case 'flank':
+        // Flank trapper: funnels rivals towards outer edges aggressively
         wallStyle = 'flank_trap';
         openingStyle = 'wing_drift';
-        wallProbBias = 0.06;
+        wallProbBias = 0.40;
         break;
-      case 'gap':
-        wallStyle = 'defensive_backwall';
+      case 'shiller':
+        // Vertical divider specialist: cuts the board along files early
+        wallStyle = 'vertical_corridor';
+        openingStyle = 'center_march';
+        wallProbBias = 0.35;
+        break;
+      case 'split':
+        // Board symmetry breaker: deep vertical corridor division
+        wallStyle = 'vertical_corridor';
+        openingStyle = 'center_march';
+        wallProbBias = 0.35;
+        break;
+      case 'reed':
+        // Choke specialist: horizontal chokes and narrow gaps
+        wallStyle = 'horizontal_barricade';
         openingStyle = 'early_fence';
-        wallProbBias = 0.03;
+        wallProbBias = 0.35;
         break;
       case 'counter':
+        // Counter-wall punisher: equalizes and counters rival walling immediately
         wallStyle = 'defensive_backwall';
         openingStyle = 'mixed';
-        wallProbBias = 0.04;
+        wallProbBias = 0.25;
         break;
-      case 'evasive':
-        wallStyle = 'minimal';
-        openingStyle = 'wing_drift';
-        wallProbBias = -0.05;
+      case 'gap':
+        // Gap tactician: lures and tactical corridor trades
+        wallStyle = 'defensive_backwall';
+        openingStyle = 'early_fence';
+        wallProbBias = 0.15;
         break;
       case 'tempo':
+        // Tournament tempo: balanced pawn development and midgame timing
         wallStyle = 'balanced';
         openingStyle = 'mixed';
-        wallProbBias = 0.01;
+        wallProbBias = 0.0;
+        break;
+      case 'evasive':
+        // Sidestepper: avoids confrontations, maneuvers around funnels
+        wallStyle = 'minimal';
+        openingStyle = 'wing_drift';
+        wallProbBias = -0.25;
         break;
       case 'rush':
+        // Central sprinter: fast pawn momentum, minimal early walls
         wallStyle = 'minimal';
         openingStyle = 'center_march';
-        wallProbBias = -0.08;
+        wallProbBias = -0.45;
         break;
     }
 

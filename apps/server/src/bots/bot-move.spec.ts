@@ -163,7 +163,7 @@ describe('bot-move', () => {
     }
   });
 
-  it('executes signature opening plan from bot persona', async () => {
+  it('dynamically evaluates moves using engine instead of static hardcoded opening scripts', async () => {
     const shillerPersona = BOT_PERSONAS.find((p) => p.playstyle === 'shiller') || persona;
     const state = createInitialState({
       mode: '2p',
@@ -176,15 +176,10 @@ describe('bot-move', () => {
       botPlayerId: 'p2',
       seed: 42,
       ownMoveIndex: 0,
-      openingPlan: ['SHILLER', 'A', 'A', 'A', 'A'],
     };
 
     const action = await chooseBotAction(state, ctx);
     expect(action).not.toBeNull();
-    expect(action?.type).toBe('PLACE_WALL');
-    if (action?.type === 'PLACE_WALL') {
-      expect(action.wall.col).toBe(3);
-      expect(action.wall.orientation).toBe('V');
-    }
+    expect(['MOVE', 'PLACE_WALL']).toContain(action?.type);
   });
 });
