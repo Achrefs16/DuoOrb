@@ -656,18 +656,37 @@ fn wall_style_bias(
     let own_distance = manhattan(player.position, center_r, center_c);
     let rival_distance = nearest_opponent_distance(state, &player.id, center_r, center_c);
 
+    let is_behind = match player.goal_direction {
+        crate::types::GoalDirection::Bottom => wall.row < player.position.row,
+        crate::types::GoalDirection::Top => wall.row > player.position.row,
+        crate::types::GoalDirection::Right => wall.col < player.position.col,
+        crate::types::GoalDirection::Left => wall.col > player.position.col,
+        crate::types::GoalDirection::Center => false,
+    };
+    if is_behind {
+        return -0.15;
+    }
+
     let mut score = match wall_style {
         WallStyle::HorizontalBarricade => {
-            if wall.orientation == Orientation::H { 0.04 } else { -0.02 }
+            if wall.orientation == Orientation::H {
+                if rival_distance <= 3.5 { 0.06 } else { 0.02 }
+            } else {
+                -0.02
+            }
         }
         WallStyle::VerticalCorridor => {
-            if wall.orientation == Orientation::V { 0.04 } else { -0.02 }
+            if wall.orientation == Orientation::V {
+                if wall.col == 3 || wall.col == 4 { 0.06 } else { 0.03 }
+            } else {
+                -0.02
+            }
         }
         WallStyle::DefensiveBackwall => {
-            if own_distance <= 3.0 { 0.035 } else { -0.015 }
+            if own_distance <= 3.0 && !is_behind { 0.04 } else { -0.02 }
         }
         WallStyle::FlankTrap => {
-            if rival_distance <= 3.0 { 0.035 } else { -0.015 }
+            if (wall.col <= 2 || wall.col >= 5) && rival_distance <= 3.5 { 0.05 } else { -0.015 }
         }
         WallStyle::Minimal => -0.06,
         WallStyle::Balanced => 0.0,
@@ -838,7 +857,14 @@ fn wall_delays_opponent(state: &GameState, mover_idx: usize, wall: &WallCoord) -
         if squeezes_someone {
             return true;
         }
-        if crate::mcts::is_parallel_funnel_wall(wall.row as u8, wall.col as u8, is_h, my_corridor) {
+        let is_behind = match mover.goal_direction {
+            crate::types::GoalDirection::Bottom => wall.row < mover.position.row,
+            crate::types::GoalDirection::Top => wall.row > mover.position.row,
+            crate::types::GoalDirection::Right => wall.col < mover.position.col,
+            crate::types::GoalDirection::Left => wall.col > mover.position.col,
+            crate::types::GoalDirection::Center => false,
+        };
+        if !is_behind && crate::mcts::is_parallel_funnel_wall(wall.row as u8, wall.col as u8, is_h, my_corridor) {
             return true;
         }
     }

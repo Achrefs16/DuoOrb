@@ -125,4 +125,66 @@ describe('bot-move', () => {
     const action = await chooseBotAction(state, ctx);
     expect(action).not.toBeNull();
   });
+
+  it('counter-walls against opponent building a box trap instead of blindly walking into it', async () => {
+    const counterPersona = BOT_PERSONAS.find((p) => p.playstyle === 'counter') || persona;
+    const state = createInitialState({
+      mode: '2p',
+      playerIds: ['p1', 'p2'],
+    });
+
+    // P1 (Human) at (7, 4), P2 (Bot) at (1, 4)
+    state.players[0].position = { row: 7, col: 4 };
+    state.players[0].wallsRemaining = 8;
+    state.players[1].position = { row: 1, col: 4 };
+    state.players[1].wallsRemaining = 10;
+    state.currentPlayerIndex = 1; // Bot to move
+
+    // P1 has placed 2 box walls at row 4
+    state.walls = [
+      { row: 4, col: 4, orientation: 'H', placedByPlayerId: 'p1', sequence: 1 },
+      { row: 4, col: 2, orientation: 'H', placedByPlayerId: 'p1', sequence: 2 },
+    ];
+
+    const ctx: BotMoveContext = {
+      persona: counterPersona,
+      botPlayerId: 'p2',
+      seed: 42,
+      ownMoveIndex: 1,
+    };
+
+    const action = await chooseBotAction(state, ctx);
+    expect(action).not.toBeNull();
+    // Bot should counter-wall or block instead of zombie-walking into the box
+    expect(action?.type).toBe('PLACE_WALL');
+    if (action?.type === 'PLACE_WALL') {
+      expect(action.wall.row).toBeGreaterThan(0);
+      expect(action.wall.row).toBeLessThan(7);
+    }
+  });
+
+  it('executes signature opening plan from bot persona', async () => {
+    const shillerPersona = BOT_PERSONAS.find((p) => p.playstyle === 'shiller') || persona;
+    const state = createInitialState({
+      mode: '2p',
+      playerIds: ['p1', 'p2'],
+    });
+    state.currentPlayerIndex = 1;
+
+    const ctx: BotMoveContext = {
+      persona: shillerPersona,
+      botPlayerId: 'p2',
+      seed: 42,
+      ownMoveIndex: 0,
+      openingPlan: ['SHILLER', 'A', 'A', 'A', 'A'],
+    };
+
+    const action = await chooseBotAction(state, ctx);
+    expect(action).not.toBeNull();
+    expect(action?.type).toBe('PLACE_WALL');
+    if (action?.type === 'PLACE_WALL') {
+      expect(action.wall.col).toBe(3);
+      expect(action.wall.orientation).toBe('V');
+    }
+  });
 });

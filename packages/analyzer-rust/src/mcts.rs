@@ -375,7 +375,14 @@ pub fn generate_logical_actions(
                         let my_delta = (my_after - mover_dist).max(0);
                         let net_gain = max_opp_delta - my_delta;
 
-                        let is_funnel_shield = is_parallel_funnel_wall(r, c, is_h, mover_corridor);
+                        let is_behind = match mover.goal_direction {
+                            crate::types::GoalDirection::Bottom => (r as i8) < mover.position.row,
+                            crate::types::GoalDirection::Top => (r as i8) > mover.position.row,
+                            crate::types::GoalDirection::Right => (c as i8) < mover.position.col,
+                            crate::types::GoalDirection::Left => (c as i8) > mover.position.col,
+                            crate::types::GoalDirection::Center => false,
+                        };
+                        let is_funnel_shield = !is_behind && is_parallel_funnel_wall(r, c, is_h, mover_corridor);
                         let mut is_corridor_squeeze = false;
                         if max_opp_delta == 0 {
                             for (_, opp, _, opp_corridor) in &opps {
@@ -431,6 +438,9 @@ pub fn generate_logical_actions(
                         let wall_prior = if is_sprint_finish && !is_defensive_counter && min_opp_base > 1 {
                             // Mover is 1-2 steps from winning with race lead: suppress walls so pawn advance dominates
                             0.04
+                        } else if is_behind && max_opp_delta <= 0 {
+                            // Wall behind mover that delays no opponent: suppress prior
+                            0.02
                         } else if include_all_walls {
                             // Strong delaying walls and defensive counters sort first; setup walls
                             // remain searchable with a small but non-zero prior.
@@ -571,21 +581,27 @@ pub fn heuristic_rewards(state: &GameState, board: &Board) -> [f64; 4] {
         };
 
         if state.mode == "2p" {
-            // === EXACT 100% UNTOUCHED ORIGINAL CLASSIC 2P LOGIC ===
             let turn_bonus = if state.current_player_index == 0 { 0.5 } else { -0.5 };
-            let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * 1.35;
+
+            // Dynamic wall equity in classical 2p:
+            // On a clean opening board (0 walls placed), conserve walls at 1.35 to avoid
+            // squandering walls on ply 0. Once walls are placed (active midgame / trap play),
+            // scale wall weight to 0.70 so bots actively place counter-walls and do not hoard
+            // walls while being herded into a box trap.
+            let wall_weight = if state.walls.is_empty() { 1.35 } else { 0.70 };
+            let wall_bonus = ((p0.walls_remaining - p1.walls_remaining) as f64) * wall_weight;
             let width_bonus = (width0 - width1) * 0.45;
 
             // Corridor constriction / trap vulnerability penalty:
-            // When entering a 1-wide dead-end slot while opponent has walls, penalize the fake
-            // shortest-path advance so MCTS does not sprint blindly into closing funnels.
-            let trap_penalty0 = if width0 <= 1.25 && p1.walls_remaining > 0 && d0 > 1.0 {
-                (1.30 - width0) * 3.5
+            // When entering a narrow corridor or funnel (width <= 1.50) while opponent has walls,
+            // penalize the position so MCTS does not march blindly into closing funnels/boxes.
+            let trap_penalty0 = if width0 <= 1.50 && p1.walls_remaining > 0 && d0 > 1.0 {
+                (1.55 - width0) * 3.5
             } else {
                 0.0
             };
-            let trap_penalty1 = if width1 <= 1.25 && p0.walls_remaining > 0 && d1 > 1.0 {
-                (1.30 - width1) * 3.5
+            let trap_penalty1 = if width1 <= 1.50 && p0.walls_remaining > 0 && d1 > 1.0 {
+                (1.55 - width1) * 3.5
             } else {
                 0.0
             };
