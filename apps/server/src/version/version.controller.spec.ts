@@ -6,8 +6,8 @@ describe('VersionController', () => {
     const controller = new VersionController();
     const result = controller.getVersion();
 
-    expect(result.latestVersion).toBe('1.0.7');
-    expect(result.latestVersionCode).toBe(20);
+    expect(result.latestVersion).toBe('1.0.8');
+    expect(result.latestVersionCode).toBe(21);
     expect(result.minSupportedVersionCode).toBe(15);
     expect(result.title).toBe("What's New in DuoOrb");
     expect(result.storeUrl).toContain('com.asdigital.duoorb');

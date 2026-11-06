@@ -88,6 +88,29 @@ describe('BotBackfillService', () => {
     expect(persona2).toBeDefined();
   });
 
+  it('pickPersona correctly selects novice bots (850-950) with preferred playstyle', () => {
+    const service = new BotBackfillService(config);
+    const noviceRush = service.pickPersona(850, 'u_new', () => true, 'rush');
+    expect(noviceRush).toBeDefined();
+    expect(noviceRush!.targetRating).toBeLessThan(1100);
+    expect(noviceRush!.playstyle).toBe('rush');
+
+    const noviceTempo = service.pickPersona(900, 'u_new', () => true, 'tempo');
+    expect(noviceTempo).toBeDefined();
+    expect(noviceTempo!.targetRating).toBeLessThan(1150);
+    expect(noviceTempo!.playstyle).toBe('tempo');
+  });
+
+  it('BOT_PERSONAS spans beginner (850) up to master (>2000)', () => {
+    const minRating = Math.min(...BOT_PERSONAS.map((p) => p.targetRating));
+    const maxRating = Math.max(...BOT_PERSONAS.map((p) => p.targetRating));
+    expect(minRating).toBeLessThanOrEqual(860);
+    expect(maxRating).toBeGreaterThanOrEqual(2000);
+
+    const noviceCount = BOT_PERSONAS.filter((p) => p.targetRating < 1200).length;
+    expect(noviceCount).toBeGreaterThanOrEqual(20);
+  });
+
   it('loadBackfillConfig parses environment variables properly', () => {
     const defaults = loadBackfillConfig({});
     expect(defaults.enabled).toBe(true);

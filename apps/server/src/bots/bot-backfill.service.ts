@@ -79,22 +79,43 @@ export class BotBackfillService {
   }
 
   /**
-   * Persona near the player's rating, avoiding the last few they faced.
+   * Persona near the player's target rating, avoiding the last few they faced.
    * `allow` filters out bots that are unavailable (busy or not seeded).
+   * `preferredPlaystyle` prioritizes personas matching that playstyle when available.
    */
   pickPersona(
-    humanRating: number,
+    targetRating: number,
     userId: string,
-    allow: (botUserId: string) => boolean = () => true
+    allow: (botUserId: string) => boolean = () => true,
+    preferredPlaystyle?: string
   ): BotPersona | undefined {
     const recent = new Set(this.recentPersonas.get(userId) ?? []);
     const usable = BOT_PERSONAS.filter((p) => allow(p.userId));
     if (usable.length === 0) return undefined;
-    for (let band = 150; band <= 1500; band += 150) {
+
+    // First pass: if preferredPlaystyle requested, prioritize bots with that style within reasonable rating distance
+    if (preferredPlaystyle) {
+      for (let band = 120; band <= 600; band += 120) {
+        const pool = usable.filter(
+          (p) =>
+            !recent.has(p.userId) &&
+            p.playstyle === preferredPlaystyle &&
+            Math.abs(p.targetRating - targetRating) <= band
+        );
+        if (pool.length > 0) {
+          return pool[Math.floor(this.rng() * pool.length)];
+        }
+      }
+    }
+
+    // General pass: nearest rating candidate
+    for (let band = 120; band <= 1500; band += 120) {
       const pool = usable.filter(
-        (p) => !recent.has(p.userId) && Math.abs(p.targetRating - humanRating) <= band
+        (p) => !recent.has(p.userId) && Math.abs(p.targetRating - targetRating) <= band
       );
-      if (pool.length > 0) return pool[Math.floor(this.rng() * pool.length)];
+      if (pool.length > 0) {
+        return pool[Math.floor(this.rng() * pool.length)];
+      }
     }
     return usable[Math.floor(this.rng() * usable.length)];
   }

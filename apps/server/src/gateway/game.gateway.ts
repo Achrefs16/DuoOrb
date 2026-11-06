@@ -1847,6 +1847,186 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     }
   }
 
+  /**
+   * Adaptive Skill Frontier & EOMM Churn Protection Matchmaking Engine.
+   * Dynamically calibrates bot opponent difficulty based on:
+   * 1. Onboarding staircase for new players (games < 3: 850 -> 980 -> 1120)
+   * 2. Anti-churn recovery at Markov state LL (consecutiveLosses >= 2: -180 Elo drop into proven win frontier)
+   * 3. Emergency anti-quit rescue at LLL (consecutiveLosses >= 3: <= 950 Elo, rush playstyle)
+   * 4. Ceiling testing at hot winning streaks (consecutiveWins >= 3: +120..+200 Elo, tactical/counter playstyle)
+   */
+  private async computeAdaptiveBotTarget(
+    userId: string,
+    humanRating: number,
+    gamesPlayed: number
+  ): Promise<{
+    targetRating: number;
+    preferredPlaystyle?: string;
+    isHot: boolean;
+    debugReason: string;
+  }> {
+    if (!this.prisma.isConnected) {
+      if (gamesPlayed === 0) {
+        return { targetRating: 850, preferredPlaystyle: 'rush', isHot: false, debugReason: 'onboarding_fallback' };
+      }
+      return { targetRating: humanRating, isHot: false, debugReason: 'offline_fallback' };
+    }
+
+    try {
+      const recent = await this.prisma.gamePlayer.findMany({
+        where: { userId, game: { status: 'COMPLETED' } },
+        orderBy: { game: { endedAt: 'desc' } },
+        take: 12,
+        include: {
+          game: {
+            include: {
+              players: {
+                select: {
+                  userId: true,
+                  ratingBefore: true,
+                  isWinner: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // 1. Onboarding staircase for new users (gamesPlayed < 3)
+      if (gamesPlayed === 0 || recent.length === 0) {
+        return {
+          targetRating: 850,
+          preferredPlaystyle: 'rush',
+          isHot: false,
+          debugReason: 'onboarding_match_1',
+        };
+      }
+      if (gamesPlayed === 1 || recent.length === 1) {
+        const wonPrev = recent[0]?.isWinner ?? false;
+        return {
+          targetRating: wonPrev ? 980 : 820,
+          preferredPlaystyle: wonPrev ? 'tempo' : 'rush',
+          isHot: false,
+          debugReason: wonPrev ? 'onboarding_match_2_won' : 'onboarding_match_2_lost',
+        };
+      }
+      if (gamesPlayed === 2 || recent.length === 2) {
+        const wonPrev = recent[0]?.isWinner ?? false;
+        return {
+          targetRating: wonPrev ? 1120 : 880,
+          preferredPlaystyle: wonPrev ? 'tempo' : 'rush',
+          isHot: false,
+          debugReason: wonPrev ? 'onboarding_match_3_won' : 'onboarding_match_3_lost',
+        };
+      }
+
+      // 2. Compute streaks and skill frontier from recent history
+      let consecutiveLosses = 0;
+      for (const r of recent) {
+        if (!r.isWinner) consecutiveLosses++;
+        else break;
+      }
+
+      let consecutiveWins = 0;
+      for (const r of recent) {
+        if (r.isWinner) consecutiveWins++;
+        else break;
+      }
+
+      let highestWonOpponentElo = 0;
+      let lowestLostOpponentElo = 3000;
+      let totalWins = 0;
+
+      for (const r of recent) {
+        const opp = r.game?.players?.find((p) => p.userId !== userId);
+        const oppRating = opp
+          ? (personaById(opp.userId)?.targetRating ?? (opp.ratingBefore ? Math.round(opp.ratingBefore) : 1500))
+          : 1500;
+
+        if (r.isWinner) {
+          totalWins++;
+          if (oppRating > highestWonOpponentElo) highestWonOpponentElo = oppRating;
+        } else {
+          if (oppRating < lowestLostOpponentElo) lowestLostOpponentElo = oppRating;
+        }
+      }
+
+      const recentWinRate = recent.length > 0 ? totalWins / recent.length : 0.5;
+
+      // 3. EOMM Churn Protection (Markov State LL and LLL)
+      if (consecutiveLosses >= 3) {
+        // Emergency rescue match: severe drop into guaranteed winnable tier
+        const frontierSafe = highestWonOpponentElo > 0 ? highestWonOpponentElo - 60 : 900;
+        const target = Math.min(humanRating - 280, frontierSafe, 980);
+        return {
+          targetRating: Math.max(850, Math.round(target)),
+          preferredPlaystyle: 'rush',
+          isHot: false,
+          debugReason: `churn_emergency_losses_${consecutiveLosses}`,
+        };
+      }
+
+      if (consecutiveLosses === 2) {
+        // Critical churn inflection point: pull down to proven win frontier
+        const frontierCap = highestWonOpponentElo > 0 ? highestWonOpponentElo + 25 : humanRating - 160;
+        const target = Math.min(humanRating - 180, frontierCap);
+        return {
+          targetRating: Math.max(850, Math.round(target)),
+          preferredPlaystyle: 'tempo',
+          isHot: false,
+          debugReason: 'churn_protection_losses_2',
+        };
+      }
+
+      // 4. Winning Streak & Skill Ceiling Testing
+      if (consecutiveWins >= 3) {
+        const climb = 120 + (consecutiveWins - 3) * 45;
+        const target = Math.min(2100, Math.round(humanRating + climb));
+        return {
+          targetRating: target,
+          preferredPlaystyle: consecutiveWins >= 4 ? 'counter' : 'early_wall',
+          isHot: true,
+          debugReason: `ceiling_test_wins_${consecutiveWins}`,
+        };
+      }
+
+      if (consecutiveWins === 2) {
+        const target = Math.min(2100, Math.round(humanRating + 70));
+        return {
+          targetRating: target,
+          isHot: false,
+          debugReason: 'climbing_wins_2',
+        };
+      }
+
+      // 5. Steady state / balanced match calibration
+      let target = humanRating;
+      if (consecutiveLosses === 1) {
+        target -= 45;
+      } else if (consecutiveWins === 1) {
+        target += 35;
+      }
+
+      if (recent.length >= 5) {
+        if (recentWinRate < 0.35) target -= 50;
+        else if (recentWinRate > 0.65) target += 40;
+      }
+
+      return {
+        targetRating: Math.max(850, Math.min(2100, Math.round(target))),
+        isHot: false,
+        debugReason: `steady_winrate_${Math.round(recentWinRate * 100)}%`,
+      };
+    } catch (err) {
+      this.logger.warn(`Error computing adaptive bot target for ${userId}: ${err}`);
+      return {
+        targetRating: humanRating,
+        isHot: false,
+        debugReason: 'error_fallback',
+      };
+    }
+  }
+
   private async runBotBackfill(): Promise<void> {
     if (!this.botBackfill.enabled) return;
     const due = this.botBackfill.dueEntries(this.matchmakingService.getQueueSnapshot());
@@ -1864,16 +2044,22 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       const socket = sid ? this.server.sockets.sockets.get(sid) : undefined;
       if (!socket || socket.connected === false || this.isUserInLiveGame(req.userId)) continue;
 
-      const humanRating = (await this.fullRating(req.userId)).rating;
+      const playerRatingRec = await this.fullRating(req.userId);
+      const humanRating = playerRatingRec.rating;
+      const gamesPlayed = playerRatingRec.gamesPlayed ?? 0;
+
+      const adaptive = await this.computeAdaptiveBotTarget(req.userId, humanRating, gamesPlayed);
       const busy = this.busyBotIds();
-      const persona = this.botBackfill.pickPersona(humanRating, req.userId, (id) =>
-        seatable.has(id) && !busy.has(id)
+      const persona = this.botBackfill.pickPersona(
+        adaptive.targetRating,
+        req.userId,
+        (id) => seatable.has(id) && !busy.has(id),
+        adaptive.preferredPlaystyle
       );
       if (!persona) continue;
 
       const gameId = `game-ranked-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      const isHot = await this.isHumanOnHotStreak(req.userId);
-      if (isHot) {
+      if (adaptive.isHot) {
         this.hotStreakGames.add(gameId);
       }
       const opening = this.botBackfill.openingFor(req.userId, gameId, persona);
@@ -1904,7 +2090,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       }));
       this.matchmakingService.removeFromQueue(req.userId);
       this.logger.log(
-        `Matched waiting player ${req.userId} to bot ${persona.username} (${persona.displayName}) after ${((Date.now() - req.joinedAt) / 1000).toFixed(1)}s`
+        `Matched waiting player ${req.userId} (rating: ${humanRating}, games: ${gamesPlayed}) to bot ${persona.username} (${persona.displayName}, ${persona.targetRating} Elo, style: ${persona.playstyle}) [target: ${adaptive.targetRating}, reason: ${adaptive.debugReason}] after ${((Date.now() - req.joinedAt) / 1000).toFixed(1)}s`
       );
       this.server.to(sid!).emit('matchmaking:matched', {
         gameId,

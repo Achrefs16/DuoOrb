@@ -230,9 +230,10 @@ export async function chooseBotAction(
   // the rival by +2 or more plies, or seals off the rival's exit.
   const rivalWallsPlaced = rival ? (10 - rival.wallsRemaining) : 0;
   const isBoxBuildingRival = rivalWallsPlaced >= 2;
+  const isTacticalTier = (ctx.persona?.targetRating ?? 1500) >= 1250;
   const isCounterPersona = ctx.persona?.playstyle === 'counter' || ctx.persona?.playstyle === 'early_wall';
 
-  if (me.wallsRemaining > 0 && (isBoxBuildingRival || (isCounterPersona && rivalWallsPlaced >= 1))) {
+  if (me.wallsRemaining > 0 && ((isTacticalTier && isBoxBuildingRival) || (isCounterPersona && rivalWallsPlaced >= 1))) {
     const counterWall = findTacticalCounterWall(state, botPlayerId, ctx.persona);
     if (counterWall) {
       const step = accept(counterWall);

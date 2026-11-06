@@ -50,6 +50,9 @@ function makeGateway(prismaConnected = false) {
       findFirst: vi.fn().mockResolvedValue(null),
       findMany: vi.fn().mockResolvedValue([]),
     },
+    gamePlayer: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   };
   const authService = {} as any;
   const gateway = new GameGateway(authService, prisma as any);
@@ -1413,6 +1416,85 @@ describe('GameGateway join pump edges (F11)', () => {
 
       expect(sndUser).toMatchObject({ ballSkinId: 'crystal', wallSkinId: 'emerald' });
       expect(tgtUser).toMatchObject({ ballSkinId: 'cosmic', wallSkinId: 'ruby' });
+    });
+  });
+
+  describe('computeAdaptiveBotTarget', () => {
+    it('guides new users through the onboarding staircase', async () => {
+      const { gateway, prisma } = makeGateway(true);
+      (prisma as any).gamePlayer = {
+        findMany: vi.fn().mockResolvedValue([]),
+      };
+
+      // Game 0: first match
+      const m1 = await (gateway as any).computeAdaptiveBotTarget('u_new', 1500, 0);
+      expect(m1.targetRating).toBe(850);
+      expect(m1.preferredPlaystyle).toBe('rush');
+      expect(m1.isHot).toBe(false);
+
+      // Game 1: won prev
+      (prisma as any).gamePlayer.findMany = vi.fn().mockResolvedValue([
+        { isWinner: true, game: { players: [{ userId: 'bot1', ratingBefore: 850 }] } },
+      ]);
+      const m2Won = await (gateway as any).computeAdaptiveBotTarget('u_new', 1510, 1);
+      expect(m2Won.targetRating).toBe(980);
+      expect(m2Won.preferredPlaystyle).toBe('tempo');
+
+      // Game 1: lost prev
+      (prisma as any).gamePlayer.findMany = vi.fn().mockResolvedValue([
+        { isWinner: false, game: { players: [{ userId: 'bot1', ratingBefore: 850 }] } },
+      ]);
+      const m2Lost = await (gateway as any).computeAdaptiveBotTarget('u_new', 1480, 1);
+      expect(m2Lost.targetRating).toBe(820);
+      expect(m2Lost.preferredPlaystyle).toBe('rush');
+    });
+
+    it('triggers anti-churn rescue on 2 consecutive losses', async () => {
+      const { gateway, prisma } = makeGateway(true);
+      (prisma as any).gamePlayer.findMany = vi.fn().mockResolvedValue([
+        { isWinner: false, game: { players: [{ userId: 'bot1', ratingBefore: 1250 }] } },
+        { isWinner: false, game: { players: [{ userId: 'bot2', ratingBefore: 1200 }] } },
+        { isWinner: true, game: { players: [{ userId: 'bot3', ratingBefore: 1050 }] } },
+      ]);
+
+      const res = await (gateway as any).computeAdaptiveBotTarget('u_struggling', 1470, 5);
+      // Drops to frontier cap (highestWon + 25 = 1075) and -180 Elo
+      expect(res.targetRating).toBeLessThanOrEqual(1075);
+      expect(res.preferredPlaystyle).toBe('tempo');
+      expect(res.debugReason).toBe('churn_protection_losses_2');
+      expect(res.isHot).toBe(false);
+    });
+
+    it('triggers emergency rescue on 3 consecutive losses', async () => {
+      const { gateway, prisma } = makeGateway(true);
+      (prisma as any).gamePlayer.findMany = vi.fn().mockResolvedValue([
+        { isWinner: false, game: { players: [{ userId: 'bot1', ratingBefore: 1300 }] } },
+        { isWinner: false, game: { players: [{ userId: 'bot2', ratingBefore: 1250 }] } },
+        { isWinner: false, game: { players: [{ userId: 'bot3', ratingBefore: 1200 }] } },
+        { isWinner: true, game: { players: [{ userId: 'bot4', ratingBefore: 1100 }] } },
+      ]);
+
+      const res = await (gateway as any).computeAdaptiveBotTarget('u_rage_quit_risk', 1420, 8);
+      // Drops to <= 980 Elo with rush playstyle for a fair, winnable recovery match
+      expect(res.targetRating).toBeLessThanOrEqual(980);
+      expect(res.preferredPlaystyle).toBe('rush');
+      expect(res.debugReason).toContain('churn_emergency_losses_3');
+    });
+
+    it('tests skill ceiling on hot winning streaks', async () => {
+      const { gateway, prisma } = makeGateway(true);
+      (prisma as any).gamePlayer.findMany = vi.fn().mockResolvedValue([
+        { isWinner: true, game: { players: [{ userId: 'bot1', ratingBefore: 1200 }] } },
+        { isWinner: true, game: { players: [{ userId: 'bot2', ratingBefore: 1180 }] } },
+        { isWinner: true, game: { players: [{ userId: 'bot3', ratingBefore: 1150 }] } },
+      ]);
+
+      const res = await (gateway as any).computeAdaptiveBotTarget('u_climber', 1200, 10);
+      // Climbs by +120 Elo to test skill ceiling, enables hot streak flag
+      expect(res.targetRating).toBe(1320);
+      expect(res.preferredPlaystyle).toBe('early_wall');
+      expect(res.isHot).toBe(true);
+      expect(res.debugReason).toBe('ceiling_test_wins_3');
     });
   });
 });
