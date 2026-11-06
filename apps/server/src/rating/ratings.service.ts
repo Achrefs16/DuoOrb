@@ -155,7 +155,7 @@ export class RatingsService {
   private syntheticBotRatingHistory(userId: string, limit = 20) {
     const persona = personaById(userId);
     const target = persona ? persona.targetRating : 1500;
-    const count = Math.min(Math.max(limit, 10), 16);
+    const count = persona ? persona.gamesPlayed : 12;
     const points: {
       gameId: string;
       mode: string;
@@ -166,30 +166,28 @@ export class RatingsService {
       timestamp: Date;
     }[] = [];
 
-    let hash = 0;
-    for (let j = 0; j < userId.length; j++) hash = (hash * 31 + userId.charCodeAt(j)) >>> 0;
-
-    let current = Math.round(target - count * 4.2);
+    let current = 1500;
     const now = Date.now();
     for (let i = 0; i < count; i++) {
-      const stepHash = (hash + i * 17) % 100;
-      const isWin = stepHash < 62;
-      const delta = isWin ? 12 + (stepHash % 7) : -(10 + (stepHash % 6));
-      const next = i === count - 1 ? target : current + delta;
-      const daysAgo = (count - i) * 1.2;
+      const remaining = count - i;
+      const targetDelta = (target - current) / remaining;
+      const isWin = i < (persona?.wins ?? Math.round(count * 0.6));
+      const delta = i === count - 1 ? target - current : Math.round(targetDelta * 0.7 + (isWin ? 14 : -14));
+      const next = current + delta;
+      const daysAgo = (count - i) * 0.8 + 0.1;
       const timestamp = new Date(now - daysAgo * 86400000);
       points.push({
-        gameId: `game-hist-${userId.slice(0, 8)}-${i + 1}`,
-        mode: 'CLASSIC_1V1',
+        gameId: `bot-hist-${userId.slice(0, 10)}-${i + 1}`,
+        mode: '2p',
         ratingBefore: current,
         ratingAfter: next,
-        delta: next - current,
+        delta,
         algorithmVersion: 'G2_UNIFIED_V1',
         timestamp,
       });
       current = next;
     }
-    return points;
+    return points.slice(-limit);
   }
 
   /**

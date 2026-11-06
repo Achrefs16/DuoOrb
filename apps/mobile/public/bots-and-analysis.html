@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DuoOrb AI Bots — Free Sparring Partners From Beginner to 2400</title>
-  <meta name="description" content="Explore DuoOrb's 7 free offline AI personalities (Martin 800 to Achref 2400) and learn how our Rust MCTS engine grades every move from Best to Blunder." />
-  <link rel="canonical" href="https://duoorb.com/bots-and-analysis.html" />
-  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <title>DuoOrb AI Bots — 39 Offline Sparring Partners (450 to 2900 ELO) &amp; Rust Review</title>
+  <meta name="description" content="Explore DuoOrb's 39 offline AI bot personalities across 4 skill tiers (Barnaby 450 to Milo 2900). Play against calibrated bots and review moves with our native Rust MCTS engine." />
+  <!-- Agentic Resource Discovery (ARD v0.91) Specification Links -->
+  <link rel="ard" href="/.well-known/ard.json" />
+  <link rel="ai-catalog" href="/.well-known/ai-catalog.json" />
   <meta name="theme-color" content="#121110" />
   <!-- Google Analytics & Consent Bootstrap -->
   <script>
@@ -43,29 +44,47 @@
   <meta property="og:site_name" content="DuoOrb" />
   <meta property="og:url" content="https://duoorb.com/bots-and-analysis.html" />
   <meta property="og:title" content="DuoOrb AI Bots &amp; Rust MCTS Engine Analysis" />
-  <meta property="og:description" content="7 free offline AI personalities from 800 to 2400 plus Rust MCTS move grading." />
+  <meta property="og:description" content="39 offline AI bot personalities from 450 to 2900 ELO across 4 tiers, plus Rust MCTS move grading." />
   <meta property="og:image" content="https://duoorb.com/og-image.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="DuoOrb AI Bots &amp; Rust MCTS Engine" />
-  <meta name="twitter:description" content="7 free bots, 800-2400, plus move grading math." />
+  <meta name="twitter:description" content="39 AI bots, 4 tiers, 450-2900 ELO, plus deep move grading math." />
   <meta name="twitter:image" content="https://duoorb.com/og-image.png" />
-  <link rel="stylesheet" href="/css/style.css?v=20261105-pwa" />
+  <link rel="canonical" href="https://duoorb.com/bots-and-analysis.html" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <link rel="stylesheet" href="/css/style.css?v=20261106-pwa" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@graph": [
       {
+        "@type": "Organization",
+        "@id": "https://duoorb.com/#organization",
+        "name": "DuoOrb",
+        "legalName": "AS Digital",
+        "url": "https://duoorb.com/",
+        "logo": "https://duoorb.com/icons/icon-512.png",
+        "sameAs": [
+          "https://play.google.com/store/apps/details?id=com.asdigital.duoorb",
+          "https://www.youtube.com/@DuoOrb",
+          "https://www.tiktok.com/@DuoOrb",
+          "https://www.instagram.com/DuoOrb",
+          "https://www.facebook.com/Duoorb",
+          "https://www.facebook.com/profile.php?id=61595488701114"
+        ]
+      },
+      {
         "@type": "TechArticle",
-        "headline": "Meet the 7 Free AI Personalities & the Rust MCTS Analysis Engine",
+        "headline": "Meet the 39 AI Personalities & the Rust MCTS Analysis Engine",
         "url": "https://duoorb.com/bots-and-analysis.html",
-        "author": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/about.html", "email": "support@duoorb.com" },
-        "publisher": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/", "logo": { "@type": "ImageObject", "url": "https://duoorb.com/icons/icon-512.png", "width": 512, "height": 512 } }
+        "author": { "@id": "https://duoorb.com/#organization" },
+        "publisher": { "@id": "https://duoorb.com/#organization" }
       },
       {
         "@type": "FAQPage",
         "mainEntity": [
-          { "@type": "Question", "name": "Are DuoOrb bots free?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. All 7 named AI personalities plus the Easy 1200, Normal 1500 and Hard 1800 calibration tiers are 100% free and work offline." } },
-          { "@type": "Question", "name": "Which bot should a beginner start with?", "acceptedAnswer": { "@type": "Answer", "text": "Start with Martin (800), then Elias (1100), then Nelson (1450). Each step up adds simulation budget and removes randomness." } },
+          { "@type": "Question", "name": "Are DuoOrb bots free?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. All 39 named AI bot personalities across Beginner, Intermediate, Master, and Grandmaster tiers are 100% free and work offline." } },
+          { "@type": "Question", "name": "Which bot should a beginner start with?", "acceptedAnswer": { "@type": "Answer", "text": "Start with Barnaby (450), Martin (800), or Pip (950). Each step up adds simulation depth and tests different tactical wall scenarios." } },
           { "@type": "Question", "name": "How does Engine Review grade moves?", "acceptedAnswer": { "@type": "Answer", "text": "The Rust MCTS engine computes win-equity loss per turn (loss = Δq × 40) and grades Best, Excellent, Good, Forced, Inaccuracy, Mistake or Blunder, with accuracy and the deciding moment." } }
         ]
       }
@@ -87,11 +106,12 @@
           <li><a href="/rules.html">Rules</a></li>
           <li><a href="/strategy.html">Strategy</a></li>
           <li><a href="/bots-and-analysis.html" class="active">AI &amp; Analysis</a></li>
+          <li><a href="/blog/">Blog</a></li>
           <li><a href="/about.html">About</a></li>
         </ul>
       </nav>
       <div class="nav-actions">
-        <a href="/?play=1" class="btn-pill btn-pill-primary">Play Now</a>
+        <a href="/?play=1" class="btn-pill btn-pill-primary">Play Free</a>
         <button id="mobile-nav-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false"><span></span><span></span><span></span></button>
       </div>
     </div>
@@ -101,6 +121,7 @@
         <li><a href="/rules.html">Rules</a></li>
         <li><a href="/strategy.html">Strategy</a></li>
         <li><a href="/bots-and-analysis.html" class="active">AI &amp; Analysis</a></li>
+        <li><a href="/blog/">Blog</a></li>
         <li><a href="/about.html">About</a></li>
       </ul>
     </div>
@@ -108,90 +129,134 @@
   <main>
     <section class="section">
       <div class="container" style="max-width: 820px;">
-        <span class="section-tag">AI Sparring Partners</span>
-        <h1>Meet the 7 Free AI Sparring Partners</h1>
-        <p class="lead" style="margin-top: 20px; margin-bottom: 28px;">Stuck with no friends online? Seven sparring partners wait inside DuoOrb, from Martin — who plays like your friendly dad — up to Achref, who calculates like a machine. Every one is free, works offline, and teaches you something different. And after each match, the same engine grades every move you made.</p>
+        <span class="section-tag">AI Sparring Ladder</span>
+        <h1>Meet the 39 AI Sparring Partners Across 4 Skill Tiers</h1>
+        <p class="lead" style="margin-top: 20px; margin-bottom: 28px;">Stuck with no friends online? 39 individually crafted bot personalities wait inside DuoOrb — from Barnaby (450) and Martin (800) for relaxed family play, all the way to Achref (2400) and Milo (2900) who calculate with deep Monte Carlo Tree Search. Every single bot is 100% free, runs offline, and features unique wall habits, banter, and tactical openings.</p>
         <div class="hero-actions" style="margin-bottom: 16px;">
-          <a href="/?play=1" class="btn-pill btn-pill-primary">Play Now</a>
+          <a href="/?play=1" class="btn-pill btn-pill-primary">Play Online Free</a>
+          <a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" target="_blank" rel="noopener noreferrer" class="btn-pill btn-pill-secondary">Download on Google Play ↗</a>
         </div>
       </div>
     </section>
     <section class="section section-fog" id="bot-roster">
       <div class="container" style="max-width: 820px;">
         <div class="section-header">
-          <span class="section-tag">100% Free · Works Offline</span>
-          <h2>The Complete 7-Bot Personality Ladder (800 to 2400 Rating)</h2>
-          <p><strong>Reading the table:</strong> MCTS Playouts measure how many future board positions each bot calculates per turn, while Randomness controls how often a bot intentionally plays a human-like imperfect move. Higher playouts plus zero randomness means a colder, stronger opponent. Three plain sparring tiers back the roster up: <strong>Easy (1200)</strong>, <strong>Normal (1500)</strong>, and <strong>Hard (1800)</strong>.</p>
+          <span class="section-tag">100% Free · Offline Capable · 4 Tiers</span>
+          <h2>The 39-Bot Personality Ladder (450 to 2900 ELO)</h2>
+          <p><strong>Roster Architecture:</strong> MCTS playouts measure future simulations per turn; think budget allocates maximum deliberation time; and randomness reflects intentional human-like variance. Zero randomness combined with high simulation budgets creates cold, grandmaster-level calculating power.</p>
         </div>
-        <div class="table-wrap">
+
+        <!-- Tier 1: Beginner -->
+        <h3 style="color: #4ade80; margin: 32px 0 16px; font-size: 1.35rem;">Tier 1: Beginner Sparring (450 – 1100 ELO)</h3>
+        <p style="color: #A6A29A; margin-bottom: 16px;">Ideal for new players learning jump rules, shortest-path calculation, and initial wall timing.</p>
+        <div class="table-wrap" style="margin-bottom: 36px;">
           <table class="editorial-table">
             <thead>
               <tr>
-                <th scope="col">Bot Personality</th>
-                <th scope="col">Rating &amp; Tier</th>
-                <th scope="col">MCTS Playouts</th>
-                <th scope="col">Think Budget</th>
-                <th scope="col">Randomness</th>
-                <th scope="col">Signature Playing Style</th>
+                <th scope="col">Bot</th>
+                <th scope="col">Rating</th>
+                <th scope="col">Playouts</th>
+                <th scope="col">Budget</th>
+                <th scope="col">Signature Style</th>
               </tr>
             </thead>
             <tbody>
+              <tr><td><strong>Barnaby</strong><br><em>The Whimsical Baker</em></td><td><strong>450</strong></td><td>150 sims</td><td>30 ms</td><td>Low wall usage (0.10). Moves gently along center files, perfect for absolute beginners.</td></tr>
+              <tr><td><strong>Finn</strong><br><em>The Desert Kit</em></td><td><strong>580</strong></td><td>180 sims</td><td>35 ms</td><td>Playful side-flanker learning basic jump avoidance.</td></tr>
+              <tr><td><strong>Clara</strong><br><em>The Curious Explorer</em></td><td><strong>650</strong></td><td>200 sims</td><td>40 ms</td><td>Explores diagonal bypasses; tests basic path blocks.</td></tr>
+              <tr><td><strong>Leo</strong><br><em>The Playground Sprinter</em></td><td><strong>780</strong></td><td>220 sims</td><td>40 ms</td><td>Races forward along the e-file without dropping early walls.</td></tr>
+              <tr><td><strong>Martin</strong><br><em>The Friendly Dad</em></td><td><strong>800</strong></td><td>250 sims</td><td>40 ms</td><td>Classic patient play. Advances steadily and leaves visible counter-play.</td></tr>
+              <tr><td><strong>Tariq</strong><br><em>The Spice Merchant</em></td><td><strong>920</strong></td><td>350 sims</td><td>45 ms</td><td>Prefers diagonal wall corridors to channel games into tactical races.</td></tr>
+              <tr><td><strong>Pip</strong><br><em>The Curious Sprinter</em></td><td><strong>950</strong></td><td>450 sims</td><td>50 ms</td><td>Fast, reactive hops; challenges slow opening moves.</td></tr>
+              <tr><td><strong>Ren</strong><br><em>The Chess Club Rookie</em></td><td><strong>1050</strong></td><td>550 sims</td><td>55 ms</td><td>Applies fundamental chess pawn-race logic to wall defense.</td></tr>
+              <tr><td><strong>Elias</strong><br><em>The Eager Student</em></td><td><strong>1100</strong></td><td>600 sims</td><td>60 ms</td><td>Academic theorist testing frontal wall blocks and jump timing.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tier 2: Intermediate -->
+        <h3 style="color: #38bdf8; margin: 32px 0 16px; font-size: 1.35rem;">Tier 2: Intermediate Competitors (1250 – 1650 ELO)</h3>
+        <p style="color: #A6A29A; margin-bottom: 16px;">Disciplined club-level sparring. These bots calculate wall parity and punish unforced wall spending.</p>
+        <div class="table-wrap" style="margin-bottom: 36px;">
+          <table class="editorial-table">
+            <thead>
               <tr>
-                <td><strong>Martin</strong><br /><em>The Friendly Dad</em></td>
-                <td><strong>800</strong><br />Beginner</td>
-                <td>250 sims</td>
-                <td>40 ms</td>
-                <td>0.50 (High)</td>
-                <td>Low wall frequency (0.15). Plays for fun, advances his orb straightforwardly, and leaves clear tactical openings for newcomers learning jump rules.</td>
+                <th scope="col">Bot</th>
+                <th scope="col">Rating</th>
+                <th scope="col">Playouts</th>
+                <th scope="col">Budget</th>
+                <th scope="col">Signature Style</th>
               </tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>Mateo</strong><br><em>The Street Striker</em></td><td><strong>1250</strong></td><td>800 sims</td><td>80 ms</td><td>Aggressive tempo pusher; forces immediate jump confrontations.</td></tr>
+              <tr><td><strong>Bram</strong><br><em>The Bricklayer</em></td><td><strong>1300</strong></td><td>900 sims</td><td>90 ms</td><td>Constructs thick defensive perimeter walls early.</td></tr>
+              <tr><td><strong>Zara</strong><br><em>The Pulse DJ</em></td><td><strong>1320</strong></td><td>950 sims</td><td>95 ms</td><td>High-tempo rhythm changes between wall placement and orb sprints.</td></tr>
+              <tr><td><strong>Archimedes</strong><br><em>The Silent Scholar</em></td><td><strong>1380</strong></td><td>1,000 sims</td><td>100 ms</td><td>Geometric efficiency; excels at equilateral corridor construction.</td></tr>
+              <tr><td><strong>Fiona</strong><br><em>The Forest Warden</em></td><td><strong>1440</strong></td><td>1,000 sims</td><td>100 ms</td><td>Channels opponents into long outer-flank detours.</td></tr>
+              <tr><td><strong>Nelson</strong><br><em>The Aggressive Challenger</em></td><td><strong>1450</strong></td><td>1,000 sims</td><td>100 ms</td><td>Relentless frontal pressure; cuts off central jump lanes.</td></tr>
+              <tr><td><strong>Dmitri</strong><br><em>The Iron Welder</em></td><td><strong>1480</strong></td><td>1,100 sims</td><td>110 ms</td><td>Locks down baseline exits with rigid horizontal barriers.</td></tr>
+              <tr><td><strong>Layla</strong><br><em>High-Energy Tactician</em></td><td><strong>1520</strong></td><td>1,200 sims</td><td>120 ms</td><td>Blends fast race tactics with opportunistic cross-cuts.</td></tr>
+              <tr><td><strong>Vex</strong><br><em>The Maze Trickster</em></td><td><strong>1550</strong></td><td>1,300 sims</td><td>130 ms</td><td>Constructs serpentine S-curves that test opponent patience.</td></tr>
+              <tr><td><strong>Dante</strong><br><em>The Charismatic Duelist</em></td><td><strong>1560</strong></td><td>1,350 sims</td><td>135 ms</td><td>Baiting specialist; leaves pseudo-openings to waste enemy walls.</td></tr>
+              <tr><td><strong>Mei-Ling</strong><br><em>The Origami Theorist</em></td><td><strong>1600</strong></td><td>1,400 sims</td><td>140 ms</td><td>Elegant folding labyrinths; balances wall conservation with board control.</td></tr>
+              <tr><td><strong>Amara</strong><br><em>The Rhythm Strategist</em></td><td><strong>1640</strong></td><td>1,450 sims</td><td>145 ms</td><td>Calculates step differentials before investing every wall.</td></tr>
+              <tr><td><strong>Jamal</strong><br><em>The Calm Competitor</em></td><td><strong>1650</strong></td><td>1,500 sims</td><td>150 ms</td><td>Tournament veteran; zero wasted walls, immaculate tempo defense.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tier 3: Master -->
+        <h3 style="color: #fbbf24; margin: 32px 0 16px; font-size: 1.35rem;">Tier 3: Master Tacticians (1750 – 2400 ELO)</h3>
+        <p style="color: #A6A29A; margin-bottom: 16px;">National-level depth. Computes thousands of rollouts per move with minimal to zero randomness.</p>
+        <div class="table-wrap" style="margin-bottom: 36px;">
+          <table class="editorial-table">
+            <thead>
               <tr>
-                <td><strong>Elias</strong><br /><em>The Eager Student</em></td>
-                <td><strong>1100</strong><br />Beginner</td>
-                <td>600 sims</td>
-                <td>60 ms</td>
-                <td>0.15 (Moderate)</td>
-                <td>Moderate wall frequency (0.35). A university board-game theorist who tests early opening fences and punishes basic one-move overlooks.</td>
+                <th scope="col">Bot</th>
+                <th scope="col">Rating</th>
+                <th scope="col">Playouts</th>
+                <th scope="col">Budget</th>
+                <th scope="col">Signature Style</th>
               </tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>Gideon</strong><br><em>Clockwork Cartographer</em></td><td><strong>1750</strong></td><td>1,800 sims</td><td>180 ms</td><td>Clockwork precision in wall-parity counting and endgame path locking.</td></tr>
+              <tr><td><strong>Sora</strong><br><em>The Wind Calligrapher</em></td><td><strong>1840</strong></td><td>2,000 sims</td><td>200 ms</td><td>Fluid positional shifts; maneuvers around defensive blocks seamlessly.</td></tr>
+              <tr><td><strong>Marcus</strong><br><em>The Seasoned Master</em></td><td><strong>1900</strong></td><td>2,200 sims</td><td>200 ms</td><td>Suffocating multi-wall tunnels; exploits 1-tempo leads ruthlessly.</td></tr>
+              <tr><td><strong>Samira</strong><br><em>The Oasis Architect</em></td><td><strong>1920</strong></td><td>2,300 sims</td><td>210 ms</td><td>Deep branch pruning; master of the 4-corner funnel trap.</td></tr>
+              <tr><td><strong>Torstein</strong><br><em>The Frost Bastion</em></td><td><strong>2020</strong></td><td>2,600 sims</td><td>220 ms</td><td>Impenetrable baseline defense; forces opponents into 15+ step detours.</td></tr>
+              <tr><td><strong>Viktor</strong><br><em>The Master Analyst</em></td><td><strong>2100</strong></td><td>3,000 sims</td><td>240 ms</td><td>Grandmaster calculation; counts exact step parity across all 128 wall slots.</td></tr>
+              <tr><td><strong>Kofi</strong><br><em>The High-Speed Quant</em></td><td><strong>2120</strong></td><td>3,100 sims</td><td>250 ms</td><td>High-velocity algorithmic rollouts; exploits minor positional inaccuracies.</td></tr>
+              <tr><td><strong>Captain Diego</strong><br><em>The Solar Navigator</em></td><td><strong>2220</strong></td><td>3,200 sims</td><td>260 ms</td><td>Navigates narrow baseline openings with unerring accuracy.</td></tr>
+              <tr><td><strong>Hassan</strong><br><em>The Desert Falcon</em></td><td><strong>2300</strong></td><td>3,300 sims</td><td>280 ms</td><td>Rapid counter-strike walling whenever opponent commits early.</td></tr>
+              <tr><td><strong>Master Jin</strong><br><em>The Feline Sage</em></td><td><strong>2380</strong></td><td>3,400 sims</td><td>300 ms</td><td>Deep endgame lookahead; master of the forced zugzwang corridor.</td></tr>
+              <tr><td><strong>Achref</strong><br><em>The System Architect</em></td><td><strong>2400</strong></td><td>3,500 sims</td><td>1,000 ms</td><td>Full 1-second MCTS deliberation; pinpoints mathematically optimal wall placements.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tier 4: Grandmaster -->
+        <h3 style="color: #f43f5e; margin: 32px 0 16px; font-size: 1.35rem;">Tier 4: Grandmaster &amp; Super-Engine (2480 – 2900 ELO)</h3>
+        <p style="color: #A6A29A; margin-bottom: 16px;">The apex of corridor intelligence. Combines deep MCTS simulations with exact BFS graph solving.</p>
+        <div class="table-wrap" style="margin-bottom: 36px;">
+          <table class="editorial-table">
+            <thead>
               <tr>
-                <td><strong>Nelson</strong><br /><em>The Aggressive Challenger</em></td>
-                <td><strong>1450</strong><br />Intermediate</td>
-                <td>1,000 sims</td>
-                <td>100 ms</td>
-                <td>0.10 (Low)</td>
-                <td>Direct, relentless pressure. Loves dropping aggressive frontal walls to disrupt your rhythm and force early corridor detours.</td>
+                <th scope="col">Bot</th>
+                <th scope="col">Rating</th>
+                <th scope="col">Playouts</th>
+                <th scope="col">Budget</th>
+                <th scope="col">Signature Style</th>
               </tr>
-              <tr>
-                <td><strong>Jamal</strong><br /><em>The Calm Competitor</em></td>
-                <td><strong>1650</strong><br />Intermediate</td>
-                <td>1,500 sims</td>
-                <td>150 ms</td>
-                <td>0.05 (Minimal)</td>
-                <td>Experienced club player who favors surgical, high-efficiency walls and clean tempo calculation over reckless wall races.</td>
-              </tr>
-              <tr>
-                <td><strong>Marcus</strong><br /><em>The Seasoned Master</em></td>
-                <td><strong>1900</strong><br />Master</td>
-                <td>2,200 sims</td>
-                <td>200 ms</td>
-                <td>0.00 (Zero)</td>
-                <td>Pure deterministic search. Builds suffocating multi-wall corridors and exploits wall-parity imbalances in the second half of the match.</td>
-              </tr>
-              <tr>
-                <td><strong>Viktor</strong><br /><em>The Master Analyst</em></td>
-                <td><strong>2100</strong><br />Master</td>
-                <td>3,000 sims</td>
-                <td>240 ms</td>
-                <td>0.00 (Zero)</td>
-                <td>Grandmaster theorist with deep branching calculation. Counts exact endgame step differentials and locks down side-file escape routes.</td>
-              </tr>
-              <tr>
-                <td><strong>Achref</strong><br /><em>The System Architect</em></td>
-                <td><strong>2400</strong><br />Master</td>
-                <td>3,500 sims</td>
-                <td>1,000 ms</td>
-                <td>0.00 (Zero)</td>
-                <td>The pinnacle DuoOrb architect persona. Runs full-second deep MCTS rollouts to uncover hidden counter-traps and mathematically optimal wall geometry.</td>
-              </tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>Sterling</strong><br><em>The Neon Tycoon</em></td><td><strong>2480</strong></td><td>3,800 sims</td><td>500 ms</td><td>Monopolizes board space; starves opponent of legal wall slots.</td></tr>
+              <tr><td><strong>Sensei Kenzo</strong><br><em>The Undefeated Shadow</em></td><td><strong>2580</strong></td><td>4,200 sims</td><td>600 ms</td><td>Silent, flawless defensive wall timing; never commits unprovoked.</td></tr>
+              <tr><td><strong>Dr. Valeria Vance</strong><br><em>The Quantum Theorist</em></td><td><strong>2680</strong></td><td>4,600 sims</td><td>750 ms</td><td>Explores quantum-branching board states; anticipates opponent counters 6 turns ahead.</td></tr>
+              <tr><td><strong>NEXUS-9</strong><br><em>The Sub-Atomic AI Core</em></td><td><strong>2750</strong></td><td>5,000 sims</td><td>900 ms</td><td>Pure machine calculation; exact path evaluations across all grooved channels.</td></tr>
+              <tr><td><strong>Boba</strong><br><em>The Fluffball Harbinger</em></td><td><strong>2820</strong></td><td>5,500 sims</td><td>1,000 ms</td><td>Deceptively playful exterior; punishes the slightest positional slackness.</td></tr>
+              <tr><td><strong>Milo</strong><br><em>The Unbeatable Void Kitten</em></td><td><strong>2900</strong></td><td>6,000 sims</td><td>1,200 ms</td><td>The supreme DuoOrb boss. Alpha-beta endgame lookup with zero tolerance for mistakes.</td></tr>
             </tbody>
           </table>
         </div>
@@ -238,11 +303,11 @@
         <div class="faq-grid">
           <div class="faq-item">
             <h3>Are DuoOrb bots free?</h3>
-            <p>Yes. All 7 named AI personalities plus the Easy 1200, Normal 1500 and Hard 1800 calibration tiers are 100% free and work offline.</p>
+            <p>Yes. All 39 named AI bot personalities across Beginner, Intermediate, Master, and Grandmaster tiers are 100% free and work offline.</p>
           </div>
           <div class="faq-item">
             <h3>Which bot should a beginner start with?</h3>
-            <p>Start with Martin (800), then Elias (1100), then Nelson (1450). Each step up adds simulation budget and removes randomness. Full rules: <a href="/rules.html">Rules</a>.</p>
+            <p>Start with Barnaby (450), Martin (800), or Pip (950). Each step up adds simulation depth and introduces strategic wall placements. Full rules: <a href="/rules.html">Rules</a>.</p>
           </div>
           <div class="faq-item">
             <h3>How does Engine Review grade moves?</h3>
@@ -255,9 +320,10 @@
       <div class="container" style="max-width: 640px;">
         <span class="section-tag">Your Move</span>
         <h2 style="margin-bottom: 16px;">Challenge a sparring bot now — free, no account.</h2>
-        <p class="lead" style="margin: 0 auto 32px;">Pick from Martin (800) to Achref (2400). Start gentle, climb fast.</p>
+        <p class="lead" style="margin: 0 auto 32px;">Pick from Barnaby (450) to Milo (2900). Start gentle, climb fast.</p>
         <div class="hero-actions" style="justify-content: center;">
-          <a href="/?play=1" class="btn-pill btn-pill-primary">Play Now</a>
+          <a href="/?play=1" class="btn-pill btn-pill-primary">Play Online Free</a>
+          <a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" target="_blank" rel="noopener noreferrer" class="btn-pill btn-pill-secondary">Get on Google Play ↗</a>
         </div>
       </div>
     </section>
@@ -267,29 +333,45 @@
       <div class="footer-top">
         <div class="footer-brand">
           <a href="/" class="brand-link" aria-label="DuoOrb Home"><img src="/icons/icon-192.png" class="brand-logo-img" alt="DuoOrb Logo" width="34" height="34" /><span class="brand-text">DuoOrb</span></a>
-          <p>DuoOrb AI lab: 7 free bots and Rust MCTS move grading.</p>
+          <p>DuoOrb AI lab: 39 free bots and Rust MCTS move grading.</p>
+          <div class="footer-social-links" aria-label="Official Social Channels">
+            <a href="https://www.facebook.com/Duoorb" target="_blank" rel="noopener noreferrer" class="footer-social-link" aria-label="DuoOrb on Facebook" title="Facebook @Duoorb">
+              <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+            </a>
+            <a href="https://www.instagram.com/DuoOrb" target="_blank" rel="noopener noreferrer" class="footer-social-link" aria-label="DuoOrb on Instagram" title="Instagram @DuoOrb">
+              <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+            </a>
+            <a href="https://www.tiktok.com/@DuoOrb" target="_blank" rel="noopener noreferrer" class="footer-social-link" aria-label="DuoOrb on TikTok" title="TikTok @DuoOrb">
+              <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>
+            </a>
+            <a href="https://www.youtube.com/@DuoOrb" target="_blank" rel="noopener noreferrer" class="footer-social-link" aria-label="DuoOrb on YouTube" title="YouTube @DuoOrb">
+              <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+            </a>
+          </div>
         </div>
         <div class="footer-col">
-          <h4>Play</h4>
+          <h3 class="footer-heading">Play</h3>
           <ul>
+            <li><a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" target="_blank" rel="noopener noreferrer">Google Play Store ↗</a></li>
             <li><a href="/?play=1">Play Now</a></li>
             <li><a href="/">Home Overview</a></li>
             <li><a href="/rules.html#clocks">Time Controls &amp; Clocks</a></li>
           </ul>
         </div>
         <div class="footer-col">
-          <h4>Learn &amp; Master</h4>
+          <h3 class="footer-heading">Learn &amp; Master</h3>
           <ul>
             <li><a href="/rules.html">Complete Rules</a></li>
             <li><a href="/strategy.html">Strategy &amp; Openings</a></li>
             <li><a href="/bots-and-analysis.html">AI Bots &amp; Analysis</a></li>
-            <li><a href="/#viral-guide">Two Balls &amp; Walls Game</a></li>
+            <li><a href="/blog/">Strategy Blog</a></li>
+            <li><a href="/what-is-the-game-with-two-balls-and-walls.html">Two Balls &amp; Walls Game</a></li>
           </ul>
         </div>
         <div class="footer-col">
-          <h4>Mobile &amp; Studio</h4>
+          <h3 class="footer-heading">Mobile &amp; Studio</h3>
           <ul>
-            <li><a href="/#mobile">Play on Your Phone</a></li>
+            <li><a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" target="_blank" rel="noopener noreferrer">Download on Google Play</a></li>
             <li><a href="/about.html">About DuoOrb &amp; AS Digital</a></li>
             <li><a href="/contact.html">Support &amp; Contact</a></li>
           </ul>

@@ -377,7 +377,7 @@ pub fn generate_logical_actions(
 
                         let is_funnel_shield = is_parallel_funnel_wall(r, c, is_h, mover_corridor);
                         let mut is_corridor_squeeze = false;
-                        if max_opp_delta == 0 && state.mode != "2p" {
+                        if max_opp_delta == 0 {
                             for (_, opp, _, opp_corridor) in &opps {
                                 let opp_g = GoalMask::from_goal_and_mode(opp.goal_direction, &state.mode);
                                 let (_, new_opp_corridor) = spec_masks.shortest_path_corridor(
@@ -394,44 +394,33 @@ pub fn generate_logical_actions(
                         }
 
                         // Rule B: Candidate walls must actually delay an active opponent, defend against a threat,
-                        // or build a proactive funnel / corridor squeeze in variant modes.
+                        // or build a proactive funnel / corridor squeeze setup wall.
                         // At the root we deliberately keep every legal wall so the
                         // search cannot prune a strategically strong setup wall.
                         if !include_all_walls {
                             if !is_defensive_counter {
-                                if state.mode == "2p" {
-                                    if max_opp_delta <= 0 {
-                                        continue;
-                                    }
-                                    if net_gain < 0 {
-                                        continue;
-                                    }
+                                let is_proactive_wall = (is_funnel_shield || is_corridor_squeeze) && my_delta == 0;
+                                if max_opp_delta <= 0 && !is_proactive_wall {
+                                    continue;
+                                }
+                                if net_gain < 0 && !is_proactive_wall {
+                                    continue;
+                                }
 
-                                    // Opening wall squandering prevention:
-                                    // On an open board (walls <= 2 and mover far from goal >= 6),
-                                    // casual walls that only inflict <= 2 delay waste valuable walls and tempo.
-                                    let is_opening = state.walls.len() <= 2 && mover_dist >= 6;
-                                    if is_opening && max_opp_delta <= 2 {
-                                        continue;
-                                    }
-                                } else {
-                                    // Variant modes (center2, center3, 4p, race2, race3, race4):
-                                    // Allow delay walls, defensive counters, and zero-self-harm funnel/squeeze walls.
-                                    let is_proactive_wall = (is_funnel_shield || is_corridor_squeeze) && my_delta == 0;
-                                    if max_opp_delta <= 0 && !is_proactive_wall {
-                                        continue;
-                                    }
-                                    if net_gain < 0 && !is_proactive_wall {
-                                        continue;
-                                    }
+                                // Opening wall squandering prevention:
+                                // On an open board (walls <= 2 and mover far from goal >= 6),
+                                // only drop casual walls if they are NOT a proactive funnel or corridor squeeze.
+                                let is_opening = state.walls.len() <= 2 && mover_dist >= 6;
+                                if is_opening && max_opp_delta <= 2 && !is_proactive_wall {
+                                    continue;
                                 }
                             }
                         }
 
                         let corridor_bonus = if touches_corridor || touches_mover_corridor { 0.10 } else { 0.0 };
                         let counter_bonus = if is_defensive_counter { 0.45 } else { 0.0 };
-                        let funnel_bonus = if is_funnel_shield && my_delta == 0 && state.mode != "2p" { 0.25 } else { 0.0 };
-                        let squeeze_bonus = if is_corridor_squeeze && my_delta == 0 && state.mode != "2p" { 0.15 } else { 0.0 };
+                        let funnel_bonus = if is_funnel_shield && my_delta == 0 { 0.25 } else { 0.0 };
+                        let squeeze_bonus = if is_corridor_squeeze && my_delta == 0 { 0.15 } else { 0.0 };
                         let leader_bonus = if state.mode != "2p" && leader_delta > 0 {
                             (leader_delta as f64) * 0.10
                         } else {

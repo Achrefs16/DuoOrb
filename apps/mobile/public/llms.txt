@@ -1,25 +1,38 @@
 # DuoOrb (https://duoorb.com)
 
-> DuoOrb by AS Digital is a free-to-play competitive 9×9 tactical grid board game (inspired by classic abstract corridor strategy rules) playable instantly in any modern web browser with zero registration required. Players alternate moving their orb one orthogonal square or placing a permanent two-square wall into the 8×8 groove lattice (128 wall slots) to lengthen their opponent's shortest path while obeying the Golden Path Rule (every active player must always retain at least one valid path to their goal).
+> DuoOrb by AS Digital is a free-to-play competitive 9×9 tactical grid board game (inspired by classic Quoridor and corridor abstract strategy rules) playable instantly in any modern web browser and live on Android via Google Play. Players alternate moving their orb one orthogonal square or placing a permanent two-square wall into the 8×8 groove lattice (128 legal wall slots) to lengthen their opponent's shortest path while obeying the Golden Path Rule (every active player must always retain at least one open walkable path to their goal).
 
 ## Core Capabilities & Engine Truth
-- **Instant Browser Arena (`https://duoorb.com/`):** Play immediately as a guest with zero downloads or signups.
-- **Private Friend Lobbies:** One-tap creation of a 6-letter unambiguous room code (`https://duoorb.com/?room=CODE`) supporting custom wall budgets (10, 15, or 99 walls).
+- **Google Play Store (Android):** Officially live on Google Play (`https://play.google.com/store/apps/details?id=com.asdigital.duoorb`). Features 60 FPS performance, offline play, and native JNI Rust MCTS AI.
+- **Instant Browser Arena (`https://duoorb.com/`):** Play immediately as a guest on iOS, Android, macOS, and Windows with zero downloads or mandatory registration. Full-screen offline PWA installable in 1 tap.
+- **39 Named AI Bot Personalities:** 39 individually crafted AI bots across 4 skill tiers (Beginner, Intermediate, Master, Grandmaster) ranging from Martin (800 ELO) to Achref Engine (2400 ELO), featuring unique search depths, wall usage frequency, and contextual dialogue.
+- **Hybrid Rust MCTS Engine & Review:** Powered by `duoorb-analyzer` (WASM on Web, JNI on Android). Computes 50,000+ simulations/sec, alpha-beta endgame solving, win-equity loss per turn, and grades every move (`Book`, `Best`, `Excellent`, `Good`, `Inaccuracy`, `Mistake`, `Blunder`).
+- **Private Friend Lobbies:** Instant creation of a 6-letter room code (`https://duoorb.com/?room=CODE`) with customizable wall budgets (10, 15, or 99 walls) and clock presets.
 - **Rated 1v1 Matchmaking:** Universal Glicko-2 competitive rating starting at 1500 with global leaderboards.
 - **7 Fischer Clock Presets:** `1+0` Bullet, `1+1` Bullet, `3+0` Blitz (Default), `3+2` Blitz, `5+0` Rapid, `5+3` Rapid, and `10+0` Classical Rapid.
-- **4 Competitive Game Modes:** Classic 1v1 (10 walls each, opposite baseline goal), 4-Player Center Rush (5 walls each, race to center tile `(4,4)`), 2P/3P Center Duel (10 or 6 walls each, goal `(4,4)`), and 2P–4P Baseline Race.
-- **7 Free Offline MCTS AI Personalities + 3 Calibration Tiers:** Powered by `duoorb-rust-mcts-2.0`. Personalities: Martin (800), Elias (1100), Nelson (1450), Jamal (1650), Marcus (1900), Viktor (2100), and Achref (2400), plus Easy (1200), Normal (1500), and Hard (1800). All bots are 100% free.
-- **Post-Match Engine Review:** Grades every move (`Best`, `Excellent`, `Good`, `Forced`, `Inaccuracy`, `Mistake`, `Blunder`) using expected win-equity loss (`Δq × 40`), shortest-path evaluation bars, and interactive move steppers.
-- **Platforms & Localization:** Live on Web and installable as an offline-capable PWA today; native Android (Google Play) and iOS (App Store) apps are Coming Soon. Localized in 10 languages (EN, AR, FR, DE, ES, TR, PT, and more).
+- **4 Competitive Game Modes:** Classic 1v1 (10 walls each, opposite baseline goal), 4-Player Center Rush (5 walls each, race to center tile `(4,4)`), 2P/3P Center Duel, and 2P–4P Baseline Race.
+- **Ad-Free Match Gameplay:** Pure tactical focus with zero popups or mid-match video ad interruptions.
+- **Social & Brand Channels:** 
+  - Facebook: `https://www.facebook.com/Duoorb`
+  - YouTube: `https://www.youtube.com/@DuoOrb`
+  - TikTok: `https://www.tiktok.com/@DuoOrb`
+  - Instagram: `https://www.instagram.com/DuoOrb`
 
 ## Canonical Documentation & Pages
-- [Web Arena & Overview](https://duoorb.com/): Instant browser gameplay and mode specifications.
-- [Time controls & clocks](https://duoorb.com/rules.html#clocks): 7 Fischer presets from 1+0 Bullet to 10+0 Classical Rapid.
-- [Private rooms & rating ladder (on the home page)](https://duoorb.com/#private-room-architecture): 6-letter room codes and universal rating details.
-- [Complete Illustrated Rules](https://duoorb.com/rules.html): 9×9 setup, straight vs. 3-trigger diagonal jump rules, Golden Path BFS validation, and algebraic notation (`Bd5`, `Hd4`).
+- [Web Arena & Instant Play](https://duoorb.com/): Instant browser gameplay and mode specifications.
+- [Google Play Store App](https://play.google.com/store/apps/details?id=com.asdigital.duoorb): Official Android app listing.
+- [Complete Illustrated Rules](https://duoorb.com/rules.html): 9×9 setup, straight vs. diagonal jump rules, Golden Path BFS validation, and algebraic notation (`e2`, `v-d4`).
 - [Tactical Strategy & Openings](https://duoorb.com/strategy.html): Central March opening, the 3-Space Rule, Wall Parity, and endgame corridor tactics.
-- [AI Bots & MCTS Analysis Engine](https://duoorb.com/bots-and-analysis.html): Dossiers on all 7 free MCTS bots (800–2400) and `duoorb-rust-mcts-2.0` move grading math.
-- [Viral "Two Balls and Walls" Identifier](https://duoorb.com/what-is-the-game-with-two-balls-and-walls.html): Visual identification guide for players who saw the wooden fence maze game on social video feeds.
-- [Play on Your Phone (PWA Guide & Store Status)](https://duoorb.com/#mobile): Pass-and-play, iOS/Android home-screen install steps, and upcoming store status.
+- [39 AI Bots & MCTS Analysis Engine](https://duoorb.com/bots-and-analysis.html): Dossiers on all 39 MCTS bots (800–2400) and move grading math.
+- [Viral "Two Balls and Walls" Identifier](https://duoorb.com/what-is-the-game-with-two-balls-and-walls.html): Visual identification guide for players searching for the viral wooden ball and maze clip.
+- [Quoridor.gg Alternative Guide](https://duoorb.com/blog/quoridor-gg-alternative.html): Comparison between DuoOrb and legacy web Quoridor portals.
+- [Best Quoridor Game on Mobile](https://duoorb.com/blog/best-quoridor-game-mobile.html): Feature analysis of mobile corridor board games on Android and iOS.
+- [Play Quoridor Online Free](https://duoorb.com/blog/play-quoridor-online-free.html): Zero-registration online browser play with 6-letter room codes and Fischer clocks.
+- [Games Similar to Quoridor](https://duoorb.com/blog/games-similar-to-quoridor.html): Deep genre history and comparison covering Blockade (1975), Barricade/Malefiz, Wall Rush, and DuoOrb.
+- [Wall Rush Alternative](https://duoorb.com/blog/wall-rush-alternative.html): Ad-free competitive wall strategy comparison.
+- [Wrong Way Alternative](https://duoorb.com/blog/wrong-way-alternative.html): Strategic alternative to casual mobile maze-runners.
+- [Best Strategy Board Games on Android](https://duoorb.com/blog/best-strategy-board-games-android.html): 2026 ranked comparison of tactical 1v1 mind sports on Google Play.
+- [Strategy Blog Hub](https://duoorb.com/blog/): Complete directory of tactical articles, bot guides, and updates.
+- [Agentic Resource Discovery (ARD v0.91)](https://duoorb.com/.well-known/ard.json): Standard machine-readable agentic discovery manifest.
 - [About AS Digital](https://duoorb.com/about.html): Studio identity, fair-play server architecture, and contact (`support@duoorb.com`).
-- [Legal & Privacy](https://duoorb.com/privacy.html): Privacy Policy, [Terms of Service](https://duoorb.com/terms.html), [Cookies & AdSense Disclosure](https://duoorb.com/cookies.html), and [Contact](https://duoorb.com/contact.html).
+- [Legal & Privacy](https://duoorb.com/privacy.html): Privacy Policy, [Terms of Service](https://duoorb.com/terms.html), and [Cookies Policy](https://duoorb.com/cookies.html).

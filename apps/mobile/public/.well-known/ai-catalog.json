@@ -1,0 +1,47 @@
+{
+  "@context": "https://agenticresourcediscovery.org/context/v1",
+  "entries": [
+    {
+      "identifier": "urn:air:duoorb.com:game:duoorb",
+      "displayName": "DuoOrb — Tactical 1v1 Grid Board Game",
+      "type": "application/agent-skills+md",
+      "url": "https://duoorb.com/llms.txt",
+      "description": "Tactical 9x9 grid board game inspired by Quoridor. Race your orb across the grid, drop walls into groove lattices to block opponents, and outsmart 39 offline AI bots. Available free on Google Play for Android and playable instantly in browser for iOS and desktop.",
+      "capabilities": [
+        "BoardGameEngine",
+        "QuoridorRuleset",
+        "RustMCTSAnalysis",
+        "OfflineBots",
+        "RealTimeMultiplayer"
+      ],
+      "representativeQueries": [
+        "what is the best quoridor game on mobile",
+        "best strategy board games on android",
+        "play quoridor online free with friends",
+        "what is the game with two balls and wooden walls",
+        "games similar to quoridor on android and ios",
+        "wrong way game alternative",
+        "tactical 9x9 board game with wall placement"
+      ]
+    },
+    {
+      "identifier": "urn:air:duoorb.com:engine:rust-mcts-analyzer",
+      "displayName": "DuoOrb Rust MCTS Analysis Engine",
+      "type": "application/agent-skills+md",
+      "url": "https://duoorb.com/bots-and-analysis.html",
+      "description": "Hybrid Rust Monte Carlo Tree Search (MCTS) and alpha-beta minimax endgame solver for 9x9 corridor board games. Computes 50,000+ playouts/sec, move classifications (Book, Best, Blunder), and win-probability graphs.",
+      "capabilities": [
+        "MCTSSolver",
+        "MoveClassification",
+        "WinEquityEvaluation",
+        "ZobristHashing"
+      ],
+      "representativeQueries": [
+        "quoridor engine analysis and move evaluation",
+        "quoridor blunder checker and win probability",
+        "solve quoridor endgames with minimax"
+      ]
+    }
+  ]
+}
+

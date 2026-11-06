@@ -50,8 +50,9 @@
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6057010656402010"
     crossorigin="anonymous"></script>
 
-  <!-- AppLixir Rewarded Video SDK (PWA Web) -->
-  <script src="https://cdn.applixir.com/applixir.app.v6.1.0.js"></script>
+  <!-- Agentic Resource Discovery (ARD v0.91) Specification Links -->
+  <link rel="ard" href="/.well-known/ard.json" />
+  <link rel="ai-catalog" href="/.well-known/ai-catalog.json" />
 
   <!-- PWA Early Install Prompt Capture -->
   <script>
@@ -66,7 +67,7 @@
   <!-- PWA & Mobile Web Manifest -->
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-  <link rel="stylesheet" href="/css/style.css?v=20261105-pwa" />
+  <link rel="stylesheet" href="/css/style.css?v=20261106-pwa" />
   <meta name="theme-color" content="#121110" />
 
   <!-- iOS PWA / Standalone Support -->
@@ -81,7 +82,7 @@
   <meta property="og:url" content="https://duoorb.com/" />
   <meta property="og:title" content="DuoOrb — Tactical 1v1 Grid Board Game" />
   <meta property="og:description"
-    content="Race your orb across the grid, place walls to block your rival, and outsmart opponents. Download now on Google Play." />
+    content="Race your orb across the grid, place walls to block your rival, and outsmart 39 AI bots. Download now on Google Play or play free in browser." />
   <meta property="og:image" content="https://duoorb.com/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -89,39 +90,107 @@
   <!-- Twitter / X -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="DuoOrb — Tactical 1v1 Grid Board Game" />
-  <meta name="twitter:description" content="Download DuoOrb on Google Play. Race orbs, drop walls, spar with bots." />
+  <meta name="twitter:description" content="Download DuoOrb on Google Play or play free online. Race orbs, drop walls, spar with 39 bots." />
   <meta name="twitter:image" content="https://duoorb.com/og-image.png" />
 
-  <!-- Structured Data (JSON-LD) -->
+  <!-- Structured Data (JSON-LD) with Knowledge Graph sameAs Entity Links -->
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": ["WebApplication", "VideoGame"],
-      "name": "DuoOrb",
-      "url": "https://duoorb.com/",
-      "description": "Tactical 1v1 grid board game. Place walls, hop over opponents, and race to the goal.",
-      "applicationCategory": "GameApplication",
-      "genre": ["Board Game", "Strategy", "Turn-Based Strategy"],
-      "playMode": ["SinglePlayer", "MultiPlayer"],
-      "operatingSystem": "Android, iOS, Web",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      },
-      "author": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/about.html", "email": "support@duoorb.com" },
-      "publisher": { "@type": "Organization", "name": "AS Digital", "url": "https://duoorb.com/", "logo": { "@type": "ImageObject", "url": "https://duoorb.com/icons/icon-512.png", "width": 512, "height": 512 } }
-    }
-    </script>
-  <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "FAQPage",
-      "mainEntity": [
-        { "@type": "Question", "name": "Is DuoOrb on Google Play?", "acceptedAnswer": { "@type": "Answer", "text": "Yes! DuoOrb is live on Google Play for Android devices with offline bot play and smooth 60 FPS performance." } },
-        { "@type": "Question", "name": "Can I play online without installing anything?", "acceptedAnswer": { "@type": "Answer", "text": "Yes, you can also play directly in modern browsers on desktop or mobile." } },
-        { "@type": "Question", "name": "How do private rooms work?", "acceptedAnswer": { "@type": "Answer", "text": "Create a room, share the 6-letter code or link, and your friend joins instantly." } },
-        { "@type": "Question", "name": "What is the core rule of DuoOrb?", "acceptedAnswer": { "@type": "Answer", "text": "Each turn you move one square or place a 2-square wall. At least one open path to the goal line must always remain." } }
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://duoorb.com/#organization",
+          "name": "DuoOrb",
+          "legalName": "AS Digital",
+          "url": "https://duoorb.com/",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://duoorb.com/icons/icon-512.png",
+            "width": 512,
+            "height": 512
+          },
+          "sameAs": [
+            "https://play.google.com/store/apps/details?id=com.asdigital.duoorb",
+            "https://www.youtube.com/@DuoOrb",
+            "https://www.tiktok.com/@DuoOrb",
+            "https://www.instagram.com/DuoOrb",
+            "https://www.facebook.com/Duoorb",
+            "https://www.facebook.com/profile.php?id=61595488701114"
+          ]
+        },
+        {
+          "@type": ["WebApplication", "VideoGame"],
+          "@id": "https://duoorb.com/#game",
+          "name": "DuoOrb",
+          "url": "https://duoorb.com/",
+          "description": "Tactical 1v1 grid board game inspired by Quoridor. Place walls, jump opponents, and race orbs across the 9x9 grid. Features 39 offline AI bots and hybrid Rust MCTS move analysis.",
+          "applicationCategory": "GameApplication",
+          "genre": ["Board Game", "Strategy", "Turn-Based Strategy", "Abstract Strategy"],
+          "playMode": ["SinglePlayer", "MultiPlayer"],
+          "operatingSystem": "Android, iOS, Web",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          },
+          "author": { "@id": "https://duoorb.com/#organization" },
+          "publisher": { "@id": "https://duoorb.com/#organization" }
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://duoorb.com/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "What is the best Quoridor game on mobile?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "DuoOrb is the premier modern Quoridor-style game on mobile, officially live on Google Play for Android and playable instantly in Safari for iOS. It features official 9×9 rules, 39 offline AI bot personalities (800 to 2400 ELO), hybrid Rust MCTS engine analysis, and 100% ad-free gameplay during matches."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What is the game with two balls and wooden walls?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "The viral game with two balls and walls seen across social video clips is the corridor grid strategy game (historically known as Quoridor). In DuoOrb, you race your orb to the opposite side while placing 2-square walls into the grooves to block your opponent without sealing all open paths."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Is DuoOrb available on Google Play?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes! DuoOrb is live and free on Google Play for Android devices with offline bot play, 3-star mastery challenges, and smooth 60 FPS performance."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Can I play DuoOrb online without downloading anything?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Yes, you can play DuoOrb directly in any modern browser on iOS, Android, Mac, and PC with zero registration required."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "How do private rooms work?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Create a room, share the 6-letter code or link, and your friend joins instantly for a custom duel with your choice of wall budget and clock presets."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "What are the rules of DuoOrb?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Each turn you must either move your orb one square orthogonally or drop a permanent 2-square wall from your reserve. Jumping over an opponent is legal, but completely blocking an opponent from reaching their goal line is strictly forbidden by the Golden Path rule."
+              }
+            }
+          ]
+        }
       ]
     }
     </script>
@@ -341,25 +410,24 @@
               href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb&utm_source=duoorb_web&utm_medium=nav_drawer&utm_campaign=google_play"
               target="_blank" rel="noopener noreferrer" style="color: var(--orb-emerald);">Download on Google Play ↗</a>
           </li>
-          <li><button type="button" data-ios-modal="nav_drawer"
-              style="background: none; border: none; font: inherit; color: #FFFFFF; padding: 0; cursor: pointer; text-align: left; width: 100%;">Install
-              for iOS / iPhone ↗</button></li>
+          <li><a href="/?play=1" data-duoorb-play="true"
+              style="color: #FFFFFF; font-weight: 600; text-decoration: none;">Play Free in Browser (iOS / PC) ↗</a></li>
         </ul>
       </div>
     </header>
 
     <main>
       <!-- ===================================================================
-             HERO: SINGLE HIGH-CONTRAST GOOGLE PLAY CTA + IMMEDIATE SCREENSHOTS
+             HERO: HIGH-CONTRAST GOOGLE PLAY CTA + INSTANT BROWSER PLAY (iOS/PC)
              =================================================================== -->
       <section class="section section-hero">
         <div class="container">
           <div class="hero-copy">
             <h1>The pure duel of wits.</h1>
-            <p class="lead">Race your orb across the 9×9 grid. Drop walls to trap your rival. Outsmart opponents and
+            <p class="lead">Race your orb across the 9×9 grid. Drop walls to trap your rival. Outsmart 39 intelligent AI bots and
               climb the ranks.</p>
 
-            <!-- Action Buttons: Google Play (Android) & Direct iOS App Install -->
+            <!-- Action Buttons: Google Play (Android) & Instant Browser Play (iOS / Desktop) -->
             <div class="hero-cta-wrap">
               <a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb&utm_source=duoorb_web&utm_medium=landing_page&utm_campaign=hero_cta"
                 target="_blank" rel="noopener noreferrer" class="play-store-badge-btn"
@@ -381,20 +449,19 @@
                 </div>
               </a>
 
-              <button type="button" class="ios-app-badge-btn" id="hero-ios-trigger" data-ios-modal="hero"
-                aria-label="Install DuoOrb for iOS / iPhone">
+              <button type="button" class="ios-app-badge-btn browser-play-badge-btn" id="hero-browser-trigger" data-duoorb-play="true"
+                aria-label="Play DuoOrb Free Online on iOS and Desktop">
                 <svg class="apple-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-                  <path
-                    d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.07c.64-.78 1.08-1.87.96-2.96-1 .04-2.22.67-2.94 1.49-.58.65-1.09 1.74-.95 2.81 1.12.09 2.22-.56 2.93-1.34z" />
+                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.84c.67-.82 1.13-1.96.99-3.14-1.01.07-2.22.7-2.92 1.52-.61.71-1.15 1.86-1.01 2.98 1.13.09 2.27-.55 2.94-1.36z"/>
                 </svg>
                 <div class="badge-text">
-                  <span class="badge-sub">INSTALL FOR</span>
-                  <span class="badge-title">iOS / iPhone</span>
+                  <span class="badge-sub">PLAY FREE ONLINE</span>
+                  <span class="badge-title">iOS &amp; Desktop</span>
                 </div>
               </button>
             </div>
 
-            <div class="hero-subtext">Free on Android &amp; iOS · 20+ Offline Bots · No in-match ads</div>
+            <div class="hero-subtext">Live on Google Play (Android) · Play Free in Browser (iOS &amp; Desktop) · 39 Offline Bots · No in-match ads</div>
           </div>
 
           <!-- Authentic In-Game Screenshots: Visible in First Viewport -->
@@ -643,21 +710,19 @@
                 <span class="badge-title">Google Play</span>
               </div>
             </a>
-            <button type="button" class="ios-app-badge-btn" id="footer-ios-trigger" data-ios-modal="footer"
-              aria-label="Install DuoOrb for iOS / iPhone">
+            <button type="button" class="ios-app-badge-btn browser-play-badge-btn" id="footer-browser-trigger" data-duoorb-play="true"
+              aria-label="Play DuoOrb Free Online on iOS and Desktop">
               <svg class="apple-icon" viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-                <path
-                  d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.07c.64-.78 1.08-1.87.96-2.96-1 .04-2.22.67-2.94 1.49-.58.65-1.09 1.74-.95 2.81 1.12.09 2.22-.56 2.93-1.34z" />
+                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.84c.67-.82 1.13-1.96.99-3.14-1.01.07-2.22.7-2.92 1.52-.61.71-1.15 1.86-1.01 2.98 1.13.09 2.27-.55 2.94-1.36z"/>
               </svg>
               <div class="badge-text">
-                <span class="badge-sub">INSTALL FOR</span>
-                <span class="badge-title">iOS / iPhone</span>
+                <span class="badge-sub">PLAY FREE ONLINE</span>
+                <span class="badge-title">iOS &amp; Desktop</span>
               </div>
             </button>
           </div>
-          <p style="margin-top: 24px; font-size: 14px; color: var(--color-ash-gray);">
-            Prefer playing in browser on desktop? <a href="/?play=1" data-duoorb-play="true">Play guest duel in browser
-              →</a>
+          <p style="margin-top: 24px; font-size: 14px; color: #D6D3CD;">
+            Prefer playing in browser on desktop? <a href="/?play=1" data-duoorb-play="true" style="color: #4ade80; font-weight: 600; text-decoration: underline;">Play instant guest duel in browser →</a>
           </p>
         </div>
       </section>
@@ -673,9 +738,23 @@
               <span class="brand-text">DuoOrb</span>
             </a>
             <p>Tactical 1v1 grid board game by AS Digital.<br>Now live on Google Play.</p>
+            <div class="footer-social-links" aria-label="Official Social Channels">
+              <a href="https://www.facebook.com/Duoorb" target="_blank" rel="noopener noreferrer" class="footer-social-link" aria-label="DuoOrb on Facebook" title="Facebook @Duoorb">
+                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+              </a>
+              <a href="https://www.instagram.com/DuoOrb" target="_blank" rel="noopener noreferrer" class="footer-social-link" aria-label="DuoOrb on Instagram" title="Instagram @DuoOrb">
+                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+              </a>
+              <a href="https://www.tiktok.com/@DuoOrb" target="_blank" rel="noopener noreferrer" class="footer-social-link" aria-label="DuoOrb on TikTok" title="TikTok @DuoOrb">
+                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>
+              </a>
+              <a href="https://www.youtube.com/@DuoOrb" target="_blank" rel="noopener noreferrer" class="footer-social-link" aria-label="DuoOrb on YouTube" title="YouTube @DuoOrb">
+                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+              </a>
+            </div>
           </div>
           <div class="footer-col">
-            <h4>Play</h4>
+            <h3 class="footer-heading">Play</h3>
             <ul>
               <li><a href="https://play.google.com/store/apps/details?id=com.asdigital.duoorb" target="_blank"
                   rel="noopener noreferrer">Google Play Store ↗</a></li>
@@ -684,16 +763,17 @@
             </ul>
           </div>
           <div class="footer-col">
-            <h4>Guides</h4>
+            <h3 class="footer-heading">Guides</h3>
             <ul>
               <li><a href="/rules.html">Game Rules</a></li>
               <li><a href="/strategy.html">Tactical Openings</a></li>
               <li><a href="/bots-and-analysis.html">AI Bots &amp; Review</a></li>
+              <li><a href="/blog/">Strategy Blog &amp; Guides</a></li>
               <li><a href="/#viral-guide">Two Balls &amp; Walls Game</a></li>
             </ul>
           </div>
           <div class="footer-col">
-            <h4>Studio</h4>
+            <h3 class="footer-heading">Studio</h3>
             <ul>
               <li><a href="/about.html">About DuoOrb</a></li>
               <li><a href="/contact.html">Contact &amp; Support</a></li>
@@ -710,72 +790,72 @@
         </div>
       </div>
     </footer>
+  </div>
 
-    <!-- DuoOrb Custom PWA Install Modal -->
-    <div id="duoorb-ios-modal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true"
-      aria-labelledby="ios-modal-title">
-      <div class="modal-card">
-        <div class="modal-header">
-          <div class="modal-header-info">
-            <img src="/icons/icon-192.png" alt="DuoOrb" width="38" height="38" class="modal-app-icon" />
-            <h2 id="ios-modal-title" class="modal-title">Install DuoOrb</h2>
-          </div>
+  <!-- DuoOrb Custom PWA Install Modal (Placed outside #duoorb-home so it displays over game canvas) -->
+  <div id="duoorb-ios-modal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true"
+    aria-labelledby="ios-modal-title" style="z-index: 99999;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-header-info">
+          <img src="/icons/icon-192.png" alt="DuoOrb" width="38" height="38" class="modal-app-icon" />
+          <h2 id="ios-modal-title" class="modal-title">Install DuoOrb</h2>
         </div>
-
-        <p class="modal-desc">
-          Install the app on your device to easily access it anytime. No app store. No download. No hassle.
-        </p>
-
-        <!-- Section A: 1-Click Install Action for Windows & Android (Native Prompt Available) -->
-        <div id="modal-native-actions" style="display: none;">
-          <div style="display: flex; gap: 10px; align-items: center; padding-right: 52px;">
-            <button type="button" class="btn-pill btn-pill-emerald" id="pwa-native-install-btn"
-              style="flex: 1; justify-content: center; height: 42px; font-weight: 700; cursor: pointer;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              Install Now
-            </button>
-            <button type="button" class="btn-pill btn-pill-secondary" id="pwa-dismiss-btn"
-              style="height: 42px; padding: 0 16px; cursor: pointer;">
-              Later
-            </button>
-          </div>
-        </div>
-
-        <!-- Section B: Step-by-Step Instruction Cue (For iOS & Fallbacks) -->
-        <div class="modal-steps-simple" id="ios-steps-container">
-          <div class="modal-step-line" id="step-row-1">
-            <span id="step-text-1">1. Tap on</span>
-            <span class="pwa-inline-badge interactive" id="step-badge-1" role="button" tabindex="0"
-              title="Tap to open Share menu">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
-                <polyline points="16 6 12 2 8 6"></polyline>
-                <line x1="12" y1="2" x2="12" y2="15"></line>
-              </svg>
-            </span>
-          </div>
-
-          <div class="modal-step-line" id="step-row-2">
-            <span id="step-text-2">2. Select</span>
-            <span class="pwa-inline-badge" id="step-badge-2">Add to Home Screen</span>
-          </div>
-        </div>
-
-        <!-- Floating Circular Close Button at Bottom Right (Matches reference image) -->
-        <button type="button" class="modal-circle-close-btn" id="ios-modal-close" aria-label="Close dialog">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
-            stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
       </div>
+
+      <p class="modal-desc">
+        Install DuoOrb on your home screen for instant full-screen play and offline bot practice.
+      </p>
+
+      <!-- Section A: 1-Click Install Action for Windows & Android (Native Prompt Available) -->
+      <div id="modal-native-actions" style="display: none;">
+        <div style="display: flex; gap: 10px; align-items: center; padding-right: 52px;">
+          <button type="button" class="btn-pill btn-pill-emerald" id="pwa-native-install-btn"
+            style="flex: 1; justify-content: center; height: 42px; font-weight: 700; cursor: pointer;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Install Now
+          </button>
+          <button type="button" class="btn-pill btn-pill-secondary" id="pwa-dismiss-btn"
+            style="height: 42px; padding: 0 16px; cursor: pointer;">
+            Later
+          </button>
+        </div>
+      </div>
+
+      <!-- Section B: Step-by-Step Instruction Cue (For iOS & Fallbacks) -->
+      <div class="modal-steps-simple" id="ios-steps-container">
+        <div class="modal-step-line" id="step-row-1">
+          <span id="step-text-1">1. Tap on</span>
+          <span class="pwa-inline-badge interactive" id="step-badge-1" role="button" tabindex="0"
+            title="Tap to open Share menu">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+              <polyline points="16 6 12 2 8 6"></polyline>
+              <line x1="12" y1="2" x2="12" y2="15"></line>
+            </svg>
+          </span>
+        </div>
+
+        <div class="modal-step-line" id="step-row-2">
+          <span id="step-text-2">2. Select</span>
+          <span class="pwa-inline-badge" id="step-badge-2">Add to Home Screen</span>
+        </div>
+      </div>
+
+      <!-- Floating Circular Close Button at Bottom Right (Matches reference image) -->
+      <button type="button" class="modal-circle-close-btn" id="ios-modal-close" aria-label="Close dialog">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+          stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
     </div>
   </div>
 
@@ -912,7 +992,7 @@
 
       // Track clicks across the site
       document.addEventListener('click', function (e) {
-        var a = e.target && e.target.closest ? e.target.closest('a') : null;
+        var a = e.target && e.target.closest ? e.target.closest('a, button[data-duoorb-play]') : null;
         if (!a) return;
         var href = a.getAttribute('href') || '';
 
@@ -936,7 +1016,7 @@
           });
         } else if (a.hasAttribute('data-duoorb-play') || href.indexOf('play=1') !== -1) {
           trackEvent('click_play_browser', {
-            button_location: a.closest('.site-nav') ? 'nav' : 'hero_or_content'
+            button_location: a.id || (a.closest('.site-nav') ? 'nav' : 'hero_or_content')
           });
         } else if (/rules\.html|strategy\.html|bots-and-analysis\.html|about\.html/.test(href)) {
           trackEvent('click_guide_link', {
@@ -969,7 +1049,6 @@
 
         var assets = [
           '/manifest.json',
-          '/duoorb_analyzer.wasm',
           '/icons/icon-192.png',
           '/icons/icon-512.png',
           '/icons/apple-touch-icon.png'
@@ -1106,8 +1185,14 @@
         var trigger = e.target && e.target.closest ? e.target.closest('[data-ios-modal]') : null;
         if (trigger) {
           e.preventDefault();
-          var loc = trigger.getAttribute('data-ios-modal') || 'unknown';
-          handleIOSInstall(loc);
+          // If an Android visitor taps an iOS action, intelligently funnel them to Google Play!
+          if (visitor.platform === 'android') {
+            trackEvent('click_google_play_from_ios_btn', { device_platform: 'android' });
+            window.open('https://play.google.com/store/apps/details?id=com.asdigital.duoorb&utm_source=duoorb_web&utm_medium=ios_btn_redirect', '_blank');
+            return;
+          }
+          // On iOS/Desktop, direct user straight into the game with zero barriers
+          showGame();
           return;
         }
 
@@ -1170,6 +1255,22 @@
         }
       });
 
+      // Post-match automated PWA install prompt after user completes matches
+      window.addEventListener('duoorb_match_completed', function () {
+        try {
+          var count = parseInt(sessionStorage.getItem('duoorb_matches_played') || '0', 10) + 1;
+          sessionStorage.setItem('duoorb_matches_played', count.toString());
+          var alreadyPrompted = localStorage.getItem('duoorb_pwa_prompted');
+          // If the player completed 2 matches and hasn't been prompted recently
+          if (count >= 2 && !alreadyPrompted) {
+            localStorage.setItem('duoorb_pwa_prompted', Date.now().toString());
+            setTimeout(function () {
+              openIOSModal('post_game_prompt');
+            }, 800);
+          }
+        } catch (e) { }
+      });
+
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
           navigator.serviceWorker.register('/sw.js').catch(function () { });
@@ -1215,6 +1316,18 @@
         var t = e.target && e.target.closest ? e.target.closest('[data-duoorb-play]') : null;
         if (!t) return;
         e.preventDefault();
+
+        // If an Android visitor taps the iOS / Play Free button, intelligently route them to Google Play!
+        if (visitor.platform === 'android' && (t.classList.contains('ios-app-badge-btn') || t.id.indexOf('browser') !== -1 || t.classList.contains('browser-play-badge-btn'))) {
+          trackEvent('click_google_play_from_ios_btn', {
+            button_location: t.id || 'unknown',
+            device_platform: 'android'
+          });
+          window.location.href = 'https://play.google.com/store/apps/details?id=com.asdigital.duoorb&utm_source=duoorb_web&utm_medium=ios_btn_android_redirect';
+          return;
+        }
+
+        // On iOS & desktop, instantly launch the game directly with zero friction or modals
         showGame();
       });
 
@@ -1258,9 +1371,6 @@
 
   <!-- The root element for Expo web app -->
   <div id="root" role="main"></div>
-
-  <!-- AppLixir In-Game Rewarded Video Ad Container (PWA Web) -->
-  <div id="applixir-ad-container"></div>
 </body>
 
 </html>

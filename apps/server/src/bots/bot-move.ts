@@ -205,42 +205,41 @@ export async function chooseBotAction(
     }
   }
 
-  // 3. Opening plan (first few own moves according to signature playstyle).
-  if (ctx.openingPlan && ctx.ownMoveIndex < ctx.openingPlan.length) {
-    const opened = accept(
-      resolveOpeningIntent(state, botPlayerId, ctx.openingPlan[ctx.ownMoveIndex])
-    );
-    if (opened) return opened;
-  }
-
-  // 4. Tactical counter-wall reaction:
-  // If rival is placing walls against the bot, respond strategically like a human player
-  const rivalWallsPlaced = rival ? (state.mode === '2p' ? 10 : 5) - rival.wallsRemaining : 0;
-  if (rival && rivalWallsPlaced > 0 && me.wallsRemaining > 0) {
-    const counter = findTacticalCounterWall(state, botPlayerId);
-    if (counter) {
-      const ok = accept(counter);
-      if (ok) return ok;
-    }
-  }
-
-  // 5. Engine (Native ONNX AlphaZero when available for ONNX bots or hot-streak promotion, else JS MCTS).
+  // 3. Native Hybrid AI Engine (AlphaZero Neural Priors + Multi-threaded MCTS + Tactical Minimax Solver)
+  // Powered by the calibrated 39-bot personality system with distinct styles and parameters.
   let action: GameAction | null = null;
-  const useOnnx = Boolean(ctx.forceMilo || ctx.persona.useOnnx);
-  const targetEngineBotId = ctx.forceMilo ? 'milo' : (ctx.persona.engineBotId || 'milo');
-  if (useOnnx && nativeAnalyzer && typeof nativeAnalyzer.getBotActionAsync === 'function' && !ctx.shouldCancel?.()) {
+  let fromNativeEngine = false;
+  if (nativeAnalyzer && typeof nativeAnalyzer.getBotActionAsync === 'function' && !ctx.shouldCancel?.()) {
     try {
+      const personalityConfig = {
+        id: ctx.persona.userId,
+        name: ctx.persona.displayName,
+        elo: ctx.persona.targetRating,
+        temperature: ctx.persona.temperature,
+        blunder_rate: ctx.persona.blunderRate,
+        blunder_rank_min: 1,
+        blunder_rank_max: ctx.persona.targetRating >= 1600 ? 2 : 3,
+        wall_prob_bias: ctx.persona.wallProbBias,
+        wall_style: ctx.persona.wallStyle,
+        opening_style: ctx.persona.openingStyle,
+        variety_window: ctx.persona.varietyWindow,
+        simulations: ctx.forceMilo ? 8000 : ctx.persona.simulations,
+      };
+
+      const engineBotId = ctx.forceMilo ? 'milo' : (ctx.persona.engineBotId || 'achref');
       action = await nativeAnalyzer.getBotActionAsync(
         state,
-        targetEngineBotId,
-        null,
+        engineBotId,
+        JSON.stringify(personalityConfig),
         ctx.seed
       );
+      if (action) fromNativeEngine = true;
     } catch {
       action = null;
     }
   }
 
+  // 4. Fallback JS MCTS engine when native module is unavailable
   if (!action) {
     const fallbackId = ctx.forceMilo ? 'milo' : ctx.persona.engineBotId;
     const profile = botById(fallbackId)?.profile;
@@ -262,8 +261,9 @@ export async function chooseBotAction(
     // Never retreat or step into a closed pocket while a forward step exists.
     if ((next < 0 || next > current) && advancing) action = advancing;
   } else if (action?.type === 'PLACE_WALL') {
-    // Never spend a wall that delays nobody.
-    if (!wallDelaysRival(state, botPlayerId, {
+    // If selected by native engine, AlphaZero + MCTS already evaluated deep pathing and long-range setup walls.
+    // For fallback non-native engines, verify the wall delays at least one opponent before spending it.
+    if (!fromNativeEngine && !wallDelaysRival(state, botPlayerId, {
       ...action.wall,
       placedByPlayerId: botPlayerId,
       sequence: state.history.length + 1,

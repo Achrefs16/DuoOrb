@@ -32,18 +32,25 @@ describe('Bot Roster & Diverse 20-Pattern Naming', () => {
     expect(repetitiveSuffixCount).toBe(0);
   });
 
-  it('includes diverse identity types: all-caps, anime, tech, formal, esports, numbers', () => {
-    const usernames = BOT_PERSONAS.map((p) => p.username);
-    // All caps
-    expect(usernames.some((u) => u === 'NOVA' || u === 'APEX')).toBe(true);
-    // Anime
-    expect(usernames.some((u) => u === 'sasuke99' || u === 'itachi_7')).toBe(true);
-    // Esports/prefix
-    expect(usernames.some((u) => u.startsWith('fn_') || u.startsWith('ttv_'))).toBe(true);
-    // Dot tech
-    expect(usernames.some((u) => u.includes('.') && !u.includes('@'))).toBe(true);
-    // Double underscore
-    expect(usernames.some((u) => u.includes('__'))).toBe(true);
+  it('uses organic, natural human names without anime characters or artificial clan tags', () => {
+    const usernames = BOT_PERSONAS.map((p) => p.username.toLowerCase());
+    // No anime character formulas
+    expect(usernames.some((u) => u.includes('sasuke') || u.includes('itachi') || u.includes('luffy') || u.includes('tanjiro'))).toBe(false);
+    // No esports clan prefixes
+    expect(usernames.some((u) => u.startsWith('fn_') || u.startsWith('ttv_') || u.startsWith('faze_'))).toBe(false);
+    // No artificial double underscores
+    expect(usernames.some((u) => u.includes('__'))).toBe(false);
+    // Diverse organic handles present
+    expect(usernames.some((u) => u === 'marcus_reed' || u === 'felix_bauer' || u === 'aarav_sharma' || u === 'mateus_costa')).toBe(true);
+  });
+
+  it('enforces maximum 16 matches played per bot with both wins and losses', () => {
+    for (const p of BOT_PERSONAS) {
+      expect(p.gamesPlayed).toBeLessThanOrEqual(16);
+      expect(p.gamesPlayed).toBeGreaterThanOrEqual(8);
+      expect(p.wins).toBeGreaterThanOrEqual(1);
+      expect(p.gamesPlayed - p.wins).toBeGreaterThanOrEqual(1);
+    }
   });
 
   it('spans rating tiers from 900 to 2100 with ONNX enabled on high tiers', () => {
@@ -57,7 +64,8 @@ describe('Bot Roster & Diverse 20-Pattern Naming', () => {
     const onnxBots = BOT_PERSONAS.filter((p) => p.useOnnx);
     expect(onnxBots.length).toBeGreaterThan(30);
     for (const bot of onnxBots) {
-      expect(bot.engineBotId).toBe('milo');
+      expect(bot.engineBotId).toBeDefined();
+      expect(bot.simulations).toBeGreaterThanOrEqual(3000);
     }
   });
 

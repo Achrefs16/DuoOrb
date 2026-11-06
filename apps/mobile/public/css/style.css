@@ -403,7 +403,8 @@ a:hover {
 /* ==========================================================================
    OFFICIAL IOS PWA INSTALL BADGE (Matches Google Play Badge Exactly)
    ========================================================================== */
-.ios-app-badge-btn {
+.ios-app-badge-btn,
+.browser-play-badge-btn {
   display: inline-flex;
   align-items: center;
   gap: 14px;
@@ -416,29 +417,38 @@ a:hover {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
   cursor: pointer;
   font-family: inherit;
+  font-size: 16px;
+  line-height: normal;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
   transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
-.ios-app-badge-btn:hover {
+.ios-app-badge-btn:hover,
+.browser-play-badge-btn:hover {
   transform: translateY(-2px);
   background-color: #1a1917;
   border-color: #FFFFFF;
 }
 
-.ios-app-badge-btn .apple-icon {
+.ios-app-badge-btn .apple-icon,
+.browser-play-badge-btn .apple-icon {
   flex-shrink: 0;
   width: 28px;
   height: 28px;
 }
 
-.ios-app-badge-btn .badge-text {
+.ios-app-badge-btn .badge-text,
+.browser-play-badge-btn .badge-text {
   display: flex;
   flex-direction: column;
   line-height: 1.15;
   text-align: left;
 }
 
-.ios-app-badge-btn .badge-sub {
+.ios-app-badge-btn .badge-sub,
+.browser-play-badge-btn .badge-sub {
   font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 700;
@@ -447,7 +457,8 @@ a:hover {
   text-transform: uppercase;
 }
 
-.ios-app-badge-btn .badge-title {
+.ios-app-badge-btn .badge-title,
+.browser-play-badge-btn .badge-title {
   font-family: var(--font-sans);
   font-size: 20px;
   font-weight: 800;
@@ -933,7 +944,8 @@ table.editorial-table code {
   }
 
   .play-store-badge-btn,
-  .ios-app-badge-btn {
+  .ios-app-badge-btn,
+  .browser-play-badge-btn {
     width: 100%;
     max-width: 320px;
     justify-content: center;
@@ -1163,31 +1175,39 @@ body.legal h1 {
   }
 }
 
-/* AppLixir In-Game Ad Overlay (PWA Web) */
-#applixir-ad-container {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 999999;
-  background: rgba(0, 0, 0, 0.92);
+/* Footer Headings & Social Links */
+.footer-heading {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #A6A29A;
+  margin: 0 0 16px;
 }
 
-#applixir-ad-container.applixir-active {
-  display: block;
+.footer-social-links {
+  display: flex;
+  gap: 12px;
+  margin-top: 14px;
+  align-items: center;
 }
 
-#applixir-ad-container iframe {
-  display: block !important;
-  width: 100% !important;
-  height: 100% !important;
-  max-width: 800px !important;
-  max-height: 500px !important;
-  position: absolute !important;
-  top: 50% !important;
-  left: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  border: none !important;
+.footer-social-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #D6D3CD;
+  transition: all 0.2s ease;
+}
+
+.footer-social-link:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #FFFFFF;
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
 }

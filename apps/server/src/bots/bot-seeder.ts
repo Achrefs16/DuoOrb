@@ -52,7 +52,12 @@ export async function ensureBotRoster(prisma: PrismaService): Promise<boolean> {
           wins: p.wins,
           losses: p.gamesPlayed - p.wins,
         },
-        update: {},
+        update: {
+          rating: p.targetRating,
+          gamesPlayed: p.gamesPlayed,
+          wins: p.wins,
+          losses: p.gamesPlayed - p.wins,
+        },
       });
     }
 

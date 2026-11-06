@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::hybrid::find_ranked_hybrid_actions;
 use crate::mcts::Prng;
-use crate::pathfinding::is_goal_cell;
+use crate::pathfinding::{is_goal_cell, EdgeMasks, GoalMask};
 use crate::rules::is_legal_action;
 use crate::types::{CellCoord, GameAction, GameState, Orientation, PlayerState, WallCoord};
 
@@ -745,8 +745,13 @@ fn is_backward_pawn_move(state: &GameState, mover_idx: usize, action: &GameActio
     false
 }
 
-/// Checks whether a wall placement actually delays at least one active opponent by >= 1 step
-/// while keeping paths open for all players (Quoridor golden rule).
+/// Checks whether a wall placement is a valid, non-useless strategic wall:
+/// 1. Mover and all opponents must retain legal paths to goals (Quoridor golden rule).
+/// 2. Must not cause net self-harm to the mover.
+/// 3. Provides real strategic value:
+///    a) directly delays an active opponent (new_d > cur_d), OR
+///    b) significantly constricts an opponent's shortest path corridor (corridor squeeze), OR
+///    c) shields the mover's corridor (is_parallel_funnel_wall) with 0 self-delay.
 fn wall_delays_opponent(state: &GameState, mover_idx: usize, wall: &WallCoord) -> bool {
     if wall.row < 0 || wall.row >= 8 || wall.col < 0 || wall.col >= 8 {
         return false;
@@ -759,44 +764,86 @@ fn wall_delays_opponent(state: &GameState, mover_idx: usize, wall: &WallCoord) -
     let mut spec_board = board;
     spec_board.place_wall_raw(wall.row as u8, wall.col as u8, is_h);
 
-    // Mover must retain a valid path
-    if let Some(mover) = state.players.get(mover_idx) {
-        let my_d = crate::pathfinding::shortest_distance(
-            mover.position,
-            mover.goal_direction,
-            &spec_board,
-            &state.mode,
-        );
-        if my_d < 0 {
-            return false;
-        }
+    let mover = match state.players.get(mover_idx) {
+        Some(m) => m,
+        None => return false,
+    };
+
+    let mover_goal = GoalMask::from_goal_and_mode(mover.goal_direction, &state.mode);
+    let edge_masks = EdgeMasks::from_board(&board);
+    let spec_masks = EdgeMasks::from_board(&spec_board);
+
+    let (my_d, my_corridor) = edge_masks.shortest_path_corridor(
+        mover.position.row as u8,
+        mover.position.col as u8,
+        mover_goal,
+    );
+    let (my_new_d, _) = spec_masks.shortest_path_corridor(
+        mover.position.row as u8,
+        mover.position.col as u8,
+        mover_goal,
+    );
+    if my_new_d < 0 {
+        return false;
     }
 
+    let my_delay = (my_new_d - my_d).max(0);
+
     let mut delays_someone = false;
+    let mut squeezes_someone = false;
+    let mut max_opp_delay = 0;
+
     for (idx, opp) in state.players.iter().enumerate() {
         if idx == mover_idx || opp.status == "FINISHED" {
             continue;
         }
-        let cur_d = crate::pathfinding::shortest_distance(
-            opp.position,
-            opp.goal_direction,
-            &board,
-            &state.mode,
+        let opp_goal = GoalMask::from_goal_and_mode(opp.goal_direction, &state.mode);
+        let (cur_d, cur_corridor) = edge_masks.shortest_path_corridor(
+            opp.position.row as u8,
+            opp.position.col as u8,
+            opp_goal,
         );
-        let new_d = crate::pathfinding::shortest_distance(
-            opp.position,
-            opp.goal_direction,
-            &spec_board,
-            &state.mode,
+        let (new_d, new_corridor) = spec_masks.shortest_path_corridor(
+            opp.position.row as u8,
+            opp.position.col as u8,
+            opp_goal,
         );
         if new_d < 0 {
             return false;
         }
-        if new_d > cur_d {
+        let delay = new_d - cur_d;
+        if delay > max_opp_delay {
+            max_opp_delay = delay;
+        }
+        if delay > 0 {
             delays_someone = true;
         }
+        let reduction = cur_corridor.count_ones().saturating_sub(new_corridor.count_ones());
+        if reduction >= 2 {
+            squeezes_someone = true;
+        }
     }
-    delays_someone
+
+    // Never accept self-harm unless delaying opponent by more:
+    if my_delay > 0 && max_opp_delay <= my_delay {
+        return false;
+    }
+
+    if delays_someone {
+        return true;
+    }
+
+    // Proactive strategic wall: corridor squeeze or funnel shield with 0 self-delay
+    if my_delay == 0 {
+        if squeezes_someone {
+            return true;
+        }
+        if crate::mcts::is_parallel_funnel_wall(wall.row as u8, wall.col as u8, is_h, my_corridor) {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// The Master Personality Decision Function:

@@ -10,9 +10,6 @@ export class HistoryService {
   async getUserHistory(userId: string, limit = 20, offset = 0) {
     if (!this.prisma.isConnected) return { games: [], total: 0 };
 
-    const isBot = userId.startsWith(BOT_ID_PREFIX);
-    const effectiveLimit = isBot ? Math.min(limit, 6) : limit;
-
     const [players, total, groups] = await Promise.all([
       this.prisma.gamePlayer.findMany({
         where: { userId, game: { status: 'COMPLETED' } },
@@ -32,7 +29,7 @@ export class HistoryService {
           },
         },
         orderBy: { game: { endedAt: 'desc' } },
-        take: effectiveLimit,
+        take: limit,
         skip: offset,
       }),
       this.prisma.gamePlayer.count({ where: { userId, game: { status: 'COMPLETED' } } }),
@@ -105,19 +102,16 @@ export class HistoryService {
       };
     });
 
-    const displayTotal = isBot ? Math.min(total, 6) : total;
+    const wins = groups.find((g) => g.isWinner)?._count.isWinner ?? 0;
+    const losses = groups.find((g) => !g.isWinner)?._count.isWinner ?? Math.max(0, total - wins);
 
     return {
       games,
-      total: displayTotal,
+      total,
       summary: {
-        total: displayTotal,
-        wins: isBot
-          ? Math.min(groups.find((g) => g.isWinner)?._count.isWinner ?? 0, 4)
-          : groups.find((g) => g.isWinner)?._count.isWinner ?? 0,
-        losses: isBot
-          ? Math.max(0, displayTotal - Math.min(groups.find((g) => g.isWinner)?._count.isWinner ?? 0, 4))
-          : groups.find((g) => !g.isWinner)?._count.isWinner ?? 0,
+        total,
+        wins,
+        losses,
       },
     };
   }

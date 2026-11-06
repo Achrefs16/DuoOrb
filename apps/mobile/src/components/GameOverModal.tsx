@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -226,6 +227,14 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         friction: 8,
         tension: 65,
       }).start();
+
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        try {
+          window.dispatchEvent(new CustomEvent('duoorb_match_completed'));
+        } catch {
+          // ignore
+        }
+      }
     }
   }, [visible, pop]);
 

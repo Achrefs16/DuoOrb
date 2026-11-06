@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://duoorb.com/</loc>
-    <lastmod>2026-10-15</lastmod>
+    <lastmod>2026-11-06</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
     <image:image><image:loc>https://duoorb.com/screenshots/gameplay-duel.png</image:loc><image:title>DuoOrb live 1v1 tactical match</image:title></image:image>
@@ -12,53 +12,108 @@
     <image:image><image:loc>https://duoorb.com/screenshots/clutch-board-endgame.png</image:loc><image:title>Tight labyrinth endgame duel</image:title></image:image>
   </url>
   <url>
+    <loc>https://duoorb.com/what-is-the-game-with-two-balls-and-walls.html</loc>
+    <lastmod>2026-11-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.92</priority>
+    <image:image><image:loc>https://duoorb.com/screenshots/gameplay-duel.png</image:loc><image:title>Two balls and wooden walls strategy game</image:title></image:image>
+  </url>
+  <url>
+    <loc>https://duoorb.com/blog/</loc>
+    <lastmod>2026-11-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
+  </url>
+  <url>
+    <loc>https://duoorb.com/blog/quoridor-gg-alternative.html</loc>
+    <lastmod>2026-11-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.90</priority>
+  </url>
+  <url>
+    <loc>https://duoorb.com/blog/best-quoridor-game-mobile.html</loc>
+    <lastmod>2026-11-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.90</priority>
+  </url>
+  <url>
+    <loc>https://duoorb.com/blog/play-quoridor-online-free.html</loc>
+    <lastmod>2026-11-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.88</priority>
+  </url>
+  <url>
+    <loc>https://duoorb.com/blog/games-similar-to-quoridor.html</loc>
+    <lastmod>2026-11-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.88</priority>
+  </url>
+  <url>
+    <loc>https://duoorb.com/blog/wall-rush-alternative.html</loc>
+    <lastmod>2026-11-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.88</priority>
+  </url>
+  <url>
+    <loc>https://duoorb.com/blog/wrong-way-alternative.html</loc>
+    <lastmod>2026-11-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.88</priority>
+  </url>
+  <url>
+    <loc>https://duoorb.com/blog/best-strategy-board-games-android.html</loc>
+    <lastmod>2026-11-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.88</priority>
+  </url>
+  <url>
     <loc>https://duoorb.com/rules.html</loc>
-    <lastmod>2026-10-15</lastmod>
+    <lastmod>2026-11-06</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.85</priority>
     <image:image><image:loc>https://duoorb.com/screenshots/match-review-analysis.png</image:loc><image:title>DuoOrb post-match engine analysis and move grading</image:title></image:image>
   </url>
   <url>
     <loc>https://duoorb.com/strategy.html</loc>
-    <lastmod>2026-10-15</lastmod>
+    <lastmod>2026-11-06</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.90</priority>
+    <priority>0.88</priority>
   </url>
   <url>
     <loc>https://duoorb.com/bots-and-analysis.html</loc>
-    <lastmod>2026-10-15</lastmod>
+    <lastmod>2026-11-06</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.88</priority>
     <image:image><image:loc>https://duoorb.com/screenshots/match-review-analysis.png</image:loc><image:title>DuoOrb MCTS win evaluation bar and move classifications</image:title></image:image>
   </url>
   <url>
     <loc>https://duoorb.com/about.html</loc>
-    <lastmod>2026-10-15</lastmod>
+    <lastmod>2026-11-06</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.80</priority>
   </url>
   <url>
+    <loc>https://duoorb.com/contact.html</loc>
+    <lastmod>2026-11-06</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.40</priority>
+  </url>
+  <url>
     <loc>https://duoorb.com/privacy.html</loc>
-    <lastmod>2026-10-05</lastmod>
+    <lastmod>2026-11-06</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.30</priority>
   </url>
   <url>
     <loc>https://duoorb.com/terms.html</loc>
-    <lastmod>2026-10-05</lastmod>
+    <lastmod>2026-11-06</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.30</priority>
   </url>
   <url>
     <loc>https://duoorb.com/cookies.html</loc>
-    <lastmod>2026-10-15</lastmod>
+    <lastmod>2026-11-06</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.30</priority>
-  </url>
-  <url>
-    <loc>https://duoorb.com/contact.html</loc>
-    <lastmod>2026-10-15</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.40</priority>
   </url>
 </urlset>

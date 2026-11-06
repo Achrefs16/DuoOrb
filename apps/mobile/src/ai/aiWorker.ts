@@ -106,8 +106,8 @@ let activeId: number | null = null;
 let cancelled = false;
 const queue: AiWorkerRequest[] = [];
 
-// Preload WASM engine on worker startup
-void getWasmEngine();
+// Lazy load WASM on demand when first move/analysis is requested (saves 25MB on page load)
+// void getWasmEngine();
 
 function pump(): void {
   if (activeId !== null) return;

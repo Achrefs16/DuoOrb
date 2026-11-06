@@ -2,7 +2,9 @@ User-agent: *
 Allow: /
 Disallow: /play.html
 Disallow: /app.html
-Disallow: /what-is-the-game-with-two-balls-and-walls.html
+
+# Agentic Resource Discovery (ARD) Directive
+Agentmap: https://duoorb.com/.well-known/ard.json
 
 User-agent: Googlebot
 Allow: /
@@ -29,6 +31,9 @@ User-agent: ClaudeBot
 Allow: /
 
 User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot
 Allow: /
 
 Sitemap: https://duoorb.com/sitemap.xml

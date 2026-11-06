@@ -3,7 +3,7 @@ import { HistoryService } from './history.service.js';
 import { BOT_ID_PREFIX } from '../bots/bot-ids.js';
 
 describe('HistoryService', () => {
-  it('caps bot history to 6 games max', async () => {
+  it('returns full, uncapped match history and accurate career totals for bot players', async () => {
     let capturedTake = 0;
     const mockPrisma: any = {
       isConnected: true,
@@ -14,7 +14,7 @@ describe('HistoryService', () => {
             {
               isWinner: true,
               game: {
-                id: 'bot_game_1',
+                id: 'bot_match_0001',
                 mode: '2p',
                 status: 'COMPLETED',
                 players: [],
@@ -24,10 +24,10 @@ describe('HistoryService', () => {
             },
           ]);
         }),
-        count: vi.fn().mockResolvedValue(45), // 45 total games in DB
+        count: vi.fn().mockResolvedValue(12),
         groupBy: vi.fn().mockResolvedValue([
-          { isWinner: true, _count: { isWinner: 30 } },
-          { isWinner: false, _count: { isWinner: 15 } },
+          { isWinner: true, _count: { isWinner: 8 } },
+          { isWinner: false, _count: { isWinner: 4 } },
         ]),
       },
     };
@@ -36,11 +36,11 @@ describe('HistoryService', () => {
     const botUserId = `${BOT_ID_PREFIX}us_001`;
     const res = await service.getUserHistory(botUserId, 20, 0);
 
-    // Bot query should cap take at 6
-    expect(capturedTake).toBe(6);
-    // Bot query should cap total at 6
-    expect(res.total).toBe(6);
-    expect(res.summary.total).toBe(6);
+    expect(capturedTake).toBe(20);
+    expect(res.total).toBe(12);
+    expect(res.summary.total).toBe(12);
+    expect(res.summary.wins).toBe(8);
+    expect(res.summary.losses).toBe(4);
   });
 
   it('keeps normal pagination for human players', async () => {
