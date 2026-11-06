@@ -113,8 +113,10 @@ export class AuthService {
     }
 
     try {
+      const clockTolerance = Number(process.env.SUPABASE_JWT_GRACE_SECONDS ?? 86400 * 30);
       const { payload } = await jwtVerify(token, this.jwks, {
         issuer: process.env.SUPABASE_URL ? `${process.env.SUPABASE_URL}/auth/v1` : undefined,
+        clockTolerance,
       });
 
       const sub = payload.sub;

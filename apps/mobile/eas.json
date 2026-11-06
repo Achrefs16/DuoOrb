@@ -14,7 +14,8 @@
         "buildType": "apk"
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_SERVER_URL": "https://api.duoorb.com"
       }
     },
     "preview-arm64": {
@@ -29,6 +30,9 @@
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_SERVER_URL": "https://api.duoorb.com"
       }
     }
   },
