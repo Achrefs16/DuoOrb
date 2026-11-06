@@ -19,6 +19,10 @@ export async function ensureBotRoster(prisma: PrismaService): Promise<boolean> {
       data: BOT_PERSONAS.map((p) => ({ id: p.userId })),
       skipDuplicates: true,
     });
+    // Temporarily alias bot usernames to avoid unique constraint collisions when usernames shift
+    await prisma.$executeRawUnsafe(
+      `UPDATE profiles SET username = CONCAT('tmp_', "userId") WHERE "userId" LIKE 'bot_%';`
+    );
     // Ensure every bot persona has an authentic profile in PostgreSQL
     for (const p of BOT_PERSONAS) {
       await prisma.profile.upsert({
